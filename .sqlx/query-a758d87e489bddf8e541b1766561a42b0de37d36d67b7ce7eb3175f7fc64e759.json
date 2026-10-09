@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE book_ingest_source SET\n            extracted_cover = COALESCE($2, extracted_cover),\n            pending_authors = COALESCE($3, pending_authors),\n            pending_series = COALESCE($4, pending_series),\n            pending_series_index = COALESCE($5, pending_series_index),\n            source_metadata = COALESCE($6, source_metadata),\n            conversion_error = COALESCE($7, conversion_error)\n        WHERE book_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Jsonb",
+        "Jsonb",
+        "Float8",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a758d87e489bddf8e541b1766561a42b0de37d36d67b7ce7eb3175f7fc64e759"
+}

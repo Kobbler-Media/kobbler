@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT p.id AS \"person_id!\", p.name AS \"name!\", mcr.job\n        FROM movie_crew mcr\n        JOIN people p ON p.id = mcr.person_id\n        WHERE mcr.movie_id = $1 AND mcr.job = 'Director'\n        ORDER BY p.name ASC, p.id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "person_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "people",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "people",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "job",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_crew",
+            "name": "job"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "79cd28cdc4b85e5e2708e7730f497428741befe82a26d0d7b3146eb2a9b7094d"
+}

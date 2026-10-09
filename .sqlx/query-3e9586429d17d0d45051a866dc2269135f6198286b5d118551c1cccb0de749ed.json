@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(sh.content_category, 'tv') AS \"category!\"\n        FROM tv_episodes ep\n        JOIN tv_seasons se ON se.id = ep.season_id\n        JOIN tv_shows sh ON sh.id = se.show_id\n        WHERE ep.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "category!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3e9586429d17d0d45051a866dc2269135f6198286b5d118551c1cccb0de749ed"
+}

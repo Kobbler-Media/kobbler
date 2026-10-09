@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT season_id FROM tv_episodes WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "season_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "season_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "db2d862ab350121612875593cbc287e47e922150871dea94328dba3bbf882f6b"
+}

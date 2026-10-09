@@ -1,0 +1,126 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            c.id,\n            c.name,\n            c.category,\n            c.language,\n            c.country,\n            c.icon_url,\n            c.enabled,\n            (SELECT COUNT(*)::int FROM iptv_sources s WHERE s.channel_id = c.id) AS \"source_count!: i32\",\n            EXISTS(SELECT 1 FROM iptv_epg e WHERE e.channel_id = c.id) AS \"has_epg!: bool\",\n            (SELECT e.title FROM iptv_epg e\n             WHERE e.channel_id = c.id\n             AND e.start_time <= NOW() AND e.stop_time > NOW()\n             ORDER BY e.start_time DESC LIMIT 1) AS \"current_program?\",\n            (SELECT g.name FROM iptv_channel_groups g\n             WHERE g.enabled AND c.category = ANY(g.auto_assign_categories)\n             ORDER BY g.display_order, g.slug\n             LIMIT 1) AS \"group?\"\n        FROM iptv_channels c\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "country",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "country"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "icon_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "icon_url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "source_count!: i32",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "has_epg!: bool",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "current_program?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "group?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1a136a9106ac08a16ffeb57212cc900e055ec02c9f06b6c64f84173e16a970d5"
+}

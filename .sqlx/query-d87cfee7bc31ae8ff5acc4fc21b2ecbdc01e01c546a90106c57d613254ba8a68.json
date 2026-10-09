@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_channels\n        SET enabled = COALESCE($2, enabled),\n            favourite = COALESCE($3, favourite),\n            updated_at = NOW()\n        WHERE id = ANY($1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d87cfee7bc31ae8ff5acc4fc21b2ecbdc01e01c546a90106c57d613254ba8a68"
+}

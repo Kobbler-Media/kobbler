@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO books (id, title, description, identifiers, images,\n                           release_date, is_released, want_status,\n                           discovered_from_author_id, page_count, rating, rating_count,\n                           first_seen_at, provider_metadata,\n                           narrator, want_format)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), $13,\n                $14, COALESCE($15, 'ebook'))\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Date",
+        "Bool",
+        "Text",
+        "Uuid",
+        "Int4",
+        "Float8",
+        "Int4",
+        "Jsonb",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ac3d75e63c86488ab3c613bcc81c44769735e8de02490a91fbff6331ee069ff0"
+}

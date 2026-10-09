@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT guide_id AS \"guide_id!\", id, status\n        FROM livetv_recordings\n        WHERE guide_id = ANY($1) AND status NOT IN ('cancelled', 'moved')\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "guide_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "guide_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "09eca4e4b3a024acfbb2c68fedbdbd73593245f394dd34fdea008db6a34349b3"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tv_watch_states t SET episode_id = $1\n                       WHERE t.episode_id = $2\n                         AND NOT EXISTS (\n                             SELECT 1 FROM tv_watch_states x\n                             WHERE x.user_id = t.user_id AND x.episode_id = $1\n                         )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e627567e165b755f38477bea58e1df80fa8ced0e9cc9de2a2a155b82bad21b67"
+}

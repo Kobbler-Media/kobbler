@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_providers SET\n            name = COALESCE($2, name),\n            url = COALESCE($3, url),\n            username = COALESCE($4, username),\n            password = COALESCE($5, password),\n            preferred_format = COALESCE($6, preferred_format),\n            sync_interval_secs = COALESCE($7, sync_interval_secs),\n            enabled = COALESCE($8, enabled),\n            account_info = COALESCE($9, account_info),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Bool",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a246d91fb75a0cbe392d026024fe726b318c8dd5eca1aab34a29b37213167c88"
+}

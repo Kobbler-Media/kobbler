@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            m.id AS movie_id,\n            m.title,\n            m.year,\n            m.images AS \"images: serde_json::Value\",\n            ws.position_seconds AS \"position_seconds!\",\n            COALESCE(\n                (SELECT MAX(mf.duration_seconds) FROM movie_files mf\n                 WHERE mf.movie_id = m.id AND mf.available = true),\n                (SELECT (ds.probe_data->>'duration')::float8 FROM debrid_stream_sessions ds\n                 WHERE ds.media_type = 'movie' AND ds.media_id = m.id AND ds.probe_data IS NOT NULL\n                 ORDER BY ds.updated_at DESC LIMIT 1)\n            ) AS \"duration_seconds?: f64\",\n            ws.updated_at AS \"updated_at!\"\n        FROM movie_watch_states ws\n        JOIN movies m ON m.id = ws.movie_id\n        WHERE ws.user_id = $1\n          AND ws.position_seconds IS NOT NULL\n          AND ws.position_seconds >= 60\n          AND ws.watched = FALSE\n        ORDER BY ws.updated_at DESC\n        LIMIT 20\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "movie_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "images: serde_json::Value",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "position_seconds!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movie_watch_states",
+            "name": "position_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "duration_seconds?: f64",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "movie_watch_states",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      null,
+      false
+    ]
+  },
+  "hash": "37c6810bcae8401208998f7b9351e54d354386ebee5735fa4a737a7327b9fecf"
+}

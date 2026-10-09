@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_recordings\n        SET output_dir = $2, tuner_index = $3, container = 'hls',\n            actual_start = COALESCE(actual_start, NOW()), updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3c7f28cb3239a529e8ba3d9e60ab8a6d07c40775a050a37f6f31ae1a46c69537"
+}

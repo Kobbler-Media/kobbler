@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS(\n            SELECT 1 FROM audiobook_chapters c\n            JOIN audiobook_files af ON af.id = c.audiobook_file_id\n            WHERE af.book_id = $1 AND c.source = $2\n        ) AS \"exists!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "92f36b21115d20dda822c86fe11296e67739487c1feae4e3dda96fa3a8838bf4"
+}

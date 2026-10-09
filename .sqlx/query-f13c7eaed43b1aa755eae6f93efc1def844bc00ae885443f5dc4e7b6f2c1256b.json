@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE movies SET streamed_at = COALESCE(streamed_at, NOW()) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f13c7eaed43b1aa755eae6f93efc1def844bc00ae885443f5dc4e7b6f2c1256b"
+}

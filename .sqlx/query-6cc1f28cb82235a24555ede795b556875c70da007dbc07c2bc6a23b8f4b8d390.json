@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM chat_pairing_codes\n        WHERE created_at < NOW() - make_interval(secs => $1::double precision)\n          AND (consumed_at IS NOT NULL OR expires_at <= NOW())\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6cc1f28cb82235a24555ede795b556875c70da007dbc07c2bc6a23b8f4b8d390"
+}

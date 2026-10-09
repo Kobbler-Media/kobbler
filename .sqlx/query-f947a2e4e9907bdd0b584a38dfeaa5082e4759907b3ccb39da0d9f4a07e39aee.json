@@ -1,0 +1,143 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            f.id,\n            f.file_name,\n            f.file_path,\n            f.media_root_id,\n            COALESCE(mr.name, mr.path) as \"media_root_name!\",\n            f.match_status,\n            f.entity_type,\n            f.interpretation,\n            b.title as \"book_title?\",\n            m.title as \"movie_title?\",\n            tv.title as \"show_name?\"\n        FROM media_root_files f\n        JOIN media_roots mr ON mr.id = f.media_root_id\n        LEFT JOIN books b ON f.entity_type = 'book' AND f.entity_id = b.id\n        LEFT JOIN movies m ON f.entity_type = 'movie' AND f.entity_id = m.id\n        LEFT JOIN tv_shows tv ON f.entity_type = 'tv_show' AND f.entity_id = tv.id\n        WHERE f.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "file_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "media_root_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "media_root_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "media_root_name!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "match_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "match_status"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "entity_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "entity_type"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "interpretation",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "interpretation"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "book_title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "movie_title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "show_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "f947a2e4e9907bdd0b584a38dfeaa5082e4759907b3ccb39da0d9f4a07e39aee"
+}

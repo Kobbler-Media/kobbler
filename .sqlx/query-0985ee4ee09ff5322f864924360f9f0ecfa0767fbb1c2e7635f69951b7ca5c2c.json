@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM iptv_channels\n        WHERE id NOT IN (SELECT DISTINCT channel_id FROM iptv_sources)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "0985ee4ee09ff5322f864924360f9f0ecfa0767fbb1c2e7635f69951b7ca5c2c"
+}

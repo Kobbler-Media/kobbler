@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT movie_id\n            FROM movie_watch_states\n            WHERE user_id = $1 AND movie_id = ANY($2) AND watched\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "movie_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_watch_states",
+            "name": "movie_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ad12721680cedc98e412d189791521d076733db406c5aa83a73edc78ab6c9428"
+}

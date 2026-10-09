@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tv_seasons (id, show_id, season_identifier, season_sort_order,\n                                title, description, images, air_date,\n                                episode_count, is_monitored, is_special, auto_want_mode)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\n        ON CONFLICT (show_id, season_identifier)\n        DO UPDATE SET\n            season_sort_order = EXCLUDED.season_sort_order,\n            title = COALESCE(EXCLUDED.title, tv_seasons.title),\n            description = COALESCE(EXCLUDED.description, tv_seasons.description),\n            images = tv_seasons.images || EXCLUDED.images,\n            air_date = COALESCE(EXCLUDED.air_date, tv_seasons.air_date),\n            episode_count = COALESCE(EXCLUDED.episode_count, tv_seasons.episode_count),\n            is_special = EXCLUDED.is_special,\n            is_monitored = EXCLUDED.is_monitored\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Date",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1a64f4f31dbbeb29079bc6fb54c7faebc225124ff5739e9430448f2124d32f3a"
+}

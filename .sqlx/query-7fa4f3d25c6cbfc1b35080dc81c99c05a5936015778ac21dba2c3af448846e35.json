@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT DISTINCT af.book_id AS \"book_id!\"\n                FROM audiobook_files af\n                WHERE EXISTS (\n                    SELECT 1 FROM audiobook_transcripts at WHERE at.audiobook_file_id = af.id\n                )\n                UNION\n                SELECT DISTINCT bf.book_id\n                FROM book_files bf\n                WHERE EXISTS (\n                    SELECT 1 FROM ebook_segments es WHERE es.book_file_id = bf.id\n                )\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7fa4f3d25c6cbfc1b35080dc81c99c05a5936015778ac21dba2c3af448846e35"
+}

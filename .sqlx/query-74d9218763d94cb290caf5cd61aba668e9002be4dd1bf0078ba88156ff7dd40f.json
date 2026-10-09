@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reading_status SET status = $1, last_modified_at = NOW() WHERE reading_state_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "74d9218763d94cb290caf5cd61aba668e9002be4dd1bf0078ba88156ff7dd40f"
+}

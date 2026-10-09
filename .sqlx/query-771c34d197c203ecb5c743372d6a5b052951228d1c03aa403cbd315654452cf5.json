@@ -1,0 +1,162 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            s.id, s.media_type, s.media_id, s.release_title,\n            s.debrid_provider, s.filename, s.filesize, s.pinned,\n            s.progress_seconds, s.created_at, s.updated_at,\n            COALESCE(m.title, e.title) AS \"media_title?\",\n            COALESCE(m.images->>'poster', sh.images->>'poster') AS \"media_image_url?\"\n        FROM debrid_stream_sessions s\n        LEFT JOIN movies m ON s.media_type = 'movie' AND s.media_id = m.id\n        LEFT JOIN tv_episodes e ON s.media_type = 'episode' AND s.media_id = e.id\n        LEFT JOIN tv_seasons sn ON e.season_id = sn.id\n        LEFT JOIN tv_shows sh ON sn.show_id = sh.id\n        WHERE s.user_id = $1\n        ORDER BY s.updated_at DESC\n        LIMIT 10\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "media_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "release_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "release_title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "debrid_provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_provider"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "filename",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "filename"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "filesize",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "filesize"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "pinned",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "pinned"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "progress_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "progress_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "media_title?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "media_image_url?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "771c34d197c203ecb5c743372d6a5b052951228d1c03aa403cbd315654452cf5"
+}

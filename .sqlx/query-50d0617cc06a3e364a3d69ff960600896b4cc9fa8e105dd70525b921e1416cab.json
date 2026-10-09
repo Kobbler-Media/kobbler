@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO audiobook_files (\n            id, book_id, file_index, format, file_path, file_size, file_hash,\n            duration_seconds, bitrate, codec, channels, sample_rate,\n            track_number, disc_number,\n            source_path, source_mtime, source_type, source_metadata, added_at\n        )\n        VALUES (\n            $1, $2,\n            COALESCE((SELECT MAX(file_index) + 1 FROM audiobook_files WHERE book_id = $2), 0),\n            $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,\n            COALESCE($17, '{}'::jsonb), NOW()\n        )\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Float8",
+        "Int4",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "50d0617cc06a3e364a3d69ff960600896b4cc9fa8e105dd70525b921e1416cab"
+}

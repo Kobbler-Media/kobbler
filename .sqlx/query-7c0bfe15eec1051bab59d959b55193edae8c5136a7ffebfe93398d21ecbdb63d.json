@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE livetv_sessions SET recording_id = $2 WHERE session_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7c0bfe15eec1051bab59d959b55193edae8c5136a7ffebfe93398d21ecbdb63d"
+}

@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kobbler Cast Receiver</title>
+    <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+    <link rel="stylesheet" href="receiver.css" />
+  </head>
+  <body>
+    <cast-media-player></cast-media-player>
+    <div id="skip-overlay" class="skip-overlay" tabindex="0" aria-hidden="true">
+      <button id="skip-btn" class="skip-btn" tabindex="0">Skip</button>
+    </div>
+    <div id="thumbnail-preview" class="thumbnail-preview"></div>
+    <div id="chapter-display" class="chapter-display"></div>
+    <script src="receiver.js"></script>
+  </body>
+</html>

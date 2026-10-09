@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM iptv_favourites WHERE user_id = $1 AND channel_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "463ef90857bbd58c77f9e31a808cf5814abbca2b733964ba566e8dda292eaa3d"
+}

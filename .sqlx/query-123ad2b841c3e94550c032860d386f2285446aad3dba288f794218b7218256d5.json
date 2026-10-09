@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            te.id AS episode_id,\n            tshow.id AS show_id,\n            tshow.title AS show_title,\n            tshow.content_category,\n            ts.season_identifier,\n            te.episode_identifier,\n            te.title,\n            te.air_date AS \"air_date!\"\n        FROM tv_episodes te\n        JOIN tv_seasons ts ON ts.id = te.season_id\n        JOIN tv_shows tshow ON tshow.id = ts.show_id\n        WHERE tshow.id = $1\n          AND te.air_date <= CURRENT_DATE\n          AND ts.is_special = FALSE\n        ORDER BY te.air_date DESC, ts.season_sort_order DESC, te.episode_sort_order DESC, te.id DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "episode_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "show_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "show_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content_category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "content_category"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "season_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "episode_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "episode_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "air_date!",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "air_date"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "123ad2b841c3e94550c032860d386f2285446aad3dba288f794218b7218256d5"
+}

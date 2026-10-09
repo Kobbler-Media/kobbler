@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM movies\n        WHERE want_status = 'none'\n          AND streamed_at IS NULL\n          AND updated_at < NOW() - INTERVAL '30 minutes'\n          AND NOT EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id AND mf.available = true)\n          AND NOT EXISTS (\n              SELECT 1 FROM media_root_files mrf\n              WHERE mrf.entity_id = movies.id AND mrf.entity_type = 'movie' AND mrf.available = true\n          )\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9a025ebe73b3c9c333dceade352a5288c7683c8375367f8fa4b3f3282ef86b84"
+}

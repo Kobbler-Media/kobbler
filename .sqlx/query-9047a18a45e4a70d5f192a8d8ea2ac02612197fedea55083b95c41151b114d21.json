@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH found AS (\n            SELECT m.id AS message_id, s.ord, s.val\n            FROM chat_messages m\n            CROSS JOIN LATERAL jsonb_array_elements(m.steps) WITH ORDINALITY AS s(val, ord)\n            WHERE m.session_id = $1\n              AND m.created_at > $3\n              AND s.val -> 'observation' ->> 'confirm_token' = $2\n              AND COALESCE(s.val -> 'observation' ->> 'confirmed', 'false') = 'false'\n            ORDER BY m.created_at DESC, s.ord DESC\n            LIMIT 1\n        )\n        UPDATE chat_messages m\n        SET steps = jsonb_set(\n                m.steps,\n                ARRAY[(found.ord - 1)::text, 'observation', 'confirmed'],\n                'true'::jsonb\n            )\n        FROM found\n        WHERE m.id = found.message_id\n        RETURNING (found.val -> 'observation') AS \"observation!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "observation!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9047a18a45e4a70d5f192a8d8ea2ac02612197fedea55083b95c41151b114d21"
+}

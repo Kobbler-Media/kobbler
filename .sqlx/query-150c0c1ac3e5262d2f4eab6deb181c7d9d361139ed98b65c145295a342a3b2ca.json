@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE people SET\n            is_monitored = COALESCE($2, is_monitored),\n            auto_want_mode = COALESCE($3, auto_want_mode),\n            monitoring_started_at = CASE\n                WHEN $2 = true THEN COALESCE(monitoring_started_at, NOW())\n                WHEN $2 = false THEN NULL\n                ELSE monitoring_started_at\n            END,\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "150c0c1ac3e5262d2f4eab6deb181c7d9d361139ed98b65c145295a342a3b2ca"
+}

@@ -1,0 +1,172 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, show_id, season_identifier, season_sort_order,\n               title, description, images, air_date,\n               episode_count, is_monitored, is_special, auto_want_mode, created_at\n        FROM tv_seasons\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "show_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "show_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "season_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "season_sort_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_sort_order"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "images",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "air_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "air_date"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "episode_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "episode_count"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "is_monitored",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "is_monitored"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "is_special",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "is_special"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "auto_want_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "auto_want_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8bd735564613950ac90f266ae45adef9a0e6ff841e93895cdbadab38a42746b8"
+}

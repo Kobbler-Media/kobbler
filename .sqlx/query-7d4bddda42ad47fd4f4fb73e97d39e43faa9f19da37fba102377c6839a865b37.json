@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE debrid_stream_sessions\n            SET debrid_url = $1, debrid_url_expires_at = $2, updated_at = NOW()\n            WHERE id = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d4bddda42ad47fd4f4fb73e97d39e43faa9f19da37fba102377c6839a865b37"
+}

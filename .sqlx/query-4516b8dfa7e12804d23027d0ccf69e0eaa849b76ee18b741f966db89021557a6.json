@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_channels\n        SET callsign = COALESCE($2, callsign),\n            network = COALESCE(network, $3),\n            logo_url = COALESCE(logo_url, $4),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4516b8dfa7e12804d23027d0ccf69e0eaa849b76ee18b741f966db89021557a6"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tv_episode_files SET skip_detect_ran_at = NOW() WHERE id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7e2a404fc6f8132c9e249eae0d61556d6433424f857cab2138815e62283a9ab2"
+}

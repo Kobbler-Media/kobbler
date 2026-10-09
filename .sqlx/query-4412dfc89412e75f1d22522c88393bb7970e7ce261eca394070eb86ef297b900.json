@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO reading_states (id, book_id, user_id, device_id)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (book_id, user_id, device_id) DO UPDATE SET id = reading_states.id\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reading_states",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4412dfc89412e75f1d22522c88393bb7970e7ce261eca394070eb86ef297b900"
+}

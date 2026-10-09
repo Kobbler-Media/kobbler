@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            w.media_type AS \"media_type!\",\n            w.media_id AS \"media_id!\",\n            tshow.title AS \"title!\",\n            NULL::text AS subtitle,\n            tshow.images AS \"images!: serde_json::Value\",\n            w.added_at AS \"added_at!\"\n        FROM watchlist_items w\n        JOIN tv_shows tshow ON tshow.id = w.media_id\n        WHERE w.user_id = $1 AND w.media_type = 'show'\n\n        UNION ALL\n\n        SELECT\n            w.media_type AS \"media_type!\",\n            w.media_id AS \"media_id!\",\n            m.title AS \"title!\",\n            m.year::text AS subtitle,\n            m.images AS \"images!: serde_json::Value\",\n            w.added_at AS \"added_at!\"\n        FROM watchlist_items w\n        JOIN movies m ON m.id = w.media_id\n        WHERE w.user_id = $1 AND w.media_type = 'movie'\n\n        ORDER BY 6 DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_type!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "media_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "subtitle",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "images!: serde_json::Value",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "added_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "17102595afb87fa421aacb9e59b0dbeaa9f3a396e486e302a40b753fab46d2f1"
+}

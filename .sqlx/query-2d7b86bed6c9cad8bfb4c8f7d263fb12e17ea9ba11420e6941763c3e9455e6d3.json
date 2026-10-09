@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM debrid_stream_sessions WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2d7b86bed6c9cad8bfb4c8f7d263fb12e17ea9ba11420e6941763c3e9455e6d3"
+}

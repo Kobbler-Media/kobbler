@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE reading_bookmark SET\n            progress_percent = $1,\n            content_source_progress_percent = $2,\n            location_value = $3,\n            location_type = $4,\n            location_source = $5,\n            last_modified_at = NOW()\n        WHERE reading_state_id = $6\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8",
+        "Float8",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "02a630bc559953ee337286a157dd11b1e7d27a979e582d19e356b97ff4834595"
+}

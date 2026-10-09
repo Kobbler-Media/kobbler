@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE series SET\n            identifiers = identifiers || $2,\n            images = images || $3,\n            description = COALESCE($4, description),\n            total_book_count = COALESCE($5, total_book_count),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d01f2c51ef7f8d48b0cde788af0273a761bb050812c96e72e8f285f720d8e35e"
+}

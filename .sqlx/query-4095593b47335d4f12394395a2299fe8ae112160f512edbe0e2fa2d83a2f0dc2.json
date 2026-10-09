@@ -1,0 +1,209 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, channel_id, epg_id, title, status, start_time, end_time,\n               pre_padding_secs, post_padding_secs, file_path, file_size_bytes,\n               error_message, created_at, duration_seconds, video_codec, container\n        FROM iptv_recordings\n        WHERE status = 'scheduled'\n          AND start_time\n              - make_interval(secs => pre_padding_secs::double precision)\n              - make_interval(secs => $2::double precision) <= $1\n        ORDER BY start_time ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "epg_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "epg_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "start_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "start_time"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "end_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "end_time"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "pre_padding_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "pre_padding_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "post_padding_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "post_padding_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "file_size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "file_size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "error_message",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "error_message"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "duration_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "duration_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "video_codec",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "video_codec"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "container",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_recordings",
+            "name": "container"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "4095593b47335d4f12394395a2299fe8ae112160f512edbe0e2fa2d83a2f0dc2"
+}

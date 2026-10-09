@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM job_status WHERE status NOT IN ('pending', 'running')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7a865aa89d4e54ef01d1c4a98f16c9c1cd5a001024dfcfa7f72ffc08de312694"
+}

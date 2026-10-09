@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, title, year, identifiers, alternate_titles, quality_profile_id, preferred_languages\n        FROM movies\n        WHERE identifiers->>'imdb_id' = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "identifiers"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "alternate_titles",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "alternate_titles"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "quality_profile_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "quality_profile_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "preferred_languages",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "preferred_languages"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "fd692f817d5adbbf09b7313923b28eb396d75b1ad97a4da8d30c73bcbd51e120"
+}

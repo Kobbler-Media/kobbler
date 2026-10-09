@@ -1,0 +1,202 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO iptv_providers (id, name, url, username, password, preferred_format, sync_interval_secs)\n        VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'm3u8'), COALESCE($7, 3600))\n        RETURNING id, name, url, username, password, preferred_format, sync_interval_secs,\n                  enabled, account_info, last_sync_at, last_sync_error,\n                  consecutive_sync_failures, next_sync_retry_at, created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "username",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "username"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "password",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "password"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "preferred_format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "preferred_format"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "sync_interval_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "sync_interval_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "account_info",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "account_info"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "last_sync_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "last_sync_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "last_sync_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "last_sync_error"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "consecutive_sync_failures",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "consecutive_sync_failures"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "next_sync_retry_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "next_sync_retry_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_providers",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "3e770e50ff359a806c2fea8ecfc74e0322271c2629cd17c098a9b8b6eae944fb"
+}

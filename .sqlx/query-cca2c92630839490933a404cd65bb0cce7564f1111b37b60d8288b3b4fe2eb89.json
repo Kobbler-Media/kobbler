@@ -1,0 +1,167 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            b.id, b.title, b.identifiers, b.images, b.want_status,\n            bs.series_id AS \"series_id?\", bs.series_index AS \"series_index?\",\n            b.created_at, b.updated_at,\n            s.name as \"series_name?\",\n            (SELECT STRING_AGG(a.name, ', ') FROM book_authors ba JOIN authors a ON a.id = ba.author_id WHERE ba.book_id = b.id) as author,\n            la.status as \"attempt_status?\",\n            la.created_at as \"last_attempt_at?\"\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        LEFT JOIN LATERAL (\n            SELECT wa.status, wa.created_at\n            FROM wanted_attempts wa\n            WHERE wa.book_id = b.id\n            ORDER BY wa.created_at DESC\n            LIMIT 1\n        ) la ON TRUE\n        WHERE b.id = $1\n          AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n          AND b.want_status IN ('pending', 'wanted', 'searching', 'downloading', 'watching', 'search_failed')\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "identifiers"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "images",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "want_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "want_status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "series_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "series_index?",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_index"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "series_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "author",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "attempt_status?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "wanted_attempts",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "last_attempt_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "wanted_attempts",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "cca2c92630839490933a404cd65bb0cce7564f1111b37b60d8288b3b4fe2eb89"
+}

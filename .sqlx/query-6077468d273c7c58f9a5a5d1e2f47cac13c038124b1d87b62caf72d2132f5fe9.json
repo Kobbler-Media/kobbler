@@ -1,0 +1,104 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO webpush_subscriptions (user_id, endpoint, p256dh, auth, user_agent)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (endpoint) DO UPDATE SET\n            user_id = EXCLUDED.user_id,\n            p256dh = EXCLUDED.p256dh,\n            auth = EXCLUDED.auth,\n            user_agent = EXCLUDED.user_agent\n        RETURNING id, user_id, endpoint, p256dh, auth, user_agent, created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "endpoint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "endpoint"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "p256dh",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "p256dh"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "auth",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "auth"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "user_agent",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "user_agent"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "6077468d273c7c58f9a5a5d1e2f47cac13c038124b1d87b62caf72d2132f5fe9"
+}

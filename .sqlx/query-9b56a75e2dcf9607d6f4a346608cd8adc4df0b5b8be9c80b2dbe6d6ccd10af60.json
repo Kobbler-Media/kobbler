@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM tv_seasons\n        WHERE (\n            is_monitored = false\n            OR auto_want_mode = 'none'\n            OR (auto_want_mode = 'inherit' AND EXISTS (\n                SELECT 1 FROM tv_shows WHERE tv_shows.id = tv_seasons.show_id AND tv_shows.auto_want_mode = 'none'\n            ))\n        )\n          AND NOT EXISTS (SELECT 1 FROM tv_episodes WHERE season_id = tv_seasons.id)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9b56a75e2dcf9607d6f4a346608cd8adc4df0b5b8be9c80b2dbe6d6ccd10af60"
+}

@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT bf.book_id, b.title\n        FROM book_files bf\n        JOIN books b ON b.id = bf.book_id\n        WHERE NOT EXISTS (\n            SELECT 1 FROM ebook_segments es\n            WHERE es.book_file_id = bf.id\n        )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_files",
+            "name": "book_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "98a147f13843af0f5b49177bdcdb23fb2b121dd1d47d16c57e0d10da683d2d83"
+}

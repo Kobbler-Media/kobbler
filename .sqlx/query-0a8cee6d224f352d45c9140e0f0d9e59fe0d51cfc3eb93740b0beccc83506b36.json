@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE user_sync_providers SET enabled = $3, updated_at = NOW()\n        WHERE user_id = $1 AND provider_type = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0a8cee6d224f352d45c9140e0f0d9e59fe0d51cfc3eb93740b0beccc83506b36"
+}

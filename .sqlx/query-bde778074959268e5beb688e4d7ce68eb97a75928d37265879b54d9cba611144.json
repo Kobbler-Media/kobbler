@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT DISTINCT s.media_root_id AS \"media_root_id?: Uuid\"\n            FROM tv_episode_file_episodes tefe\n            JOIN tv_episodes e ON e.id = tefe.episode_id\n            JOIN tv_seasons ss ON ss.id = e.season_id\n            JOIN tv_shows s ON s.id = ss.show_id\n            WHERE tefe.episode_file_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_root_id?: Uuid",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "media_root_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "bde778074959268e5beb688e4d7ce68eb97a75928d37265879b54d9cba611144"
+}

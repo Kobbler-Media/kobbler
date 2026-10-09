@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM watchlist_items WHERE media_type = $1 AND media_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c70abe7e11745dd510f7c5bc5ef7dbacf51d83ca96d85f37252f8bae56a8994c"
+}

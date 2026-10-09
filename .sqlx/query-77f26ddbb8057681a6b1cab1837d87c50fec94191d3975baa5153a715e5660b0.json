@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_recordings SET\n            duration_seconds = COALESCE($2, duration_seconds),\n            video_codec = COALESCE($3, video_codec),\n            container = COALESCE($4, container)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "77f26ddbb8057681a6b1cab1837d87c50fec94191d3975baa5153a715e5660b0"
+}

@@ -1,0 +1,196 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, movie_file_id, episode_file_id, file_path, file_size,\n               format, language, title, is_forced, is_hearing_impaired,\n               source, source_id, source_metadata, available, created_at\n        FROM external_subtitles\n        WHERE episode_file_id = $1\n        ORDER BY created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "movie_file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "movie_file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "episode_file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "episode_file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "file_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "file_size"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "format"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "is_forced",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "is_forced"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "is_hearing_impaired",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "is_hearing_impaired"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "source_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "source_id"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "source_metadata",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "source_metadata"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "available",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "available"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "external_subtitles",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "d07e3daa457374249c7b9289e4fa447fc93208a0ec13efb335affd6918a87e35"
+}

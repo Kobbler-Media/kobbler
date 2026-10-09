@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO audiobook_files (book_id, file_index, format, file_path, file_size, duration_seconds)\n         VALUES ($1, 0, 'WAV', $2, $3, 60.0)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b191da5aed62b549903fc4163c9cd6b7b7a32900bfd03422e8cea93dceec540"
+}

@@ -1,0 +1,316 @@
+<!doctype html>
+<html>
+  <head>
+    <title>hls.js MVP debug</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15"></script>
+    <style>
+      body {
+        font-family: monospace;
+        background: #1a1a1a;
+        color: #e0e0e0;
+        margin: 20px;
+      }
+      #log {
+        white-space: pre-wrap;
+        font-size: 11px;
+        max-height: 400px;
+        overflow-y: auto;
+        background: #111;
+        padding: 10px;
+        border: 1px solid #333;
+        margin: 10px 0;
+      }
+      #playlist-raw {
+        white-space: pre-wrap;
+        font-size: 11px;
+        max-height: 200px;
+        overflow-y: auto;
+        background: #0a0a1a;
+        padding: 10px;
+        border: 1px solid #336;
+        margin: 10px 0;
+        display: none;
+      }
+      video {
+        width: 800px;
+        height: 450px;
+        background: #000;
+        display: block;
+        margin: 10px 0;
+      }
+      input {
+        width: 360px;
+        padding: 5px;
+        font-family: monospace;
+      }
+      select,
+      button {
+        padding: 5px 15px;
+        cursor: pointer;
+        font-family: monospace;
+      }
+      .err {
+        color: #f66;
+      }
+      .ok {
+        color: #6f6;
+      }
+      .dim {
+        color: #888;
+      }
+      .controls {
+        margin: 10px 0;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>hls.js MVP — zero Svelte, default config</h3>
+
+    <div class="controls">
+      <select id="media_type">
+        <option value="movie">movie</option>
+        <option value="episode">episode</option>
+      </select>
+      <input id="file_id" placeholder="file_id (UUID)" />
+      <button onclick="go()">Create session &amp; play</button>
+      <button onclick="location.reload()">Reset</button>
+    </div>
+
+    <div class="controls">
+      <button onclick="fetchPlaylist()">Fetch raw playlist</button>
+      <button onclick="destroySession()">Destroy session</button>
+    </div>
+
+    <video id="video" controls></video>
+
+    <div id="log"></div>
+    <div id="playlist-raw"></div>
+
+    <script>
+      const logEl = document.getElementById('log');
+      const playlistEl = document.getElementById('playlist-raw');
+      let sessionId = null;
+      let sessionData = null;
+
+      function log(msg, cls) {
+        const line = document.createElement('div');
+        line.textContent = `[${new Date().toISOString().substr(11, 12)}] ${msg}`;
+        if (cls) line.className = cls;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+        console.log(msg);
+      }
+
+      async function go() {
+        const fileId = document.getElementById('file_id').value.trim();
+        const mediaType = document.getElementById('media_type').value;
+        if (!fileId) {
+          log('Enter a file_id', 'err');
+          return;
+        }
+
+        // Step 1: create session
+        log(`Creating session: ${mediaType} / ${fileId}...`);
+        const t0 = performance.now();
+        try {
+          const res = await fetch('/api/v1/admin/playback/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              media_type: mediaType,
+              file_id: fileId,
+              capabilities: {
+                video_codecs: ['h264', 'hevc'],
+                audio_codecs: ['aac', 'opus', 'flac'],
+                containers: ['mp4', 'webm']
+              }
+            })
+          });
+          const elapsed = (performance.now() - t0).toFixed(0);
+          if (!res.ok) {
+            const text = await res.text();
+            log(`Session creation failed (${res.status}) ${elapsed}ms: ${text}`, 'err');
+            return;
+          }
+          sessionData = await res.json();
+          sessionId = sessionData.session_id;
+          log(`Session created in ${elapsed}ms`, 'ok');
+          log(
+            `  id=${sessionId} method=${sessionData.method} duration=${sessionData.duration_seconds}s`,
+            'ok'
+          );
+          log(
+            `  audio_tracks=${sessionData.audio_tracks?.length} subtitles=${sessionData.subtitles?.length}`,
+            'dim'
+          );
+          if (sessionData.playlist_url) log(`  playlist=${sessionData.playlist_url}`, 'dim');
+          if (sessionData.direct_url) log(`  direct=${sessionData.direct_url}`, 'dim');
+        } catch (e) {
+          log(`Session creation error: ${e.message}`, 'err');
+          return;
+        }
+
+        // Step 2: play
+        const video = document.getElementById('video');
+
+        if (sessionData.method === 'direct_play' && sessionData.direct_url) {
+          log('Direct play mode — setting src directly');
+          video.src = sessionData.direct_url;
+          video.play().catch((e) => log(`Play rejected: ${e.message}`, 'err'));
+          return;
+        }
+
+        if (!sessionData.playlist_url) {
+          log('No playlist URL in response!', 'err');
+          return;
+        }
+
+        const masterUrl = sessionData.playlist_url;
+
+        // Wire up video element events
+        [
+          'loadstart',
+          'loadedmetadata',
+          'loadeddata',
+          'canplay',
+          'canplaythrough',
+          'playing',
+          'waiting',
+          'pause',
+          'error',
+          'stalled',
+          'ended'
+        ].forEach((evt) => {
+          video.addEventListener(evt, () => {
+            const extra =
+              evt === 'error' && video.error
+                ? ` code=${video.error.code} "${video.error.message}"`
+                : evt === 'loadedmetadata' || evt === 'canplay'
+                  ? ` duration=${video.duration} readyState=${video.readyState}`
+                  : '';
+            log(`VIDEO: ${evt}${extra}`, evt === 'error' ? 'err' : 'ok');
+          });
+        });
+
+        if (!Hls.isSupported()) {
+          log('hls.js not supported, trying native', 'err');
+          video.src = masterUrl;
+          video.play().catch((e) => log(`Play rejected: ${e.message}`, 'err'));
+          return;
+        }
+
+        log(`hls.js v${Hls.version} — using DEFAULT config (no custom tuning)`, 'ok');
+
+        // Completely default hls.js — no custom config at all
+        const hls = new Hls();
+
+        hls.on(Hls.Events.MANIFEST_LOADING, (_, d) => log(`MANIFEST_LOADING: ${d.url}`));
+        hls.on(Hls.Events.MANIFEST_LOADED, () => log(`MANIFEST_LOADED`, 'ok'));
+        hls.on(Hls.Events.MANIFEST_PARSED, (_, d) => {
+          log(`MANIFEST_PARSED: ${d.levels?.length} level(s)`, 'ok');
+          if (d.levels)
+            d.levels.forEach((l, i) =>
+              log(`  level ${i}: ${l.width}x${l.height} codecs="${l.codecSet || 'none'}"`)
+            );
+          video.play().catch((e) => log(`Play rejected: ${e.message}`, 'err'));
+        });
+        hls.on(Hls.Events.LEVEL_LOADING, (_, d) => log(`LEVEL_LOADING: ${d.url}`, 'dim'));
+        hls.on(Hls.Events.LEVEL_LOADED, (_, d) =>
+          log(
+            `LEVEL_LOADED: ${d.details?.fragments?.length} frags, live=${d.details?.live}, totalduration=${d.details?.totalduration?.toFixed(1)}`,
+            'ok'
+          )
+        );
+        hls.on(Hls.Events.FRAG_LOADING, (_, d) =>
+          log(`FRAG_LOADING: sn=${d.frag.sn} ${d.frag.relurl}`, 'dim')
+        );
+        hls.on(Hls.Events.FRAG_LOADED, (_, d) =>
+          log(`FRAG_LOADED: sn=${d.frag.sn} ${(d.payload?.byteLength / 1024).toFixed(0)}KB`, 'ok')
+        );
+        hls.on(Hls.Events.FRAG_PARSING_INIT_SEGMENT, (_, d) => {
+          const tracks = d.tracks || {};
+          for (const [type, track] of Object.entries(tracks)) {
+            log(`INIT_SEG: ${type} codec="${track.codec}" container="${track.container}"`, 'ok');
+          }
+        });
+        hls.on(Hls.Events.BUFFER_CODECS, (_, d) => {
+          for (const [type, track] of Object.entries(d)) {
+            if (track && typeof track === 'object' && track.codec) {
+              log(`BUFFER_CODECS: ${type} codec="${track.codec}"`, 'ok');
+            }
+          }
+        });
+        hls.on(Hls.Events.ERROR, (_, d) => {
+          log(
+            `HLS ERROR: type=${d.type} details=${d.details} fatal=${d.fatal} reason="${d.reason || ''}"`,
+            'err'
+          );
+          if (d.response) log(`  response: ${d.response.code} ${d.response.url}`, 'err');
+          if (d.frag) log(`  frag: sn=${d.frag.sn} url=${d.frag.relurl}`, 'err');
+          if (d.fatal && d.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            log('Attempting recoverMediaError...', 'err');
+            hls.recoverMediaError();
+          }
+        });
+
+        hls.loadSource(masterUrl);
+        hls.attachMedia(video);
+
+        window._hls = hls;
+        window._video = video;
+        log('hls.js attached — waiting for manifest...', 'dim');
+      }
+
+      async function fetchPlaylist() {
+        if (!sessionId) {
+          log('No session', 'err');
+          return;
+        }
+        try {
+          // Fetch both master and stream playlists
+          const masterUrl = `/api/v1/admin/playback/sessions/${sessionId}/master.m3u8`;
+          const masterRes = await fetch(masterUrl, { credentials: 'include' });
+          const masterText = await masterRes.text();
+
+          // Extract stream URL from master
+          const streamLine = masterText.split('\n').find((l) => l.includes('stream.m3u8'));
+          let streamText = '(could not find stream URL in master)';
+          if (streamLine) {
+            const streamUrl = streamLine.startsWith('http')
+              ? streamLine
+              : new URL(streamLine.trim(), location.origin).href;
+            const streamRes = await fetch(streamUrl, { credentials: 'include' });
+            streamText = await streamRes.text();
+          }
+
+          playlistEl.style.display = 'block';
+          playlistEl.textContent = `=== MASTER ===\n${masterText}\n\n=== STREAM ===\n${streamText}`;
+          log('Playlists fetched — see below', 'ok');
+        } catch (e) {
+          log(`Playlist fetch error: ${e.message}`, 'err');
+        }
+      }
+
+      async function destroySession() {
+        if (!sessionId) {
+          log('No session', 'err');
+          return;
+        }
+        try {
+          await fetch(`/api/v1/admin/playback/sessions/${sessionId}`, {
+            method: 'DELETE',
+            credentials: 'include'
+          });
+          log(`Session ${sessionId} destroyed`, 'ok');
+          sessionId = null;
+        } catch (e) {
+          log(`Destroy error: ${e.message}`, 'err');
+        }
+      }
+    </script>
+  </body>
+</html>

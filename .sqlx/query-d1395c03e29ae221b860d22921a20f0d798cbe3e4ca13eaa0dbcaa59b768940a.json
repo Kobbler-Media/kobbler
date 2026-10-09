@@ -1,0 +1,106 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO iptv_channel_groups (id, name, slug, icon, display_order,\n                                         auto_assign_categories, enabled)\n        VALUES ($1, $2, $3, $4, COALESCE($5, 0), $6, COALESCE($7, true))\n        RETURNING id, name, slug, icon, display_order, auto_assign_categories, enabled\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "icon",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "icon"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "display_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "display_order"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "auto_assign_categories",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "auto_assign_categories"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "enabled"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "TextArray",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d1395c03e29ae221b860d22921a20f0d798cbe3e4ca13eaa0dbcaa59b768940a"
+}

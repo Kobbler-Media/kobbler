@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO movie_watch_states (movie_id, user_id, watched) VALUES ($1, $2, TRUE)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "50b527248284c9ca3b4fb9e484fc5648bbc1485fa31b758bdca1970df005d761"
+}

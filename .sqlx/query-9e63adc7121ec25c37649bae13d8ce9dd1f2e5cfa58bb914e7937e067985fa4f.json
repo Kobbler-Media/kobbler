@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT identifiers FROM books WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "identifiers"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9e63adc7121ec25c37649bae13d8ce9dd1f2e5cfa58bb914e7937e067985fa4f"
+}

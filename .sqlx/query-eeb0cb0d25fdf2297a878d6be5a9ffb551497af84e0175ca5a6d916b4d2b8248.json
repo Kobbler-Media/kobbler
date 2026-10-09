@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT ON (c.id) c.id, c.name, s.remote_category_name\n        FROM iptv_channels c\n        JOIN iptv_sources s ON s.channel_id = c.id\n        WHERE c.category IS NULL\n          AND s.remote_category_name IS NOT NULL\n        ORDER BY c.id, s.priority ASC, s.health_score DESC, s.id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "remote_category_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "remote_category_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "eeb0cb0d25fdf2297a878d6be5a9ffb551497af84e0175ca5a6d916b4d2b8248"
+}

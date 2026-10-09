@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH mine AS (\n            SELECT transport, target, label FROM chat_watches WHERE id = $1\n        ),\n        claimed AS (\n            UPDATE chat_watches\n            SET last_state = $2,\n                last_edit_at = NOW(),\n                expires_at = NOW() + ($3::double precision * INTERVAL '1 second')\n            WHERE id = $1\n              AND (last_state IS NULL OR last_state <> ALL($4))\n            RETURNING id\n        ),\n        hushed AS (\n            DELETE FROM chat_watches w\n            USING mine\n            WHERE w.id <> $1\n              AND EXISTS (SELECT 1 FROM claimed)\n              AND w.transport = mine.transport\n              AND w.target = mine.target\n              AND w.label = mine.label\n              AND (w.last_state IS NULL OR w.last_state <> ALL($4))\n            RETURNING w.id\n        )\n        SELECT\n            (SELECT COUNT(*) FROM claimed) AS \"claimed!\",\n            (SELECT COUNT(*) FROM hushed) AS \"hushed!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "claimed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "hushed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Float8",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "2052e9f9f157700df550d43d06872087f708340e48cc3e1ee318bab4b0bc7a2d"
+}

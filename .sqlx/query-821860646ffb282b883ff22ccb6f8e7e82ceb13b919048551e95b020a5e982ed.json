@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.title AS \"show_title!\",\n               ts.season_identifier,\n               te.episode_identifier,\n               te.title AS \"episode_title?\",\n               (s.images->>'poster') AS \"show_poster_url?\"\n        FROM tv_episodes te\n        JOIN tv_seasons ts ON ts.id = te.season_id\n        JOIN tv_shows s ON s.id = ts.show_id\n        WHERE te.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "show_title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "season_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "episode_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "episode_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "episode_title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "show_poster_url?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "821860646ffb282b883ff22ccb6f8e7e82ceb13b919048551e95b020a5e982ed"
+}

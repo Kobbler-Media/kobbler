@@ -1,0 +1,94 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            (SELECT COUNT(*) FROM books\n             WHERE (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = books.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = books.id))\n             AND ($1::text IS NULL\n               OR ($1 = 'ebook' AND EXISTS (SELECT 1 FROM book_files bf2 WHERE bf2.book_id = books.id))\n               OR ($1 = 'audiobook' AND EXISTS (SELECT 1 FROM audiobook_files af2 WHERE af2.book_id = books.id))\n             )\n            ) AS \"books_count!\",\n            (SELECT COUNT(DISTINCT b.id) FROM books b\n             WHERE EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)\n            ) AS \"audiobooks_count!\",\n            (SELECT COUNT(DISTINCT s.id) FROM series s\n             WHERE EXISTS (SELECT 1 FROM book_series bss JOIN books b ON b.id = bss.book_id WHERE bss.series_id = s.id AND (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n               AND ($1::text IS NULL\n                 OR ($1 = 'ebook' AND EXISTS (SELECT 1 FROM book_files bf2 WHERE bf2.book_id = b.id))\n                 OR ($1 = 'audiobook' AND EXISTS (SELECT 1 FROM audiobook_files af2 WHERE af2.book_id = b.id))\n               )\n             )\n            ) AS \"series_count!\",\n            (SELECT COUNT(DISTINCT a.id) FROM authors a\n             WHERE EXISTS (SELECT 1 FROM book_authors ba JOIN books b ON b.id = ba.book_id\n                          WHERE ba.author_id = a.id AND (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n               AND ($1::text IS NULL\n                 OR ($1 = 'ebook' AND EXISTS (SELECT 1 FROM book_files bf3 WHERE bf3.book_id = b.id))\n                 OR ($1 = 'audiobook' AND EXISTS (SELECT 1 FROM audiobook_files af3 WHERE af3.book_id = b.id))\n               )\n             )\n            ) AS \"authors_count!\",\n            (SELECT COUNT(*) FROM shelves WHERE user_id = $2) AS \"shelves_count!\",\n            0::bigint AS \"downloads_active!\",\n            (SELECT COUNT(*) FROM books WHERE ingest_status = 'pending') AS \"ingest_pending!\",\n            (SELECT COUNT(*) FROM movies WHERE EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id)) AS \"movies_count!\",\n            (SELECT COUNT(*) FROM tv_shows WHERE content_category = 'tv') AS \"tv_shows_count!\",\n            (SELECT COUNT(*) FROM tv_shows WHERE content_category = 'sport') AS \"sports_count!\",\n            (SELECT COUNT(*) FROM people p\n             WHERE p.is_monitored = true\n                OR EXISTS (SELECT 1 FROM movie_cast mc WHERE mc.person_id = p.id)\n                OR EXISTS (SELECT 1 FROM movie_crew mcr WHERE mcr.person_id = p.id)\n                OR EXISTS (SELECT 1 FROM tv_cast tc WHERE tc.person_id = p.id)\n                OR EXISTS (SELECT 1 FROM tv_crew tcr WHERE tcr.person_id = p.id)\n            ) AS \"people_count!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "books_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "audiobooks_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "series_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "authors_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "shelves_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "downloads_active!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "ingest_pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "movies_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "tv_shows_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "sports_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "people_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "70bd58c2259bd4fb01b02a5e138b4930af69067d6de8c6b8e8dcf40fb6aee128"
+}

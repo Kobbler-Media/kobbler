@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO iptv_favourites (user_id, channel_id, display_order)\n        VALUES ($1, $2, COALESCE(\n            (SELECT MAX(display_order) + 1 FROM iptv_favourites WHERE user_id = $1),\n            0\n        ))\n        ON CONFLICT (user_id, channel_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7fa13620748c3124a5a63dfda2b054bc951d545985497920b33201fd5bf6189e"
+}

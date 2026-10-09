@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH upserted AS (\n            INSERT INTO search_recents (user_id, entity_type, entity_id)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (user_id, entity_type, entity_id)\n            DO UPDATE SET\n                access_count = search_recents.access_count + 1,\n                last_accessed_at = NOW()\n            RETURNING id\n        ),\n        ranked AS (\n            SELECT id, ROW_NUMBER() OVER (\n                ORDER BY access_count DESC, last_accessed_at DESC\n            ) AS rn\n            FROM search_recents\n            WHERE user_id = $1\n        )\n        DELETE FROM search_recents\n        WHERE id IN (SELECT id FROM ranked WHERE rn > 50)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "04527a8ee3adf293a6cd224417359392ec29f6910fbe2bb645b4acc7a782e204"
+}

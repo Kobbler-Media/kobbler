@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT vapid_private_key, vapid_public_key\n        FROM system_config\n        WHERE id = 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "vapid_private_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "system_config",
+            "name": "vapid_private_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "vapid_public_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "system_config",
+            "name": "vapid_public_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "8811d498892280bec4ec11936eac0f6278a14ffa4dbe8ad020e1f3523bd31f76"
+}

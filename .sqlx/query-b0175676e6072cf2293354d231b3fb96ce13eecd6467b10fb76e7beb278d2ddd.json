@@ -1,0 +1,122 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, title_pattern, channel_id, record_new_only, keep_count,\n               pre_padding_secs, post_padding_secs, enabled, created_at\n        FROM iptv_series_rules\n        ORDER BY created_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_series_rules",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title_pattern",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_series_rules",
+            "name": "title_pattern"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_series_rules",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "record_new_only",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "iptv_series_rules",
+            "name": "record_new_only"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "keep_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_series_rules",
+            "name": "keep_count"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "pre_padding_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_series_rules",
+            "name": "pre_padding_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "post_padding_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_series_rules",
+            "name": "post_padding_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "iptv_series_rules",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_series_rules",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b0175676e6072cf2293354d231b3fb96ce13eecd6467b10fb76e7beb278d2ddd"
+}

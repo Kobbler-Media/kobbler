@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<episodedetails>
+  <title>Chapter One: Make Your Mark</title>
+  <season>1</season>
+  <episode>1</episode>
+  <aired>2018-03-25</aired>
+  <plot>A Midwestern contract killer gets hit with the acting bug while on a job in LA.</plot>
+  <uniqueid type="tvdb" default="true">6493154</uniqueid>
+  <uniqueid type="sonarr">1605</uniqueid>
+  <watched>false</watched>
+  <fileinfo>
+    <streamdetails>
+      <video>
+        <aspect>1.7777778</aspect>
+        <bitrate>0</bitrate>
+        <codec>h264</codec>
+        <framerate>23.976023976023976023976023976</framerate>
+        <height>720</height>
+        <scantype>Progressive</scantype>
+        <width>1280</width>
+        <duration>30.364366666666665</duration>
+        <durationinseconds>1822</durationinseconds>
+      </video>
+      <audio>
+        <bitrate>640000</bitrate>
+        <channels>6</channels>
+        <codec>EAC3</codec>
+        <language>eng</language>
+      </audio>
+      <subtitle>
+        <language>eng</language>
+      </subtitle>
+      <subtitle>
+        <language>eng</language>
+      </subtitle>
+    </streamdetails>
+  </fileinfo>
+</episodedetails>

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT prev.summary\n        FROM chat_sessions cur\n        JOIN chat_sessions prev\n          ON prev.id <> cur.id\n         AND prev.transport = cur.transport\n         AND prev.summary IS NOT NULL\n         AND (\n              (cur.space IS NOT NULL\n                 AND prev.space = cur.space\n                 AND prev.thread IS NOT DISTINCT FROM cur.thread)\n              OR (cur.space IS NULL\n                 AND cur.user_id IS NOT NULL\n                 AND prev.user_id = cur.user_id)\n             )\n        WHERE cur.id = $1\n          AND COALESCE(prev.closed_at, prev.updated_at) > NOW() - make_interval(days => $2)\n        ORDER BY COALESCE(prev.closed_at, prev.updated_at) DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "summary",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "summary"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "4897822f36c58ccfe447dd33a3828ce8afb3d9afd3dbe09f7a1d3b9b18d9db90"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM audiobook_chapters WHERE audiobook_file_id = $1 AND source = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ffa1152dbd6617dd4b14ea1b8784a9a00e0154ab1420b4053ab6cc86c7a16fe8"
+}

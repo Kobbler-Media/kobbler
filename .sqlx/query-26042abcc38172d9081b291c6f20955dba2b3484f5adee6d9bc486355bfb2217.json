@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_recordings SET status = 'recording'\n        WHERE id = $1 AND status = 'scheduled'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "26042abcc38172d9081b291c6f20955dba2b3484f5adee6d9bc486355bfb2217"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tv_episodes SET rejected_releases = rejected_releases || $2::jsonb, updated_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9127f0439bbcf0dfb9648dca6b017dca41abd13edd961e09697645d6aa5c4d3d"
+}

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT ON (te.season_id)\n               te.season_id AS \"season_id!\",\n               tef.id       AS \"file_id!\"\n          FROM tv_episode_files tef\n          JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id\n          JOIN tv_episodes te ON te.id = tefe.episode_id\n         WHERE tef.available = TRUE\n           AND tef.media_cache_generated_at IS NOT NULL\n           AND (\n                NOT $1::bool\n             OR tef.skip_detect_ran_at IS NULL\n             OR tef.skip_detect_ran_at < tef.media_cache_generated_at\n           )\n         ORDER BY te.season_id, tef.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "season_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "season_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "f502a9104cb460cab3bf1fc554216184dd1fff476034b5a50f2b9c854e875510"
+}

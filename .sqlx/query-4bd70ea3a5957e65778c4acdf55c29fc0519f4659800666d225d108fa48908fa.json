@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE wanted_attempts\n        SET status = $1, message = $2, files_json = $3, idempotency_key = COALESCE($5, idempotency_key)\n        WHERE external_id = $4\n        RETURNING book_id, movie_id, download_url\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "wanted_attempts",
+            "name": "book_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "movie_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "wanted_attempts",
+            "name": "movie_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "download_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "wanted_attempts",
+            "name": "download_url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "4bd70ea3a5957e65778c4acdf55c29fc0519f4659800666d225d108fa48908fa"
+}

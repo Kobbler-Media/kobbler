@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM tv_shows\n        WHERE (is_monitored = false OR auto_want_mode = 'none')\n          AND streamed_at IS NULL\n          AND NOT EXISTS (SELECT 1 FROM tv_seasons WHERE show_id = tv_shows.id)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "80dd0732ba01f979114e17f9c6f820fdc291e38432bd6ec2f0c8c56b4209c0df"
+}

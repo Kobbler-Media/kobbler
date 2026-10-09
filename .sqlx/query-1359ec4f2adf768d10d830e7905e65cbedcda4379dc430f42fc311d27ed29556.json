@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE tv_shows SET\n            title = COALESCE($2, title),\n            sort_title = COALESCE($3, sort_title),\n            original_title = COALESCE($4, original_title),\n            year = COALESCE($5, year),\n            status = COALESCE($6, status),\n            description = COALESCE($7, description),\n            images = images || $8,\n            identifiers = CASE WHEN $9 THEN $10 ELSE identifiers END,\n            genres = COALESCE($11, genres),\n            rating = COALESCE($12, rating),\n            rating_count = COALESCE($13, rating_count),\n            content_rating = COALESCE($14, content_rating),\n            network = COALESCE($15, network),\n            first_aired = COALESCE($16, first_aired),\n            last_aired = COALESCE($17, last_aired),\n            next_airing = COALESCE($18, next_airing),\n            runtime = COALESCE($19, runtime),\n            total_episode_count = COALESCE($20, total_episode_count),\n            quality_profile_id = CASE WHEN $21 THEN $22 ELSE quality_profile_id END,\n            preferred_languages = CASE WHEN $23 THEN $24::text[] ELSE preferred_languages END,\n            media_root_id = CASE WHEN $25 THEN $26 ELSE media_root_id END,\n            alternate_titles = COALESCE($27, alternate_titles),\n            streamed_at = COALESCE($28, streamed_at),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Bool",
+        "Jsonb",
+        "TextArray",
+        "Float8",
+        "Int4",
+        "Text",
+        "Text",
+        "Date",
+        "Date",
+        "Date",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Uuid",
+        "Bool",
+        "TextArray",
+        "Bool",
+        "Uuid",
+        "TextArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1359ec4f2adf768d10d830e7905e65cbedcda4379dc430f42fc311d27ed29556"
+}

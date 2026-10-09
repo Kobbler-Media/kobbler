@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE series SET\n                name = $2,\n                sort_key = $3,\n                identifiers = identifiers || $4,\n                images = images || $5,\n                description = COALESCE($6, description),\n                total_book_count = COALESCE($7, total_book_count),\n                is_monitored = COALESCE($8, is_monitored),\n                auto_want_mode = CASE\n                    WHEN $9::text IS NOT NULL AND $9::text != 'none' THEN $9::text\n                    ELSE auto_want_mode\n                END,\n                updated_at = NOW()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Int4",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5dbc6d2c50068a533ad5741b8e16689a10709cdf0a35fdd450cb73a71d4b495d"
+}

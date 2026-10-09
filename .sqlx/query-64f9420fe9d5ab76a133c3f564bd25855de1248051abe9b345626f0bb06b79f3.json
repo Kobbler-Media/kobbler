@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT book_id FROM user_book_data\n        WHERE user_id = ANY($1)\n          AND (finished_at IS NOT NULL OR reading_status IN ('reading', 'finished'))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "book_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "64f9420fe9d5ab76a133c3f564bd25855de1248051abe9b345626f0bb06b79f3"
+}

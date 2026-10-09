@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, last_modified FROM shelf_archives WHERE user_id = $1 AND last_modified > $2 ORDER BY last_modified ASC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "shelf_archives",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "shelf_archives",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "last_modified",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "shelf_archives",
+            "name": "last_modified"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "4334c8e1c9713e0a2d97750d518f51e28307172b29d5b4f91ad07bd5aad21f07"
+}

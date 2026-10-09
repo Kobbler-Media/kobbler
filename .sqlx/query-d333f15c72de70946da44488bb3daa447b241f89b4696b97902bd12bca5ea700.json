@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE books SET\n            title = COALESCE($2, title),\n            description = COALESCE($3, description),\n            language = COALESCE($4, language),\n            publisher = COALESCE($5, publisher),\n            pubdate = COALESCE($6, pubdate),\n            identifiers = identifiers || $7,\n            page_count = COALESCE($8, page_count),\n            rating = COALESCE($9, rating),\n            rating_count = COALESCE($10, rating_count),\n            images = images || $11,\n            is_released = COALESCE($12, is_released),\n            want_status = COALESCE($13, want_status),\n            provider_metadata = provider_metadata || $14,\n            narrator = COALESCE($15, narrator),\n            duration_seconds = COALESCE($16, duration_seconds),\n            is_abridged = COALESCE($17, is_abridged),\n            want_format = COALESCE($18, want_format),\n            updated_at = CASE WHEN\n                title IS DISTINCT FROM COALESCE($2, title)\n                OR description IS DISTINCT FROM COALESCE($3, description)\n                OR language IS DISTINCT FROM COALESCE($4, language)\n                OR publisher IS DISTINCT FROM COALESCE($5, publisher)\n                OR pubdate IS DISTINCT FROM COALESCE($6, pubdate)\n                OR page_count IS DISTINCT FROM COALESCE($8, page_count)\n                OR is_released IS DISTINCT FROM COALESCE($12, is_released)\n                OR want_status IS DISTINCT FROM COALESCE($13, want_status)\n                OR narrator IS DISTINCT FROM COALESCE($15, narrator)\n                OR duration_seconds IS DISTINCT FROM COALESCE($16, duration_seconds)\n                OR is_abridged IS DISTINCT FROM COALESCE($17, is_abridged)\n                OR want_format IS DISTINCT FROM COALESCE($18, want_format)\n            THEN NOW() ELSE updated_at END\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Jsonb",
+        "Int4",
+        "Float8",
+        "Int4",
+        "Jsonb",
+        "Bool",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Int4",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d333f15c72de70946da44488bb3daa447b241f89b4696b97902bd12bca5ea700"
+}

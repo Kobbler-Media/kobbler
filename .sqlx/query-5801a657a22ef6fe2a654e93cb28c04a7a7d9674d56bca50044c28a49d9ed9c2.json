@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT ON (b.id) b.id, b.title, b.images->'cover'->>'source_url' AS cover_url,\n               COALESCE(bm.progress_percent, 0)::int AS \"progress_percent!\",\n               rs.updated_at\n        FROM reading_states rs\n        JOIN reading_bookmark bm ON bm.reading_state_id = rs.id\n        JOIN books b ON b.id = rs.book_id\n        WHERE rs.user_id = $1\n          AND COALESCE(bm.progress_percent, 0) > 0\n        ORDER BY b.id, rs.updated_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "cover_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "progress_percent!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_states",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "5801a657a22ef6fe2a654e93cb28c04a7a7d9674d56bca50044c28a49d9ed9c2"
+}

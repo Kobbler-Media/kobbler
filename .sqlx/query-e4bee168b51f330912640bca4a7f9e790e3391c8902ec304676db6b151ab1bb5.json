@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO auth_tokens (id, user_id, token_hash, scope, expires_at) VALUES ($1, $2, $3, $4, NOW() + INTERVAL '30 days')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e4bee168b51f330912640bca4a7f9e790e3391c8902ec304676db6b151ab1bb5"
+}

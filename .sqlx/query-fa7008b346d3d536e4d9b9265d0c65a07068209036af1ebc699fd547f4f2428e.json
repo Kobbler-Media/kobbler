@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_recordings\n        SET status = $2, error = $3,\n            actual_end = CASE WHEN $2 IN ('completed', 'failed') THEN NOW() ELSE actual_end END,\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fa7008b346d3d536e4d9b9265d0c65a07068209036af1ebc699fd547f4f2428e"
+}

@@ -1,0 +1,97 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            b.id AS book_id,\n            b.title,\n            b.images AS \"images: serde_json::Value\",\n            COALESCE(\n                (SELECT jsonb_agg(DISTINCT jsonb_build_object('name', a2.name))\n                 FROM book_authors ba2\n                 JOIN authors a2 ON a2.id = ba2.author_id\n                 WHERE ba2.book_id = b.id),\n                '[]'::jsonb\n            ) AS \"authors: serde_json::Value\",\n            (SELECT bm.progress_percent\n             FROM reading_states rs\n             JOIN reading_bookmark bm ON bm.reading_state_id = rs.id\n             WHERE rs.user_id = $1 AND rs.book_id = b.id\n             ORDER BY rs.updated_at DESC\n             LIMIT 1) AS \"progress_percent?\",\n            ubd.reading_status_updated_at AS \"updated_at!\",\n            EXISTS (\n                SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id\n            ) AS \"has_audiobook!\",\n            b.duration_seconds\n        FROM user_book_data ubd\n        JOIN books b ON b.id = ubd.book_id\n        WHERE ubd.user_id = $1\n          AND ubd.reading_status = 'reading'\n        ORDER BY ubd.reading_status_updated_at DESC\n        LIMIT 20\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "images: serde_json::Value",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "authors: serde_json::Value",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "progress_percent?",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "reading_status_updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "has_audiobook!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "duration_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "duration_seconds"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      true,
+      null,
+      true
+    ]
+  },
+  "hash": "f466d7412c8e34289ab900ab0b9f792b88a9c78f8afe955842ce246b0ff1bb66"
+}

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO metadata_cache (id, provider_type, query_key, response, expires_at)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (provider_type, query_key)\n        DO UPDATE SET response = $4, expires_at = $5\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "688e2a1bd80f9601b358af464c76843b58accef1469cf355d6f6d61e5ed78678"
+}

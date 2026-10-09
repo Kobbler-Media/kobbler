@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_tokens SET revoked = TRUE WHERE token_hash = $1 AND revoked = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ab344631536e634a822eaefcc01d47ad9fbf659b24098293f4491613f1fd266"
+}

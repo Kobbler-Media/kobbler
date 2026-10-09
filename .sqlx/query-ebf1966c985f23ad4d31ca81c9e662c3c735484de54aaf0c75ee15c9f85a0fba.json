@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT u.user_id AS \"user_id!\"\n                FROM (\n                    SELECT r.user_id FROM reading_states r WHERE r.book_id = $1\n                    UNION\n                    SELECT wa.user_id FROM wanted_attempts wa\n                     WHERE wa.book_id = $1 AND wa.user_id IS NOT NULL\n                ) u\n                ORDER BY u.user_id\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ebf1966c985f23ad4d31ca81c9e662c3c735484de54aaf0c75ee15c9f85a0fba"
+}

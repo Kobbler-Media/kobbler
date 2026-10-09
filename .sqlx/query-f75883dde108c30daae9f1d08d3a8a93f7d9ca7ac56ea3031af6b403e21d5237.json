@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO user_book_data (user_id, book_id, provider_read_ids)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (user_id, book_id) DO UPDATE SET\n            provider_read_ids = user_book_data.provider_read_ids || $3,\n            updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f75883dde108c30daae9f1d08d3a8a93f7d9ca7ac56ea3031af6b403e21d5237"
+}

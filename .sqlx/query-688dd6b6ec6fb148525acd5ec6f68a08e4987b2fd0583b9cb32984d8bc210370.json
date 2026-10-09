@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_recordings\n        SET status = $2, error = $3, actual_end = NOW(), updated_at = NOW()\n        WHERE id = $1 AND status = 'recording'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "688dd6b6ec6fb148525acd5ec6f68a08e4987b2fd0583b9cb32984d8bc210370"
+}

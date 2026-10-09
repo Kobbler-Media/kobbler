@@ -1,0 +1,168 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO livetv_tuner_leases\n            (id, tuner_id, channel_id, tuner_index, holder_kind, session_id,\n             recording_id, user_id, buffer_dir)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n        RETURNING id, tuner_id, channel_id, tuner_index, holder_kind, session_id,\n                  recording_id, user_id, buffer_dir, acquired_at, expires_at, released_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tuner_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "tuner_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "tuner_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "tuner_index"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "holder_kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "holder_kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "session_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "recording_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "recording_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "buffer_dir",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "buffer_dir"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "acquired_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "acquired_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "released_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuner_leases",
+            "name": "released_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Text",
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "a1b9dec29f2665b5db511e06272f0a720b25b6b396da707b8261725409d2e3c2"
+}

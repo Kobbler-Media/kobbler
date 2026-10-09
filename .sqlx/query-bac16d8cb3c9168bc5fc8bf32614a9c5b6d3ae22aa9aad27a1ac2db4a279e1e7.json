@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM livetv_watch_events WHERE started_at < $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bac16d8cb3c9168bc5fc8bf32614a9c5b6d3ae22aa9aad27a1ac2db4a279e1e7"
+}

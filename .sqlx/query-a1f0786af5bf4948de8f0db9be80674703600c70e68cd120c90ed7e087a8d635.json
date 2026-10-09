@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE authors SET\n            name = $2,\n            images = images || $3,\n            bio = COALESCE($4, bio),\n            known_book_count = $5,\n            last_metadata_refresh_at = NOW(),\n            next_metadata_refresh_at = NOW() + (metadata_refresh_interval_hours || ' hours')::INTERVAL,\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a1f0786af5bf4948de8f0db9be80674703600c70e68cd120c90ed7e087a8d635"
+}

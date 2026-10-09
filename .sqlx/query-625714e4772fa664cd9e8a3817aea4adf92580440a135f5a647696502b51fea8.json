@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_root_files SET entity_id = $1 WHERE entity_type = 'tv_episode' AND entity_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "625714e4772fa664cd9e8a3817aea4adf92580440a135f5a647696502b51fea8"
+}

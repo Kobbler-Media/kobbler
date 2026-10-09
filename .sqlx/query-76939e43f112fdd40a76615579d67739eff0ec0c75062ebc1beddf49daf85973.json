@@ -1,0 +1,185 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, provider_id, remote_stream_id, remote_category_id, remote_category_name,\n               name, icon_url, epg_channel_id, stream_type, language,\n               suggested_channel_id, suggested_confidence, dismissed, last_seen_at\n        FROM iptv_unmatched_sources\n        WHERE dismissed = false\n        ORDER BY name ASC\n        LIMIT $1 OFFSET $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "provider_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "remote_stream_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "remote_stream_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "remote_category_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "remote_category_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "remote_category_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "remote_category_name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "icon_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "icon_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "epg_channel_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "epg_channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "stream_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "stream_type"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "suggested_channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "suggested_channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "suggested_confidence",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "suggested_confidence"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "dismissed",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "dismissed"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "last_seen_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "76939e43f112fdd40a76615579d67739eff0ec0c75062ebc1beddf49daf85973"
+}

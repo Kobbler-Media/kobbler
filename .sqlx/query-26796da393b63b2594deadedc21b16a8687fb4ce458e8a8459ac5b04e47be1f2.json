@@ -1,0 +1,110 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT d.id, d.name, d.user_id, d.token, d.kobo_api_url,\n               d.device_type as \"device_type: DeviceType\", s.last_sync_at,\n               d.auto_sync_new_books\n        FROM devices d\n        LEFT JOIN device_sync_state s ON s.device_id = d.id\n        WHERE d.device_type != 'web'\n        ORDER BY d.created_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "devices",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "devices",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "devices",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "token",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "devices",
+            "name": "token"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "kobo_api_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "devices",
+            "name": "kobo_api_url"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "device_type: DeviceType",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "devices",
+            "name": "device_type"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "last_sync_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "device_sync_state",
+            "name": "last_sync_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "auto_sync_new_books",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "devices",
+            "name": "auto_sync_new_books"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "26796da393b63b2594deadedc21b16a8687fb4ce458e8a8459ac5b04e47be1f2"
+}

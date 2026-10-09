@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT b.title, b.identifiers, b.images, b.want_format, b.narrator, b.pubdate,\n               s.name as \"series_name?\", bs.series_index AS \"series_index?\",\n               (SELECT STRING_AGG(a.name, ', ') FROM book_authors ba JOIN authors a ON a.id = ba.author_id WHERE ba.book_id = b.id) as author\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        WHERE b.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "identifiers"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "images",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "want_format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "want_format"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "narrator",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "narrator"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "pubdate",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "pubdate"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "series_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "series_index?",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_index"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "author",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "1ffe3547d6fb2b42f93d466344d8d57589f9528ffb582d2786669577f090423a"
+}

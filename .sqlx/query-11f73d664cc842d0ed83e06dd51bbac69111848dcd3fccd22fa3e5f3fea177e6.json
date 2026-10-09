@@ -1,0 +1,98 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, user_id, endpoint, p256dh, auth, user_agent, created_at\n        FROM webpush_subscriptions\n        ORDER BY created_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "endpoint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "endpoint"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "p256dh",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "p256dh"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "auth",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "auth"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "user_agent",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "user_agent"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "11f73d664cc842d0ed83e06dd51bbac69111848dcd3fccd22fa3e5f3fea177e6"
+}

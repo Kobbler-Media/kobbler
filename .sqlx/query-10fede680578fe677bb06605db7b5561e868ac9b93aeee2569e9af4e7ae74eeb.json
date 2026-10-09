@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_recordings\n        SET episode_id = $2, movie_id = $3, match_attempted_at = NOW(), updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "10fede680578fe677bb06605db7b5561e868ac9b93aeee2569e9af4e7ae74eeb"
+}

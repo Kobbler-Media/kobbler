@@ -1,0 +1,116 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO livetv_ad_fingerprints (id, fingerprint, duration_secs, label, origin)\n        VALUES ($1,$2,$3,$4,$5)\n        RETURNING id, fingerprint, duration_secs, label, origin, seen_count,\n                  first_seen_at, last_seen_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_fingerprints",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "fingerprint",
+        "type_info": "Int4Array",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_fingerprints",
+            "name": "fingerprint"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "duration_secs",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_fingerprints",
+            "name": "duration_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_fingerprints",
+            "name": "label"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_fingerprints",
+            "name": "origin"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "seen_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_fingerprints",
+            "name": "seen_count"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "first_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_fingerprints",
+            "name": "first_seen_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_fingerprints",
+            "name": "last_seen_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4Array",
+        "Float8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "35c0191e3e6d90e4e934fcb0af94900acf2d292dd0dcb8e3a65b07da1edeeb7d"
+}

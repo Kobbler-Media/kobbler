@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_channels\n        SET enabled = FALSE, updated_at = NOW()\n        WHERE tuner_id = $1 AND NOT (id = ANY($2)) AND enabled\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "642b9251526205138bd9729d9203dc128b134aed0d11b0ba725d318778bdd250"
+}

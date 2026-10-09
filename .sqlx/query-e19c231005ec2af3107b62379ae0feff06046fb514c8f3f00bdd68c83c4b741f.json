@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE book_files SET file_path = $2, content_revision = gen_random_uuid()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e19c231005ec2af3107b62379ae0feff06046fb514c8f3f00bdd68c83c4b741f"
+}

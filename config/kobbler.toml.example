@@ -1,0 +1,318 @@
+# Kobbler configuration — EXAMPLE / TEMPLATE
+#
+# First-time setup:
+#   cp config/kobbler.toml.example config/kobbler.toml
+#   # then edit the CHANGEME placeholders below (all of them are optional
+#   # features — a default install needs none of them)
+#
+# The live file is `config/kobbler.toml`, which is not tracked in git. Treat it
+# as instance state rather than source: docker-compose bind-mounts
+# `./config:/config`, and the Settings UI rewrites it in place on every save,
+# so anything you put there will be reformatted and merged by the app.
+#
+# If `config/kobbler.toml` is missing the API writes one from its built-in
+# defaults and carries on, so a fresh install boots without this step. Copying
+# the template first is still worth it: you get this file's comments, which the
+# generated one does not have.
+#
+# Values below match the code defaults in `api/src/file_config.rs`, so this
+# file describes a working standalone install with no optional services.
+# Anything marked CHANGEME only matters once you opt into that feature.
+
+# =============================================================================
+# Public URLs
+# =============================================================================
+
+# Externally reachable base URL for this Kobbler — the address someone outside the
+# app would type into a browser. Used wherever Kobbler has to emit a link that is
+# opened elsewhere, e.g. citations in a Google Chat reply. Optional; leave it
+# commented out and those places fall back to plain text.
+# Must include the scheme; no trailing slash.
+# Example: "https://kobbler.example.com" or "http://192.168.1.100:6767"
+# public_url = "https://kobbler.example.com"   # CHANGEME
+
+# Public URL for Kobo device sync, including mount point
+# Set this to your server's externally-accessible URL
+# Example: "https://kobbler.example.com/kobo" or "http://192.168.1.100:6767"
+public_proxy_url = "http://localhost:6767"
+
+# Kobo store API URL (for merge/passthrough modes)
+kobo_storeapi_base_url = "https://storeapi.kobo.com"
+
+# =============================================================================
+# Kobo Sync Mode
+# =============================================================================
+
+# Kobo proxy mode: merge, passthrough, or local
+#   merge       - Combine your books with Kobo store purchases (recommended)
+#   passthrough - Pure proxy, just forward to Kobo store
+#   local       - Local only, never call Kobo servers
+kobo_mode = "merge"
+
+# =============================================================================
+# Proxy Logging
+# =============================================================================
+
+# Enable logging of all Kobo proxy requests (useful for debugging)
+proxy_logging_enabled = true
+
+# Number of days to keep proxy logs before cleanup
+proxy_log_retention_days = 7
+
+# Enable capturing binary blobs (request/response bodies)
+# Warning: This can use significant disk space
+blob_capture_enabled = false
+
+# =============================================================================
+# Pagination & Limits
+# =============================================================================
+
+# Maximum books to sync per batch (Kobo protocol batching)
+kobo_sync_batch_size = 100
+
+# Maximum activity entries to keep
+activity_limit = 200
+
+# Default and maximum page sizes for API responses
+default_page_size = 50
+max_page_size = 200
+
+# =============================================================================
+# Book Entitlements
+# =============================================================================
+
+# Default entitlement mode for new books
+#   all_devices - New books are available to all devices (recommended)
+#   none        - New books must be manually assigned to devices
+default_entitlement_mode = "all_devices"
+
+# =============================================================================
+# Directory Watcher
+# =============================================================================
+
+# Enable automatic directory watching for new books
+watcher_enabled = false
+
+# Interval for directory scanning in seconds
+# (used as fallback when filesystem events aren't available)
+watcher_scan_interval_seconds = 60
+
+# =============================================================================
+# Metadata Providers
+# =============================================================================
+
+# Enable automatic metadata lookups from external providers
+# (OpenLibrary, Google Books, Hardcover)
+metadata_providers_enabled = true
+
+# Number of days to cache metadata lookup results
+metadata_cache_days = 30
+rewrite_kobo_urls = false
+wanted_default_provider = "hardcover"
+
+# =============================================================================
+# Kobload — automated acquisition (OPTIONAL)
+# =============================================================================
+#
+# Kobload is a separate companion project. Leave these empty unless you run it;
+# nothing in Kobbler requires them.
+#
+# Kobload usually runs off-box, so these must be PUBLICLY reachable URLs —
+# internal Docker hostnames (kobload-api, kobbler-web, kobbler) will not
+# resolve for it.
+#
+# `kobload_ingest_url` embeds an ingest token that must exist in the
+# `ingest_tokens` DB table. Mint one in Settings; do not invent a value here.
+
+kobload_base_url = ""            # e.g. "https://kobload.example.com"
+kobload_api_key = ""             # CHANGEME once Kobload is running
+kobload_ingest_token = ""        # CHANGEME — mint in Settings > Ingest Tokens
+kobload_ingest_url = ""          # e.g. "https://kobbler.example.com/api/v1/ingest/<token>"
+kobload_communication_mode = ""
+
+# Dead key — no longer read anywhere in api/src. Kept only so old files parse.
+kobload_callback_url = ""
+
+ebook_convert_path = ""
+ebook_meta_path = ""
+
+# =============================================================================
+# Search (Meilisearch)
+# =============================================================================
+#
+# Meilisearch is optional. Leave `meili_url` empty (and MEILI_URL unset) and
+# kobbler runs every search as a SQL query against Postgres instead — slower and
+# without typo tolerance or facets, but a complete install needs only Postgres
+# and NATS. Startup says which mode is active.
+#
+# `meili_url` is the Docker service name from the bundled compose file, so it
+# only resolves when that container is running. Point it elsewhere if you run
+# Meilisearch yourself.
+#
+# The master key comes from MEILI_MASTER_KEY in .env, which the meilisearch
+# container also reads. A `meili_master_key` set here wins over it, so only set
+# one if Meilisearch runs outside the bundled compose file.
+
+meili_url = "http://meilisearch:7700"
+# meili_master_key = ""
+
+# =============================================================================
+# Media / Storage
+# =============================================================================
+
+video_storage_root = ""
+
+# Large regenerable caches. Point these at a roomy disk — leaving them empty
+# sends the data to the default volume instead.
+transcode_cache_dir = ""                                   # e.g. "/mnt/hdd/transcoding"
+cache_dir = ""                                             # e.g. "/mnt/hdd/cache"
+debrid_cache_dir = ""                                      # e.g. "/mnt/hdd/debrid"
+
+prefer_debrid_streaming = false
+debrid_cache_max_bytes = 107374182400
+debrid_cache_ttl_secs = 86400
+
+# =============================================================================
+# *arr integrations (optional)
+# =============================================================================
+
+sonarr_url = ""
+sonarr_api_key = ""
+radarr_url = ""
+radarr_api_key = ""
+
+# =============================================================================
+# Enrichment / Transcription / TTS (all OPTIONAL)
+# =============================================================================
+#
+# These drive optional GPU/ML sidecar containers that a default install does
+# not start. Everything here is off by default; turn a flag on only after the
+# matching service is actually running.
+#
+# The `*_service_url` values below are the Docker service names used by the
+# optional service definitions in the bundled compose file. They resolve only
+# when you have started that container — they are addresses, not a promise that
+# something is listening there.
+
+enrichment_enabled = false
+transcript_mode = "off"
+stt_service_url = "http://stt-parakeet-cpp:8023"
+
+tts_enabled = false
+# "breeze" | "chatterbox" | "kokoro" | "openai" | "auto". Only "breeze" has a
+# forced aligner, so only it drives the reader's word-highlight path.
+tts_service_type = "auto"
+# Used when NOT routing through koblem (route_gpu_via_koblem = false). With
+# koblem in the middle, `effective_tts_url()` returns the koblem URL instead.
+tts_service_url = "http://tts-breeze:8203"
+# Empty = let the engine pick a voice and hold it for the request. There is no
+# "default" clone to name.
+tts_default_voice = ""
+
+# Hardware video encoder. Empty = software encoding, which works everywhere.
+# Set to "nvenc", "qsv" or "vaapi" only if the host actually has that hardware
+# and the container can see it.
+hw_encoder = ""
+gpu_preempt_tts = true
+
+# Route vision/TTS/STT through koblem instead of calling each service directly.
+# koblem is a separate optional project; leave this false to run standalone.
+route_gpu_via_koblem = false
+
+# =============================================================================
+# Skip detect / vision (OPTIONAL)
+# =============================================================================
+#
+# Intro/credit detection needs the vision sidecar. `vision_service_url` is the
+# compose service name and only resolves while that optional container runs.
+
+skip_detect_mode = "off"           # off | full
+vision_service_url = "http://siglip2:8890"
+
+# =============================================================================
+# Chat — LLM assistant (OPTIONAL)
+# =============================================================================
+#
+# Needs an OpenAI-compatible endpoint you supply (hosted or local). Off by
+# default; nothing else in Kobbler depends on it.
+
+chat_enabled = false
+chat_llm_provider = ""
+chat_llm_base_url = ""
+chat_llm_api_key = ""
+chat_llm_model = ""
+# Thinking level for the Koblem chat route: "" (auto: medium for Qwen models,
+# off otherwise), "off", "low", "medium" or "high".
+chat_llm_thinking = ""
+
+# =============================================================================
+# koblem — shared GPU media services (OPTIONAL)
+# =============================================================================
+#
+# koblem is a separate project. Leave the URL empty to run Kobbler standalone;
+# set it (e.g. "http://koblem-api:8090") only if you also run koblem.
+
+koblem_service_url = ""
+koblem_api_key = ""              # CHANGEME once koblem is running
+
+# =============================================================================
+# Jobs
+# =============================================================================
+
+# Per-job-type concurrency. Unlisted types use the built-in default.
+job_concurrency = { media_analyze = 1, media_extract = 1, media_root_scan = 1, audiobook_transcribe = 1, media_probe = 4, skip_detect = 2 }
+
+# Default interval (seconds) between periodic media-root filesystem scans.
+# Safety net — real-time ingest uses kobload + the filesystem watcher.
+# Per-root overrides live on the media root edit form.
+media_root_scan_interval_seconds = 1800
+
+# =============================================================================
+# IPTV
+# =============================================================================
+
+iptv_language_filter = ["en"]
+iptv_auto_create_channels = true
+iptv_health_check_enabled = true
+
+# =============================================================================
+# Live TV (HDHomeRun tuner)
+# =============================================================================
+
+# Where programme data comes from. The tuner's own feed is free but capped at 48 h.
+livetv_guide_source = "tuner"            # tuner | silicondust | xmltv
+
+# Pause/rewind buffer. The HLS segment directory IS the buffer, so retention is a
+# disk-hygiene knob, not a capability one.
+livetv_buffer_policy = "tune_in"         # tune_in | rolling | programme
+livetv_buffer_cap_hours = 3
+
+# What happens when a scheduled recording claims the tuner you are watching.
+# Same-channel is never a clash - the buffer just keeps growing.
+livetv_clash_policy = "keep_playing"     # keep_playing | stop | ask
+
+# Ad detection marks breaks; this decides what the player does about them.
+# A false positive costs far more than a false negative, so the default only shades.
+livetv_ad_posture = "shade"              # shade | button | auto
+livetv_ad_disable_genres = ["News", "Sports"]
+livetv_ad_train_from_corrections = true
+
+# Browsers cannot play 1080i25 + AC-3, so the web path deinterlaces and transcodes.
+# kobapp gets the raw TS and is unaffected by these.
+livetv_deinterlace_web = true
+livetv_transcode_height = 720
+
+# Recordings are large and long-lived - point this at real disk, not the container
+# volume. Unset, this follows the IPTV recording path (Settings > IPTV), and falls
+# back to {storage_root}/livetv only when that is unset too.
+# livetv_recording_path = "/mnt/hdd/recordings"
+
+# =============================================================================
+# Discover / playback preferences
+# =============================================================================
+
+preferred_audio_language = "english"
+preferred_subtitle_language = "english"
+discover_region = "US"
+discover_streaming_services = []
+cast_receiver_app_id = ""

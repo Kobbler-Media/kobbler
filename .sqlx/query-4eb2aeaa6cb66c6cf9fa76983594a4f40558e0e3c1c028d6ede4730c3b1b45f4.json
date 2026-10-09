@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE debrid_cache_files SET pinned = false WHERE session_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4eb2aeaa6cb66c6cf9fa76983594a4f40558e0e3c1c028d6ede4730c3b1b45f4"
+}

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.auto_want_mode, a.monitoring_started_at\n        FROM authors a\n        JOIN book_authors ba ON ba.author_id = a.id\n        JOIN book_series bks ON bks.book_id = ba.book_id AND bks.series_id = $1\n        WHERE a.is_monitored = TRUE\n        -- An earlier start date wants more books, so it is the permissive\n        -- tie-break; NULL is the most permissive of all ('new_only' falls\n        -- through to wanting everything). Trailing id makes the order total.\n        ORDER BY CASE a.auto_want_mode\n                     WHEN 'all' THEN 0\n                     WHEN 'fill_gaps' THEN 1\n                     WHEN 'new_only' THEN 2\n                     ELSE 3\n                 END,\n                 a.monitoring_started_at ASC NULLS FIRST,\n                 a.id ASC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "auto_want_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "auto_want_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "monitoring_started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "monitoring_started_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "91e26192579f56833ef8a0bf17bb6813c34a22045c26f37a243028c085096e28"
+}

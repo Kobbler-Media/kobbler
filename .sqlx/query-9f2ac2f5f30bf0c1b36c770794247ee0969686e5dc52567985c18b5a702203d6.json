@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE authors SET\n            identifiers = identifiers || $2,\n            images = images || $3,\n            bio = COALESCE($4, bio),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9f2ac2f5f30bf0c1b36c770794247ee0969686e5dc52567985c18b5a702203d6"
+}

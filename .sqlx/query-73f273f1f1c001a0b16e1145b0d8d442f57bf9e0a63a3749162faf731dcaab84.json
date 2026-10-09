@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.id, s.title, s.year, s.images, tc.character_name,\n               s.identifiers->>'tmdb_id' AS tmdb_id,\n               EXISTS (SELECT 1 FROM tv_episodes te\n                       JOIN tv_seasons tsn ON tsn.id = te.season_id\n                       JOIN tv_episode_file_episodes tefe ON tefe.episode_id = te.id\n                       JOIN tv_episode_files tef ON tef.id = tefe.episode_file_id AND tef.available\n                       WHERE tsn.show_id = s.id) AS is_in_library\n        FROM tv_cast tc\n        JOIN tv_shows s ON s.id = tc.show_id\n        WHERE tc.person_id = $1\n        ORDER BY s.year DESC NULLS LAST\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "images",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "character_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_cast",
+            "name": "character_name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "tmdb_id",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "is_in_library",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "73f273f1f1c001a0b16e1145b0d8d442f57bf9e0a63a3749162faf731dcaab84"
+}

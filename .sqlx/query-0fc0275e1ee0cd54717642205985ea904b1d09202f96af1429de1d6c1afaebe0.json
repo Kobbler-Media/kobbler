@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE user_book_data\n        SET provider_read_ids = provider_read_ids - $3::text,\n            updated_at = NOW()\n        WHERE user_id = $1 AND book_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0fc0275e1ee0cd54717642205985ea904b1d09202f96af1429de1d6c1afaebe0"
+}

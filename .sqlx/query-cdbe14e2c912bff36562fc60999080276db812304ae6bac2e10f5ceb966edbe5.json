@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT provider_read_ids\n        FROM user_book_data\n        WHERE user_id = $1 AND book_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_read_ids",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "provider_read_ids"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cdbe14e2c912bff36562fc60999080276db812304ae6bac2e10f5ceb966edbe5"
+}

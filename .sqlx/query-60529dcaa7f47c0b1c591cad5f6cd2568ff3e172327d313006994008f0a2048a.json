@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE series SET\n            description = COALESCE($2, description),\n            total_book_count = $3,\n            images = images || $4,\n            last_metadata_refresh_at = NOW(),\n            next_metadata_refresh_at = NOW() + (metadata_refresh_interval_hours || ' hours')::INTERVAL,\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "60529dcaa7f47c0b1c591cad5f6cd2568ff3e172327d313006994008f0a2048a"
+}

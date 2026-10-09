@@ -1,0 +1,95 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            e.id AS episode_id,\n            e.title AS \"episode_title?\",\n            e.episode_identifier,\n            s.season_identifier,\n            sh.id AS show_id,\n            sh.title AS show_title,\n            CASE WHEN (sh.images->'poster'->>'source_url' IS NOT NULL OR sh.images->'poster'->>'cached_at' IS NOT NULL)\n                 THEN '/api/v1/admin/tv/shows/' || sh.id || '/poster'\n                 ELSE NULL\n            END as poster_url\n        FROM tv_episodes e\n        JOIN tv_seasons s ON s.id = e.season_id\n        JOIN tv_shows sh ON sh.id = s.show_id\n        WHERE e.id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "episode_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "episode_title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "episode_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "episode_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "season_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "show_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "show_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "poster_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "eedfdc17a892881220113bfd1ca1980ec03c6c62a677ca8c09681e4542784393"
+}

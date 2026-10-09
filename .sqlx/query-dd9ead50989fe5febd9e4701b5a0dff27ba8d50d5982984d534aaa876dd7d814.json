@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, book_id, file_path, available\n        FROM audiobook_files\n        WHERE ($1::uuid IS NULL OR book_id = $1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "book_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "available",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "available"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dd9ead50989fe5febd9e4701b5a0dff27ba8d50d5982984d534aaa876dd7d814"
+}

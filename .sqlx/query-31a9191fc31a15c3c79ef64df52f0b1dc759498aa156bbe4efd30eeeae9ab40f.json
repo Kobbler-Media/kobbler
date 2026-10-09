@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT b.id,\n               (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)\n                OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)) AS \"is_in_library!\",\n               b.user_edited_at,\n               bs.series_id AS \"series_id?\"\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        WHERE b.media_root_id = $2\n          AND LOWER(b.title) = LOWER($1)\n          AND (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)\n               OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n        ORDER BY b.created_at ASC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "is_in_library!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_edited_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "user_edited_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "series_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      true,
+      false
+    ]
+  },
+  "hash": "31a9191fc31a15c3c79ef64df52f0b1dc759498aa156bbe4efd30eeeae9ab40f"
+}

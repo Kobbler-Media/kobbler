@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH mine AS (\n            SELECT transport, target, label FROM chat_watches WHERE id = $1\n        )\n        UPDATE chat_watches w\n        SET last_state = $2,\n            message_id = COALESCE($3, w.message_id)\n        FROM mine\n        WHERE w.transport = mine.transport\n          AND w.target = mine.target\n          AND w.label = mine.label\n          AND (w.last_state IS NULL OR w.last_state <> ALL($4))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb7168baf127177a31c9409d7fff3b2b9b143cf0f9c7ed5a41c791602cdbe59a"
+}

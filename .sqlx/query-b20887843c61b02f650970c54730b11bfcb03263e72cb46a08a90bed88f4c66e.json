@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT buffer_dir FROM livetv_sessions WHERE ended_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "buffer_dir",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_sessions",
+            "name": "buffer_dir"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b20887843c61b02f650970c54730b11bfcb03263e72cb46a08a90bed88f4c66e"
+}

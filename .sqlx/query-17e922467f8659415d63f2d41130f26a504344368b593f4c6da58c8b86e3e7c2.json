@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_favourites SET display_order = $3\n        WHERE user_id = $1 AND channel_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "17e922467f8659415d63f2d41130f26a504344368b593f4c6da58c8b86e3e7c2"
+}

@@ -1,0 +1,105 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT g.id, g.name, g.slug, g.icon, g.display_order, g.auto_assign_categories,\n               g.enabled,\n               COUNT(DISTINCT c.id) AS \"channel_count!\"\n        FROM iptv_channel_groups g\n        LEFT JOIN iptv_channels c ON c.enabled AND c.category = ANY(g.auto_assign_categories)\n        GROUP BY g.id\n        ORDER BY g.display_order ASC, g.name ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "slug",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "slug"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "icon",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "icon"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "display_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "display_order"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "auto_assign_categories",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "auto_assign_categories"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "iptv_channel_groups",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "channel_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "891db312b4ce416827af82b1c038770b4dd4b0867a38f8adab790272b1250990"
+}

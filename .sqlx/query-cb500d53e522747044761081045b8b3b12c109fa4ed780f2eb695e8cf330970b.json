@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH updated AS (\n            UPDATE entitlements\n            SET is_removed = FALSE, updated_at = NOW()\n            WHERE book_id = $1 AND scope_type = $2 AND scope_id IS NOT DISTINCT FROM $3\n            RETURNING id\n        ),\n        inserted AS (\n            INSERT INTO entitlements (id, book_id, scope_type, scope_id, is_removed)\n            SELECT $4, $1, $2, $3, FALSE\n            WHERE NOT EXISTS (SELECT 1 FROM updated)\n            ON CONFLICT (book_id, scope_type, scope_id) DO NOTHING\n            RETURNING id\n        )\n        SELECT id AS \"id!\" FROM updated\n        UNION ALL\n        SELECT id AS \"id!\" FROM inserted\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cb500d53e522747044761081045b8b3b12c109fa4ed780f2eb695e8cf330970b"
+}

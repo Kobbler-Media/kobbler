@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT sh.title AS \"show!\", se.season_identifier AS \"season!\"\n            FROM tv_seasons se JOIN tv_shows sh ON sh.id = se.show_id\n            WHERE se.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "show!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "season!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "6d8d088118a9d221810916cd6b693d9196ac256b663df74dc50fd2e38dd062d0"
+}

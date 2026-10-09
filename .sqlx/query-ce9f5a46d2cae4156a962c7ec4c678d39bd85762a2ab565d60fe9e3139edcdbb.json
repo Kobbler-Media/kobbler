@@ -1,0 +1,148 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, recording_id, start_seconds, end_seconds, method, confidence,\n               ads_known, ads_total, corrected_by, corrected_at, created_at\n        FROM livetv_ad_breaks WHERE recording_id = ANY($1) ORDER BY recording_id, start_seconds\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "recording_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "recording_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "start_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "start_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "end_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "end_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "method",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "method"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "confidence",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "confidence"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "ads_known",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "ads_known"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "ads_total",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "ads_total"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "corrected_by",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "corrected_by"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "corrected_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "corrected_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_ad_breaks",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "ce9f5a46d2cae4156a962c7ec4c678d39bd85762a2ab565d60fe9e3139edcdbb"
+}

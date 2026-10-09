@@ -1,0 +1,198 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ts.id AS show_id,\n               ts.title AS show_title,\n               ts.content_category,\n               ts.year,\n               s.season_sort_order,\n               e.episode_sort_order,\n               e.title AS \"episode_title?\",\n               e.description AS \"episode_description?\",\n               e.air_date AS \"air_date?\",\n               e.images->'still'->>'source_url' AS \"still_url?\",\n               f.file_path AS \"file_path?\",\n               f.video_width AS \"video_width?\",\n               f.video_height AS \"video_height?\",\n               f.release_title AS \"release_title?\",\n               f.hdr_format AS \"hdr_format?\",\n               f.is_hdr AS \"is_hdr?\"\n        FROM tv_episodes e\n        JOIN tv_seasons s ON s.id = e.season_id\n        JOIN tv_shows ts ON ts.id = s.show_id\n        LEFT JOIN LATERAL (\n            SELECT tf.file_path, tf.video_width, tf.video_height, tf.hdr_format,\n                   tf.is_hdr, tf.source_metadata->>'release_title' AS release_title\n            FROM tv_episode_file_episodes fe\n            JOIN tv_episode_files tf ON tf.id = fe.episode_file_id\n            WHERE fe.episode_id = e.id AND tf.available\n            ORDER BY tf.created_at DESC\n            LIMIT 1\n        ) f ON TRUE\n        WHERE e.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "show_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "show_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "content_category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "content_category"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "season_sort_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_sort_order"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "episode_sort_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "episode_sort_order"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "episode_title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "episode_description?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "air_date?",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "air_date"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "still_url?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "file_path?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "video_width?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "video_width"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "video_height?",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "video_height"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "release_title?",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "hdr_format?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "hdr_format"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "is_hdr?",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "is_hdr"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "062a3af003ac2249c599c6ecce5db127ba690ca5222fd94afb6b296bf752c49d"
+}

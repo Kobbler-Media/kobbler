@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_providers SET\n            last_sync_error = $2,\n            consecutive_sync_failures = consecutive_sync_failures + 1,\n            next_sync_retry_at = NOW() + make_interval(secs =>\n                LEAST(\n                    600.0 * POWER(3.0, LEAST(consecutive_sync_failures, 5)::double precision),\n                    14400.0\n                )\n            ),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "22be835962c02e6f6b5b9a1a927c148d6814415a37e4f518d2b07923cb4d6582"
+}

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO kindle_targets (id, kindle_account_id, device_serial, device_name, device_id)\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (kindle_account_id, device_serial)\n        DO UPDATE SET\n            device_name = COALESCE(EXCLUDED.device_name, kindle_targets.device_name),\n            device_id = COALESCE(EXCLUDED.device_id, kindle_targets.device_id)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "kindle_targets",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3bc5df9ab18e00df8e84f39f3bf69e954a8b752d91aff401ba494c66d7cacce6"
+}

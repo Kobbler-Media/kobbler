@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT sh.title AS \"show!\", se.season_identifier AS \"season!\",\n                   ep.episode_identifier AS \"episode!\", ep.title AS \"title?\"\n            FROM tv_episodes ep\n            JOIN tv_seasons se ON se.id = ep.season_id\n            JOIN tv_shows sh ON sh.id = se.show_id\n            WHERE ep.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "show!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "season!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "episode!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "episode_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "461903c598984bf4a176c9f88e4004bdcea0ee2b2170df321bfef41b9c48bce3"
+}

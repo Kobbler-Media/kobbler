@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tv_seasons SET auto_want_mode = 'none' WHERE show_id = $1 AND auto_want_mode IN ('all', 'fill_gaps')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cd81a310fe67b897d52480206106e508862c73011901fa0497005fc276a24485"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO search_index_meta (key, value, updated_at)\n        VALUES ($1, $2, NOW())\n        ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8075fc15328ae1d4ee1abe3d37f87e42b8f4e5fef95186bae8df683c28fad0e4"
+}

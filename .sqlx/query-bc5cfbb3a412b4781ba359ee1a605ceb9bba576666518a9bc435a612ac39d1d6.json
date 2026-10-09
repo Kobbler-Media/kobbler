@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO device_sync_providers (device_id, provider_type, enabled)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (device_id, provider_type) DO UPDATE SET enabled = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bc5cfbb3a412b4781ba359ee1a605ceb9bba576666518a9bc435a612ac39d1d6"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE reading_statistics SET\n            spent_reading_minutes = $1,\n            remaining_time_minutes = $2,\n            last_modified_at = NOW()\n        WHERE reading_state_id = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "49d30db92ba8cbfe94db3a1910a02d22052750085c0f39ac05dd2e162385b583"
+}

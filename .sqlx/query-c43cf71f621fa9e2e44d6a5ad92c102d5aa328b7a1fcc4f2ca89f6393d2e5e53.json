@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM chat_pairing_codes WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c43cf71f621fa9e2e44d6a5ad92c102d5aa328b7a1fcc4f2ca89f6393d2e5e53"
+}

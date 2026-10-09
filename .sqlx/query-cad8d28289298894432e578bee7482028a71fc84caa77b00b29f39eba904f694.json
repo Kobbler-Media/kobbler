@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO iptv_sources (id, channel_id, provider_id, remote_stream_id,\n                                  remote_category_id, remote_category_name, name, icon_url,\n                                  epg_channel_id, stream_type, match_method, last_seen_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'manual', NOW())\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cad8d28289298894432e578bee7482028a71fc84caa77b00b29f39eba904f694"
+}

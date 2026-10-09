@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_channel_groups SET\n            name = COALESCE($2, name),\n            slug = COALESCE($3, slug),\n            icon = COALESCE($4, icon),\n            display_order = COALESCE($5, display_order),\n            auto_assign_categories = COALESCE($6, auto_assign_categories),\n            enabled = COALESCE($7, enabled)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "TextArray",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dbf0fbd7c976ecb93d121172baf6224c70d9c6de88959a3cfecb838b7a4dffb6"
+}

@@ -1,0 +1,340 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_channels SET\n            enabled = COALESCE($2, enabled),\n            favourite = COALESCE($3, favourite),\n            sort_order = COALESCE($4, sort_order),\n            display_name = CASE WHEN $5 THEN $6 ELSE display_name END,\n            logo_url = CASE WHEN $7 THEN $8 ELSE logo_url END,\n            kind = COALESCE($9, kind),\n            region = CASE WHEN $10 THEN $11 ELSE region END,\n            network = CASE WHEN $12 THEN $13 ELSE network END,\n            updated_at = NOW()\n        WHERE id = $1\n        RETURNING id, tuner_id, lcn, scan_name, callsign, frequency, program_number, onid, tsid,\n                  modulation, video_codec, audio_codec, hd, signal_strength, signal_quality,\n                  last_seen_at, enabled, favourite, sort_order, display_name, logo_url, kind,\n                  region, network, created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tuner_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "tuner_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "lcn",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "lcn"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "scan_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "scan_name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "callsign",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "callsign"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "frequency",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "frequency"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "program_number",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "program_number"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "onid",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "onid"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "tsid",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "tsid"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "modulation",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "modulation"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "video_codec",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "video_codec"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "audio_codec",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "audio_codec"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "hd",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "hd"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "signal_strength",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "signal_strength"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "signal_quality",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "signal_quality"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "last_seen_at"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "favourite",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "favourite"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "sort_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "sort_order"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "logo_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "logo_url"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "region",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "region"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "network",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "network"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Bool",
+        "Int4",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "2829c0925848829aed45328b8132bb6222b0dc12ec146a61ea5379062be1a8fd"
+}

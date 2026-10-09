@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE chat_sessions SET closed_at = NOW(), summary = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bbae173f51a6b8fe9076bd56f07e3d34193b53ecd0863de230eee4f2a3077e86"
+}

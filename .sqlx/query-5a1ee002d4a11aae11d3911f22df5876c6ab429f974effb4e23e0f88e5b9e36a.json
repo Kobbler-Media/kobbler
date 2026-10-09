@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE wanted_attempts SET status = $1 WHERE book_id = $2 AND external_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a1ee002d4a11aae11d3911f22df5876c6ab429f974effb4e23e0f88e5b9e36a"
+}

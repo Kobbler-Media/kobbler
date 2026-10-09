@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT lcn AS \"lcn!\", id FROM livetv_channels WHERE tuner_id = $1 AND lcn IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lcn!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "lcn"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "8cc08d9807087c19c00275821c8c54922b0d84c0934554118f2e5ec0a16ff880"
+}

@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id AS \"id!\", file_path AS \"file_path!\" FROM tv_episode_files WHERE available = TRUE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_path!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "file_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "171cf12a69226fc47ae0eb09cc1bcb4b16a96ff4e63f49b98440448e837320d7"
+}

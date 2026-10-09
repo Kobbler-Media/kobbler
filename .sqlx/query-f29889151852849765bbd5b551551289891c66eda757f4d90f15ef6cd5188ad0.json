@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO discord_message_map (agent_id, entity_id, message_id, channel_id)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (agent_id, entity_id)\n        DO UPDATE SET message_id = EXCLUDED.message_id, channel_id = EXCLUDED.channel_id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f29889151852849765bbd5b551551289891c66eda757f4d90f15ef6cd5188ad0"
+}

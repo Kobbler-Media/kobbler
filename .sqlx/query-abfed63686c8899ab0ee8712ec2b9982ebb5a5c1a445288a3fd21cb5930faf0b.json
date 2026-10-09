@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT te.id\n        FROM tv_episodes te\n        JOIN tv_seasons ts ON ts.id = te.season_id\n        WHERE ts.show_id = $1 AND te.air_date = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "abfed63686c8899ab0ee8712ec2b9982ebb5a5c1a445288a3fd21cb5930faf0b"
+}

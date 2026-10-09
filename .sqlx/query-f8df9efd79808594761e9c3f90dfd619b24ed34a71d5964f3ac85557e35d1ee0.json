@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT q.id AS \"id!\", q.name AS \"name!\", q.credits AS \"credits!\"\n        FROM (\n            SELECT p.id, p.name,\n                   (SELECT COUNT(*) FROM movie_cast mc WHERE mc.person_id = p.id)\n                 + (SELECT COUNT(*) FROM movie_crew mcr WHERE mcr.person_id = p.id)\n                 + (SELECT COUNT(*) FROM tv_cast tc WHERE tc.person_id = p.id)\n                 + (SELECT COUNT(*) FROM tv_crew tcr WHERE tcr.person_id = p.id)\n                 + (SELECT COUNT(*) FROM tv_episode_cast tec WHERE tec.person_id = p.id)\n                   AS credits\n            FROM people p\n            WHERE p.name ILIKE $1 OR p.sort_name ILIKE $1\n        ) q\n        ORDER BY (LOWER(q.name) = LOWER($2)) DESC, q.credits DESC, q.name ASC, q.id ASC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "people",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "people",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "credits!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "f8df9efd79808594761e9c3f90dfd619b24ed34a71d5964f3ac85557e35d1ee0"
+}

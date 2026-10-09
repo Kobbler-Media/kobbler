@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_unmatched_sources SET dismissed = true WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "68c56b4b45a375f25c3466bca7fc89596ebf24c3a7f413f1edde4ae7c805bb15"
+}

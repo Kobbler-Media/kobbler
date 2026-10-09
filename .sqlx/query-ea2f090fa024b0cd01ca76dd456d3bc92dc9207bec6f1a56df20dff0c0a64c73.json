@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM livetv_ad_breaks WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ea2f090fa024b0cd01ca76dd456d3bc92dc9207bec6f1a56df20dff0c0a64c73"
+}

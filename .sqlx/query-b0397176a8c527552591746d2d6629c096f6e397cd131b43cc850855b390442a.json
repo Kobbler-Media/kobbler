@@ -1,0 +1,232 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, channel_id, provider_id, remote_stream_id, remote_category_id,\n               remote_category_name, name, icon_url, epg_channel_id, stream_type, quality,\n               priority, health_score, last_health_check_at, last_seen_at,\n               match_method, match_confidence, metadata\n        FROM iptv_sources\n        WHERE channel_id = $1\n        ORDER BY priority ASC, health_score DESC, id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "provider_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "remote_stream_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "remote_stream_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "remote_category_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "remote_category_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "remote_category_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "remote_category_name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "icon_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "icon_url"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "epg_channel_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "epg_channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "stream_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "stream_type"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "quality",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "quality"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "priority",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "priority"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "health_score",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "health_score"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "last_health_check_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "last_health_check_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "last_seen_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "last_seen_at"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "match_method",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "match_method"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "match_confidence",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "match_confidence"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "metadata",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "metadata"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "b0397176a8c527552591746d2d6629c096f6e397cd131b43cc850855b390442a"
+}

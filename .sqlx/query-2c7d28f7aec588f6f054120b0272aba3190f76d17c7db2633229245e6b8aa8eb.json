@@ -1,0 +1,98 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH book_counts AS (\n            SELECT\n                SUM(CASE WHEN b.want_status = 'pending' THEN 1 ELSE 0 END) as pending,\n                SUM(CASE WHEN b.want_status = 'wanted' THEN 1 ELSE 0 END) as wanted,\n                SUM(CASE WHEN b.want_status = 'searching' THEN 1 ELSE 0 END) as searching,\n                SUM(CASE WHEN b.want_status = 'downloading' THEN 1 ELSE 0 END) as downloading,\n                SUM(CASE WHEN b.want_status = 'watching' THEN 1 ELSE 0 END) as watching,\n                SUM(CASE WHEN b.want_status = 'search_failed' THEN 1 ELSE 0 END) as search_failed\n            FROM books b\n            WHERE NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n              AND b.want_status IN ('pending', 'wanted', 'searching', 'downloading', 'watching', 'search_failed')\n        ),\n        attempt_counts AS (\n            SELECT\n                COALESCE(SUM(CASE WHEN wa.status = 'queued' THEN 1 ELSE 0 END), 0) as queued,\n                COALESCE(SUM(CASE WHEN wa.status = 'ingesting' THEN 1 ELSE 0 END), 0) as ingesting,\n                COALESCE(SUM(CASE WHEN wa.status = 'kobload_error' THEN 1 ELSE 0 END), 0) as kobload_error,\n                COALESCE(SUM(CASE WHEN wa.status = 'needs_review' THEN 1 ELSE 0 END), 0) as needs_review,\n                COALESCE(SUM(CASE WHEN wa.status = 'completed' THEN 1 ELSE 0 END), 0) as completed,\n                COALESCE(SUM(CASE WHEN wa.status = 'failed' THEN 1 ELSE 0 END), 0) as failed\n            FROM wanted_attempts wa\n            JOIN books b ON b.id = wa.book_id\n            WHERE NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n            AND wa.id = (\n                SELECT wa2.id FROM wanted_attempts wa2\n                WHERE wa2.book_id = wa.book_id\n                ORDER BY wa2.created_at DESC LIMIT 1\n            )\n        )\n        SELECT\n            COALESCE(bc.pending, 0) as \"pending!\",\n            COALESCE(bc.wanted, 0) as \"wanted!\",\n            COALESCE(bc.searching, 0) as \"searching!\",\n            COALESCE(bc.downloading, 0) as \"downloading!\",\n            COALESCE(bc.watching, 0) as \"watching!\",\n            COALESCE(bc.search_failed, 0) as \"search_failed!\",\n            ac.queued as \"queued!\",\n            ac.ingesting as \"ingesting!\",\n            ac.kobload_error as \"kobload_error!\",\n            ac.needs_review as \"needs_review!\",\n            ac.completed as \"completed!\",\n            ac.failed as \"failed!\"\n        FROM book_counts bc, attempt_counts ac\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "wanted!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "searching!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "downloading!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "watching!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "search_failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "queued!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "ingesting!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "kobload_error!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "needs_review!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "failed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2c7d28f7aec588f6f054120b0272aba3190f76d17c7db2633229245e6b8aa8eb"
+}

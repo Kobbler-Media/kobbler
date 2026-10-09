@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT avatar, avatar_content_type as \"avatar_content_type?\" FROM users WHERE id = $1 AND avatar IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "avatar",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "avatar"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "avatar_content_type?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "avatar_content_type"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "6c918bc85abedc5309b8faa39e44888841029cbf14b1efea9023ffb0dbb16011"
+}

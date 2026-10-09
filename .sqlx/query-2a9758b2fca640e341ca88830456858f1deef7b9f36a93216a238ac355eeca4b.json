@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, movie_file_id, episode_file_id, track_index,\n               codec, language, title, is_forced, is_default, is_hearing_impaired\n        FROM subtitle_tracks\n        WHERE episode_file_id = $1\n        ORDER BY track_index\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "movie_file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "movie_file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "episode_file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "episode_file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "track_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "track_index"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "codec",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "codec"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "is_forced",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "is_forced"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "is_default",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "is_default"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "is_hearing_impaired",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "is_hearing_impaired"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2a9758b2fca640e341ca88830456858f1deef7b9f36a93216a238ac355eeca4b"
+}

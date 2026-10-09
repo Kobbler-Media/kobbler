@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM user_sync_providers WHERE user_id = $1 AND provider_type = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "229e17456d35eb0a9138da67402a748ab350b6259515373a7f2c5c6c2d31ce51"
+}

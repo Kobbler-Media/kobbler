@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_recordings\n        SET status = 'recording', actual_start = COALESCE(actual_start, NOW()), updated_at = NOW()\n        WHERE id = $1 AND status = 'scheduled'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "53cfc4c96b7aa1845914ac994353ffc51d5ecb1b79a307ffd4eecbd54ad5a689"
+}

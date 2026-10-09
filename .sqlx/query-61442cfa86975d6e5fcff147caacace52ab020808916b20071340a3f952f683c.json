@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT b.title, b.description, b.language, b.publisher, b.pubdate,\n               bs.series_id AS \"series_id?\", bs.series_index AS \"series_index?\"\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        WHERE b.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "publisher",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "publisher"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "pubdate",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "pubdate"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "series_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "series_index?",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_index"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "61442cfa86975d6e5fcff147caacace52ab020808916b20071340a3f952f683c"
+}

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT mrf.file_path\n            FROM media_root_files mrf\n            WHERE mrf.media_root_id = $1\n              AND mrf.match_status = 'added'\n              AND mrf.entity_type = 'movie'\n              AND mrf.entity_id = $2\n            ORDER BY mrf.file_path\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "file_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bcc49ee6d536b67b20888906148d254b171b623d76d3b832decd3158a184bdfd"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO kindle_deliveries (id, kindle_target_id, book_id, book_file_id)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (kindle_target_id, book_id) DO UPDATE SET\n            book_file_id = EXCLUDED.book_file_id,\n            delivered_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "baa41c7117b4e998c5887f16f6a2393d963cd397dc88df8146f415f142f34472"
+}

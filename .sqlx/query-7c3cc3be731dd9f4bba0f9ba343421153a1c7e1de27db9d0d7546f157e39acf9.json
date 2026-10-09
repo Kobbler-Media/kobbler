@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT episode_key AS \"episode_key!\"\n        FROM livetv_recordings\n        WHERE episode_key = ANY($1)\n          AND status IN ('scheduled', 'recording', 'completed')\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "episode_key!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "episode_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "7c3cc3be731dd9f4bba0f9ba343421153a1c7e1de27db9d0d7546f157e39acf9"
+}

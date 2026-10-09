@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_cache_version FROM movie_files WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_cache_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "media_cache_version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "39b46269a3d9f75c1c4ada7bcb94ab84f7d0dc852711c88ded0cd8e4b50981e2"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO entitlements (id, book_id, scope_type, scope_id, is_removed)\n        VALUES ($1, $2, $3, $4, FALSE)\n        ON CONFLICT (book_id, scope_type, scope_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9f7a5be39588d554fcc2da2ea2589e1bfaba9c6bd3ca92738f7453cd457fbb14"
+}

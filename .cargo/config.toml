@@ -1,0 +1,9 @@
+# api enables tokio's `taskdump` feature, which tokio gates behind this cfg.
+# Without it the build fails inside tokio itself, so it is not optional.
+# api/Dockerfile sets the same flag via RUSTFLAGS.
+#
+# This uses the `cfg(all())` target form rather than `[build] rustflags`, because
+# any `[target.<triple>]` block in a user's own ~/.cargo/config.toml overrides
+# `build.rustflags` entirely, silently dropping this flag.
+[target.'cfg(all())']
+rustflags = ["--cfg", "tokio_unstable"]

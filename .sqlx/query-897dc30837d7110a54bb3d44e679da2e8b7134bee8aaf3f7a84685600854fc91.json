@@ -1,0 +1,146 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.id, r.series_rule_id AS \"series_rule_id!\", r.output_dir, r.episode_id,\n               r.guide_id, r.actual_end, r.scheduled_end, r.size_bytes,\n               s.keep_count, s.keep_until, s.keep_until_date\n        FROM livetv_recordings r\n        JOIN livetv_series_rules s ON s.id = r.series_rule_id\n        WHERE r.status = 'completed'\n        ORDER BY r.series_rule_id, COALESCE(r.actual_end, r.scheduled_end) DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "series_rule_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "series_rule_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "output_dir",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "output_dir"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "episode_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "episode_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "guide_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "guide_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "actual_end",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "actual_end"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "scheduled_end",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "scheduled_end"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "keep_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "keep_count"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "keep_until",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "keep_until"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "keep_until_date",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "keep_until_date"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "897dc30837d7110a54bb3d44e679da2e8b7134bee8aaf3f7a84685600854fc91"
+}

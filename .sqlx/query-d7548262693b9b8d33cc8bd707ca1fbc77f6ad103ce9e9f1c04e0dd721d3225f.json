@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            u.id AS user_id,\n            u.email,\n            u.display_name,\n            (SELECT COUNT(*) FROM chat_sessions cs WHERE cs.user_id = u.id)\n                AS \"session_count!\",\n            (SELECT COUNT(*) FROM chat_messages cm\n              JOIN chat_sessions cs ON cs.id = cm.session_id\n             WHERE cs.user_id = u.id)\n                AS \"message_count!\",\n            (SELECT COUNT(*) FROM chat_sessions cs\n             WHERE cs.user_id = u.id AND cs.summary IS NOT NULL)\n                AS \"summary_count!\",\n            (SELECT COUNT(*) FROM chat_profile_facts f WHERE f.user_id = u.id)\n                AS \"fact_count!\",\n            (SELECT MAX(cs.updated_at) FROM chat_sessions cs WHERE cs.user_id = u.id)\n                AS last_seen\n        FROM users u\n        ORDER BY (SELECT MAX(cs.updated_at) FROM chat_sessions cs WHERE cs.user_id = u.id)\n                 DESC NULLS LAST,\n                 u.email ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "session_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "message_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "summary_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "fact_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_seen",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "d7548262693b9b8d33cc8bd707ca1fbc77f6ad103ce9e9f1c04e0dd721d3225f"
+}

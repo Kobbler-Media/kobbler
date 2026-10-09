@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE debrid_stream_sessions\n        SET pinned = true, updated_at = NOW()\n        WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "487378965b4dd9b93481f79370a905429c9d194059c5c7adabf7c6bcc2b4062e"
+}

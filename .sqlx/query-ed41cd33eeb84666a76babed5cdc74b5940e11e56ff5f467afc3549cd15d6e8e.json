@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            sub.show_id as \"show_id!\",\n            sub.show_title as \"show_title!\",\n            sub.show_images as \"show_images!: serde_json::Value\",\n            sub.season_identifier as \"season_identifier!\",\n            sub.episode_id as \"episode_id!\",\n            sub.episode_identifier as \"episode_identifier!\",\n            sub.episode_title,\n            sub.added_at as \"added_at!\"\n        FROM (\n            SELECT DISTINCT ON (tshow.id)\n                tshow.id as show_id,\n                tshow.title as show_title,\n                tshow.images as show_images,\n                ts.season_identifier,\n                te.id as episode_id,\n                te.episode_identifier,\n                te.title as episode_title,\n                tef.created_at as added_at\n            FROM tv_episode_files tef\n            JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id\n            JOIN tv_episodes te ON te.id = tefe.episode_id\n            JOIN tv_seasons ts ON te.season_id = ts.id\n            JOIN tv_shows tshow ON ts.show_id = tshow.id\n            WHERE tef.available = true AND tshow.content_category = $1\n            ORDER BY tshow.id, tef.created_at DESC\n        ) sub\n        ORDER BY sub.added_at DESC\n        LIMIT 12\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "show_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "show_title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "show_images!: serde_json::Value",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "season_identifier!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "episode_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "episode_identifier!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "episode_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "episode_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "added_at!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "ed41cd33eeb84666a76babed5cdc74b5940e11e56ff5f467afc3549cd15d6e8e"
+}

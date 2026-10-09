@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.id, r.status, r.output_dir\n        FROM livetv_recordings r\n        JOIN livetv_channels c ON c.id = r.channel_id\n        WHERE c.tuner_id = $1\n        ORDER BY r.scheduled_start\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "output_dir",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "output_dir"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "5a1da6e60759815a2d0766ae075167dd33860d6eae26583614aac5f47f225965"
+}

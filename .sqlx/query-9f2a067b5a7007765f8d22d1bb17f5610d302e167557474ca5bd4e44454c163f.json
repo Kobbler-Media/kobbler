@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM livetv_guide g\n        WHERE g.channel_id = $1\n          AND g.start_time >= $2\n          AND g.start_time <= $3\n          AND g.start_time <> ALL($4)\n          AND NOT EXISTS (\n              SELECT 1 FROM livetv_recordings r\n              WHERE r.guide_id = g.id AND r.status NOT IN ('cancelled', 'moved')\n          )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9f2a067b5a7007765f8d22d1bb17f5610d302e167557474ca5bd4e44454c163f"
+}

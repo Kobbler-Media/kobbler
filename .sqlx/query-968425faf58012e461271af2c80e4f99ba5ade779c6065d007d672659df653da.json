@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, season_id\n        FROM tv_episodes e\n        WHERE want_status IN ('watching', 'searching', 'downloading', 'ingesting')\n          AND NOT EXISTS (\n              SELECT 1 FROM tv_episode_file_episodes efe WHERE efe.episode_id = e.id\n          )\n        ORDER BY season_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "season_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "season_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "968425faf58012e461271af2c80e4f99ba5ade779c6065d007d672659df653da"
+}

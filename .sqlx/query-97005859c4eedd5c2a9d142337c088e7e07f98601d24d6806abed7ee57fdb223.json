@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH matches AS (\n            SELECT non_lib.id AS discovered_id,\n                   lib.id AS library_id,\n                   non_lib.identifiers AS discovered_identifiers\n            FROM books non_lib\n            JOIN book_authors non_lib_ba ON non_lib_ba.book_id = non_lib.id\n            JOIN books lib ON (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = lib.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = lib.id))\n                          AND LOWER(lib.title) = LOWER(non_lib.title)\n            JOIN book_authors lib_ba ON lib_ba.book_id = lib.id\n                                    AND lib_ba.author_id = non_lib_ba.author_id\n            WHERE non_lib.discovered_from_author_id = $1\n              AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = non_lib.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = non_lib.id))\n        ),\n        update_lib AS (\n            UPDATE books lib\n            SET identifiers = lib.identifiers || m.discovered_identifiers,\n                updated_at = NOW()\n            FROM matches m\n            WHERE lib.id = m.library_id\n        )\n        DELETE FROM books\n        WHERE id IN (SELECT discovered_id FROM matches)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "97005859c4eedd5c2a9d142337c088e7e07f98601d24d6806abed7ee57fdb223"
+}

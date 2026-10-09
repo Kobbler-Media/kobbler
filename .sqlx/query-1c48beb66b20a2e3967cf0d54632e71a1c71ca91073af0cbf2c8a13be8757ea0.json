@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE movie_files SET skip_detect_ran_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1c48beb66b20a2e3967cf0d54632e71a1c71ca91073af0cbf2c8a13be8757ea0"
+}

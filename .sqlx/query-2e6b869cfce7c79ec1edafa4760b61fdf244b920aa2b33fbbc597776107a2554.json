@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT mf.id FROM movie_files mf\n         JOIN media_root_files mrf ON mrf.file_path = mf.file_path AND mrf.available = true\n         WHERE mf.duration_seconds IS NOT NULL\n           AND mf.available = true\n         ORDER BY mf.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2e6b869cfce7c79ec1edafa4760b61fdf244b920aa2b33fbbc597776107a2554"
+}

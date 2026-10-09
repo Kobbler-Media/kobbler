@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tv_show_ratings (id, show_id, user_id, rating)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (show_id, user_id)\n        DO UPDATE SET\n            rating = EXCLUDED.rating,\n            updated_at = NOW()\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_show_ratings",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "21249620a9cc76783927585b697f5e51192d8e20937c5222bec90f2a1082a110"
+}

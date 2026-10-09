@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_sessions\n        SET channel_id = $2, lease_id = $3, mode = $4, buffer_dir = $5,\n            started_at = NOW(), last_access = NOW(), recording_id = NULL\n        WHERE session_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0ff35069cbaf8f642308392ab15e9ee26169bd741803d8f02668075a7bbc150f"
+}

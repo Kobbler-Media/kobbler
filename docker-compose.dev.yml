@@ -1,0 +1,176 @@
+# Kobbler — local development stack.
+#
+# Hot-reloading API (cargo-watch) and web (vite) containers, plus the infra they
+# need. Not for production — see docker-compose.yml for that.
+#
+#   cp env.dev.template .env.dev
+#   docker network create kob_dev
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# The `kob_dev` external network is shared with the sibling projects (kobload,
+# koblem) so they can reach each other by service name during development.
+
+networks:
+  kob_dev:
+    name: kob_dev
+    external: true
+
+services:
+  kobbler-db:
+    image: postgres:18.4
+    container_name: kobbler-db
+    environment:
+      POSTGRES_DB: kobbler
+      POSTGRES_USER: kobbler
+      POSTGRES_PASSWORD: kobbler
+    volumes:
+      - kobbler_pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kobbler -d kobbler"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - default
+      - kob_dev
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.54.3
+    container_name: kobbler-meilisearch
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-dev-master-key}
+      - MEILI_UPGRADE_DB=true
+    volumes:
+      - meili_data:/meili_data
+    ports:
+      - "${MEILI_PORT:-7700}:7700"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - default
+      - kob_dev
+
+  api:
+    image: kobbler-api:dev
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      target: dev
+      additional_contexts:
+        # Sibling checkout of the koblibs crates — see README.md.
+        koblibs: ${KOBLIBS_DIR:-../koblibs}
+    container_name: kobbler-api
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      # Container-internal settings (not overridable via .env files)
+      DATABASE_URL: postgres://kobbler:kobbler@kobbler-db:5432/kobbler
+      STORAGE_ROOT: /data
+      CONFIG_PATH: /config/kobbler.toml
+      CARGO_TARGET_DIR: /target
+      NATS_URL: nats://devtoken@nats:4222
+      MEILI_URL: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-dev-master-key}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    ports:
+      - "${KOBBLER_API_PORT:-6766}:8080"
+      - "${KOBBLER_PROXY_PORT:-6767}:6767"
+      # tokio-console (cargo build --features tokio-console + TOKIO_CONSOLE=1)
+      # - "${TOKIO_CONSOLE_PORT:-6669}:6669"
+    volumes:
+      - kobbler_data:/data
+      - ./config:/config
+      - ./Cargo.toml:/app/Cargo.toml
+      # Note: Cargo.lock intentionally NOT mounted - use image's lock file
+      # to avoid stale git dependency issues. Rebuild image for dep changes.
+      - ./api:/app/api
+      - ./kobo-proxy:/app/kobo-proxy
+      - ${KOBLIBS_DIR:-../koblibs}:/koblibs
+      - kobbler_api_target:/target
+      # Local dev watch directory (contents gitignored). Add test ebooks to local/watch/
+      # then configure a watch directory in the UI pointing to /watch/local
+      - ./local/watch:/watch/local:ro
+      - ${KOBBLER_TEST_DATA:-./local/test-data}:/test-data
+    # Hardware transcoding passthrough. Uncomment for Intel/AMD VA-API; neither
+    # this nor NVIDIA is required, Kobbler falls back to software transcoding.
+    # devices:
+    #   - /dev/dri:/dev/dri
+    depends_on:
+      kobbler-db:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    networks:
+      - default
+      - kob_dev
+
+  tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: kobbler-tts
+    restart: unless-stopped
+    volumes:
+      - tts-model-cache:/app/api/src/models
+      - tts-voice-cache:/app/api/src/voices
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "-X", "POST", "http://localhost:8880/v1/audio/speech",
+             "-H", "Content-Type: application/json",
+             "-d", "{\"model\":\"kokoro\",\"input\":\"ready\",\"voice\":\"af_alloy\",\"response_format\":\"mp3\"}",
+             "-o", "/dev/null"]
+      interval: 30s
+      timeout: 120s
+      retries: 3
+      start_period: 180s
+    networks:
+      - default
+      - kob_dev
+
+  web:
+    image: kobbler-web:dev
+    build:
+      context: ./web
+      additional_contexts:
+        koblibs: ${KOBLIBS_DIR:-../koblibs}
+      target: dev
+    container_name: kobbler-web
+    env_file:
+      - path: .env.dev
+        required: false
+    environment:
+      # Container-internal settings (not overridable via .env files)
+      VITE_PROXY_TARGET: http://api:8080
+      VITE_API_BASE_URL: ""
+      # Hardcoded for dev compose - frontend always in dev mode
+      PUBLIC_DEV_MODE: 1
+    ports:
+      - "${KOBBLER_WEB_PORT:-5173}:5173"
+    volumes:
+      - ./web:/app
+      - ${KOBLIBS_DIR:-../koblibs}:/koblibs
+      - kobbler_web_node_modules:/app/node_modules
+      - kobbler_web_svelte_kit:/app/.svelte-kit
+    depends_on:
+      - api
+    networks:
+      - default
+      - kob_dev
+
+volumes:
+  kobbler_pg:
+  kobbler_data:
+  kobbler_api_target:
+  kobbler_web_node_modules:
+  kobbler_web_svelte_kit:
+  tts-model-cache:
+  tts-voice-cache:
+  meili_data:

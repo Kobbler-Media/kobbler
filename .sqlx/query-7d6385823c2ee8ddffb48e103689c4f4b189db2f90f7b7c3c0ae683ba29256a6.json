@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO user_sync_providers (user_id, provider_type, enabled, config)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (user_id, provider_type) DO UPDATE SET\n            enabled = $3,\n            config = $4,\n            updated_at = NOW()\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_sync_providers",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7d6385823c2ee8ddffb48e103689c4f4b189db2f90f7b7c3c0ae683ba29256a6"
+}

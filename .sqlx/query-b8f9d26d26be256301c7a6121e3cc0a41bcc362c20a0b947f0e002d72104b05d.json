@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tv_seasons SET is_monitored = $1 WHERE show_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b8f9d26d26be256301c7a6121e3cc0a41bcc362c20a0b947f0e002d72104b05d"
+}

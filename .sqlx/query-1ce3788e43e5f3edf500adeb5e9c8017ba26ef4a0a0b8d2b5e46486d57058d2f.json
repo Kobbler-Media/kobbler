@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT usp.provider_type, usp.config->>'api_key' AS \"api_key!\"\n        FROM user_sync_providers usp\n        JOIN devices d ON d.user_id = usp.user_id\n        WHERE d.id = $1\n          AND usp.enabled = true\n          AND usp.config->>'api_key' IS NOT NULL\n          AND NOT EXISTS (\n              SELECT 1 FROM device_sync_providers dsp\n              WHERE dsp.device_id = $1\n                AND dsp.provider_type = usp.provider_type\n                AND dsp.enabled = false\n          )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "provider_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_sync_providers",
+            "name": "provider_type"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "api_key!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "1ce3788e43e5f3edf500adeb5e9c8017ba26ef4a0a0b8d2b5e46486d57058d2f"
+}

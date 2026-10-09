@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM subtitle_tracks WHERE episode_file_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "86f30c54dce80ef9a0e8a2c631ccc7605a9b0057a18a65fc2c5b1ae971978c83"
+}

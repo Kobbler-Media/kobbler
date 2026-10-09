@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO livetv_watch_events\n            (id, user_id, channel_id, guide_id, series_id, title, episode_key,\n             started_at, ended_at, watched_secs, programme_secs, source)\n        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Int4",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "940b31d20b550568e7d3f1574979e9fb8b29f303c46b8742305e68f728b39395"
+}

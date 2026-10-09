@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE book_files\n        SET available = TRUE,\n            last_checked_at = NOW(),\n            unavailable_since = NULL\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3f6a0d0e2c7f9a11bb264a13fd53a3245933c8496677e6f4732c05833da9e5ed"
+}

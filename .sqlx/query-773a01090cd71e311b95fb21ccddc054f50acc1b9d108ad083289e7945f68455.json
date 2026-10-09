@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM livetv_affinity a\n        WHERE NOT EXISTS (SELECT 1 FROM livetv_watch_events w WHERE w.user_id = a.user_id)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "773a01090cd71e311b95fb21ccddc054f50acc1b9d108ad083289e7945f68455"
+}

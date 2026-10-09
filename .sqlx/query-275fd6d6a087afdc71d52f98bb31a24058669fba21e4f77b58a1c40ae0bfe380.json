@@ -1,0 +1,142 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            m.id,\n            m.title,\n            m.year,\n            CASE WHEN (m.images->'poster'->>'source_url' IS NOT NULL OR m.images->'poster'->>'cached_at' IS NOT NULL)\n                 THEN '/api/v1/admin/movies/' || m.id || '/poster'\n                 ELSE NULL\n            END as poster_url,\n            EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = m.id) AS \"is_in_library!\",\n            COALESCE(m.want_status, 'none') as \"want_status!\",\n            COALESCE(m.sort_title, m.title) as \"sort_title!\",\n            COALESCE(m.genres, ARRAY[]::text[]) as \"genres!: Vec<String>\",\n            COALESCE(\n                (SELECT array_agg(p.name ORDER BY p.name)\n                 FROM movie_crew mc\n                 JOIN people p ON p.id = mc.person_id\n                 WHERE mc.movie_id = m.id AND mc.department = 'Directing'),\n                ARRAY[]::text[]\n            ) as \"directors!: Vec<String>\",\n            m.rating,\n            m.runtime,\n            m.content_rating,\n            m.description\n        FROM movies m\n        WHERE m.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "poster_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_in_library!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "want_status!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "sort_title!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "genres!: Vec<String>",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "directors!: Vec<String>",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "rating",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "rating"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "runtime",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "runtime"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "content_rating",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "content_rating"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "description"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "275fd6d6a087afdc71d52f98bb31a24058669fba21e4f77b58a1c40ae0bfe380"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE entitlements SET updated_at = NOW() WHERE book_id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bb667481a41c6821e9662e52c1e8042102fe249865496166698c363c99717fd4"
+}

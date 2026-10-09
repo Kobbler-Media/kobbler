@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT buffer_dir FROM livetv_sessions",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "buffer_dir",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_sessions",
+            "name": "buffer_dir"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "34a2fc765fe69504cb79d207bef021c19ce6fcd7e344409b0c5cf0035fbd39a6"
+}

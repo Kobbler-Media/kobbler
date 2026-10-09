@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO reading_status (reading_state_id, status, times_started_reading) VALUES ($1, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cd9eb8e4eac9a4f5f3f4a672d54d1642fa2283402a46a48397db5c317d00f229"
+}

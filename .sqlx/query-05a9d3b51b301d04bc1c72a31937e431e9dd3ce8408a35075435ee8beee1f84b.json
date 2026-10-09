@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE tv_watch_states\n        SET watched = FALSE, watched_at = NULL, position_seconds = NULL, updated_at = NOW()\n        WHERE episode_id = ANY($1) AND user_id = $2 AND watched = TRUE\n        RETURNING episode_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "episode_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_watch_states",
+            "name": "episode_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "05a9d3b51b301d04bc1c72a31937e431e9dd3ce8408a35075435ee8beee1f84b"
+}

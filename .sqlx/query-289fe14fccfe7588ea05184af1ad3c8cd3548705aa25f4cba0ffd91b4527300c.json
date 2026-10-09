@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT tefe.episode_id AS \"episode_id!\"\n        FROM tv_episode_file_episodes tefe\n        JOIN tv_episode_files tef ON tef.id = tefe.episode_file_id\n        JOIN tv_episodes e ON e.id = tefe.episode_id\n        WHERE e.season_id = $1 AND tef.available\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "episode_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_file_episodes",
+            "name": "episode_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "289fe14fccfe7588ea05184af1ad3c8cd3548705aa25f4cba0ffd91b4527300c"
+}

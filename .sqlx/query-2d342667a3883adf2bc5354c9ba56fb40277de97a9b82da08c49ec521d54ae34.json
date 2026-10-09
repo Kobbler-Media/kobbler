@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT corrupt_ranges FROM movie_files WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "corrupt_ranges",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "corrupt_ranges"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2d342667a3883adf2bc5354c9ba56fb40277de97a9b82da08c49ec521d54ae34"
+}

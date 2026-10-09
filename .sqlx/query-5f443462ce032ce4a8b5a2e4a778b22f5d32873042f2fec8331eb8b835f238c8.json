@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT m.media_root_id AS \"media_root_id?: Uuid\"\n            FROM movie_files mf\n            JOIN movies m ON m.id = mf.movie_id\n            WHERE mf.id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_root_id?: Uuid",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "media_root_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "5f443462ce032ce4a8b5a2e4a778b22f5d32873042f2fec8331eb8b835f238c8"
+}

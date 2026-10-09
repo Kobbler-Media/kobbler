@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT ts.id, ts.season_identifier, ts.season_sort_order, ts.title,\n               ts.is_special, ts.episode_count\n        FROM tv_seasons ts\n        WHERE ts.show_id = $1 AND ts.season_sort_order = $2\n        ORDER BY ts.season_identifier ASC, ts.id ASC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "season_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "season_sort_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_sort_order"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "is_special",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "is_special"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "episode_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "episode_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "67b123a4316a071072471a5a76e4485eba5b599a64f9058698ddec2887c7eba2"
+}

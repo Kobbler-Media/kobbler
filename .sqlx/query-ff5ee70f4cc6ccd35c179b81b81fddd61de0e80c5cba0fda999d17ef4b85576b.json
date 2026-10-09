@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE audiobook_chapters\n        SET title = $2, start_seconds = $3, end_seconds = $4\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff5ee70f4cc6ccd35c179b81b81fddd61de0e80c5cba0fda999d17ef4b85576b"
+}

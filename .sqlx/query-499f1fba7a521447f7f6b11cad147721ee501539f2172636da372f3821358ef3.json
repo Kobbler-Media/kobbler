@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT b.id, b.title, b.images->'cover'->>'source_url' AS cover_url,\n               GREATEST(e.updated_at, b.updated_at) AS \"synced_at!\"\n        FROM entitlements e\n        JOIN books b ON b.id = e.book_id\n        WHERE (\n            e.scope_type = 'ALL_USERS'\n            OR (e.scope_type = 'USER' AND e.scope_id = $1)\n            OR (e.scope_type = 'DEVICE' AND e.scope_id = $2)\n        )\n        AND e.is_removed = FALSE\n        AND b.ingest_status IS NULL\n        AND EXISTS (\n            SELECT 1 FROM book_files bf WHERE bf.book_id = b.id AND bf.available = TRUE\n        )\n        ORDER BY GREATEST(e.updated_at, b.updated_at) DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "cover_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "synced_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "499f1fba7a521447f7f6b11cad147721ee501539f2172636da372f3821358ef3"
+}

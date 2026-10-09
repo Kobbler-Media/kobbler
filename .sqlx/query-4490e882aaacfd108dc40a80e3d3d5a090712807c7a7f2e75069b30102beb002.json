@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE chat_identities\n        SET last_seen_at = NOW(),\n            external_id = COALESCE(external_id, $2)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4490e882aaacfd108dc40a80e3d3d5a090712807c7a7f2e75069b30102beb002"
+}

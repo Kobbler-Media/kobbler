@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE iptv_channels SET icon_cache_attempted_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "926cd90fceaf1477eba8fd01219cda022864d9c16b3f2c8aca1fc66d9e432f1e"
+}

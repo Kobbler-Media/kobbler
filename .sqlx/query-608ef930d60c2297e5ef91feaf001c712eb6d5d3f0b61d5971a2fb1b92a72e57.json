@@ -1,0 +1,328 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, movie_id, file_path, file_size, file_fingerprint, format, quality,\n               languages, subtitles, source_type, source_metadata, available, created_at,\n               video_codec, video_width, video_height, video_bitrate_kbps,\n               framerate, bit_depth, is_hdr, hdr_format, is_interlaced,\n               duration_seconds, container, overall_bitrate_kbps, keyframes\n        FROM movie_files\n        WHERE movie_id = $1\n        ORDER BY created_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "movie_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "movie_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "file_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "file_size"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "file_fingerprint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "file_fingerprint"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "format"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "quality",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "quality"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "languages",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "languages"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "subtitles",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "subtitles"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "source_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "source_type"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "source_metadata",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "source_metadata"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "available",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "available"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "video_codec",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "video_codec"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "video_width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "video_width"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "video_height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "video_height"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "video_bitrate_kbps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "video_bitrate_kbps"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "framerate",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "framerate"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "bit_depth",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "bit_depth"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "is_hdr",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "is_hdr"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "hdr_format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "hdr_format"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "is_interlaced",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "is_interlaced"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "duration_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "duration_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "container",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "container"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "overall_bitrate_kbps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "overall_bitrate_kbps"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "keyframes",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "keyframes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "608ef930d60c2297e5ef91feaf001c712eb6d5d3f0b61d5971a2fb1b92a72e57"
+}

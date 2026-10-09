@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE wanted_attempts\n        SET status = 'failed', message = 'Skipped by user'\n        WHERE id = (\n            SELECT id FROM wanted_attempts\n            WHERE book_id = $1 AND status = 'needs_review'\n            ORDER BY created_at DESC\n            LIMIT 1\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fe8eaca79e6f0bbb320845c40e7ad06dec2ec25e8d416aea7a371e55c2b0ca29"
+}

@@ -1,0 +1,61 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT q.id AS \"id!\", q.title AS \"title!\", q.year, q.held AS \"held!\"\n            FROM (\n                SELECT m.id, m.title, m.year,\n                       EXISTS (SELECT 1 FROM movie_files mf\n                               WHERE mf.movie_id = m.id AND mf.available) AS held\n                FROM movies m\n                WHERE m.title ILIKE $1 OR m.original_title ILIKE $1\n            ) q\n            ORDER BY (LOWER(q.title) = LOWER($2)) DESC, q.held DESC,\n                     q.year DESC NULLS LAST, q.title ASC, q.id ASC\n            LIMIT $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "held!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "2b4b3aeb083b9efd432712fbfbb51d6dce1daeb835fdfab431f0a64c843561b5"
+}

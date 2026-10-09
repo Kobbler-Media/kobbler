@@ -1,0 +1,51 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            EXISTS(SELECT 1 FROM books       WHERE id = $1) AS \"is_book!\",\n            EXISTS(SELECT 1 FROM movies      WHERE id = $1) AS \"is_movie!\",\n            EXISTS(SELECT 1 FROM tv_episodes WHERE id = $1) AS \"is_episode!\",\n            EXISTS(SELECT 1 FROM tv_seasons  WHERE id = $1) AS \"is_season!\",\n            EXISTS(SELECT 1 FROM tv_shows    WHERE id = $1) AS \"is_show!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_book!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_movie!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_episode!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_season!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_show!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "71901089bd1c715bd22b3fe175e570eabb7ff37dd6efaf4b0ac8bd751b1d3f9b"
+}

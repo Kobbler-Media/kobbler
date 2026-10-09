@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM movies WHERE want_status = 'wanted' AND NOT EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e7612bf4acf4e84d718ce7138f0cc0881acca40791eec9df59e093dc90c85746"
+}

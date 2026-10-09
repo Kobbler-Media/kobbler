@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO discord_show_threads (agent_id, show_id, thread_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (agent_id, show_id) DO UPDATE SET thread_id = EXCLUDED.thread_id\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "445607aa1abfbd42f9308bbdcfaac2501cf30de6a865108b1fb6f9f03d9d4a1e"
+}

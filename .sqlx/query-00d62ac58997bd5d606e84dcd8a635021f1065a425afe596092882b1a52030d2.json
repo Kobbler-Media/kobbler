@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT mrf.file_path\n            FROM media_root_files mrf\n            WHERE mrf.media_root_id = $1\n              AND mrf.match_status = 'added'\n              AND mrf.entity_type = 'tv_episode'\n              AND mrf.entity_id IN (\n                  SELECT e.id FROM tv_episodes e\n                  JOIN tv_seasons s ON s.id = e.season_id\n                  WHERE s.show_id = $2\n              )\n            ORDER BY mrf.file_path\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "file_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "00d62ac58997bd5d606e84dcd8a635021f1065a425afe596092882b1a52030d2"
+}

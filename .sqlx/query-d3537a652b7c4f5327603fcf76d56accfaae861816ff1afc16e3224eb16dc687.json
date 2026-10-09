@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id\n          FROM movie_files\n         WHERE available = TRUE\n           AND media_cache_generated_at IS NOT NULL\n           AND (\n                NOT $1::bool\n             OR skip_detect_ran_at IS NULL\n             OR skip_detect_ran_at < media_cache_generated_at\n           )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d3537a652b7c4f5327603fcf76d56accfaae861816ff1afc16e3224eb16dc687"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE books\n        SET want_status = 'none', updated_at = NOW()\n        WHERE id IN (SELECT book_id FROM book_series WHERE series_id = $1)\n        AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = books.id)\n                 OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = books.id))\n        AND want_status IN ('wanted', 'pending')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6c1d90d51afd332c7ed3694892e10ef6238f9825f7520ae983df2daf49c3ae99"
+}

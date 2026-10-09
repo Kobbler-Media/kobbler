@@ -1,0 +1,244 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, series_id, title, enabled, channel_ids, weekdays, window_start, window_end,\n               new_only, min_season, keep_count, keep_until, keep_until_date,\n               padding_before_secs, padding_after_secs, on_clash, priority, created_at, updated_at\n        FROM livetv_series_rules\n        WHERE (NOT $1::bool OR enabled)\n        ORDER BY priority DESC, title ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "series_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "channel_ids",
+        "type_info": "UuidArray",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "channel_ids"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "weekdays",
+        "type_info": "Int2Array",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "weekdays"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "window_start",
+        "type_info": "Time",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "window_start"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "window_end",
+        "type_info": "Time",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "window_end"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "new_only",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "new_only"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "min_season",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "min_season"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "keep_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "keep_count"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "keep_until",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "keep_until"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "keep_until_date",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "keep_until_date"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "padding_before_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "padding_before_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "padding_after_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "padding_after_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "on_clash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "on_clash"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "priority",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "priority"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_series_rules",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fd01b1b2e9fed7b199163efeb6d22b09905b09608d75d38c7bd719b6f0b24028"
+}

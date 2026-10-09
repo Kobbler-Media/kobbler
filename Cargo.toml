@@ -1,0 +1,3 @@
+[workspace]
+members = ["api", "kobo-proxy", "libs/stk-client"]
+resolver = "2"

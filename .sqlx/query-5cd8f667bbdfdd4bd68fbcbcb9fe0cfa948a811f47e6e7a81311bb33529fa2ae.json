@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_ingest_source SET extracted_cover = $2 WHERE book_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5cd8f667bbdfdd4bd68fbcbcb9fe0cfa948a811f47e6e7a81311bb33529fa2ae"
+}

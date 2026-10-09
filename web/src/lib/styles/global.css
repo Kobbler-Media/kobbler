@@ -1,0 +1,716 @@
+/* =============================================================================
+   Global Shared Styles for Kobbler Web
+   ============================================================================= */
+
+@import '@koblibs/ui/styles/shared.css';
+
+:global(:root) {
+  --sidebar-width: 220px;
+}
+
+@media (max-width: 768px) {
+  :global(:root) {
+    --sidebar-width: 0px;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   Kobbler-specific button variants
+   ----------------------------------------------------------------------------- */
+.btn.accent-dark {
+  border: 1px solid #3b2b1f;
+  color: #1d130c;
+}
+
+.btn-outline {
+  background: var(--bg-2);
+  border: 1px solid var(--ring);
+  color: var(--ink);
+}
+
+.btn-success {
+  background: var(--success);
+  color: #000;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+/* -----------------------------------------------------------------------------
+   Sidebar Empty State
+   ----------------------------------------------------------------------------- */
+.sidebar-empty {
+  text-align: center;
+  padding: 24px 16px;
+}
+
+.sidebar-empty-icon {
+  color: var(--muted);
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.sidebar-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.sidebar-empty p {
+  font-size: 12px;
+  margin: 0 0 16px;
+}
+
+.sidebar-stats {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ring);
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* -----------------------------------------------------------------------------
+   Detail Panel
+   ----------------------------------------------------------------------------- */
+.detail-backdrop {
+  display: none;
+}
+
+.detail-panel {
+  position: sticky;
+  top: 24px;
+  align-self: flex-start;
+  flex-shrink: 0;
+  width: clamp(240px, 22vw, 320px);
+  background: var(--card);
+  border: 1px solid var(--ring);
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.detail-header h3 {
+  margin: 0;
+  font-size: 16px;
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.detail-section {
+  display: grid;
+  gap: 6px;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.section-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* -----------------------------------------------------------------------------
+   Page Layout
+   ----------------------------------------------------------------------------- */
+.page-layout {
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+}
+
+.library-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.section-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-row span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* -----------------------------------------------------------------------------
+   Responsive - Detail Panel Mobile
+   ----------------------------------------------------------------------------- */
+@media (max-width: 768px) {
+  /* Hide sidebar by default on mobile - pages should add .detail-panel-open when showing */
+  .detail-panel {
+    display: none;
+  }
+
+  .detail-panel.detail-panel-open {
+    display: grid;
+    position: fixed;
+    inset: 12px;
+    width: auto !important;
+    max-width: none !important;
+    max-height: calc(100vh - 24px);
+    overflow: auto;
+    z-index: 100;
+  }
+
+  .detail-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 6, 6, 0.45);
+    border: none;
+    z-index: 99;
+    cursor: pointer;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   Status Pill Variants (kobbler-specific)
+   ----------------------------------------------------------------------------- */
+.status-pill.owned {
+  border-color: rgba(40, 167, 69, 0.3);
+  color: #4ade80;
+  background: rgba(40, 167, 69, 0.1);
+}
+
+.status-pill.wanted {
+  border-color: rgba(234, 179, 8, 0.3);
+  color: var(--wanted);
+  background: rgba(234, 179, 8, 0.1);
+}
+
+.status-pill.synced {
+  border-color: rgba(34, 197, 94, 0.3);
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.status-pill.skipped {
+  border-color: rgba(107, 114, 128, 0.3);
+  color: #9ca3af;
+  background: rgba(107, 114, 128, 0.1);
+}
+
+.status-pill.missing {
+  border-color: var(--ring);
+  color: var(--muted);
+  background: transparent;
+}
+
+.status-pill.searching,
+.status-pill.downloading {
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.status-pill.watching {
+  border-color: rgba(139, 92, 246, 0.3);
+  color: var(--monitored);
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.status-pill.failed {
+  border-color: rgba(239, 68, 68, 0.3);
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.status-pill.pulse {
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+   Monitored Pill
+   ----------------------------------------------------------------------------- */
+.monitored-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(139, 92, 246, 0.15);
+  border: 1px solid var(--monitored);
+  color: var(--monitored);
+  padding: 4px 10px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.monitored-pill:hover {
+  background: rgba(139, 92, 246, 0.25);
+}
+
+.monitored-pill.inactive {
+  background: transparent;
+  border-color: var(--ring);
+  color: var(--muted);
+}
+
+.monitored-pill .material-icons-outlined {
+  font-size: 14px;
+}
+
+.monitored-pill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* -----------------------------------------------------------------------------
+   Tag Clouds & Chips
+   ----------------------------------------------------------------------------- */
+.tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--ring);
+  cursor: pointer;
+}
+
+.tag:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.id-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.id-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--ring);
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--ink);
+  font-family: monospace;
+}
+
+.id-chip.warning {
+  border-color: var(--warning);
+  color: var(--warning);
+  cursor: pointer;
+}
+
+.id-chip.warning:hover {
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.shelf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.shelf-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--ring);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.shelf-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* -----------------------------------------------------------------------------
+   Add Button
+   ----------------------------------------------------------------------------- */
+.add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px dashed var(--ring);
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* -----------------------------------------------------------------------------
+   Value Link
+   ----------------------------------------------------------------------------- */
+.value.link {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.value.link:hover {
+  text-decoration: underline;
+}
+
+/* -----------------------------------------------------------------------------
+   Section Title Row
+   ----------------------------------------------------------------------------- */
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.section-title-row .label {
+  margin-bottom: 0;
+}
+
+.section-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* -----------------------------------------------------------------------------
+   Rating Stars
+   ----------------------------------------------------------------------------- */
+.rating-stars {
+  color: #fbbf24;
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+
+.rating-context {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 8px;
+}
+
+/* -----------------------------------------------------------------------------
+   File Box
+   ----------------------------------------------------------------------------- */
+.file-box {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--ring);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.file-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* -----------------------------------------------------------------------------
+   Checkbox Labels
+   ----------------------------------------------------------------------------- */
+
+/* -----------------------------------------------------------------------------
+   Ownership Toggle
+   ----------------------------------------------------------------------------- */
+.ownership-toggle {
+  display: flex;
+  background: var(--card);
+  border: 1px solid var(--ring);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ownership-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--muted);
+  border: none;
+  background: none;
+}
+
+.ownership-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ownership-btn.active {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+/* -----------------------------------------------------------------------------
+   View Size Toggle
+   ----------------------------------------------------------------------------- */
+.view-size-toggle {
+  display: flex;
+  background: var(--card);
+  border: 1px solid var(--ring);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.view-size-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--muted);
+  border: none;
+  background: none;
+  display: flex;
+  align-items: center;
+}
+
+.view-size-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.view-size-btn.active {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+/* -----------------------------------------------------------------------------
+   Protocol Badge (Downloads)
+   ----------------------------------------------------------------------------- */
+.protocol-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--ring);
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* -----------------------------------------------------------------------------
+   Source Field (Edit Mode)
+   ----------------------------------------------------------------------------- */
+.source-field {
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--ring);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+
+.source-field:focus-within {
+  border-color: var(--accent);
+}
+
+.source-field-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  padding: 10px 12px;
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+}
+
+.source-field-input::placeholder {
+  color: var(--muted);
+}
+
+.source-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-left: 1px solid var(--ring);
+  background: var(--bg-2);
+  color: var(--muted);
+}
+
+.source-selector:hover {
+  background: var(--card);
+  color: var(--ink);
+}
+
+.source-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: #1d130c;
+}
+
+/* -----------------------------------------------------------------------------
+   MultiSearchSelect (chips + input)
+   ----------------------------------------------------------------------------- */
+.multi-search-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--ring);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-height: 38px;
+  align-items: center;
+  cursor: text;
+}
+
+.multi-search-select:focus-within {
+  border-color: var(--accent);
+}
+
+.multi-search-select .chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--ring);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.multi-search-select .chip .remove {
+  cursor: pointer;
+  opacity: 0.5;
+  font-size: 14px;
+}
+
+.multi-search-select .chip .remove:hover {
+  opacity: 1;
+  color: var(--danger);
+}
+
+.multi-search-select input {
+  background: none;
+  border: none;
+  color: var(--ink);
+  font-size: 12px;
+  outline: none;
+  flex: 1;
+  min-width: 80px;
+}
+
+/* -----------------------------------------------------------------------------
+   Floating glass action buttons (detail page headerActions snippets)
+   ----------------------------------------------------------------------------- */
+.glass-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.glass-btn:hover {
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.glass-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1d130c;
+}
+
+.glass-btn.active:hover {
+  opacity: 0.9;
+}
+
+.glass-btn.syncing {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.glass-btn .spin {
+  animation: glass-btn-spin 1s linear infinite;
+}
+
+@keyframes glass-btn-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO iptv_watch_history (user_id, channel_id, watch_count, last_watched_at, duration_secs)\n        VALUES ($1, $2, 1, NOW(), $3)\n        ON CONFLICT (user_id, channel_id)\n        DO UPDATE SET\n            watch_count = iptv_watch_history.watch_count + 1,\n            last_watched_at = NOW(),\n            duration_secs = iptv_watch_history.duration_secs + EXCLUDED.duration_secs\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "884493b9182e26c76c642e4f00804640f2c4501a919daf8d6e8bd6870ff36731"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.id\n        FROM livetv_recordings r\n        WHERE r.id = ANY($1)\n          AND (\n            EXISTS (\n                SELECT 1 FROM tv_watch_states ws\n                WHERE ws.episode_id = r.episode_id AND ws.watched = TRUE\n            )\n            OR EXISTS (\n                SELECT 1 FROM movie_watch_states mws\n                WHERE mws.movie_id = r.movie_id AND mws.watched = TRUE\n            )\n            OR EXISTS (\n                SELECT 1 FROM livetv_watch_events we\n                WHERE we.guide_id = r.guide_id\n                  AND we.source = 'recording'\n                  AND we.programme_secs IS NOT NULL\n                  AND we.programme_secs > 0\n                  AND we.watched_secs::float8 / we.programme_secs::float8 >= 0.9\n            )\n          )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e43c19132a6f529e3f5e61db7c10500d05fd65282c640c9c30d8f7eed057aedd"
+}

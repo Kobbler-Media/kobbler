@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE audiobook_files SET\n            duration_seconds = COALESCE($2, duration_seconds),\n            bitrate = COALESCE($3, bitrate),\n            codec = COALESCE($4, codec),\n            channels = COALESCE($5, channels),\n            sample_rate = COALESCE($6, sample_rate),\n            file_size = COALESCE($7, file_size)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Int4",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b96e20f955af7a0db9bb5c6d7285c61841d1c2ec84ab92986878d9ef714fcaed"
+}

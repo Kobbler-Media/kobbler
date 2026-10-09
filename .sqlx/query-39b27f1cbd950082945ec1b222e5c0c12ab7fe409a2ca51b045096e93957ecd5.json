@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE movie_files SET media_cache_version = $2, media_cache_generated_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "39b27f1cbd950082945ec1b222e5c0c12ab7fe409a2ca51b045096e93957ecd5"
+}

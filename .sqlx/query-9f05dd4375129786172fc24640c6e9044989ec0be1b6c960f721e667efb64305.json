@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tv_episode_file_episodes t SET episode_id = $1\n                       WHERE t.episode_id = $2\n                         AND NOT EXISTS (\n                             SELECT 1 FROM tv_episode_file_episodes x\n                             WHERE x.episode_file_id = t.episode_file_id AND x.episode_id = $1\n                         )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9f05dd4375129786172fc24640c6e9044989ec0be1b6c960f721e667efb64305"
+}

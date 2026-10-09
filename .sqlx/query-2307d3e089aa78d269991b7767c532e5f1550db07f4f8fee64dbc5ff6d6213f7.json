@@ -1,0 +1,86 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, title, identifiers, auto_want_mode, content_category, sport_metadata\n        FROM tv_shows\n        WHERE is_monitored = TRUE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "identifiers"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "auto_want_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "auto_want_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "content_category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "content_category"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "sport_metadata",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "sport_metadata"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "2307d3e089aa78d269991b7767c532e5f1550db07f4f8fee64dbc5ff6d6213f7"
+}

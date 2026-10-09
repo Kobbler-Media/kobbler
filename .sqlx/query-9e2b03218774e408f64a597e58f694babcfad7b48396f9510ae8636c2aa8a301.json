@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE auth_tokens\n           SET expires_at = NOW() + make_interval(days => $2),\n               last_used_at = NOW(),\n               device_name = COALESCE($3, device_name),\n               client_kind = COALESCE($4, client_kind)\n           WHERE token_hash = $1 AND revoked = FALSE AND expires_at > NOW()\n           RETURNING expires_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "auth_tokens",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "9e2b03218774e408f64a597e58f694babcfad7b48396f9510ae8636c2aa8a301"
+}

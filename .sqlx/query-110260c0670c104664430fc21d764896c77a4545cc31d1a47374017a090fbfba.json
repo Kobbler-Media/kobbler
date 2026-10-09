@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO kindle_accounts (id, user_id, credentials_json, pending_verifier)\n        VALUES ($1, $2, '', $3)\n        ON CONFLICT (user_id)\n        DO UPDATE SET pending_verifier = EXCLUDED.pending_verifier\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "kindle_accounts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "110260c0670c104664430fc21d764896c77a4545cc31d1a47374017a090fbfba"
+}

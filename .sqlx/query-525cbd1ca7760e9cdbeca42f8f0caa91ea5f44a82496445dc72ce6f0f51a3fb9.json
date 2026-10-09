@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM series\n        WHERE is_monitored = false\n          AND NOT EXISTS (SELECT 1 FROM book_series WHERE series_id = series.id)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "525cbd1ca7760e9cdbeca42f8f0caa91ea5f44a82496445dc72ce6f0f51a3fb9"
+}

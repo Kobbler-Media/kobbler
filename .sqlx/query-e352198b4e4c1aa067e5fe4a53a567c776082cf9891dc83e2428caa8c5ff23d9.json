@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO entitlements (id, book_id, scope_type, scope_id, is_removed)\n        SELECT gen_random_uuid(), $1, 'DEVICE', unnest($2::uuid[]), FALSE\n        ON CONFLICT (book_id, scope_type, scope_id) DO UPDATE\n            SET is_removed = FALSE, updated_at = NOW()\n            WHERE entitlements.is_removed = TRUE\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e352198b4e4c1aa067e5fe4a53a567c776082cf9891dc83e2428caa8c5ff23d9"
+}

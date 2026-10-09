@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT q.id AS \"id!\", q.season_identifier AS \"season_identifier!\",\n               q.season_sort_order AS \"season_sort_order!\", q.title,\n               q.is_special AS \"is_special!\", q.episode_count\n        FROM (\n            SELECT ts.id, ts.season_identifier, ts.season_sort_order, ts.title,\n                   ts.is_special, ts.episode_count,\n                   EXISTS (\n                       SELECT 1 FROM tv_episodes te\n                       WHERE te.season_id = ts.id\n                         AND te.air_date IS NOT NULL\n                         AND te.air_date <= CURRENT_DATE\n                   ) AS has_aired\n            FROM tv_seasons ts\n            WHERE ts.show_id = $1 AND ts.is_special = FALSE AND ts.season_sort_order > 0\n        ) q\n        ORDER BY q.has_aired DESC,\n                 CASE WHEN q.has_aired THEN -q.season_sort_order ELSE q.season_sort_order END ASC,\n                 q.id ASC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "season_identifier!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "season_sort_order!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_sort_order"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "is_special!",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "is_special"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "episode_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "episode_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "cec8c6e2e2bb89ea511d220eff4ce406558ac79d9c3caa05a338b585efd790b2"
+}

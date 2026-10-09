@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT mc.id, mc.person_id, p.name AS person_name,\n               CASE WHEN p.images->'profile' IS NOT NULL\n                    AND (p.images->'profile'->>'source_url' IS NOT NULL OR p.images->'profile'->>'cached_at' IS NOT NULL)\n                    THEN '/api/v1/admin/people/' || p.id || '/image'\n                    ELSE NULL\n               END AS person_image_url,\n               mc.character_name, mc.cast_order\n        FROM movie_cast mc\n        JOIN people p ON p.id = mc.person_id\n        WHERE mc.movie_id = $1\n        ORDER BY mc.cast_order ASC NULLS LAST\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_cast",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "person_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_cast",
+            "name": "person_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "person_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "people",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "person_image_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "character_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_cast",
+            "name": "character_name"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "cast_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movie_cast",
+            "name": "cast_order"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      true,
+      true
+    ]
+  },
+  "hash": "26d70a0fb09af29808c41eff277d90a7f614e7085229a3f03162f0db9d1030c3"
+}

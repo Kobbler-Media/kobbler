@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_cache_version FROM audiobook_files WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_cache_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "media_cache_version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6fc8b2127f3a318472278fc4368282787fe31c4fd72910d672821def5bf9e536"
+}

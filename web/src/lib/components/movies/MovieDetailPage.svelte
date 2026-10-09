@@ -1,0 +1,726 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { on, off } from '$lib/services/eventstream.svelte';
+  import type {
+    Movie,
+    MovieFile,
+    MovieWatchState,
+    PlaybackSessionResponse,
+    SubtitleTrackInfo,
+    ExternalSubtitleInfo
+  } from '$lib/types';
+  import {
+    getMovieFiles,
+    getMovieWatchState,
+    updateMovieWatchState,
+    deleteMovieFile,
+    rejectDownload,
+    replaceFile,
+    searchMovieReleases,
+    queueMovieRelease,
+    wantMovie,
+    getMovieTracks
+  } from '$lib/api/client';
+  import { getStatsState } from '$lib/stores/stats.svelte';
+  import { usePlayback } from '$lib/composables/usePlayback.svelte';
+  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
+  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
+  import { showMessage } from '$lib/context/app.svelte';
+  import ContentPageView from '$lib/components/ContentPageView.svelte';
+  import PersonCard from '$lib/components/shared/PersonCard.svelte';
+  import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
+  import WatchToggle from '$lib/components/shared/WatchToggle.svelte';
+  import FilesList from '$lib/components/shared/FilesList.svelte';
+  import GenreChips from '$lib/components/GenreChips.svelte';
+  import { isActivelyWanted } from '$lib/utils/want-status';
+  import DualRatingStars from '$lib/components/DualRatingStars.svelte';
+  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
+  import SubtitlesList from '$lib/components/shared/SubtitlesList.svelte';
+  import SubtitleSearchModal from '$lib/components/shared/SubtitleSearchModal.svelte';
+  import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
+  import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
+  import EntityHero from '../shared/EntityHero.svelte';
+
+  interface Props {
+    movie: Movie;
+    syncing?: boolean;
+    onWant: () => void;
+    onUnwant: () => void;
+    onRefresh: () => void;
+    onDelete: () => void;
+    onClose: () => void;
+    onBack?: () => void;
+    onEdit?: () => void;
+    onCastClick?: (personId: string, personName: string) => void;
+    onGenreClick?: (genre: string) => void;
+    onMoveFile?: (fileId: string) => void;
+    onReanalyze?: (force?: boolean) => void;
+    onWatchlistToggle?: (inWatchlist: boolean) => void;
+    initialPlaybackSession?: PlaybackSessionResponse;
+  }
+
+  let {
+    movie,
+    syncing = false,
+    onWant,
+    onUnwant,
+    onRefresh,
+    onDelete,
+    onClose,
+    onBack,
+    onEdit,
+    onCastClick,
+    onGenreClick,
+    onMoveFile,
+    onReanalyze,
+    onWatchlistToggle,
+    initialPlaybackSession
+  }: Props = $props();
+
+  let files = $state<MovieFile[]>([]);
+  let watchState = $state<MovieWatchState | null>(null);
+  let loadingWatch = $state(false);
+  let deletingFileId = $state<string | null>(null);
+  let rejecting = $state(false);
+  let showReleaseSearch = $state(false);
+  let subtitleTracks = $state<SubtitleTrackInfo[]>([]);
+  let externalSubtitles = $state<ExternalSubtitleInfo[]>([]);
+  let showSubtitleSearch = $state(false);
+
+  const statsState = getStatsState();
+  const stats = $derived(statsState.stats);
+
+  const playback = usePlayback({
+    mediaType: 'movie',
+    refreshWatchState: async () => {
+      watchState = await getMovieWatchState(movie.id);
+    }
+  });
+
+  const stream = useStreamPlayback({
+    mediaType: 'movie',
+    getMediaId: () => movie.id,
+    getSearchParams: () => ({ movie_id: movie.id }),
+    getResumePosition: () => watchState?.position_seconds ?? undefined,
+    getEstimatedDuration: () => (movie.runtime ? movie.runtime * 60 : undefined),
+    playback,
+    onMessage: showMessage
+  });
+
+  // Debrid cache warming finishes after stream search has already returned, so
+  // fold its results into the option list: mark verified-cached and promote,
+  // otherwise auto-play keeps walking options warming has proven blocked.
+  $effect(() => {
+    const cb = on(
+      'stream_warm_ready',
+      (data: { info_hash: string; file_id?: number | null; debrid_provider_id: string }) => {
+        stream.markCached(data.info_hash, data.file_id ?? null, data.debrid_provider_id);
+      }
+    );
+    return () => off('stream_warm_ready', cb);
+  });
+
+  const runtime = $derived.by(() => {
+    if (!movie.runtime) return null;
+    const hours = Math.floor(movie.runtime / 60);
+    const mins = movie.runtime % 60;
+    if (hours === 0) return `${mins}m`;
+    return `${hours}h ${mins}m`;
+  });
+
+  const director = $derived.by(() => {
+    if (!movie.crew) return null;
+    const d = movie.crew.find((c) => c.job === 'Director');
+    return d?.person_name ?? null;
+  });
+
+  async function loadTracks() {
+    try {
+      const tracks = await getMovieTracks(movie.id);
+      subtitleTracks = tracks.files.flatMap((f) => f.subtitle_tracks);
+      externalSubtitles = tracks.files.flatMap((f) => f.external_subtitles);
+    } catch {
+      // Non-critical
+    }
+  }
+
+  async function loadDetails() {
+    loadingWatch = true;
+    try {
+      const [f, ws] = await Promise.all([getMovieFiles(movie.id), getMovieWatchState(movie.id)]);
+      files = f;
+      watchState = ws;
+    } catch (e) {
+      console.error('Failed to load movie details:', e);
+    } finally {
+      loadingWatch = false;
+    }
+    loadTracks();
+  }
+
+  /** Pre-warm the right thing: playback session for owned content, stream search for unowned. */
+  function preWarm() {
+    if (movie.is_in_library && files.length > 0) {
+      // Must match the resume logic in the Play button — if watched, start from beginning
+      const resumePos = watchState?.watched
+        ? undefined
+        : (watchState?.position_seconds ?? undefined);
+      playback.preWarm(files[0].id, resumePos);
+      return;
+    }
+    stream.preWarmStream();
+  }
+
+  onMount(() => {
+    loadDetails().then(() => {
+      if (initialPlaybackSession) {
+        playback.playSession(initialPlaybackSession);
+      } else {
+        preWarm();
+      }
+    });
+    return () => {
+      playback.teardownPreWarm();
+      stream.teardown();
+    };
+  });
+
+  let prevMovieId: string | undefined;
+  $effect(() => {
+    const id = movie.id;
+    if (prevMovieId !== undefined && prevMovieId !== id) {
+      loadTracks();
+      stream.reset();
+      playback.teardownPreWarm();
+      loadDetails().then(() => preWarm());
+    }
+    prevMovieId = id;
+  });
+
+  async function handleRatingChange(rating: number | null) {
+    try {
+      const result = await updateMovieWatchState(movie.id, { rating });
+      watchState = {
+        id: result.id,
+        movie_id: movie.id,
+        user_id: '',
+        watched: watchState?.watched ?? false,
+        watched_at: watchState?.watched_at ?? null,
+        position_seconds: watchState?.position_seconds ?? null,
+        rating,
+        created_at: watchState?.created_at ?? new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+    } catch {
+      showMessage('Failed to update rating');
+    }
+  }
+
+  async function toggleWatched() {
+    loadingWatch = true;
+    try {
+      const newWatched = !watchState?.watched;
+      const result = await updateMovieWatchState(movie.id, {
+        watched: newWatched,
+        watched_at: newWatched ? new Date().toISOString() : null
+      });
+      watchState = {
+        id: result.id,
+        movie_id: movie.id,
+        user_id: '',
+        watched: newWatched,
+        watched_at: newWatched ? new Date().toISOString() : null,
+        position_seconds: watchState?.position_seconds ?? null,
+        rating: watchState?.rating ?? null,
+        created_at: watchState?.created_at ?? new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      showMessage(newWatched ? 'Marked as watched' : 'Marked as unwatched');
+    } catch {
+      showMessage('Failed to update watch state');
+    } finally {
+      loadingWatch = false;
+    }
+  }
+
+  async function handleDeleteFile(fileId: string) {
+    if (!confirm('Delete this file? This cannot be undone.')) return;
+    deletingFileId = fileId;
+    try {
+      await deleteMovieFile(movie.id, fileId);
+      files = files.filter((f) => f.id !== fileId);
+      showMessage('File deleted');
+      onRefresh();
+    } catch (e) {
+      showMessage(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      deletingFileId = null;
+    }
+  }
+
+  async function handleReplace(fileId: string) {
+    if (!confirm('Replace this file? The current file will be deleted and a new search started.'))
+      return;
+    try {
+      await replaceFile('movie', movie.id, fileId);
+      showMessage('Replacement search started');
+      await loadDetails();
+      onRefresh();
+    } catch (e) {
+      showMessage(e instanceof Error ? e.message : 'Replace failed');
+    }
+  }
+
+  async function handleRejectAndResearch() {
+    rejecting = true;
+    try {
+      await rejectDownload('movie', movie.id);
+      showMessage('Download rejected — searching for new release');
+      showReleaseSearch = true;
+    } catch (e) {
+      showMessage(e instanceof Error ? e.message : 'Reject failed');
+    } finally {
+      rejecting = false;
+    }
+  }
+</script>
+
+<ContentPageView
+  noHeader={true}
+  noPadding={true}
+  pageBackdropUrl={movie.backdrop_url || movie.poster_url}
+  {onBack}
+  {onClose}
+  {onRefresh}
+  {onEdit}
+  {syncing}
+>
+  {#snippet headerActions()}
+    <button
+      type="button"
+      class="glass-btn"
+      class:syncing
+      onclick={onRefresh}
+      title={syncing ? 'Syncing metadata...' : 'Refresh'}
+    >
+      <span class="material-icons-outlined" class:spin={syncing}>refresh</span>
+    </button>
+    {#if onReanalyze}
+      <button
+        type="button"
+        class="glass-btn"
+        onclick={() => onReanalyze?.(false)}
+        title="Re-analyze Media"
+      >
+        <span class="material-icons-outlined">science</span>
+      </button>
+      <button
+        type="button"
+        class="glass-btn"
+        onclick={() => onReanalyze?.(true)}
+        title="Force Re-analyze (rebuild cache from scratch, ignore manifest)"
+      >
+        <span class="material-icons-outlined">autorenew</span>
+      </button>
+    {/if}
+    {#if onEdit}
+      <button type="button" class="glass-btn" onclick={onEdit} title="Edit">
+        <span class="material-icons-outlined">edit</span>
+      </button>
+    {/if}
+    <button type="button" class="glass-btn" onclick={onClose} title="Close">
+      <span class="material-icons-outlined">close</span>
+    </button>
+  {/snippet}
+  <EntityHero
+    title={movie.title}
+    coverUrl={movie.poster_url}
+    backdropUrl={movie.backdrop_url}
+    logoUrl={movie.logo_url}
+    description={movie.description}
+  >
+    {#snippet ratingContent()}
+      <DualRatingStars
+        communityRating={movie.rating}
+        communityRatingCount={movie.rating_count ?? null}
+        userRating={watchState?.rating ?? null}
+        size="small"
+        editable={true}
+        onRatingChange={handleRatingChange}
+      />
+    {/snippet}
+
+    {#snippet actions()}
+      {#if files.length > 0}
+        <PlaybackArea
+          positionSeconds={watchState?.position_seconds ?? null}
+          totalSeconds={movie.runtime ? movie.runtime * 60 : null}
+          watched={watchState?.watched ?? false}
+          loading={playback.startingFileId !== null}
+          variant="hero"
+          onPlay={() =>
+            playback.play(
+              files[0].id,
+              undefined,
+              watchState?.watched ? undefined : (watchState?.position_seconds ?? undefined)
+            )}
+        />
+      {:else if stats.kobload_configured}
+        <PlaybackArea
+          mode="stream"
+          positionSeconds={watchState?.position_seconds ?? null}
+          totalSeconds={movie.runtime ? movie.runtime * 60 : null}
+          watched={watchState?.watched ?? false}
+          loading={stream.resolving || stream.streamLoading}
+          variant="hero"
+          onPlay={stream.autoPlay}
+          onPickStream={stream.openModal}
+        />
+      {/if}
+
+      <WatchToggle
+        watched={watchState?.watched ?? false}
+        loading={loadingWatch}
+        onToggle={toggleWatched}
+      />
+
+      {#if onWatchlistToggle}
+        <button
+          class="btn btn-outline"
+          class:watchlist-active={movie.in_watchlist}
+          type="button"
+          onclick={() => onWatchlistToggle?.(!movie.in_watchlist)}
+          title={movie.in_watchlist
+            ? 'Remove from your watch list'
+            : 'Add to your watch list — shows up in Up Next'}
+        >
+          <span class="material-icons-outlined">
+            {movie.in_watchlist ? 'playlist_add_check' : 'playlist_add'}
+          </span>
+          {movie.in_watchlist ? 'On My List' : 'Want to Watch'}
+        </button>
+      {/if}
+
+      {#if isActivelyWanted(movie.want_status)}
+        <button class="btn btn-outline" type="button" onclick={onUnwant}>
+          <span class="material-icons-outlined">close</span>
+          Remove from Wanted
+        </button>
+      {:else if !movie.is_in_library}
+        <button class="btn btn-primary" type="button" onclick={onWant}>
+          <span class="material-icons-outlined">bookmark_add</span>
+          Want
+        </button>
+      {/if}
+
+      <button class="btn btn-danger-icon" type="button" onclick={onDelete} title="Delete">
+        <span class="material-icons-outlined">delete</span>
+      </button>
+    {/snippet}
+
+    {#snippet meta()}
+      <div class="hero-meta-snippet">
+        {#if movie.year}<span>{movie.year}</span>{/if}
+        {#if movie.year && (runtime || movie.content_rating || director)}<span class="sep">·</span
+          >{/if}
+        {#if runtime}<span>{runtime}</span>{/if}
+        {#if runtime && (movie.content_rating || director)}<span class="sep">·</span>{/if}
+        {#if movie.content_rating}<span class="content-rating">{movie.content_rating}</span>{/if}
+        {#if movie.content_rating && director}<span class="sep">·</span>{/if}
+        {#if director}<span>Directed by <strong>{director}</strong></span>{/if}
+      </div>
+      {#if movie.genres && movie.genres.length > 0}
+        <div class="hero-genres">
+          <GenreChips
+            genres={movie.genres}
+            size="small"
+            clickable={!!onGenreClick}
+            {onGenreClick}
+          />
+        </div>
+      {/if}
+    {/snippet}
+  </EntityHero>
+
+  <div class="full-page-main-grid page-container">
+    <div class="details-column">
+      <!-- Cast -->
+      {#if movie.cast && movie.cast.length > 0}
+        <div class="section card-section">
+          <div class="label">Cast</div>
+          <div class="cast-grid">
+            {#each movie.cast.slice(0, 12) as member (member.id)}
+              {#if onCastClick}
+                <button
+                  type="button"
+                  class="cast-btn"
+                  onclick={() => onCastClick?.(member.person_id, member.person_name)}
+                >
+                  <PersonCard
+                    name={member.person_name}
+                    role={member.character_name}
+                    imageUrl={member.person_image_url}
+                  />
+                </button>
+              {:else}
+                <PersonCard
+                  name={member.person_name}
+                  role={member.character_name}
+                  imageUrl={member.person_image_url}
+                />
+              {/if}
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <div class="actions-column">
+      <!-- Files -->
+      {#if files.length > 0}
+        <div class="section card-section">
+          <div class="label">Files</div>
+          <FilesList
+            {files}
+            {deletingFileId}
+            startingPlaybackFileId={playback.startingFileId}
+            onPlay={(fileId) => playback.play(fileId)}
+            onDelete={handleDeleteFile}
+            onMove={onMoveFile}
+            onReplace={handleReplace}
+            onSearchReleases={stats.kobload_configured
+              ? () => (showReleaseSearch = true)
+              : undefined}
+            onRejectAndResearch={handleRejectAndResearch}
+            {rejecting}
+          />
+        </div>
+      {/if}
+
+      {#if files.length > 0}
+        <div class="section card-section">
+          <SubtitlesList
+            {subtitleTracks}
+            {externalSubtitles}
+            onSearchSubtitles={() => (showSubtitleSearch = true)}
+          />
+        </div>
+      {/if}
+    </div>
+  </div>
+</ContentPageView>
+
+{#if playback.isActive}
+  <VideoPlayer
+    sessionResponse={playback.session}
+    creationParams={playback.session
+      ? {
+          media_type: 'movie',
+          file_id: playback.playingFileId!,
+          capabilities: playback.capabilities!
+        }
+      : undefined}
+    mediaId={movie.id}
+    mediaInfo={{ title: movie.title, artworkUrl: movie.poster_url ?? undefined }}
+    initialPosition={watchState?.watched ? undefined : (watchState?.position_seconds ?? undefined)}
+    pendingStatus={stream.pendingStatus ?? undefined}
+    pendingError={stream.cachingError ?? undefined}
+    onClose={() => {
+      stream.abort();
+      playback.close();
+    }}
+    onSwitchStream={stream.handleSwitchStream}
+    onPickStream={() => {
+      stream.closeCachingOverlay();
+      stream.openModal();
+    }}
+    onRetryStream={stream.retryCaching}
+  />
+{/if}
+
+{#if showReleaseSearch}
+  <ReleaseSearchModal
+    entityTitle={movie.title}
+    initialQuery={movie.title}
+    onClose={() => (showReleaseSearch = false)}
+    searchFn={(query) => searchMovieReleases(movie.id, query)}
+    smartSearchFn={() => searchMovieReleases(movie.id)}
+    queueFn={async (release, source) => {
+      await queueMovieRelease(movie.id, release, source);
+      await loadDetails();
+      onRefresh();
+    }}
+    wantFn={async () => {
+      await wantMovie(movie.id);
+      await loadDetails();
+      onRefresh();
+    }}
+  />
+{/if}
+
+{#if showSubtitleSearch && files.length > 0}
+  <SubtitleSearchModal
+    mediaType="movie"
+    entityId={movie.id}
+    fileId={files[0].id}
+    onClose={() => (showSubtitleSearch = false)}
+    onDownloaded={() => {
+      showSubtitleSearch = false;
+      loadTracks();
+    }}
+  />
+{/if}
+
+{#if stream.showStreamModal}
+  <StreamOptionsModal
+    options={stream.streamOptions}
+    loading={stream.streamLoading}
+    errors={stream.streamErrors}
+    onClose={stream.closeModal}
+    onPlay={stream.playOption}
+  />
+{/if}
+
+{#if stream.isCaching && !playback.isActive}
+  <StreamCachingOverlay
+    progress={stream.cachingProgress ?? 0}
+    error={stream.cachingError}
+    onCancel={stream.closeCachingOverlay}
+    onRetry={stream.retryCaching}
+    onPickStream={() => {
+      stream.closeCachingOverlay();
+      stream.openModal();
+    }}
+  />
+{/if}
+
+<style>
+  .full-page-main-grid {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 32px;
+    align-items: start;
+  }
+
+  .details-column,
+  .actions-column {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    min-width: 0;
+  }
+
+  .card-section {
+    background: var(--card);
+    border: 1px solid var(--ring);
+    border-radius: 16px;
+    padding: 24px;
+  }
+
+  .hero-meta-snippet {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .sep {
+    opacity: 0.5;
+  }
+
+  .content-rating {
+    padding: 2px 8px;
+    border: 1px solid var(--muted);
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+  }
+
+  .hero-genres {
+    margin-top: 6px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 100px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+  }
+
+  .btn-outline.watchlist-active {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .btn-danger-icon {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid var(--ring);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-danger-icon:hover {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .label {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+  }
+
+  .cast-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+  }
+
+  .cast-btn {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    border-radius: 12px;
+    transition: all 0.2s;
+  }
+
+  .cast-btn:hover {
+    background: var(--bg-2);
+    transform: translateY(-2px);
+  }
+
+  @media (max-width: 1100px) {
+    .full-page-main-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .actions-column {
+      order: -1;
+    }
+  }
+</style>

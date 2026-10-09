@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE books SET want_status = $2, updated_at = NOW()\n        WHERE id = $1\n        AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = books.id)\n                 OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = books.id))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "abd49c60e1a88c7ba7e1159efdd6f04549882a59c407a3040265bc1e7339b031"
+}

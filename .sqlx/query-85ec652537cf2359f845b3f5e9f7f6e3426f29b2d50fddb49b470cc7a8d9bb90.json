@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_sources SET channel_id = $2 WHERE channel_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "85ec652537cf2359f845b3f5e9f7f6e3426f29b2d50fddb49b470cc7a8d9bb90"
+}

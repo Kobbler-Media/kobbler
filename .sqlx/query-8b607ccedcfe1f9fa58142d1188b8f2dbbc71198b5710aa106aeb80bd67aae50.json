@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM books\n        WHERE want_status = 'none'\n          AND updated_at < NOW() - INTERVAL '30 minutes'\n          AND NOT EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = books.id)\n          AND NOT EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = books.id)\n          AND NOT EXISTS (\n              SELECT 1 FROM media_root_files mrf\n              WHERE mrf.entity_id = books.id AND mrf.entity_type = 'book'\n          )\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8b607ccedcfe1f9fa58142d1188b8f2dbbc71198b5710aa106aeb80bd67aae50"
+}

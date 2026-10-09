@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, name, identifiers, auto_want_mode, monitoring_started_at\n        FROM authors\n        WHERE is_monitored = TRUE\n          AND identifiers->>'hardcover' IS NOT NULL\n          AND (next_metadata_refresh_at IS NULL OR next_metadata_refresh_at <= NOW())\n        ORDER BY last_metadata_refresh_at ASC NULLS FIRST\n        LIMIT $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "identifiers"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "auto_want_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "auto_want_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "monitoring_started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "monitoring_started_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "d72f4f3c4e5f7bb65ced2a71c4deb9e8cd9b389d63b7388bc3d4c285d0074ed9"
+}

@@ -1,0 +1,148 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, transport, target, message_id, entity_kind, entity_id, label,\n               user_id, last_state, created_at, expires_at\n        FROM chat_watches\n        WHERE entity_id = ANY($1) AND expires_at > NOW()\n        ORDER BY created_at, id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "transport",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "transport"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "target"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "message_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "message_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "entity_kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "entity_kind"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "entity_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "entity_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "label"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "last_state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "last_state"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "f02a97a862077c18f9d397b99bcf12c23723f17692069b062c5ace1d68ce8335"
+}

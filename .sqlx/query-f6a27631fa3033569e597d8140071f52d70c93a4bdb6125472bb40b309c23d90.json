@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) AS \"count!\"\n        FROM chat_pairing_codes\n        WHERE transport = $1 AND external_id = $2\n          AND created_at > NOW() - make_interval(secs => $3::double precision)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f6a27631fa3033569e597d8140071f52d70c93a4bdb6125472bb40b309c23d90"
+}

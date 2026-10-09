@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, transport, space, thread, user_id, updated_at FROM chat_sessions WHERE transport = $1 AND user_id = $2 AND closed_at IS NULL AND updated_at >= $3 ORDER BY updated_at DESC, id DESC LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "transport",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "transport"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "space",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "space"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "thread",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "thread"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "fac0d02e9ec96198f7200fe2baa5b720a58669246d54f1d34e131f2d79257f80"
+}

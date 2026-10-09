@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE livetv_ad_fingerprints SET seen_count = seen_count + 1, last_seen_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1489765d5a599bea2d68b1a335a272dbd4af13050c0dda886b13d0ec48c9927a"
+}

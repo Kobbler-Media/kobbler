@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reading_states SET client_payload = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d0c342fc7c28b6dc0a2fdb01ebf3b5c967b52e0c853d0b48ecebe0ebb15223f"
+}

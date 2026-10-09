@@ -1,0 +1,167 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO livetv_tuners (id, device_id, friendly_name, model_number, firmware_version,\n                                   base_url, device_auth, tuner_count)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n        ON CONFLICT (device_id) DO UPDATE SET\n            friendly_name = EXCLUDED.friendly_name,\n            model_number = EXCLUDED.model_number,\n            firmware_version = EXCLUDED.firmware_version,\n            base_url = EXCLUDED.base_url,\n            device_auth = EXCLUDED.device_auth,\n            tuner_count = EXCLUDED.tuner_count,\n            updated_at = NOW()\n        RETURNING id, device_id, friendly_name, model_number, firmware_version, base_url,\n                  device_auth, tuner_count, last_scan_at, last_guide_sync_at, created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "device_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "device_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "friendly_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "friendly_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "model_number",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "model_number"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "firmware_version",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "firmware_version"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "base_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "base_url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "device_auth",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "device_auth"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "tuner_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "tuner_count"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "last_scan_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "last_scan_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "last_guide_sync_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "last_guide_sync_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "b42592187d675b5b1d30d72e107aaef6844264fd75874c5d01bc8be68c3e9011"
+}

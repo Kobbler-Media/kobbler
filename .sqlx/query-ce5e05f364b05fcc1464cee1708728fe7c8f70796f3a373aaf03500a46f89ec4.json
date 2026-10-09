@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE proxy_logs SET\n            request_body = $2,\n            request_body_size = $3,\n            upstream_status = $4,\n            upstream_headers = $5,\n            upstream_body = $6,\n            upstream_body_size = $7,\n            response_status = $8,\n            response_headers = $9,\n            response_body = $10,\n            response_body_size = $11,\n            upstream_url = $12,\n            upstream_duration_ms = $13,\n            total_duration_ms = $14,\n            severity = $15,\n            notes = $16,\n            request_blob_path = $17,\n            response_blob_path = $18,\n            original_response_headers = $19,\n            status = $20,\n            entity_refs = $21,\n            has_alert = $22,\n            alert_message = $23\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8",
+        "Int2",
+        "Jsonb",
+        "Text",
+        "Int8",
+        "Int2",
+        "Jsonb",
+        "Text",
+        "Int8",
+        "Text",
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Jsonb",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ce5e05f364b05fcc1464cee1708728fe7c8f70796f3a373aaf03500a46f89ec4"
+}

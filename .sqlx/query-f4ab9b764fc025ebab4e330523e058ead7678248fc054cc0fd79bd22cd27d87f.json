@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT af.id FROM audiobook_files af\n         JOIN media_root_files mrf\n           ON (mrf.file_path = af.file_path OR mrf.file_path = af.source_path)\n           AND mrf.available = true\n         WHERE af.media_cache_version < $1\n           AND af.duration_seconds IS NOT NULL\n           AND af.available = true\n         ORDER BY af.added_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f4ab9b764fc025ebab4e330523e058ead7678248fc054cc0fd79bd22cd27d87f"
+}

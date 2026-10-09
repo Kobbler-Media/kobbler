@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO iptv_sync_log (id, provider_id, status)\n        VALUES ($1, $2, 'running')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7bda70fcbebb216416860686e8471f44b65242352e1b76a0be04dd56e635d6ba"
+}

@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT segments, pipeline_version, generated_at\n        FROM movie_cached_segments\n        WHERE movie_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "segments",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movie_cached_segments",
+            "name": "segments"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pipeline_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movie_cached_segments",
+            "name": "pipeline_version"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "generated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "movie_cached_segments",
+            "name": "generated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "302adfbfe2021d6510766a6778443c5920888f0e350797b19f1c719a56487495"
+}

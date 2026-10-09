@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.name\n        FROM authors a\n        JOIN book_authors ba ON ba.author_id = a.id\n        WHERE ba.book_id = $1\n        ORDER BY a.name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4b4e8f170344e899e8ae1daec4a5bfdfb5e6f6de079d857b309a7114cd62eca0"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, position_seconds)\n                        VALUES ($1, $2, $3, FALSE, $4)\n                        ON CONFLICT (episode_id, user_id)\n                        DO UPDATE SET position_seconds = $4, updated_at = NOW()\n                        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a0c13e7a6374b515889b11caf35e35a85fe310ab7e0120d519807217c8066670"
+}

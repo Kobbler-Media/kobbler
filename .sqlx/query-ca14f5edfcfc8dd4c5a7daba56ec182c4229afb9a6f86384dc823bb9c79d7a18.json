@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT rejected_releases FROM movies WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "rejected_releases",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "rejected_releases"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ca14f5edfcfc8dd4c5a7daba56ec182c4229afb9a6f86384dc823bb9c79d7a18"
+}

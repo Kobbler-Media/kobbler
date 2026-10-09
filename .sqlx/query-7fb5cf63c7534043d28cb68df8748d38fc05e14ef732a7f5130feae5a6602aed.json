@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id AS \"id!\", file_path AS \"file_path!\" FROM movie_files WHERE available = TRUE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_path!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "file_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "7fb5cf63c7534043d28cb68df8748d38fc05e14ef732a7f5130feae5a6602aed"
+}

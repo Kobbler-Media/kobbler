@@ -1,0 +1,173 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT a.id, a.name, a.identifiers, a.images, a.bio,\n               a.is_monitored, a.auto_want_mode, a.known_book_count, a.metadata,\n               COUNT(DISTINCT CASE WHEN (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)) THEN ba.book_id END) AS \"book_count!\",\n               COUNT(DISTINCT CASE WHEN (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)) THEN bks.series_id END) AS \"series_count!\",\n               COUNT(DISTINCT ba.book_id) AS \"total_book_count!\",\n               COUNT(DISTINCT bks.series_id) AS \"total_series_count!\",\n               COUNT(DISTINCT CASE WHEN b.want_status = 'wanted' THEN ba.book_id END) AS \"wanted_count!\",\n               (\n                 SELECT COALESCE(array_agg(id), ARRAY[]::uuid[])\n                 FROM (\n                   SELECT b2.id FROM books b2\n                   JOIN book_authors ba3 ON ba3.book_id = b2.id\n                   WHERE ba3.author_id = a.id AND (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b2.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b2.id))\n                   ORDER BY b2.created_at DESC\n                   LIMIT 3\n                 ) sub\n               ) AS \"sample_book_ids!: Vec<Uuid>\",\n               (\n                 SELECT string_agg(s_name, ', ')\n                 FROM (\n                   SELECT DISTINCT s.name AS s_name FROM series s\n                   JOIN book_series bs2 ON bs2.series_id = s.id\n                   JOIN book_authors ba2 ON ba2.book_id = bs2.book_id\n                   WHERE ba2.author_id = a.id\n                   ORDER BY s_name\n                   LIMIT 3\n                 ) sub2\n               ) AS top_series_names\n        FROM authors a\n        LEFT JOIN book_authors ba ON ba.author_id = a.id\n        LEFT JOIN books b ON b.id = ba.book_id\n        LEFT JOIN book_series bks ON bks.book_id = b.id AND bks.is_primary = TRUE\n        WHERE a.id = $1\n        GROUP BY a.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "identifiers"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "images",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "bio",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "bio"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "is_monitored",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "is_monitored"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "auto_want_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "auto_want_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "known_book_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "known_book_count"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "metadata",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "metadata"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "book_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "series_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "total_book_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "total_series_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "wanted_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "sample_book_ids!: Vec<Uuid>",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "top_series_names",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9a0673efaae5520ed3e6b0158deb975eca11a42adc63011e09f35bf744de38c5"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE wanted_attempts SET status = 'cancelled', message = 'Cancelled by user' WHERE external_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0facaaec5b29cf20aae0c2739011b14855bb3411862aa206da8dc1cd6e7e5622"
+}

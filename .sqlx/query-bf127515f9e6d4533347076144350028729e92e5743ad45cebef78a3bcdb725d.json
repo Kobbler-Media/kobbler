@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT w.channel_id, w.series_id, w.started_at, w.watched_secs, w.programme_secs,\n               g.genres AS \"genres?\"\n        FROM livetv_watch_events w\n        LEFT JOIN livetv_guide g ON g.id = w.guide_id\n        WHERE w.user_id = $1 AND w.started_at >= $2\n        ORDER BY w.started_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_watch_events",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "series_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_watch_events",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_watch_events",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "watched_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_watch_events",
+            "name": "watched_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "programme_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_watch_events",
+            "name": "programme_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "genres?",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "genres"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "bf127515f9e6d4533347076144350028729e92e5743ad45cebef78a3bcdb725d"
+}

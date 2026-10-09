@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT (watched_secs::float8 / programme_secs::float8) AS \"completion!\",\n               started_at\n        FROM livetv_watch_events\n        WHERE user_id = $1 AND series_id = $2\n          AND programme_secs IS NOT NULL AND programme_secs > 0\n        ORDER BY started_at DESC\n        LIMIT $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "completion!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_watch_events",
+            "name": "started_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      false
+    ]
+  },
+  "hash": "16134e2051571bed4e407d3a2d286c10a2796637620aeb77db98225c73d3bd16"
+}

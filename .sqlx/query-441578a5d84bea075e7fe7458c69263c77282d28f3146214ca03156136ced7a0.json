@@ -1,0 +1,316 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, file_path, file_size, file_fingerprint, format, quality,\n               languages, subtitles, source_type, source_metadata, available, created_at,\n               video_codec, video_width, video_height, video_bitrate_kbps,\n               framerate, bit_depth, is_hdr, hdr_format, is_interlaced,\n               duration_seconds, container, overall_bitrate_kbps, keyframes\n        FROM tv_episode_files\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "file_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "file_size"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "file_fingerprint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "file_fingerprint"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "format"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "quality",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "quality"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "languages",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "languages"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "subtitles",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "subtitles"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "source_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "source_type"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "source_metadata",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "source_metadata"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "available",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "available"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "video_codec",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "video_codec"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "video_width",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "video_width"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "video_height",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "video_height"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "video_bitrate_kbps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "video_bitrate_kbps"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "framerate",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "framerate"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "bit_depth",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "bit_depth"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "is_hdr",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "is_hdr"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "hdr_format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "hdr_format"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "is_interlaced",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "is_interlaced"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "duration_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "duration_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "container",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "container"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "overall_bitrate_kbps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "overall_bitrate_kbps"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "keyframes",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "keyframes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "441578a5d84bea075e7fe7458c69263c77282d28f3146214ca03156136ced7a0"
+}

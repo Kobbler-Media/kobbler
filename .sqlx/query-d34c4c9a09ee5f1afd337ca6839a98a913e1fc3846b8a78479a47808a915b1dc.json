@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_series_rules SET\n            title_pattern = COALESCE($2, title_pattern),\n            channel_id = COALESCE($3, channel_id),\n            record_new_only = COALESCE($4, record_new_only),\n            keep_count = COALESCE($5, keep_count),\n            pre_padding_secs = COALESCE($6, pre_padding_secs),\n            post_padding_secs = COALESCE($7, post_padding_secs),\n            enabled = COALESCE($8, enabled)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Bool",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d34c4c9a09ee5f1afd337ca6839a98a913e1fc3846b8a78479a47808a915b1dc"
+}

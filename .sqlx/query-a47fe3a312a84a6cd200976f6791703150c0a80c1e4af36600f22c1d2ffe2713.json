@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM people\n        WHERE is_monitored = false\n          AND NOT EXISTS (SELECT 1 FROM movie_cast WHERE person_id = people.id)\n          AND NOT EXISTS (SELECT 1 FROM movie_crew WHERE person_id = people.id)\n          AND NOT EXISTS (SELECT 1 FROM tv_cast WHERE person_id = people.id)\n          AND NOT EXISTS (SELECT 1 FROM tv_crew WHERE person_id = people.id)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "people",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a47fe3a312a84a6cd200976f6791703150c0a80c1e4af36600f22c1d2ffe2713"
+}

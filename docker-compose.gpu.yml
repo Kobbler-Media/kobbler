@@ -1,0 +1,157 @@
+# Kobbler — optional GPU engines overlay.
+#
+# Three self-hosted inference services that Kobbler will use if you point it at
+# them. All of them need an NVIDIA GPU and the NVIDIA container toolkit; none of
+# them is required for a working Kobbler.
+#
+#   tts-breeze        text-to-speech        (config: tts_service_url)
+#   stt-parakeet-cpp  speech-to-text        (config: stt_service_url)
+#   siglip2           image/text embeddings (config: vision_service_url)
+#
+# Run it alongside the core stack:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# The matching defaults are already in config/kobbler.toml.example
+# (http://tts-breeze:8203, http://stt-parakeet-cpp:8023, http://siglip2:8890) —
+# services on the same compose network resolve each other by service name.
+#
+# Each service builds from a ggml port maintained outside this repository, pinned
+# by the *_REPO / *_REF variables (override them in .env). Model weights are never baked into the images — they are
+# either bind-mounted from the host or downloaded into a named volume on first
+# start, so nothing licence-encumbered ends up in an image layer.
+
+services:
+  # BreezeTTS 2 on ggml. Exposes /v1/audio/speech (wav | pcm | SSE with
+  # interleaved alignment events) and /v1/audio/voices CRUD with multipart
+  # voice cloning.
+  #
+  # Breeze-TTS-2 weights are research / non-commercial licensed. Check the
+  # licence before using this for anything but personal evaluation.
+  tts-breeze:
+    image: kobbler-tts-breeze:latest
+    build:
+      context: ./docker/tts-breeze
+      args:
+        BREEZE_REPO: "${BREEZE_REPO:-https://github.com/dbrain/hbd-qwen3-tts.cpp.git}"
+        BREEZE_REF: "${BREEZE_REF:-d022511}"
+        BREEZE_CUDA_ARCHS: "${BREEZE_CUDA_ARCHS:-86;89;120}"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${TTS_BREEZE_PORT:-8803}:8203"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - breeze-voices:/app/voices
+      - ${BREEZE_MODELS_DIR:-./data/models}:/models:ro
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      BREEZE_MODEL: "${BREEZE_MODEL:-breeze-tts-2-v2-Q4_K_M.gguf}"
+      # Keeps the ~926 MiB text encoder in host RAM. Bit-identical audio, ~1.7%
+      # slower, and it is what keeps streaming long-form under ~2.3 GiB VRAM.
+      BREEZE_TEXT_ENC_CPU: "${BREEZE_TEXT_ENC_CPU:-1}"
+      BREEZE_WORKER_ISOLATION: "1"
+      BREEZE_IDLE_UNLOAD_SECONDS: "${BREEZE_IDLE_UNLOAD_SECONDS:-300}"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8203/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Parakeet-TDT speech-to-text on ggml (CrispASR). Used for audiobook
+  # transcripts and video subtitle generation. The image downloads its own GGUF
+  # on first request into the parakeet-cpp-models volume.
+  stt-parakeet-cpp:
+    image: kobbler-stt-parakeet:latest
+    build:
+      context: ./docker/stt-parakeet-cpp
+      args:
+        PARAKEET_REPO: "${PARAKEET_REPO:-https://github.com/dbrain/hbd-CrispASR.git}"
+        PARAKEET_REF: "${PARAKEET_REF:-457252dd}"
+        PARAKEET_CUDA_ARCHS: "${PARAKEET_CUDA_ARCHS:-86;89;120}"
+        PARAKEET_FORCE_MMQ: "${PARAKEET_FORCE_MMQ:-OFF}"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${STT_PARAKEET_PORT:-8023}:8023"
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # Lowercase, matched against the model registry's HF filenames:
+      # q4_k (smallest) / q5_0 / q8_0 / f16.
+      PARAKEET_MODEL_QUANT: ${PARAKEET_MODEL_QUANT:-q8_0}
+      PARAKEET_LAZY_LOAD: "1"
+      PARAKEET_IDLE_UNLOAD_SECONDS: "${PARAKEET_IDLE_UNLOAD_SECONDS:-300}"
+      PARAKEET_WORKER_ISOLATION: "${PARAKEET_WORKER_ISOLATION:-1}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - parakeet-cpp-models:/root/.cache/huggingface
+      # Read-only view of the library so transcription can read source audio.
+      - ${KOBBLER_MEDIA_ROOT:-./data/media}:/media:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8023/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # SigLIP-2 image/text embeddings, used for visual search, auto-tagging and
+  # ad/skip detection. Fetches its GGUF into the siglip2-models volume on first
+  # start; see SIGLIP2_HF_REPO in .env.example.
+  siglip2:
+    image: kobbler-siglip2:latest
+    build:
+      context: ./docker/siglip2
+      additional_contexts:
+        # Point SIGLIP2_SRC at a local siglip2.cpp checkout to build from a
+        # working tree instead of cloning SIGLIP2_REPO.
+        siglip2_src: "${SIGLIP2_SRC:-docker-image://scratch}"
+      args:
+        SIGLIP2_REPO: "${SIGLIP2_REPO:-https://github.com/dbrain/hbd-siglip2.cpp.git}"
+        SIGLIP2_REF: "${SIGLIP2_REF:-6bd2ceb}"
+        SIGLIP2_CUDA_ARCHS: "${SIGLIP2_CUDA_ARCHS:-86;89;120}"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${SIGLIP2_PORT:-18890}:8890"
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      SIGLIP2_HF_REPO: "${SIGLIP2_HF_REPO:-dbrains/SigLIP2-So400m-Patch16-NaFlex-GGUF}"
+      SIGLIP2_QUANT: "${SIGLIP2_QUANT:-q8_0}"
+      LAZY_LOAD: "1"
+      IDLE_UNLOAD_SECONDS: "${SIGLIP2_IDLE_UNLOAD_SECONDS:-300}"
+      SIGLIP2_WORKER_ISOLATION: "${SIGLIP2_WORKER_ISOLATION:-1}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - siglip2-models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8890/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+
+volumes:
+  # Cloned voices (npy codes + sidecars) — back this up.
+  breeze-voices:
+  # Model caches; safe to drop, they re-download.
+  parakeet-cpp-models:
+  siglip2-models:

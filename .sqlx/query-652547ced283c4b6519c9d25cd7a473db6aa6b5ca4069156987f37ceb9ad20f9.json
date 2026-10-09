@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.media_root_id AS \"media_root_id?: Uuid\"\n        FROM tv_seasons ss\n        JOIN tv_shows s ON s.id = ss.show_id\n        WHERE ss.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_root_id?: Uuid",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "media_root_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "652547ced283c4b6519c9d25cd7a473db6aa6b5ca4069156987f37ceb9ad20f9"
+}

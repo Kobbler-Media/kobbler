@@ -1,0 +1,136 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT b.id, b.title, b.description, b.language, b.publisher, b.pubdate,\n               bks.series_id, s.name AS series_name, bks.series_index,\n               b.identifiers\n        FROM books b\n        JOIN book_series bks ON bks.book_id = b.id AND bks.series_id = $1\n        JOIN series s ON s.id = bks.series_id\n        WHERE (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n        ORDER BY bks.series_index NULLS LAST, b.title\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "publisher",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "publisher"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "pubdate",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "pubdate"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "series_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "series_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "series_index",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_index"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "identifiers"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "e686e4ef7435258bc4854b0287ea6e1136db593796f5d4d5347a8a8cef6882c5"
+}

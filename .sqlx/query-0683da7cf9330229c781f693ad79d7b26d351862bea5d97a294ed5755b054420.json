@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE authors SET metadata = COALESCE(metadata, '{}'::jsonb) || $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0683da7cf9330229c781f693ad79d7b26d351862bea5d97a294ed5755b054420"
+}

@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT enabled, triggers, muted_until, quiet_from, quiet_to\n        FROM chat_notification_prefs\n        WHERE user_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "chat_notification_prefs",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "triggers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "chat_notification_prefs",
+            "name": "triggers"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "muted_until",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chat_notification_prefs",
+            "name": "muted_until"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "quiet_from",
+        "type_info": "Time",
+        "origin": {
+          "Table": {
+            "table": "chat_notification_prefs",
+            "name": "quiet_from"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "quiet_to",
+        "type_info": "Time",
+        "origin": {
+          "Table": {
+            "table": "chat_notification_prefs",
+            "name": "quiet_to"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2ba82a59ed550ac3429424dcd0fe2dc359cfb71f34b177a86e5999283f2c0d6a"
+}

@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            c.id,\n            c.audiobook_file_id,\n            af.file_path,\n            af.duration_seconds AS file_duration_seconds,\n            c.chapter_index,\n            c.title,\n            c.start_seconds,\n            c.end_seconds,\n            c.source\n        FROM audiobook_chapters c\n        JOIN audiobook_files af ON af.id = c.audiobook_file_id\n        WHERE af.book_id = $1\n        ORDER BY af.file_index, af.file_path, c.chapter_index\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_chapters",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "audiobook_file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_chapters",
+            "name": "audiobook_file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "file_duration_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "duration_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "chapter_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "audiobook_chapters",
+            "name": "chapter_index"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audiobook_chapters",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "start_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "audiobook_chapters",
+            "name": "start_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "end_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "audiobook_chapters",
+            "name": "end_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audiobook_chapters",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e0565b2999a9e60296f65b2fbe89782a00bdb46bcd65bce4151859002847c38e"
+}

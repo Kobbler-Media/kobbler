@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, watched_at, position_seconds)\n        SELECT gen_random_uuid(), e.id, $1, TRUE, $2, NULL\n        FROM tv_episodes e\n        WHERE e.id = ANY($3)\n        ON CONFLICT (episode_id, user_id)\n        DO UPDATE SET\n            watched = TRUE,\n            watched_at = $2,\n            position_seconds = NULL,\n            updated_at = NOW()\n        RETURNING episode_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "episode_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_watch_states",
+            "name": "episode_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b6e4eda565e4789454787f3ac812b4c14556f475620a644fcf123ab0864154fa"
+}

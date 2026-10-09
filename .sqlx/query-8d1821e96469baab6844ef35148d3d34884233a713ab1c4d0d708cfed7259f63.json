@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE wanted_attempts SET status = 'searching', message = 'Retry search triggered' WHERE external_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d1821e96469baab6844ef35148d3d34884233a713ab1c4d0d708cfed7259f63"
+}

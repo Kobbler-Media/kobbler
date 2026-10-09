@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT user_id AS \"user_id!\"\n        FROM wanted_attempts\n        WHERE user_id IS NOT NULL\n          AND (book_id = $1 OR movie_id = $1 OR episode_id = $1)\n        ORDER BY created_at DESC, id DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "wanted_attempts",
+            "name": "user_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "48e1b3b66183ffc39c8c2da7f01e5a2ad0744302aa3b4f7cbee0e28121347175"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE tv_shows SET streamed_at = COALESCE(streamed_at, NOW())\n                WHERE id = (\n                    SELECT ts.show_id FROM tv_episodes te\n                    JOIN tv_seasons ts ON ts.id = te.season_id\n                    WHERE te.id = $1\n                )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "743cbb3868894703a99303d21b040aeedaee2fe7453bf2a919477d4f5f2b52d4"
+}

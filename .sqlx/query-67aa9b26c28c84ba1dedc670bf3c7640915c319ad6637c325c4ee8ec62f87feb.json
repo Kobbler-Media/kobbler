@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE livetv_tuner_leases SET released_at = NOW() WHERE id = $1 AND released_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "67aa9b26c28c84ba1dedc670bf3c7640915c319ad6637c325c4ee8ec62f87feb"
+}

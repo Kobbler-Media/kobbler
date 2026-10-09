@@ -1,0 +1,239 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH visible_entitlements AS (\n            -- All entitlements visible to this device, with scope priority\n            SELECT e.*,\n                   CASE e.scope_type\n                       WHEN 'DEVICE'    THEN 1\n                       WHEN 'USER'      THEN 2\n                       WHEN 'ALL_USERS' THEN 3\n                   END AS scope_priority\n            FROM entitlements e\n            WHERE (\n                e.scope_type = 'ALL_USERS'\n                OR (e.scope_type = 'USER' AND e.scope_id = $1)\n                OR (e.scope_type = 'DEVICE' AND e.scope_id = $2)\n            )\n        ),\n        deduped AS (\n            -- Pick the most specific scope per book.\n            -- Use the winning scope's is_removed and created_at,\n            -- but MAX updated_at across all scopes so any change triggers sync.\n            SELECT DISTINCT ON (ve.book_id)\n                ve.book_id,\n                ve.is_removed,\n                ve.created_at,\n                (SELECT MAX(v2.updated_at) FROM visible_entitlements v2 WHERE v2.book_id = ve.book_id) AS updated_at\n            FROM visible_entitlements ve\n            ORDER BY ve.book_id, ve.scope_priority ASC\n        )\n        SELECT d.book_id, d.is_removed,\n               d.created_at AS entitlement_created_at, d.updated_at AS \"entitlement_updated_at!\",\n               b.title, b.description, b.language, b.publisher, b.pubdate,\n               bs.series_id AS \"series_id?\", s.name AS \"series_name?\", bs.series_index AS \"series_index?\", b.identifiers,\n               b.page_count, b.rating, b.created_at AS book_created_at, b.updated_at AS book_updated_at,\n               COALESCE(\n                   (SELECT jsonb_agg(jsonb_build_object('format', bf.format, 'size_bytes', bf.size_bytes, 'content_revision', bf.content_revision))\n                    FROM book_files bf WHERE bf.book_id = d.book_id),\n                   '[]'::jsonb\n               ) AS \"files!\",\n               COALESCE(\n                   (SELECT jsonb_agg(a.name ORDER BY a.name)\n                    FROM book_authors ba JOIN authors a ON a.id = ba.author_id\n                    WHERE ba.book_id = d.book_id),\n                   '[]'::jsonb\n               ) AS \"authors!\",\n               (SELECT jsonb_build_object(\n                   'id', rs.id, 'book_id', rs.book_id, 'device_id', rs.device_id,\n                   'created_at', rs.created_at, 'updated_at', rs.updated_at,\n                   'priority_timestamp', rs.priority_timestamp,\n                   'client_payload', rs.client_payload,\n                   'status', st.status, 'status_last_modified', st.last_modified_at,\n                   'times_started', st.times_started_reading, 'last_time_started', st.last_time_started_reading,\n                   'spent_reading_minutes', stats.spent_reading_minutes,\n                   'remaining_time_minutes', stats.remaining_time_minutes,\n                   'stats_last_modified', stats.last_modified_at,\n                   'progress_percent', bm.progress_percent,\n                   'content_source_progress_percent', bm.content_source_progress_percent,\n                   'location_value', bm.location_value, 'location_type', bm.location_type,\n                   'location_source', bm.location_source,\n                   'bookmark_last_modified', bm.last_modified_at\n               )\n               FROM reading_states rs\n               JOIN reading_status st ON st.reading_state_id = rs.id\n               JOIN reading_statistics stats ON stats.reading_state_id = rs.id\n               JOIN reading_bookmark bm ON bm.reading_state_id = rs.id\n               WHERE rs.user_id = $1 AND rs.book_id = d.book_id\n               ORDER BY CASE WHEN st.status = 'Reading' THEN 0\n                             WHEN COALESCE(bm.progress_percent, 0) > 0 THEN 1\n                             WHEN st.status = 'Finished' THEN 2 ELSE 3 END,\n                        rs.updated_at DESC\n               LIMIT 1\n              ) AS reading_state\n        FROM deduped d\n        JOIN books b ON b.id = d.book_id\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        WHERE (\n            d.updated_at > $3 OR d.created_at > $3\n            OR b.updated_at > $3 OR b.created_at > $3\n        )\n        AND (\n            -- Include if explicitly removed (need to tell device to delete)\n            d.is_removed = TRUE\n            -- Or if book has no files yet (metadata-only / newly created)\n            OR NOT EXISTS (\n                SELECT 1 FROM book_files bf\n                WHERE bf.book_id = d.book_id\n            )\n            -- Or if at least one file is available\n            OR EXISTS (\n                SELECT 1 FROM book_files bf\n                WHERE bf.book_id = d.book_id AND bf.available = TRUE\n            )\n        )\n        -- Only sync approved library books (not items still in ingest queue)\n        AND b.ingest_status IS NULL\n        ORDER BY GREATEST(d.updated_at, b.updated_at) ASC, b.id ASC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "entitlements",
+            "name": "book_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "is_removed",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "entitlements",
+            "name": "is_removed"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "entitlement_created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "entitlements",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "entitlement_updated_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "publisher",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "publisher"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "pubdate",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "pubdate"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "series_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "series_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "series_index?",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_index"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "identifiers"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "page_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "page_count"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "rating",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "rating"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "book_created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "book_updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "files!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 18,
+        "name": "authors!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 19,
+        "name": "reading_state",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "1d8ee9f479ff180e508205d1e34d795afda0eb2574f7605466668553f23531c5"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tv_episode_cached_segments (episode_id, segments, pipeline_version, generated_at)\n        VALUES ($1, $2, $3, NOW())\n        ON CONFLICT (episode_id) DO UPDATE\n            SET segments = EXCLUDED.segments,\n                pipeline_version = EXCLUDED.pipeline_version,\n                generated_at = NOW()\n            WHERE tv_episode_cached_segments.pipeline_version <= EXCLUDED.pipeline_version\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3cce85add584804ec4eab94a671f26a1786def50c09474bbf92ddbecd1ced28b"
+}

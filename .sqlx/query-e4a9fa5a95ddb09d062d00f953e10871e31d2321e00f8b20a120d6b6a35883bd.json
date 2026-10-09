@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT (\n                media_cache_generated_at IS NOT NULL\n            AND (\n                    skip_detect_ran_at IS NULL\n                 OR skip_detect_ran_at < media_cache_generated_at\n            )\n        ) AS \"stale!\"\n          FROM movie_files\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stale!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e4a9fa5a95ddb09d062d00f953e10871e31d2321e00f8b20a120d6b6a35883bd"
+}

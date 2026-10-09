@@ -1,0 +1,97 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            b.id AS \"book_id!\",\n            b.title AS \"title!\",\n            CASE WHEN (b.images->'cover'->>'source_url' IS NOT NULL OR b.images->'cover'->>'cached_at' IS NOT NULL)\n                 THEN '/api/v1/library/books/' || b.id || '/cover'\n                 ELSE NULL\n            END as cover_url,\n            bs.series_id AS \"series_id?\",\n            bs.series_index AS \"series_index?\",\n            s.name AS \"series_name?\",\n            -- Two independent subqueries over the same co-authors: both must\n            -- order by author_id (the codebase-wide stand-in for a primary\n            -- flag) or the name can end up linked to the other author's page.\n            (SELECT a.id FROM book_authors ba\n             JOIN authors a ON a.id = ba.author_id\n             WHERE ba.book_id = b.id\n             ORDER BY ba.author_id\n             LIMIT 1) AS author_id,\n            (SELECT a.name FROM book_authors ba\n             JOIN authors a ON a.id = ba.author_id\n             WHERE ba.book_id = b.id\n             ORDER BY ba.author_id\n             LIMIT 1) AS author\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        WHERE b.id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "cover_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "series_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "series_index?",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_index"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "series_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "author_id",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "author",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      null,
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "99efff94cad37115ff74588cfe5e46e7697436a64197a01ef821fe89a6ae8f0b"
+}

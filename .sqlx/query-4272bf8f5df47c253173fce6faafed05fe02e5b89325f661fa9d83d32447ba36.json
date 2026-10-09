@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.id AS \"season_id!\", s.season_identifier,\n                  e.id AS \"episode_id!\", e.episode_identifier,\n                  e.title AS \"episode_title?\", e.air_date, e.want_status\n        FROM tv_seasons s\n        JOIN tv_episodes e ON e.season_id = s.id\n        WHERE s.show_id = $1\n        ORDER BY s.season_sort_order, e.episode_sort_order",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "season_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "season_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "episode_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "episode_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "episode_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "episode_title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "air_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "air_date"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "want_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "want_status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "4272bf8f5df47c253173fce6faafed05fe02e5b89325f661fa9d83d32447ba36"
+}

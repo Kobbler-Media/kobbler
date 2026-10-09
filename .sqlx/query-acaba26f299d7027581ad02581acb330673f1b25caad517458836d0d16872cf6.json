@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO genres (id, name, normalized_name)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (normalized_name) DO UPDATE SET\n            name = EXCLUDED.name\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "genres",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "acaba26f299d7027581ad02581acb330673f1b25caad517458836d0d16872cf6"
+}

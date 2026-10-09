@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH visible_entitlements AS (\n            SELECT e.*,\n                   CASE e.scope_type\n                       WHEN 'DEVICE'    THEN 1\n                       WHEN 'USER'      THEN 2\n                       WHEN 'ALL_USERS' THEN 3\n                   END AS scope_priority\n            FROM entitlements e\n            WHERE (\n                e.scope_type = 'ALL_USERS'\n                OR (e.scope_type = 'USER' AND e.scope_id = $1)\n                OR (e.scope_type = 'DEVICE' AND e.scope_id = $2)\n            )\n        ),\n        deduped AS (\n            SELECT DISTINCT ON (ve.book_id)\n                ve.book_id,\n                ve.is_removed,\n                ve.created_at,\n                (SELECT MAX(v2.updated_at) FROM visible_entitlements v2 WHERE v2.book_id = ve.book_id) AS updated_at\n            FROM visible_entitlements ve\n            ORDER BY ve.book_id, ve.scope_priority ASC\n        )\n        SELECT COUNT(*) AS \"count!\"\n        FROM deduped d\n        JOIN books b ON b.id = d.book_id\n        WHERE (\n            d.updated_at > $3 OR d.created_at > $3\n            OR b.updated_at > $3 OR b.created_at > $3\n        )\n        AND (\n            d.is_removed = TRUE\n            OR NOT EXISTS (\n                SELECT 1 FROM book_files bf\n                WHERE bf.book_id = d.book_id\n            )\n            OR EXISTS (\n                SELECT 1 FROM book_files bf\n                WHERE bf.book_id = d.book_id AND bf.available = TRUE\n            )\n        )\n        AND b.ingest_status IS NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2ea6782fdabc60709c2493b666afa4993782e5d0ce13de99749301e0ca879698"
+}

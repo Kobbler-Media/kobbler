@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE job_status\n        SET status = $2,\n            result = COALESCE($3, result),\n            error = COALESCE($4, error),\n            completed_at = CASE WHEN $2 IN ('completed', 'failed') THEN NOW() ELSE completed_at END\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e784474ea2eed607209b5517bde4a50580ac1394e3774fb4b25e8d2fd86edf49"
+}

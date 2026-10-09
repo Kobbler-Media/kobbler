@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO entitlements (id, book_id, scope_type, scope_id, is_removed)\n        SELECT gen_random_uuid(), $1, 'DEVICE', d.id, FALSE\n        FROM devices d\n        WHERE d.id != $2 AND d.device_type != 'web'\n        ON CONFLICT (book_id, scope_type, scope_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a10523bc2637493ec3f74f19960d3344501113dbd7409360ed445cd654db05b2"
+}

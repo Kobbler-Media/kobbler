@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, info_hash, debrid_provider, filename, filesize,\n               cache_path AS \"cache_path?\",\n               debrid_url AS \"debrid_url?\",\n               debrid_url_expires_at AS \"debrid_url_expires_at?\"\n        FROM debrid_stream_sessions\n        WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "info_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "info_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "debrid_provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_provider"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "filename",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "filename"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "filesize",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "filesize"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "cache_path?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "cache_path"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "debrid_url?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "debrid_url_expires_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_url_expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ee388e07f5b6896f491301c63443175a3903c1adf38d7208aa5fcd2271f937b8"
+}

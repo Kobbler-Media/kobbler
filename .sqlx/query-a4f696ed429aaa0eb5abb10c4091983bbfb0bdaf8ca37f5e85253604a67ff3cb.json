@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT recording_path FROM iptv_config LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "recording_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_config",
+            "name": "recording_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a4f696ed429aaa0eb5abb10c4091983bbfb0bdaf8ca37f5e85253604a67ff3cb"
+}

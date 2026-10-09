@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE entitlements SET is_removed = FALSE, updated_at = NOW() WHERE book_id = $1 AND scope_type = 'DEVICE' AND scope_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c0c0ea3fdb2b7bacb574bf94e0111b0d0c2a4ad3227f20603fe364d176538772"
+}

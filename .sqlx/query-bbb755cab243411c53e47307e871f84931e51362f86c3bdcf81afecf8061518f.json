@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE system_config SET vapid_public_key = $1, vapid_private_key = $2 WHERE id = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bbb755cab243411c53e47307e871f84931e51362f86c3bdcf81afecf8061518f"
+}

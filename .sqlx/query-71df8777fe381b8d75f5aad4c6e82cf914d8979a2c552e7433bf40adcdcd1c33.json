@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT health_score FROM iptv_sources WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "health_score",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "iptv_sources",
+            "name": "health_score"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "71df8777fe381b8d75f5aad4c6e82cf914d8979a2c552e7433bf40adcdcd1c33"
+}

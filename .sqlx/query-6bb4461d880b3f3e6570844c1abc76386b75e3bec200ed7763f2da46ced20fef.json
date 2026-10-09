@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, air_time as \"air_time!\"\n        FROM tv_episodes\n        WHERE id = ANY($1) AND air_time IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "air_time!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "air_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "6bb4461d880b3f3e6570844c1abc76386b75e3bec200ed7763f2da46ced20fef"
+}

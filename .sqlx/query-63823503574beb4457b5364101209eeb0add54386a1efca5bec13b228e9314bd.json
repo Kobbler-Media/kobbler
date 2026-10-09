@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            g.id,\n            g.name,\n            COALESCE(\n                (SELECT COUNT(DISTINCT bg.book_id)\n                 FROM book_genres bg\n                 JOIN books b ON b.id = bg.book_id\n                 WHERE bg.genre_id = g.id AND (EXISTS (SELECT 1 FROM book_files bf2 WHERE bf2.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af2 WHERE af2.book_id = b.id))),\n                0\n            ) as \"book_count!\"\n        FROM genres g\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "genres",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "genres",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "book_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "63823503574beb4457b5364101209eeb0add54386a1efca5bec13b228e9314bd"
+}

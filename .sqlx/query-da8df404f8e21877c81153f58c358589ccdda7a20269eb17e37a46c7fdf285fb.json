@@ -1,0 +1,161 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, user_id, series_id, channel_id, genre, weekday, hour,\n               watch_count, total_secs, mean_completion, last_watched_at, updated_at\n        FROM livetv_affinity\n        WHERE user_id = $1 AND series_id IS NULL AND genre IS NULL AND weekday IS NULL\n          AND channel_id = ANY($2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "series_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "genre",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "genre"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "weekday",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "weekday"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "hour",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "hour"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "watch_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "watch_count"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "total_secs",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "total_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "mean_completion",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "mean_completion"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "last_watched_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "last_watched_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "da8df404f8e21877c81153f58c358589ccdda7a20269eb17e37a46c7fdf285fb"
+}

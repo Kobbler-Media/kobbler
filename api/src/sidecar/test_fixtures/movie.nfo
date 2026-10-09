@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<movie>
+  <title>Anchorman 2: The Legend Continues</title>
+  <originaltitle>Anchorman 2: The Legend Continues</originaltitle>
+  <year>2013</year>
+  <plot>With the 70s behind him, San Diego&apos;s top rated newsman, Ron Burgundy, returns to take New York&apos;s first 24-hour news channel by storm.</plot>
+  <rating>3.1</rating>
+  <genre>Comedy</genre>
+  <mpaa>PG-13</mpaa>
+  <studio>Bigger. Better. Burgundy-er.</studio>
+  <uniqueid type="imdb">tt1229340</uniqueid>
+  <uniqueid type="tmdb">109443</uniqueid>
+  <actor>
+    <name>Will Ferrell</name>
+    <role>Ron Burgundy</role>
+    <thumb>https://image.tmdb.org/t/p/w185/yjGbyQzVjpQl8xFkFGa7JxKZWQb.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Steve Carell</name>
+    <role>Brick Tamland</role>
+    <thumb>https://image.tmdb.org/t/p/w185/cS7Cbyff6wFVfUGem497vy9LS7A.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Paul Rudd</name>
+    <role>Brian Fantana</role>
+    <thumb>https://image.tmdb.org/t/p/w185/6jtwNOLKy0LdsRAKwZqgYMAfd5n.jpg</thumb>
+  </actor>
+  <actor>
+    <name>David Koechner</name>
+    <role>Champ Kind</role>
+    <thumb>https://image.tmdb.org/t/p/w185/4zp1LzIOK2ls1cIo1coZYK02YpG.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Christina Applegate</name>
+    <role>Veronica Corningstone</role>
+    <thumb>https://image.tmdb.org/t/p/w185/ncWS3iguCMCQ53ewacGpMGA6MHv.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Dylan Baker</name>
+    <role>Freddie Shapp</role>
+    <thumb>https://image.tmdb.org/t/p/w185/4mw6xj8Aj3ixjjeUj9pZdZPTbvz.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Meagan Good</name>
+    <role>Linda Jackson</role>
+    <thumb>https://image.tmdb.org/t/p/w185/iwSNBQKKDhEbtNe8I4ROYoYmWqE.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Judah Nelson</name>
+    <role>Walter Burgundy</role>
+    <thumb>https://image.tmdb.org/t/p/w185/gT6YdaTMLTkvgLu62gxRC7PrVM9.jpg</thumb>
+  </actor>
+  <actor>
+    <name>James Marsden</name>
+    <role>Jack Lime</role>
+    <thumb>https://image.tmdb.org/t/p/w185/lf7OnfKZnMgNh9b98764tqSocGK.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Greg Kinnear</name>
+    <role>Gary</role>
+    <thumb>https://image.tmdb.org/t/p/w185/fweC1tDqEWuMQK6OHcJLnmGBf5.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Josh Lawson</name>
+    <role>Kench Allenby</role>
+    <thumb>https://image.tmdb.org/t/p/w185/Am9vM77uZd9bGODugwmWtOfzx6E.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Kristen Wiig</name>
+    <role>Chani Lastnamé</role>
+    <thumb>https://image.tmdb.org/t/p/w185/oddvykQHx71hEZlvKinCzB3Vcfh.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Fred Willard</name>
+    <role>Ed Harken</role>
+    <thumb>https://image.tmdb.org/t/p/w185/AaHxpkee9nQfBpQeDyJLoPNtYR6.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Chris Parnell</name>
+    <role>Garth Holliday</role>
+    <thumb>https://image.tmdb.org/t/p/w185/9Ga03Y9TVIqTZJ4I9rfL740ibgJ.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Harrison Ford</name>
+    <role>Mack Tannen</role>
+    <thumb>https://image.tmdb.org/t/p/w185/zVnHagUvXkR2StdOtquEwsiwSVt.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Bill Kurtis</name>
+    <role>Narrator (voice)</role>
+    <thumb>https://image.tmdb.org/t/p/w185/7aYRruBTH3YEr6J1heEPXpB9et3.jpg</thumb>
+  </actor>
+  <actor>
+    <name>June Diane Raphael</name>
+    <role>Chani&apos;s Boss</role>
+    <thumb>https://image.tmdb.org/t/p/w185/lAwKmADejWaxNCwraNJO6tbfItb.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Tom Clark</name>
+    <role>Curtis Knightfish</role>
+    <thumb>https://image.tmdb.org/t/p/w185/zvdUM1sMJIjtJ5Q2OB4Kh8wSAqm.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Jennifer Felton</name>
+    <role>Diane Yahwea</role>
+    <thumb>https://image.tmdb.org/t/p/w185/e1vQwUQu44NakZfSxAnY3r1iVEc.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Drake</name>
+    <role>Soul Brother</role>
+    <thumb>https://image.tmdb.org/t/p/w185/tE0ZkWBP2rLj8u0NJqmMi1h1kb1.jpg</thumb>
+  </actor>
+</movie>

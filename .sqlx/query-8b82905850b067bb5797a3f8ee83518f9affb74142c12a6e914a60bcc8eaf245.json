@@ -1,0 +1,306 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT g.id, g.channel_id, g.start_time, g.end_time, g.title, g.episode_number,\n               g.episode_title, g.synopsis, g.original_airdate, g.series_id, g.genres,\n               g.image_url, g.poster_url, g.is_first, g.episode_key, g.episode_key_kind,\n               g.synced_at,\n               c.display_name, c.scan_name, c.callsign, c.lcn, c.hd, c.signal_quality,\n               c.enabled AS channel_enabled\n        FROM livetv_guide g\n        JOIN livetv_channels c ON c.id = g.channel_id\n        WHERE g.series_id = $1 AND g.start_time >= $2 AND g.start_time < $3\n        ORDER BY g.start_time ASC, c.lcn ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "start_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "start_time"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "end_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "end_time"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "episode_number",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "episode_number"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "episode_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "episode_title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "synopsis",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "synopsis"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "original_airdate",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "original_airdate"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "series_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "genres",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "genres"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "image_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "image_url"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "poster_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "poster_url"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "is_first",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "is_first"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "episode_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "episode_key"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "episode_key_kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "episode_key_kind"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "synced_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "synced_at"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "display_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "display_name"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "scan_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "scan_name"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "callsign",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "callsign"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "lcn",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "lcn"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "hd",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "hd"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "signal_quality",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "signal_quality"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "channel_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "livetv_channels",
+            "name": "enabled"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "8b82905850b067bb5797a3f8ee83518f9affb74142c12a6e914a60bcc8eaf245"
+}

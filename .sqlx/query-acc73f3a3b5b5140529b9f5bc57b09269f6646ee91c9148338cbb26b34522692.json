@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE reading_statistics\n        SET spent_reading_minutes = COALESCE(spent_reading_minutes, 0) + $2,\n            last_modified_at = NOW()\n        WHERE reading_state_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "acc73f3a3b5b5140529b9f5bc57b09269f6646ee91c9148338cbb26b34522692"
+}

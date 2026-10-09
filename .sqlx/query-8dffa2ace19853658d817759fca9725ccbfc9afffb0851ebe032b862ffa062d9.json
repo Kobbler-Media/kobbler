@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT movie_id FROM movie_watch_states\n        WHERE user_id = ANY($1) AND watched = TRUE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "movie_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_watch_states",
+            "name": "movie_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8dffa2ace19853658d817759fca9725ccbfc9afffb0851ebe032b862ffa062d9"
+}

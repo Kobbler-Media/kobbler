@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE video_metadata_providers SET\n            updated_at = NOW(),\n            enabled = COALESCE($2, enabled),\n            priority = COALESCE($3, priority),\n            config = COALESCE($4, config)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Int4",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0d49fbcce215177fab0b3a4d42dfb6e49794d4be023bcb0f7aab7dda7e550e5e"
+}

@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT transport, space, thread FROM chat_sessions WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transport",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "transport"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "space",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "space"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "thread",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "chat_sessions",
+            "name": "thread"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "bc320e6ff2904cf046646cdce5b6681b889c2bb794dc76744da85f2a1193ca5d"
+}

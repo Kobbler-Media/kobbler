@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT SUM(stats.spent_reading_minutes)::bigint\n        FROM reading_states rs\n        JOIN reading_statistics stats ON stats.reading_state_id = rs.id\n        WHERE rs.user_id = $1 AND rs.book_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sum",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "70c3adcfd4b90cbbd3c671a6704f601a54097465324b8fb7b22ca9d57ee5766e"
+}

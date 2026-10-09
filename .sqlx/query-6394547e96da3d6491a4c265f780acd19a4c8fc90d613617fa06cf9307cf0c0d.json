@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.title AS \"title?\"\n        FROM tv_episodes e\n        JOIN tv_seasons s ON s.id = e.season_id\n        JOIN tv_shows sh ON sh.id = s.show_id\n        WHERE sh.id = $1\n          AND s.season_identifier = $2\n          AND e.episode_identifier = $3\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "6394547e96da3d6491a4c265f780acd19a4c8fc90d613617fa06cf9307cf0c0d"
+}

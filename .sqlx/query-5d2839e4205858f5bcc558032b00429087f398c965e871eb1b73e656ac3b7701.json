@@ -1,0 +1,220 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, channel_id, start_time, end_time, title, episode_number, episode_title,\n               synopsis, original_airdate, series_id, genres, image_url, poster_url, is_first,\n               episode_key, episode_key_kind, synced_at\n        FROM livetv_guide WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "start_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "start_time"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "end_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "end_time"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "episode_number",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "episode_number"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "episode_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "episode_title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "synopsis",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "synopsis"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "original_airdate",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "original_airdate"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "series_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "genres",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "genres"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "image_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "image_url"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "poster_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "poster_url"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "is_first",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "is_first"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "episode_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "episode_key"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "episode_key_kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "episode_key_kind"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "synced_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "synced_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "5d2839e4205858f5bcc558032b00429087f398c965e871eb1b73e656ac3b7701"
+}

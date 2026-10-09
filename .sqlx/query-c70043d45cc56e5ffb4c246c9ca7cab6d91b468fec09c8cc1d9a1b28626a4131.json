@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tv_watch_states (episode_id, user_id, watched) VALUES ($1, $2, TRUE)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c70043d45cc56e5ffb4c246c9ca7cab6d91b468fec09c8cc1d9a1b28626a4131"
+}

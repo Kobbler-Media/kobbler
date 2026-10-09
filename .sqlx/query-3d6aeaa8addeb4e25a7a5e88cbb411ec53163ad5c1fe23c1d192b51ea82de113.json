@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.val AS \"candidate!\"\n        FROM chat_messages m\n        CROSS JOIN LATERAL jsonb_array_elements(m.steps) AS s(val)\n        CROSS JOIN LATERAL jsonb_array_elements(\n            COALESCE(s.val -> 'observation' -> 'candidates', '[]'::jsonb)\n        ) AS c(val)\n        WHERE m.session_id = $1\n          AND m.created_at > $3\n          AND c.val ->> 'ref' = $2\n        ORDER BY m.created_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "candidate!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3d6aeaa8addeb4e25a7a5e88cbb411ec53163ad5c1fe23c1d192b51ea82de113"
+}

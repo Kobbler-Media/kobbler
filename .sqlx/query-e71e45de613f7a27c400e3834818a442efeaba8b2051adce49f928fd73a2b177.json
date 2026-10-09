@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            b.id,\n            b.title,\n            b.narrator,\n            (\n                SELECT a.name\n                FROM book_authors ba\n                JOIN authors a ON a.id = ba.author_id\n                WHERE ba.book_id = b.id\n                ORDER BY a.name ASC\n                LIMIT 1\n            ) AS author\n        FROM books b\n        WHERE EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)\n          AND (b.title ILIKE $1 OR COALESCE(b.narrator, '') ILIKE $1)\n        ORDER BY b.title\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "narrator",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "narrator"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "author",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "e71e45de613f7a27c400e3834818a442efeaba8b2051adce49f928fd73a2b177"
+}

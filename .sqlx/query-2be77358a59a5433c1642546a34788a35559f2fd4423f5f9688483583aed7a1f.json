@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO livetv_affinity\n            (id, user_id, series_id, channel_id, genre, weekday, hour,\n             watch_count, total_secs, mean_completion, last_watched_at, updated_at)\n        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, NOW())\n        ON CONFLICT (user_id,\n                     COALESCE(series_id, ''),\n                     COALESCE(channel_id, '00000000-0000-0000-0000-000000000000'::uuid),\n                     COALESCE(genre, ''),\n                     COALESCE(weekday, -1),\n                     COALESCE(hour, -1))\n        DO UPDATE SET\n            watch_count     = EXCLUDED.watch_count,\n            total_secs      = EXCLUDED.total_secs,\n            mean_completion = EXCLUDED.mean_completion,\n            last_watched_at = EXCLUDED.last_watched_at,\n            updated_at      = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Text",
+        "Int2",
+        "Int2",
+        "Int4",
+        "Int8",
+        "Float8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2be77358a59a5433c1642546a34788a35559f2fd4423f5f9688483583aed7a1f"
+}

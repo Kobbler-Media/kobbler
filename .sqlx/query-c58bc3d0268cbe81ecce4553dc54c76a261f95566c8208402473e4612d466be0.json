@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_recordings\n        SET updated_at = NOW() - make_interval(secs => $1::double precision)\n        WHERE status = 'recording'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c58bc3d0268cbe81ecce4553dc54c76a261f95566c8208402473e4612d466be0"
+}

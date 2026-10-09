@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM person_dismissed_credits\n        WHERE person_id = $1 AND tmdb_id = $2 AND media_type = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8455a61207e53231aaf21a0bc4fae01c7a1f0302595714aa35954dfc461816b5"
+}

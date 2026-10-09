@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM chat_sessions\n        WHERE COALESCE(closed_at, updated_at) < NOW() - make_interval(days => $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c37339d398d0548064550611b3b0356af88753617f077f1471d1ae998e3ae31"
+}

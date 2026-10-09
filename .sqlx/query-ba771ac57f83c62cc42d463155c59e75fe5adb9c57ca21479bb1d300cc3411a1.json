@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT weekday AS \"weekday!\", hour AS \"hour!\", watch_count\n        FROM livetv_affinity\n        WHERE user_id = $1 AND series_id IS NULL AND channel_id IS NULL AND genre IS NULL\n          AND weekday IS NOT NULL AND hour IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "weekday!",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "weekday"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "hour!",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "hour"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "watch_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_affinity",
+            "name": "watch_count"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "ba771ac57f83c62cc42d463155c59e75fe5adb9c57ca21479bb1d300cc3411a1"
+}

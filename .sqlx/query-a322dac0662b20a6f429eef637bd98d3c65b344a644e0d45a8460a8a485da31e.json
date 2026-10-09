@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT e.book_id, b.title\n        FROM entitlements e\n        JOIN books b ON b.id = e.book_id\n        WHERE NOT e.is_removed\n          AND b.ingest_status IS NULL\n          AND EXISTS (\n              SELECT 1 FROM devices d\n              WHERE d.device_type = 'kobo'\n                AND (\n                    e.scope_type = 'ALL_USERS'\n                    OR (e.scope_type = 'USER' AND d.user_id = e.scope_id)\n                    OR (e.scope_type = 'DEVICE' AND d.id = e.scope_id)\n                )\n          )\n          AND EXISTS (\n              SELECT 1 FROM book_files bf\n              WHERE bf.book_id = e.book_id AND bf.available\n                AND bf.format IN ('EPUB', 'AZW3', 'AZW', 'MOBI')\n          )\n          AND NOT EXISTS (\n              SELECT 1 FROM book_files bf\n              WHERE bf.book_id = e.book_id AND bf.format = 'KEPUB'\n          )\n        ORDER BY b.title\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "entitlements",
+            "name": "book_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "a322dac0662b20a6f429eef637bd98d3c65b344a644e0d45a8460a8a485da31e"
+}

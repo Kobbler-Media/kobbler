@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<tvshow>
+  <title>Barry</title>
+  <rating>8.3</rating>
+  <plot>After following his intended target to an acting class, a hitman finds himself intrigued and decides to become an actor and change his life.</plot>
+  <mpaa>TV-MA</mpaa>
+  <id>333072</id>
+  <uniqueid type="tvdb" default="true">333072</uniqueid>
+  <uniqueid type="imdb">tt5348176</uniqueid>
+  <uniqueid type="tmdb">73107</uniqueid>
+  <uniqueid type="tvmaze">11538</uniqueid>
+  <genre>Comedy</genre>
+  <genre>Crime</genre>
+  <genre>Drama</genre>
+  <status>Ended</status>
+  <premiered>2018-03-25</premiered>
+  <enddate>2023-05-28</enddate>
+  <studio>HBO</studio>
+  <actor>
+    <name>Bill Hader</name>
+    <role>Barry Berkman</role>
+    <thumb>https://artworks.thetvdb.com/banners/person/311060/primary.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Stephen Root</name>
+    <role>Monroe Fuches</role>
+    <thumb>https://artworks.thetvdb.com/banners/v4/actor/248228/photo/660f7b5296633.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Anthony Carrigan</name>
+    <role>NoHo Hank</role>
+    <thumb>https://artworks.thetvdb.com/banners/v4/actor/317619/photo/654c94130be30.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Sarah Goldberg</name>
+    <role>Sally Reed</role>
+    <thumb>https://artworks.thetvdb.com/banners/person/278036/primary.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Henry Winkler</name>
+    <role>Gene Cousineau</role>
+    <thumb>https://artworks.thetvdb.com/banners/person/254065/primary.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Paula Newsome</name>
+    <role>Janice Moss</role>
+    <thumb>https://artworks.thetvdb.com/banners/v4/actor/275388/photo/6607b6590aca7.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Michael Irby</name>
+    <role>Cristobal Sifuentes</role>
+    <thumb>https://artworks.thetvdb.com/banners/v4/actor/314565/photo/6390f2785c820.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Sarah Burns</name>
+    <role>Mae Dunn</role>
+  </actor>
+  <actor>
+    <name>D'Arcy Carden</name>
+    <role>Natalie Greer</role>
+    <thumb>https://artworks.thetvdb.com/banners/v4/actor/474812/photo/66ffab18090da.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Glenn Fleshler</name>
+    <role>Goran Pazar</role>
+  </actor>
+  <actor>
+    <name>Robert Wisdom</name>
+    <role>Jim Moss</role>
+    <thumb>https://artworks.thetvdb.com/banners/v4/actor/275472/photo/662a94558c370.jpg</thumb>
+  </actor>
+  <actor>
+    <name>Nikita Bogolyubov</name>
+    <role>Mayrbek</role>
+  </actor>
+</tvshow>

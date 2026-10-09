@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT bf.id, bf.book_id, bf.added_at, bf.source_metadata AS \"source_metadata!\", b.title AS book_title\n        FROM book_files bf\n        JOIN books b ON b.id = bf.book_id\n        WHERE bf.source_type = 'kobload'\n          AND (bf.source_metadata->>'info_hash' IS NOT NULL\n               OR bf.source_metadata->>'release_title' IS NOT NULL)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_files",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_files",
+            "name": "book_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "added_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "book_files",
+            "name": "added_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source_metadata!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "book_files",
+            "name": "source_metadata"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "book_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3e27f004705890e9ac540feca579233386df8f2287eff4fb534b3bdf00ada98d"
+}

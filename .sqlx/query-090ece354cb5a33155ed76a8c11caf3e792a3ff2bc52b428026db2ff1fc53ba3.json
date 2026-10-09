@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO movies (id, title, sort_title, original_title, year, runtime,\n                            description, tagline, images, identifiers,\n                            genres, rating, rating_count, content_rating,\n                            release_date, is_released, quality_profile_id,\n                            preferred_languages, media_root_id, streamed_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "TextArray",
+        "Float8",
+        "Int4",
+        "Text",
+        "Date",
+        "Bool",
+        "Uuid",
+        "TextArray",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "090ece354cb5a33155ed76a8c11caf3e792a3ff2bc52b428026db2ff1fc53ba3"
+}

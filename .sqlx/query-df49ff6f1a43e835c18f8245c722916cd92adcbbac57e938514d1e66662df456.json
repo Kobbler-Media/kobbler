@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE livetv_tuner_leases SET last_heartbeat = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "df49ff6f1a43e835c18f8245c722916cd92adcbbac57e938514d1e66662df456"
+}

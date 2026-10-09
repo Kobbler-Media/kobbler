@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_sync_log SET\n            completed_at = NOW(),\n            status = 'failed',\n            error_message = $2\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ab8089ffd156e48654bcef1f4624eafc3217e5f8eb9f1a91bda377509e3bbc36"
+}

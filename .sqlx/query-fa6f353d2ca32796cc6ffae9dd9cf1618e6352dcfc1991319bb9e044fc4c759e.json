@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE authors SET\n            next_metadata_refresh_at = NOW() + (metadata_refresh_interval_hours || ' hours')::INTERVAL\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fa6f353d2ca32796cc6ffae9dd9cf1618e6352dcfc1991319bb9e044fc4c759e"
+}

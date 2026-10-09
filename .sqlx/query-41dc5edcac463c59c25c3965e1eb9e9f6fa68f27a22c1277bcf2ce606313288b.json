@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE books SET want_status = $2, updated_at = NOW() WHERE id = $1 AND want_status = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "41dc5edcac463c59c25c3965e1eb9e9f6fa68f27a22c1277bcf2ce606313288b"
+}

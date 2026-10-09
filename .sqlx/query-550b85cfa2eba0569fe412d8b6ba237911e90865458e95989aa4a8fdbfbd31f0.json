@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT extracted_cover FROM book_ingest_source WHERE book_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "extracted_cover",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "book_ingest_source",
+            "name": "extracted_cover"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "550b85cfa2eba0569fe412d8b6ba237911e90865458e95989aa4a8fdbfbd31f0"
+}

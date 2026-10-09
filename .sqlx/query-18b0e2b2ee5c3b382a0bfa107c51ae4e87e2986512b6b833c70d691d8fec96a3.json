@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n            FROM entitlements e\n            JOIN devices d ON d.device_type = 'kobo'\n            WHERE e.book_id = $1\n              AND NOT e.is_removed\n              AND (\n                  e.scope_type = 'ALL_USERS'\n                  OR (e.scope_type = 'USER' AND d.user_id = e.scope_id)\n                  OR (e.scope_type = 'DEVICE' AND d.id = e.scope_id)\n              )\n        ) AS \"exists!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "18b0e2b2ee5c3b382a0bfa107c51ae4e87e2986512b6b833c70d691d8fec96a3"
+}

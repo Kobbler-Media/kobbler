@@ -1,0 +1,92 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT q.id AS \"id!\", q.title AS \"title!\", q.year,\n               q.content_category AS \"content_category!\",\n               q.character, q.job,\n               q.guest_episodes AS \"guest_episodes!\",\n               q.episodes_held AS \"episodes_held!\"\n        FROM (\n            SELECT s.id, s.title, s.year, s.content_category,\n                   (SELECT string_agg(DISTINCT tc.character_name, ', ')\n                    FROM tv_cast tc\n                    WHERE tc.show_id = s.id AND tc.person_id = $1) AS character,\n                   (SELECT string_agg(DISTINCT tcr.job, ', ')\n                    FROM tv_crew tcr\n                    WHERE tcr.show_id = s.id AND tcr.person_id = $1) AS job,\n                   COALESCE((SELECT COUNT(DISTINCT te.id)::int\n                    FROM tv_episode_cast tec\n                    JOIN tv_episodes te ON te.id = tec.episode_id\n                    JOIN tv_seasons tsn ON tsn.id = te.season_id\n                    WHERE tsn.show_id = s.id AND tec.person_id = $1\n                      AND tec.credit_type = 'guest'), 0) AS guest_episodes,\n                   COALESCE((SELECT COUNT(DISTINCT te.id)::int\n                    FROM tv_episodes te\n                    JOIN tv_seasons tsn ON tsn.id = te.season_id\n                    JOIN tv_episode_file_episodes tefe ON tefe.episode_id = te.id\n                    JOIN tv_episode_files tef ON tef.id = tefe.episode_file_id AND tef.available\n                    WHERE tsn.show_id = s.id), 0) AS episodes_held\n            FROM tv_shows s\n            WHERE (EXISTS (SELECT 1 FROM tv_cast tc\n                           WHERE tc.show_id = s.id AND tc.person_id = $1)\n                OR EXISTS (SELECT 1 FROM tv_crew tcr\n                           WHERE tcr.show_id = s.id AND tcr.person_id = $1)\n                OR EXISTS (SELECT 1 FROM tv_episode_cast tec\n                           JOIN tv_episodes te ON te.id = tec.episode_id\n                           JOIN tv_seasons tsn ON tsn.id = te.season_id\n                           WHERE tsn.show_id = s.id AND tec.person_id = $1))\n              AND NOT EXISTS (\n                  SELECT 1 FROM person_dismissed_credits d\n                  WHERE d.person_id = $1\n                    AND d.media_type = 'tv'\n                    AND d.tmdb_id::text = s.identifiers->>'tmdb_id')\n        ) q\n        ORDER BY (q.episodes_held > 0) DESC, q.year DESC NULLS LAST, q.title ASC, q.id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "content_category!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "content_category"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "character",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "job",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "guest_episodes!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "episodes_held!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2d4bf70a7512ceedb76ea6c42f874ab6adcae8af5708418ab0aabd1f2aa09b6c"
+}

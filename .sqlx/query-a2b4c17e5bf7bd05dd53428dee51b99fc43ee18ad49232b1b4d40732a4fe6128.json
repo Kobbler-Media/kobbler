@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT episode_id\n            FROM tv_watch_states\n            WHERE user_id = $1 AND episode_id = ANY($2) AND watched\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "episode_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_watch_states",
+            "name": "episode_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a2b4c17e5bf7bd05dd53428dee51b99fc43ee18ad49232b1b4d40732a4fe6128"
+}

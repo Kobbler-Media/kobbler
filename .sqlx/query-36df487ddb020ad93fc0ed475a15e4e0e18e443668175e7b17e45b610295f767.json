@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT mrf.file_path\n            FROM media_root_files mrf\n            WHERE mrf.media_root_id = $1\n              AND mrf.match_status = 'added'\n              AND mrf.entity_type = 'book'\n              AND mrf.entity_id IN (\n                  SELECT ba2.book_id FROM book_authors ba2\n                  WHERE ba2.author_id = (\n                      SELECT ba.author_id FROM book_authors ba\n                      WHERE ba.book_id = $2\n                      ORDER BY ba.author_id\n                      LIMIT 1\n                  )\n              )\n            ORDER BY mrf.file_path\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "media_root_files",
+            "name": "file_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "36df487ddb020ad93fc0ed475a15e4e0e18e443668175e7b17e45b610295f767"
+}

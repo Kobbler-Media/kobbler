@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO audiobook_files (\n            id, book_id, file_index, format, file_path, file_size, file_hash,\n            duration_seconds, bitrate, codec, channels, sample_rate,\n            track_number, disc_number,\n            source_path, source_mtime, source_type, source_metadata, added_at\n        )\n        VALUES (\n            $1, $2,\n            COALESCE((SELECT MAX(file_index) + 1 FROM audiobook_files WHERE book_id = $2), 0),\n            $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,\n            COALESCE($17, '{}'::jsonb), NOW()\n        )\n        ON CONFLICT (book_id, file_path) DO UPDATE SET\n            file_size = EXCLUDED.file_size,\n            file_hash = COALESCE(EXCLUDED.file_hash, audiobook_files.file_hash),\n            duration_seconds = COALESCE(EXCLUDED.duration_seconds, audiobook_files.duration_seconds),\n            bitrate = COALESCE(EXCLUDED.bitrate, audiobook_files.bitrate),\n            codec = COALESCE(EXCLUDED.codec, audiobook_files.codec),\n            channels = COALESCE(EXCLUDED.channels, audiobook_files.channels),\n            sample_rate = COALESCE(EXCLUDED.sample_rate, audiobook_files.sample_rate),\n            track_number = COALESCE(EXCLUDED.track_number, audiobook_files.track_number),\n            disc_number = COALESCE(EXCLUDED.disc_number, audiobook_files.disc_number),\n            source_path = COALESCE(EXCLUDED.source_path, audiobook_files.source_path),\n            source_mtime = COALESCE(EXCLUDED.source_mtime, audiobook_files.source_mtime),\n            source_type = COALESCE(EXCLUDED.source_type, audiobook_files.source_type),\n            source_metadata = COALESCE(EXCLUDED.source_metadata, audiobook_files.source_metadata),\n            available = TRUE,\n            unavailable_since = NULL\n        RETURNING id AS \"id!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Int8",
+        "Text",
+        "Float8",
+        "Int4",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "18496326f668b3b6d2a405c4b4da40bd33f33ac1de509ca03d9d5ae5994fd2b4"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM metadata_cache WHERE provider_type = $1 AND query_key LIKE $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7f71edd86b47b8fda0bc0de8bcc044c42ff3f966cc69a49d2fb053c5387493c9"
+}

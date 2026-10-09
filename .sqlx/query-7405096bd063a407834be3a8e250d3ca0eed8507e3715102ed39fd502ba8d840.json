@@ -1,0 +1,245 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT rs.id, rs.device_id, rs.created_at, rs.updated_at, rs.priority_timestamp, rs.client_payload,\n               st.status, st.last_modified_at as status_last_modified, st.times_started_reading, st.last_time_started_reading,\n               stats.spent_reading_minutes, stats.remaining_time_minutes, stats.last_modified_at as stats_last_modified,\n               bm.progress_percent, bm.content_source_progress_percent, bm.location_value, bm.location_type, bm.location_source,\n               bm.last_modified_at as bookmark_last_modified\n        FROM reading_states rs\n        JOIN reading_status st ON st.reading_state_id = rs.id\n        JOIN reading_statistics stats ON stats.reading_state_id = rs.id\n        JOIN reading_bookmark bm ON bm.reading_state_id = rs.id\n        WHERE rs.user_id = $1 AND rs.book_id = $2\n        ORDER BY\n            CASE\n                WHEN st.status = 'Reading' THEN 0\n                WHEN COALESCE(bm.progress_percent, 0) > 0 THEN 1\n                WHEN st.status = 'Finished' THEN 2\n                ELSE 3\n            END,\n            rs.updated_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reading_states",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "device_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reading_states",
+            "name": "device_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_states",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_states",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "priority_timestamp",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_states",
+            "name": "priority_timestamp"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "client_payload",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "reading_states",
+            "name": "client_payload"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reading_status",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "status_last_modified",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_status",
+            "name": "last_modified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "times_started_reading",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "reading_status",
+            "name": "times_started_reading"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "last_time_started_reading",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_status",
+            "name": "last_time_started_reading"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "spent_reading_minutes",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "reading_statistics",
+            "name": "spent_reading_minutes"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "remaining_time_minutes",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "reading_statistics",
+            "name": "remaining_time_minutes"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "stats_last_modified",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_statistics",
+            "name": "last_modified_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "progress_percent",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "progress_percent"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "content_source_progress_percent",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "content_source_progress_percent"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "location_value",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "location_value"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "location_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "location_type"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "location_source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "location_source"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "bookmark_last_modified",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "last_modified_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "7405096bd063a407834be3a8e250d3ca0eed8507e3715102ed39fd502ba8d840"
+}

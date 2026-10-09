@@ -1,0 +1,401 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, channel_id, guide_id, series_rule_id, title, episode_number, episode_title,\n               episode_key, series_id, synopsis, scheduled_start, scheduled_end, actual_start,\n               actual_end, padding_before_secs, padding_after_secs, status, tuner_index,\n               output_dir, duration_seconds, video_codec, audio_codec, container, size_bytes,\n               episode_id, movie_id, match_attempted_at, moved_to_guide_id, image_url, error,\n               created_at, updated_at\n        FROM livetv_recordings\n        WHERE status IN ('scheduled', 'recording')\n          AND scheduled_start < $2 AND scheduled_end > $1\n        ORDER BY scheduled_start ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "channel_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "guide_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "guide_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "series_rule_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "series_rule_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "episode_number",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "episode_number"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "episode_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "episode_title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "episode_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "episode_key"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "series_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "synopsis",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "synopsis"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "scheduled_start",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "scheduled_start"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "scheduled_end",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "scheduled_end"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "actual_start",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "actual_start"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "actual_end",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "actual_end"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "padding_before_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "padding_before_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "padding_after_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "padding_after_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "tuner_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "tuner_index"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "output_dir",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "output_dir"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "duration_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "duration_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "video_codec",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "video_codec"
+          }
+        }
+      },
+      {
+        "ordinal": 21,
+        "name": "audio_codec",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "audio_codec"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "container",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "container"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "episode_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "episode_id"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "movie_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "movie_id"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "match_attempted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "match_attempted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 27,
+        "name": "moved_to_guide_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "moved_to_guide_id"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "image_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "image_url"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "error"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 31,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_recordings",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "4b8b80313c460acc0a03553eb8d9cf268971abd606a0ac4578a361e698fcda2c"
+}

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_channels SET\n            name = COALESCE($2, name),\n            normalized_name = COALESCE($3, normalized_name),\n            external_id = COALESCE($4, external_id),\n            language = COALESCE($5, language),\n            country = COALESCE($6, country),\n            category = COALESCE($7, category),\n            icon_url = COALESCE($8, icon_url),\n            epg_channel_id = COALESCE($9, epg_channel_id),\n            enabled = COALESCE($10, enabled),\n            display_order = COALESCE($11, display_order),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0840fed400edb7d3c377b1213250bc47e9784bf92892aef5a60f8ae6b14add10"
+}

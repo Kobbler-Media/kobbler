@@ -1,0 +1,13 @@
+-- A person's own timezone, as an IANA zone name ("Europe/London"), NULL when
+-- unset.
+--
+-- It lives on `users` rather than `chat_notification_prefs` because a timezone
+-- is a property of the person, not of one feature: a user with no prefs row
+-- still has one, and anything else that means "tonight" wants the same answer.
+--
+-- This supersedes 0165's note that quiet hours are wall-clock times in the
+-- SERVER's zone. They are wall-clock times in the OWNER's zone; the server zone
+-- is only the fallback for a user who has not set one. A stored UTC offset would
+-- not do: 22:00 has to mean 22:00 in summer and in winter, so the zone is
+-- resolved against the IANA rules at evaluation time.
+ALTER TABLE users ADD COLUMN timezone TEXT;

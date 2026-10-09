@@ -1,0 +1,39 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO iptv_unmatched_sources (id, provider_id, remote_stream_id,\n                                            remote_category_id, remote_category_name,\n                                            name, icon_url, epg_channel_id,\n                                            stream_type, language,\n                                            suggested_channel_id, suggested_confidence,\n                                            last_seen_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 'live'), $10, $11, $12, NOW())\n        ON CONFLICT (provider_id, remote_stream_id)\n        DO UPDATE SET\n            remote_category_id = EXCLUDED.remote_category_id,\n            remote_category_name = EXCLUDED.remote_category_name,\n            name = EXCLUDED.name,\n            icon_url = EXCLUDED.icon_url,\n            epg_channel_id = EXCLUDED.epg_channel_id,\n            stream_type = EXCLUDED.stream_type,\n            language = EXCLUDED.language,\n            suggested_channel_id = EXCLUDED.suggested_channel_id,\n            suggested_confidence = EXCLUDED.suggested_confidence,\n            last_seen_at = NOW()\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_unmatched_sources",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid",
+        "Float4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b01dfe6d725edabef3a54b231ba7b45994a36b212666fcaf52c475d530cfcd7e"
+}

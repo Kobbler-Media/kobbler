@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE livetv_tuner_leases SET holder_kind = 'recording', recording_id = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0263bd75f133f8fb4cf7c17dade44d24d8608c8676d785e94c4fbb72557a65f9"
+}

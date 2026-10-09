@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO user_book_data (user_id, book_id, rating, rating_source, rating_updated_at,\n                                     reading_status, reading_status_updated_at)\n        VALUES ($1, $2, $3, $7, $5, $4, $5)\n        ON CONFLICT (user_id, book_id) DO UPDATE SET\n            rating = CASE\n                WHEN user_book_data.rating_source IS NULL OR user_book_data.rating_source = $7\n                THEN COALESCE($3, user_book_data.rating)\n                ELSE user_book_data.rating\n            END,\n            rating_source = CASE\n                WHEN user_book_data.rating_source IS NULL OR user_book_data.rating_source = $7\n                THEN COALESCE($6, user_book_data.rating_source)\n                ELSE user_book_data.rating_source\n            END,\n            rating_updated_at = CASE\n                WHEN user_book_data.rating_source IS NULL OR user_book_data.rating_source = $7\n                THEN COALESCE($5, user_book_data.rating_updated_at)\n                ELSE user_book_data.rating_updated_at\n            END,\n            reading_status = COALESCE($4, user_book_data.reading_status),\n            reading_status_updated_at = CASE\n                WHEN $8 OR user_book_data.reading_status IS DISTINCT FROM $4\n                THEN COALESCE($5, NOW())\n                ELSE user_book_data.reading_status_updated_at\n            END,\n            updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "06b52e7ebff023c49133dc4c5575ba4c0a84cb59c6aadcb9936de275ad691d98"
+}

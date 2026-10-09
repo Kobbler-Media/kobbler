@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ef.id FROM tv_episode_files ef\n         JOIN media_root_files mrf ON mrf.file_path = ef.file_path AND mrf.available = true\n         WHERE ef.media_cache_version < $1\n           AND ef.duration_seconds IS NOT NULL\n           AND ef.available = true\n         ORDER BY ef.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d1eb9cdc7a32f658a379231e07866e32aec1943fb5ed3c14d51caaf6e8f089b6"
+}

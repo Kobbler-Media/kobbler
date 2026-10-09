@@ -1,0 +1,63 @@
+# Rust build artifacts — keep out of build context
+target/
+**/target/
+
+# Node
+**/node_modules/
+**/.svelte-kit/
+**/build/
+**/dist/
+
+# VCS + editor
+.git/
+.idea/
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Env files (don't leak secrets into images)
+.env
+.env.*
+!.env.example
+!env.dev.template
+
+# Docker / local dev
+docker-compose.dev.yml
+docker-compose.test.yml
+
+# Agent metadata
+.claude/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+
+# Docs
+README.md
+docs/
+
+# Model weights. Verified no Dockerfile COPYs a weight file or a models/ dir --
+# these were pure build-context tax. docker/stt-parakeet-cpp/models alone is 702 MB,
+# shipped to the daemon on EVERY build in this repo.
+**/models/
+*.gguf
+*.safetensors
+*.onnx
+*.nemo
+*.pt
+
+# Session/run artefacts
+*.pid
+*.log
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+out_e070/
+mvp_out/
+vram_trace.txt
+SCRATCHPAD/
+tts-samples/
+tts-bench/
+.claudeignore
+.claude/projects/

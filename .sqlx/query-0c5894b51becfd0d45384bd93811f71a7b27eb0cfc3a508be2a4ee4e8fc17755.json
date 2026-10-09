@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM entitlements WHERE scope_type = 'DEVICE' AND scope_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0c5894b51becfd0d45384bd93811f71a7b27eb0cfc3a508be2a4ee4e8fc17755"
+}

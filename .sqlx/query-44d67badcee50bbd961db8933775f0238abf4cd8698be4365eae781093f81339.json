@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT u.user_id AS \"user_id!\"\n                FROM (\n                    SELECT tws.user_id FROM tv_watch_states tws\n                      JOIN tv_episodes e ON e.id = tws.episode_id\n                      JOIN tv_seasons s ON s.id = e.season_id\n                     WHERE s.show_id = (SELECT show_id FROM tv_seasons WHERE id = $1)\n                    UNION\n                    SELECT wi.user_id FROM watchlist_items wi\n                     WHERE wi.media_type = 'show'\n                       AND wi.media_id = (SELECT show_id FROM tv_seasons WHERE id = $1)\n                    UNION\n                    SELECT wa.user_id FROM wanted_attempts wa\n                      JOIN tv_episodes e ON e.id = wa.episode_id\n                     WHERE e.season_id = $1 AND wa.user_id IS NOT NULL\n                ) u\n                ORDER BY u.user_id\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "44d67badcee50bbd961db8933775f0238abf4cd8698be4365eae781093f81339"
+}

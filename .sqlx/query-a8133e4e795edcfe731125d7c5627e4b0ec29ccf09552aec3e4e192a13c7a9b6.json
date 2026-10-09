@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1\n              FROM tv_episode_files tef\n              JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id\n              JOIN tv_episodes te ON te.id = tefe.episode_id\n             WHERE te.season_id = $1\n               AND tef.media_cache_generated_at IS NOT NULL\n               AND (\n                    tef.skip_detect_ran_at IS NULL\n                 OR tef.skip_detect_ran_at < tef.media_cache_generated_at\n               )\n        ) AS \"stale!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stale!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a8133e4e795edcfe731125d7c5627e4b0ec29ccf09552aec3e4e192a13c7a9b6"
+}

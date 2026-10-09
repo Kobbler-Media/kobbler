@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            COUNT(*) AS \"episodes!\",\n            COUNT(*) FILTER (WHERE q.held) AS \"held!\",\n            COUNT(*) FILTER (WHERE q.aired) AS \"aired!\",\n            COUNT(*) FILTER (WHERE q.air_date > CURRENT_DATE) AS \"to_come!\",\n            COUNT(*) FILTER (WHERE q.air_date IS NULL) AS \"undated!\",\n            COUNT(*) FILTER (WHERE q.held AND q.aired) AS \"held_aired!\",\n            COUNT(*) FILTER (WHERE q.held AND NOT q.aired) AS \"held_unaired!\"\n        FROM (\n            SELECT te.air_date,\n                   (te.air_date IS NOT NULL AND te.air_date <= CURRENT_DATE) AS aired,\n                   EXISTS (\n                       SELECT 1 FROM tv_episode_file_episodes tefe\n                       JOIN tv_episode_files tef\n                         ON tef.id = tefe.episode_file_id AND tef.available\n                       WHERE tefe.episode_id = te.id\n                   ) AS held\n            FROM tv_episodes te\n            WHERE te.season_id = $1\n        ) q\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "episodes!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "held!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "aired!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "to_come!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "undated!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "held_aired!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "held_unaired!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "d1abacd66feb2efadc7aacaad7e6bea498fee8aa49a2e6fb20f85ff734f60984"
+}

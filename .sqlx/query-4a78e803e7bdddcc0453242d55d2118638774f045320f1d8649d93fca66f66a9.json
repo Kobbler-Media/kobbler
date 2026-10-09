@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM livetv_ad_breaks WHERE recording_id = $1 AND corrected_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4a78e803e7bdddcc0453242d55d2118638774f045320f1d8649d93fca66f66a9"
+}

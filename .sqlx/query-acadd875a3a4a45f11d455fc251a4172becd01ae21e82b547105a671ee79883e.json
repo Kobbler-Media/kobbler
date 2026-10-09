@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(e.id) AS \"total!\",\n               COUNT(e.id) FILTER (WHERE lib.in_library) AS \"in_library!\",\n               COUNT(e.id) FILTER (WHERE e.want_status <> 'none' AND NOT lib.in_library) AS \"wanted!\",\n               COUNT(e.id) FILTER (\n                   WHERE EXISTS (SELECT 1 FROM tv_watch_states ws WHERE ws.episode_id = e.id AND ws.user_id = $2 AND ws.watched)\n               ) AS \"watched!\"\n        FROM tv_episodes e\n        JOIN tv_seasons s ON s.id = e.season_id\n        CROSS JOIN LATERAL (\n            SELECT EXISTS (SELECT 1 FROM tv_episode_file_episodes efe WHERE efe.episode_id = e.id) AS in_library\n        ) lib\n        WHERE s.show_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "in_library!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "wanted!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "watched!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "acadd875a3a4a45f11d455fc251a4172becd01ae21e82b547105a671ee79883e"
+}

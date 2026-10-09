@@ -1,0 +1,160 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, user_id, book_id, rating, rating_source, rating_updated_at,\n               reading_status, reading_status_updated_at, started_at, finished_at,\n               created_at, updated_at\n        FROM user_book_data\n        WHERE user_id = $1\n        ORDER BY updated_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "book_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "rating",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "rating"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "rating_source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "rating_source"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "rating_updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "rating_updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "reading_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "reading_status"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "reading_status_updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "reading_status_updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "finished_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "deeed63c44c7e7253bd2e77a17e80041cd73a2558159ccb3cdf624a3b2962a47"
+}

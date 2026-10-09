@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT segments, pipeline_version, generated_at\n        FROM tv_episode_cached_segments\n        WHERE episode_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "segments",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_cached_segments",
+            "name": "segments"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pipeline_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_cached_segments",
+            "name": "pipeline_version"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "generated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_cached_segments",
+            "name": "generated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "fce6a08d2608b96857b65ac6627109fcbf6cb86b57c20eb61d3976c9a43d9196"
+}

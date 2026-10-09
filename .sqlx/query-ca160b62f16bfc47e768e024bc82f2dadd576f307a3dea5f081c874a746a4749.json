@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            s.id AS season_id,\n            s.season_identifier,\n            sh.id AS show_id,\n            sh.title AS show_title,\n            CASE WHEN (sh.images->'poster'->>'source_url' IS NOT NULL OR sh.images->'poster'->>'cached_at' IS NOT NULL)\n                 THEN '/api/v1/admin/tv/shows/' || sh.id || '/poster'\n                 ELSE NULL\n            END as poster_url\n        FROM tv_seasons s\n        JOIN tv_shows sh ON sh.id = s.show_id\n        WHERE s.id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "season_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "season_identifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_seasons",
+            "name": "season_identifier"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "show_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "show_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "poster_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "ca160b62f16bfc47e768e024bc82f2dadd576f307a3dea5f081c874a746a4749"
+}

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE iptv_sync_log SET\n            completed_at = NOW(),\n            status = 'completed',\n            channels_matched = $2,\n            sources_added = $3,\n            sources_removed = $4,\n            unmatched_count = $5,\n            epg_entries = $6\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "18fb4d413613d9ba366bb15f7966b879fd2947eb7e94bf4a64cdc0595b48747b"
+}

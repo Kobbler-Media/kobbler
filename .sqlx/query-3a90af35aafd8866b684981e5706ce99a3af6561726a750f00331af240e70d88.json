@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO wanted_attempts (id, book_id, source, external_id, status, message, files_json, user_id, created_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())\n        ON CONFLICT (book_id, source, external_id) WHERE external_id IS NOT NULL\n        DO UPDATE SET status = EXCLUDED.status, message = EXCLUDED.message, files_json = EXCLUDED.files_json,\n                      user_id = COALESCE(wanted_attempts.user_id, EXCLUDED.user_id)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "wanted_attempts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3a90af35aafd8866b684981e5706ce99a3af6561726a750f00331af240e70d88"
+}

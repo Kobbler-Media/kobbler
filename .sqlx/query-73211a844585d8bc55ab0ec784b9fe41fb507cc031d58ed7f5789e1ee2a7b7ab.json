@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM wanted_attempts WHERE book_id IS NULL AND movie_id IS NULL AND episode_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "73211a844585d8bc55ab0ec784b9fe41fb507cc031d58ed7f5789e1ee2a7b7ab"
+}

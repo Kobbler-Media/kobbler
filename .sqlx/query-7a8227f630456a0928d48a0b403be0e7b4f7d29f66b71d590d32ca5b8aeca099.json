@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO shelf_archives (id, user_id, name, last_modified)\n        VALUES ($1, $2, $3, NOW())\n        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, last_modified = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7a8227f630456a0928d48a0b403be0e7b4f7d29f66b71d590d32ca5b8aeca099"
+}

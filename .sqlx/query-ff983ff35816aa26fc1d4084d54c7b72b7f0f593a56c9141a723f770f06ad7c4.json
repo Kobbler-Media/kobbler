@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE books SET ingest_status = NULL, want_status = 'none', updated_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff983ff35816aa26fc1d4084d54c7b72b7f0f593a56c9141a723f770f06ad7c4"
+}

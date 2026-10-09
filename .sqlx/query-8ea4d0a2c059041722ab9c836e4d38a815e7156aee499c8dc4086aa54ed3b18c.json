@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE subtitle_providers SET\n            updated_at = NOW(),\n            enabled = COALESCE($2, enabled),\n            priority = COALESCE($3, priority),\n            config = COALESCE($4, config)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Int4",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8ea4d0a2c059041722ab9c836e4d38a815e7156aee499c8dc4086aa54ed3b18c"
+}

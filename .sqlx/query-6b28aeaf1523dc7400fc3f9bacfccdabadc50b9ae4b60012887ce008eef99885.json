@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO entitlements (id, book_id, scope_type, scope_id, is_removed)\n        VALUES ($1, $2, $3, $4, FALSE)\n        ON CONFLICT (book_id, scope_type, scope_id) DO NOTHING\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "entitlements",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6b28aeaf1523dc7400fc3f9bacfccdabadc50b9ae4b60012887ce008eef99885"
+}

@@ -1,0 +1,176 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.id, s.name, s.updated_at, s.identifiers, s.images, s.description,\n               s.auto_want_mode, s.total_book_count, s.is_monitored, s.monitoring_started_at, s.metadata,\n               COUNT(DISTINCT CASE WHEN (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)) THEN b.id END) AS \"book_count!\",\n               COUNT(DISTINCT CASE WHEN b.want_status = 'wanted' THEN b.id END) AS \"wanted_count!\",\n               (\n                 SELECT COALESCE(array_agg(id), ARRAY[]::uuid[])\n                 FROM (\n                   SELECT b2.id FROM books b2\n                   JOIN book_series bs2 ON bs2.book_id = b2.id AND bs2.series_id = s.id\n                   WHERE (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b2.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b2.id))\n                   ORDER BY\n                     COALESCE(bs2.series_index, 999999) ASC,\n                     b2.created_at ASC\n                   LIMIT 5\n                 ) sub\n               ) AS \"sample_book_ids!: Vec<Uuid>\",\n               COALESCE(\n                 (SELECT jsonb_agg(DISTINCT jsonb_build_object('id', a2.id, 'name', a2.name))\n                  FROM book_authors ba2\n                  JOIN authors a2 ON a2.id = ba2.author_id\n                  JOIN books b2 ON b2.id = ba2.book_id\n                  JOIN book_series bs2 ON bs2.book_id = b2.id AND bs2.series_id = s.id\n                  WHERE (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b2.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b2.id))),\n                 '[]'::jsonb\n               ) AS \"authors!\"\n        FROM series s\n        LEFT JOIN book_series bks ON bks.series_id = s.id\n        LEFT JOIN books b ON b.id = bks.book_id\n        WHERE s.id = $1\n        GROUP BY s.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "identifiers"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "images",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "auto_want_mode",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "auto_want_mode"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "total_book_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "total_book_count"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "is_monitored",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "is_monitored"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "monitoring_started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "monitoring_started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "metadata",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "metadata"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "book_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 12,
+        "name": "wanted_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "sample_book_ids!: Vec<Uuid>",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "authors!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ed20613ae2c1d8c7d5c27e03bf7cc06081fdd37430a59b20c071731e83466c64"
+}

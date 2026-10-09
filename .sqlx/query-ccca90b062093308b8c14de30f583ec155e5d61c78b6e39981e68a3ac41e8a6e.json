@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE authors SET\n            name = $2,\n            normalized_name = $3,\n            identifiers = authors.identifiers || $4,\n            images = authors.images || $5,\n            bio = COALESCE($6, authors.bio),\n            is_monitored = COALESCE($7, authors.is_monitored),\n            auto_want_mode = CASE\n                WHEN $8::text IS NOT NULL AND $8::text != 'none' THEN $8::text\n                ELSE authors.auto_want_mode\n            END,\n            known_book_count = COALESCE($9, authors.known_book_count),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Bool",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ccca90b062093308b8c14de30f583ec155e5d61c78b6e39981e68a3ac41e8a6e"
+}

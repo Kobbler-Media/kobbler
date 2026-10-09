@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT format, file_path\n        FROM book_files\n        WHERE book_id = $1\n          AND id <> $2\n          AND available\n          AND format <> 'KEPUB'\n          AND source_type NOT IN ('on_demand_conversion', 'format_conversion')\n        ORDER BY CASE format\n                     WHEN 'EPUB' THEN 0\n                     WHEN 'AZW3' THEN 1\n                     WHEN 'AZW'  THEN 2\n                     WHEN 'MOBI' THEN 3\n                     ELSE 4\n                 END\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "book_files",
+            "name": "format"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "book_files",
+            "name": "file_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "16f2b948ff49508f55b8df165ae11085ed497d8c327c976a00b4a526efb17dc0"
+}

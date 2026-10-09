@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO iptv_config (id, default_format, recording_path,\n                                  epg_update_interval_secs, channel_cleanup_enabled,\n                                  epg_retention_days)\n        VALUES (1, $1, $2, $3, $4, COALESCE($5, 7))\n        ON CONFLICT (id)\n        DO UPDATE SET\n            default_format = COALESCE($1, iptv_config.default_format),\n            recording_path = COALESCE($2, iptv_config.recording_path),\n            epg_update_interval_secs = COALESCE($3, iptv_config.epg_update_interval_secs),\n            channel_cleanup_enabled = COALESCE($4, iptv_config.channel_cleanup_enabled),\n            epg_retention_days = COALESCE($5, iptv_config.epg_retention_days),\n            updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int4",
+        "Bool",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a10541839aa39f68540fb30690e401d0ab2c90377547bfca8f8341ed72b74a71"
+}

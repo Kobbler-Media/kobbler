@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH mine AS (\n            SELECT transport, target, label FROM chat_watches WHERE id = $1\n        ),\n        family AS (\n            SELECT w.id, w.message_id, w.last_edit_at\n            FROM chat_watches w, mine\n            WHERE w.transport = mine.transport\n              AND w.target = mine.target\n              AND w.label = mine.label\n              AND w.expires_at > NOW()\n        ),\n        claimed AS (\n            UPDATE chat_watches\n            SET last_edit_at = NOW()\n            WHERE id IN (SELECT id FROM family)\n              AND EXISTS (SELECT 1 FROM family WHERE id = $1)\n              AND NOT EXISTS (\n                  SELECT 1 FROM family\n                  WHERE last_edit_at > NOW() - ($2::double precision * INTERVAL '1 second')\n              )\n            RETURNING id\n        )\n        SELECT\n            (SELECT COUNT(*) FROM claimed) AS \"claimed!\",\n            (SELECT message_id FROM family WHERE message_id IS NOT NULL ORDER BY id LIMIT 1)\n                AS \"message_id?\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "claimed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "message_id?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "a5456f87d325e26f07b86bd653dd4175668163463317e2d4f9d78249e3d994d4"
+}

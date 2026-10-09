@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE tv_seasons SET\n            title = COALESCE($2, title),\n            description = COALESCE($3, description),\n            images = images || $4,\n            air_date = COALESCE($5, air_date),\n            episode_count = COALESCE($6, episode_count),\n            is_special = COALESCE($7, is_special),\n            auto_want_mode = COALESCE($8, auto_want_mode)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Date",
+        "Int4",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b39bb0ad1fe8b028651499dc3ad692e8239d503d713d4e5926ad276eccee6566"
+}

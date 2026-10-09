@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO proxy_logs (\n            id, device_id, request_method, request_path, request_query,\n            request_headers, decision, status\n        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'in_progress')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c9d1dc79a355c23e88694ff6eb2ed6fa4a6977156f676a35e2291acde2fccba3"
+}

@@ -1,0 +1,177 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id, c.name, c.normalized_name, c.external_id, c.language, c.country,\n               c.category, c.icon_url, c.epg_channel_id, c.enabled, c.display_order,\n               c.created_at, c.updated_at,\n               COUNT(s.id) AS \"source_count!\"\n        FROM iptv_channels c\n        LEFT JOIN iptv_sources s ON s.channel_id = c.id\n        GROUP BY c.id\n        ORDER BY c.display_order ASC, c.name ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "normalized_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "normalized_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "country",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "country"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "category"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "icon_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "icon_url"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "epg_channel_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "epg_channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "display_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "display_order"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "iptv_channels",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "source_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "d8fc71bd549f140488ab4d5bae64951b564012d3c2c3c534cce85d54e44d9f46"
+}

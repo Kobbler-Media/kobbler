@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM livetv_ad_fingerprints\n        WHERE origin = 'auto'\n          AND seen_count <= 1\n          AND last_seen_at < NOW() - make_interval(days => $1::int)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0a8823e1610eecd42903a437cf26915dea20eb30a1b3764e3fe79ff7f7a9bf4c"
+}

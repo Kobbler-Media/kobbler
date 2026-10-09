@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT pending_verifier FROM kindle_accounts WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending_verifier",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "kindle_accounts",
+            "name": "pending_verifier"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "773762289e875aaaa5343966580fb3793e1db7760cbcfdc162cf2e23ab734e86"
+}

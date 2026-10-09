@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n              COUNT(*) FILTER (WHERE bm.location_type = 'audiobook')      AS \"audiobook!\",\n              COUNT(*) FILTER (WHERE bm.location_type IS DISTINCT FROM 'audiobook') AS \"ebook!\"\n            FROM reading_states rs\n            JOIN reading_bookmark bm ON bm.reading_state_id = rs.id\n            WHERE rs.user_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "audiobook!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "ebook!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "5263e00bcbd5538af28aafa8a651e6e8903b68a4a3654a327a215fb7fd5e652f"
+}

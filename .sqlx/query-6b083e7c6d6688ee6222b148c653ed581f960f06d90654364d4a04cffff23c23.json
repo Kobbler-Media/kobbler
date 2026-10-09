@@ -1,0 +1,186 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH source_book AS (\n            SELECT b.id, bs.series_id,\n                   COALESCE(bs.series_index, 0) AS series_pos\n            FROM books b\n            LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n            WHERE b.id = $1\n        ),\n        source_authors AS (\n            SELECT author_id FROM book_authors WHERE book_id = $1\n        ),\n        entitled_books AS (\n            SELECT DISTINCT e.book_id\n            FROM entitlements e\n            WHERE (\n                e.scope_type = 'ALL_USERS'\n                OR (e.scope_type = 'USER' AND e.scope_id = $2)\n                OR (e.scope_type = 'DEVICE' AND e.scope_id = $3)\n            )\n            AND e.is_removed = FALSE\n            AND e.book_id != $1\n            AND EXISTS (\n                SELECT 1 FROM book_files bf\n                WHERE bf.book_id = e.book_id AND bf.available = TRUE\n            )\n        )\n        SELECT\n            b.id AS book_id,\n            b.title,\n            b.description,\n            b.language,\n            b.publisher,\n            b.pubdate,\n            bsp.series_id AS \"series_id?\",\n            s.name AS \"series_name?\",\n            bsp.series_index,\n            b.identifiers,\n            COALESCE(\n                array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL),\n                ARRAY[]::text[]\n            ) AS \"authors!: Vec<String>\",\n            rb.progress_percent,\n            CASE\n                WHEN bsp.series_id IS NOT NULL\n                     AND bsp.series_id = sb.series_id\n                     AND COALESCE(bsp.series_index, 0) > sb.series_pos\n                THEN 'next_in_series'\n                ELSE 'same_author'\n            END AS \"reason!\",\n            -- Priority: unread first (0), then started (1), then read (2)\n            CASE\n                WHEN rb.progress_percent IS NULL OR rb.progress_percent < 1 THEN 0\n                WHEN rb.progress_percent >= 100 THEN 2\n                ELSE 1\n            END AS \"read_priority!\",\n            CASE\n                WHEN bsp.series_id IS NOT NULL\n                     AND bsp.series_id = sb.series_id\n                     AND COALESCE(bsp.series_index, 0) > sb.series_pos\n                THEN 0\n                ELSE 1\n            END AS \"sort_priority!\",\n            COALESCE(bsp.series_index, 999999) AS \"sort_index!\"\n        FROM books b\n        JOIN entitled_books eb ON eb.book_id = b.id\n        LEFT JOIN book_series bsp ON bsp.book_id = b.id AND bsp.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bsp.series_id\n        LEFT JOIN book_authors ba ON ba.book_id = b.id\n        LEFT JOIN authors a ON a.id = ba.author_id\n        CROSS JOIN source_book sb\n        -- Join reading state to get progress\n        LEFT JOIN reading_states rs ON rs.book_id = b.id AND rs.user_id = $2 AND rs.device_id = $3\n        LEFT JOIN reading_bookmark rb ON rb.reading_state_id = rs.id\n        WHERE (\n            -- Same series, later position (check ANY shared series, not just primary)\n            EXISTS (\n                SELECT 1 FROM book_series bs_cand\n                WHERE bs_cand.book_id = b.id\n                  AND bs_cand.series_id = sb.series_id\n                  AND COALESCE(bs_cand.series_index, 0) > sb.series_pos\n            )\n            OR\n            -- Same author\n            EXISTS (\n                SELECT 1 FROM source_authors sa\n                JOIN book_authors ba2 ON ba2.author_id = sa.author_id\n                WHERE ba2.book_id = b.id\n            )\n        )\n        GROUP BY b.id, bsp.series_id, bsp.series_index, s.name, sb.series_id, sb.series_pos, rs.id, rb.progress_percent\n        ORDER BY\n            CASE\n                WHEN bsp.series_id IS NOT NULL\n                     AND bsp.series_id = sb.series_id\n                     AND COALESCE(bsp.series_index, 0) > sb.series_pos\n                THEN 0\n                ELSE 1\n            END ASC,\n            CASE\n                WHEN rb.progress_percent IS NULL OR rb.progress_percent < 1 THEN 0\n                WHEN rb.progress_percent >= 100 THEN 2\n                ELSE 1\n            END ASC,\n            COALESCE(bsp.series_index, 999999) ASC,\n            b.title ASC\n        LIMIT $4\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "publisher",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "publisher"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "pubdate",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "pubdate"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "series_id?",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "series_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "series",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "series_index",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "book_series",
+            "name": "series_index"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "identifiers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "identifiers"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "authors!: Vec<String>",
+        "type_info": "TextArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "progress_percent",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "progress_percent"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "reason!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "read_priority!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 14,
+        "name": "sort_priority!",
+        "type_info": "Int4",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 15,
+        "name": "sort_index!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      null,
+      true,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "6b083e7c6d6688ee6222b148c653ed581f960f06d90654364d4a04cffff23c23"
+}

@@ -1,0 +1,61 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT q.id AS \"id!\", q.title AS \"title!\", q.year, q.held AS \"held!\"\n            FROM (\n                SELECT s.id, s.title, s.year,\n                       EXISTS (SELECT 1 FROM tv_episodes te\n                               JOIN tv_seasons tsn ON tsn.id = te.season_id\n                               JOIN tv_episode_file_episodes tefe ON tefe.episode_id = te.id\n                               JOIN tv_episode_files tef\n                                 ON tef.id = tefe.episode_file_id AND tef.available\n                               WHERE tsn.show_id = s.id) AS held\n                FROM tv_shows s\n                WHERE s.title ILIKE $1 OR s.original_title ILIKE $1\n            ) q\n            ORDER BY (LOWER(q.title) = LOWER($2)) DESC, q.held DESC,\n                     q.year DESC NULLS LAST, q.title ASC, q.id ASC\n            LIMIT $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "held!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "5de1f634997aace9c0a5f22713b4fd148cf5c63b765b6d300503eb58db9bf473"
+}

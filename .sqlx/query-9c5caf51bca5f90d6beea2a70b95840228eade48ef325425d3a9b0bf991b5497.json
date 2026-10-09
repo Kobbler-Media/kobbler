@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE livetv_recordings SET\n            duration_seconds = COALESCE($2, duration_seconds),\n            size_bytes = COALESCE($3, size_bytes),\n            video_codec = COALESCE($4, video_codec),\n            audio_codec = COALESCE($5, audio_codec),\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9c5caf51bca5f90d6beea2a70b95840228eade48ef325425d3a9b0bf991b5497"
+}

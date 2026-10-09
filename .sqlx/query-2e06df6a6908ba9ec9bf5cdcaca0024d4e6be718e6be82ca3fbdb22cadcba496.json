@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT mc.person_id, p.name AS person_name, mc.department, mc.job\n        FROM movie_crew mc\n        JOIN people p ON p.id = mc.person_id\n        WHERE mc.movie_id = $1\n        ORDER BY mc.department ASC, mc.job ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "person_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_crew",
+            "name": "person_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "person_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "people",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "department",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_crew",
+            "name": "department"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "job",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movie_crew",
+            "name": "job"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2e06df6a6908ba9ec9bf5cdcaca0024d4e6be718e6be82ca3fbdb22cadcba496"
+}

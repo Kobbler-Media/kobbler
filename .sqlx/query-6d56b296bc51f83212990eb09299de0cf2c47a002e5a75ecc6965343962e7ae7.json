@@ -1,0 +1,172 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT t.id, t.device_id, t.friendly_name, t.model_number, t.firmware_version, t.base_url,\n               t.device_auth, t.tuner_count, t.last_scan_at, t.last_guide_sync_at,\n               t.created_at, t.updated_at,\n               (SELECT COUNT(*) FROM livetv_channels c WHERE c.tuner_id = t.id) AS \"channel_count!\",\n               (SELECT COUNT(*) FROM livetv_channels c WHERE c.tuner_id = t.id AND c.enabled)\n                   AS \"enabled_channel_count!\"\n        FROM livetv_tuners t\n        ORDER BY t.created_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "device_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "device_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "friendly_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "friendly_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "model_number",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "model_number"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "firmware_version",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "firmware_version"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "base_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "base_url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "device_auth",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "device_auth"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "tuner_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "tuner_count"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "last_scan_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "last_scan_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "last_guide_sync_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "last_guide_sync_at"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_tuners",
+            "name": "updated_at"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "channel_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "enabled_channel_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "6d56b296bc51f83212990eb09299de0cf2c47a002e5a75ecc6965343962e7ae7"
+}

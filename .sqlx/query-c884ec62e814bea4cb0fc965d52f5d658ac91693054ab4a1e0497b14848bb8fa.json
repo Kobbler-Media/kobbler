@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO chat_turn_logs (\n            id, session_id, user_id, transport, user_message,\n            succeeded, turn_error,\n            extract_ms, extract_output, extract_shape, extract_error,\n            resolve_ms, resolve_query, resolved_ref, resolve_candidate_count,\n            resolve_candidates, resolve_error,\n            action_ms, action_name, action_args, action_result, action_error,\n            llm_provider, llm_model, llm_ms, prompt_tokens, completion_tokens, rounds,\n            tool_calls, tool_call_count, assistant_text, total_ms\n        ) VALUES (\n            $1, $2, $3, $4, $5,\n            $6, $7,\n            $8, $9, $10, $11,\n            $12, $13, $14, $15,\n            $16, $17,\n            $18, $19, $20, $21, $22,\n            $23, $24, $25, $26, $27, $28,\n            $29, $30, $31, $32\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Bool",
+        "Text",
+        "Int4",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Int4",
+        "Jsonb",
+        "Text",
+        "Int4",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Jsonb",
+        "Int4",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c884ec62e814bea4cb0fc965d52f5d658ac91693054ab4a1e0497b14848bb8fa"
+}

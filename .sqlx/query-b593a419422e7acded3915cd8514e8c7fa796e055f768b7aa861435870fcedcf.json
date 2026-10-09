@@ -1,0 +1,85 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT q.id AS \"id!\", q.title AS \"title!\", q.year, q.character, q.job,\n               q.held AS \"held!\", q.want_status AS \"want_status!\"\n        FROM (\n            SELECT m.id, m.title, m.year, m.want_status,\n                   (SELECT string_agg(DISTINCT mc.character_name, ', ')\n                    FROM movie_cast mc\n                    WHERE mc.movie_id = m.id AND mc.person_id = $1) AS character,\n                   (SELECT string_agg(DISTINCT mcr.job, ', ')\n                    FROM movie_crew mcr\n                    WHERE mcr.movie_id = m.id AND mcr.person_id = $1) AS job,\n                   EXISTS (SELECT 1 FROM movie_files mf\n                           WHERE mf.movie_id = m.id AND mf.available) AS held\n            FROM movies m\n            WHERE (EXISTS (SELECT 1 FROM movie_cast mc\n                           WHERE mc.movie_id = m.id AND mc.person_id = $1)\n                OR EXISTS (SELECT 1 FROM movie_crew mcr\n                           WHERE mcr.movie_id = m.id AND mcr.person_id = $1))\n              AND NOT EXISTS (\n                  SELECT 1 FROM person_dismissed_credits d\n                  WHERE d.person_id = $1\n                    AND d.media_type = 'movie'\n                    AND d.tmdb_id::text = m.identifiers->>'tmdb_id')\n        ) q\n        ORDER BY q.held DESC, q.year DESC NULLS LAST, q.title ASC, q.id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "character",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "job",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "held!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "want_status!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "want_status"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      null,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "b593a419422e7acded3915cd8514e8c7fa796e055f768b7aa861435870fcedcf"
+}

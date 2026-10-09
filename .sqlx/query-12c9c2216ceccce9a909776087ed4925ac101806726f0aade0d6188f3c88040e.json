@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO books (id, title, description, language, publisher, pubdate,\n                           identifiers, page_count, rating, rating_count, images,\n                           want_status, narrator, want_format, is_abridged)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'none', $12,\n                COALESCE($13, 'ebook'), COALESCE($14, FALSE))\n        ON CONFLICT (id) DO UPDATE SET\n            title = EXCLUDED.title,\n            description = COALESCE(EXCLUDED.description, books.description),\n            language = COALESCE(EXCLUDED.language, books.language),\n            publisher = COALESCE(EXCLUDED.publisher, books.publisher),\n            pubdate = COALESCE(EXCLUDED.pubdate, books.pubdate),\n            identifiers = books.identifiers || EXCLUDED.identifiers,\n            page_count = COALESCE(EXCLUDED.page_count, books.page_count),\n            rating = COALESCE(EXCLUDED.rating, books.rating),\n            rating_count = COALESCE(EXCLUDED.rating_count, books.rating_count),\n            images = books.images || EXCLUDED.images,\n            narrator = COALESCE(EXCLUDED.narrator, books.narrator),\n            want_format = CASE\n                WHEN books.want_format = EXCLUDED.want_format THEN books.want_format\n                WHEN books.want_format = 'both' OR EXCLUDED.want_format = 'both' THEN 'both'\n                ELSE 'both'\n            END,\n            is_abridged = COALESCE(EXCLUDED.is_abridged, books.is_abridged),\n            want_status = 'none',\n            updated_at = NOW()\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Jsonb",
+        "Int4",
+        "Float8",
+        "Int4",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "12c9c2216ceccce9a909776087ed4925ac101806726f0aade0d6188f3c88040e"
+}

@@ -1,0 +1,48 @@
+.DS_Store
+.env
+.env.*
+!.env.dev.template
+__pycache__/
+*.pyc
+.venv/
+.ruff_cache/
+/tmp/
+/data/
+/plugins/*.zip
+target/
+api/target/
+# Dev snapshot (created by Save as Dev Default)
+config/dev-snapshot.tar.gz
+
+# Live instance config. This is instance state, not source: docker-compose
+# bind-mounts ./config:/config, and the Settings UI rewrites it in place on
+# every save, so a tracked copy would carry each machine's own hostnames and
+# keys into the repo.
+# Template: config/kobbler.toml.example
+config/kobbler.toml
+
+# Local dev data (test books, personal config) - directory tracked, contents ignored
+/local/watch/*
+!/local/watch/.gitkeep
+docker-compose.override.yml
+SCRATCHPAD/
+
+# TTS dev iteration: built artifacts, benchmark output, ear-test samples
+/tts-samples/
+/tts-bench/
+
+.claude/
+.agents/
+.pi/
+
+# Local agent context — machine/deploy specific, never public
+CLAUDE.local.md
+AGENTS.local.md
+
+# Local compose overrides
+docker-compose.local.yml
+!.env.example
+
+# Personal agent notes / IDE project files — never public
+.gotchas/
+.idea/

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_cache_version FROM tv_episode_files WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_cache_version",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "media_cache_version"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "2513afe669efec273a8d331a51f403d818b1ece3812e85a6fc27e224c929ed44"
+}

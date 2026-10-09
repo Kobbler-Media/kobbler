@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT u.user_id AS \"user_id!\"\n                FROM (\n                    SELECT mws.user_id FROM movie_watch_states mws WHERE mws.movie_id = $1\n                    UNION\n                    SELECT wi.user_id FROM watchlist_items wi\n                     WHERE wi.media_type = 'movie' AND wi.media_id = $1\n                    UNION\n                    SELECT wa.user_id FROM wanted_attempts wa\n                     WHERE wa.movie_id = $1 AND wa.user_id IS NOT NULL\n                ) u\n                ORDER BY u.user_id\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a03776c22c56e5f5612c5195d84b3bdef42f733af1b9c73e6ff672f1edd315ec"
+}

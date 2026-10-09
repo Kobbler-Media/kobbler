@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM authors\n        WHERE is_monitored = false\n          AND NOT EXISTS (SELECT 1 FROM book_authors WHERE author_id = authors.id)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "36c62c9d28b9b2749ba386d1ab63c91b806f41e8f97ac45a53cb5c601b759d8a"
+}

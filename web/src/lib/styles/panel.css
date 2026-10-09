@@ -1,0 +1,247 @@
+/* === Shared sidebar/detail panel styles ===
+ * Canonical versions of patterns duplicated across BookDetailsPanel,
+ * MovieDetailSidebar, TvShowDetailsPanel, EpisodeDetailsPanel,
+ * SeasonDetailsPanel, SportsLeagueDetailsPanel, SportsEventDetailsPanel,
+ * SportsSeasonDetailsPanel.
+ *
+ * Use :global() in Svelte components or import from root layout.
+ */
+
+/* --- Sections --- */
+
+.panel-section {
+  padding: 16px 0;
+  border-top: 1px solid var(--ring);
+}
+
+.panel-section-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+
+/* Section title row with inline action buttons */
+.panel-section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.panel-section-title-row .panel-section-title {
+  margin-bottom: 0;
+}
+
+.panel-section-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* --- Description / Overview --- */
+
+.panel-overview {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0;
+}
+
+.panel-overview.collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.panel-expand-link {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+.panel-expand-link:hover {
+  text-decoration: underline;
+}
+
+/* --- Metadata rows --- */
+
+.panel-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.panel-meta-item {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* --- Cast list --- */
+
+.panel-cast-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.panel-cast-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 8px;
+  transition: background 0.15s;
+  color: inherit;
+  font: inherit;
+}
+
+.panel-cast-btn:hover {
+  background: var(--bg-2);
+}
+
+.panel-more-count {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 6px 0;
+}
+
+/* --- Small icon buttons (used inline next to section titles, file boxes, etc.) --- */
+
+.panel-icon-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ring);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.panel-icon-btn:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.panel-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.panel-icon-btn .material-icons-outlined {
+  font-size: 16px;
+}
+
+/* --- File empty state (matches BookFilesPanel pattern) --- */
+
+.panel-file-empty {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--ring);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+[data-theme='light'] .panel-file-empty {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.panel-file-empty .muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* --- Want/status pills (for hero actions) --- */
+
+.panel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 100px;
+  border: 1px solid var(--ring);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.panel-pill:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.panel-pill.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.panel-pill .material-icons-outlined {
+  font-size: 14px;
+}
+
+/* --- File section label --- */
+
+.panel-file-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+/* --- Episode/event status icons --- */
+
+.status-icon {
+  font-size: 16px;
+}
+
+.status-icon.in-library {
+  color: var(--success, #22c55e);
+}
+
+.status-icon.wanted {
+  color: var(--wanted, #f59e0b);
+}
+
+.status-icon.searching,
+.status-icon.downloading,
+.status-icon.ingesting,
+.status-icon.watching {
+  color: var(--accent);
+}
+
+.status-icon.search-failed,
+.status-icon.failed {
+  color: var(--error, #ef4444);
+}
+
+.status-icon.skipped {
+  color: var(--muted);
+}

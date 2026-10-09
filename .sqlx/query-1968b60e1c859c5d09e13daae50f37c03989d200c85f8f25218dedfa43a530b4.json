@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO user_book_data (user_id, book_id, reading_status, reading_status_updated_at, started_at, finished_at)\n        VALUES ($1, $2, $3, NOW(),\n                CASE WHEN $4 THEN NOW() ELSE NULL END,\n                CASE WHEN $5 THEN NOW() ELSE NULL END)\n        ON CONFLICT (user_id, book_id) DO UPDATE SET\n            reading_status = $3,\n            reading_status_updated_at = NOW(),\n            started_at = CASE\n                WHEN $4 AND user_book_data.started_at IS NULL THEN NOW()\n                ELSE user_book_data.started_at\n            END,\n            finished_at = CASE\n                WHEN $5 THEN NOW()\n                ELSE user_book_data.finished_at\n            END,\n            updated_at = NOW()\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_book_data",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1968b60e1c859c5d09e13daae50f37c03989d200c85f8f25218dedfa43a530b4"
+}

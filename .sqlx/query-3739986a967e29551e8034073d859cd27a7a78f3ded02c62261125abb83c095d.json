@@ -1,0 +1,148 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, movie_file_id, episode_file_id, track_index,\n               codec, channels, bitrate_kbps, sample_rate,\n               language, title, is_default\n        FROM audio_tracks\n        WHERE movie_file_id = $1\n        ORDER BY track_index\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "movie_file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "movie_file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "episode_file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "episode_file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "track_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "track_index"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "codec",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "codec"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "channels",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "channels"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "bitrate_kbps",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "bitrate_kbps"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "sample_rate",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "sample_rate"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "is_default",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "audio_tracks",
+            "name": "is_default"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "3739986a967e29551e8034073d859cd27a7a78f3ded02c62261125abb83c095d"
+}

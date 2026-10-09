@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT default_format, recording_path, epg_update_interval_secs,\n               channel_cleanup_enabled, epg_retention_days\n        FROM iptv_config\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "default_format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_config",
+            "name": "default_format"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "recording_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "iptv_config",
+            "name": "recording_path"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "epg_update_interval_secs",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_config",
+            "name": "epg_update_interval_secs"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "channel_cleanup_enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "iptv_config",
+            "name": "channel_cleanup_enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "epg_retention_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "iptv_config",
+            "name": "epg_retention_days"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "867f37ced2badf521c946da478800439cd0b7c2d71f282863f8ee2550aff004a"
+}

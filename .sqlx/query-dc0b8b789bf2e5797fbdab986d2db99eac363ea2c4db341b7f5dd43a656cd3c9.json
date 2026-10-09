@@ -1,0 +1,69 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            m.id,\n            m.title,\n            m.year,\n            m.images as \"images: serde_json::Value\",\n            MAX(mf.created_at) as \"added_at!: OffsetDateTime\"\n        FROM movies m\n        JOIN movie_files mf ON mf.movie_id = m.id AND mf.available = true\n        GROUP BY m.id, m.title, m.year, m.images\n        ORDER BY MAX(mf.created_at) DESC\n        LIMIT 12\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "images: serde_json::Value",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movies",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "added_at!: OffsetDateTime",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "dc0b8b789bf2e5797fbdab986d2db99eac363ea2c4db341b7f5dd43a656cd3c9"
+}

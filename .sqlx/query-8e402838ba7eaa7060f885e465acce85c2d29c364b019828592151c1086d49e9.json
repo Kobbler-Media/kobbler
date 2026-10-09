@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE people SET\n            last_metadata_refresh_at = NOW(),\n            next_metadata_refresh_at = NOW() + (metadata_refresh_interval_hours * interval '1 hour')\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8e402838ba7eaa7060f885e465acce85c2d29c364b019828592151c1086d49e9"
+}

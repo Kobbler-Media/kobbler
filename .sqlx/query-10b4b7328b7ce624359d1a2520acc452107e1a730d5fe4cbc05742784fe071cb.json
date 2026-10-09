@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT external_id AS \"external_id!\"\n        FROM wanted_attempts\n        WHERE (book_id = $1 OR movie_id = $1 OR episode_id = $1)\n          AND external_id IS NOT NULL\n          AND status NOT IN ('completed', 'failed', 'cancelled')\n        ORDER BY created_at DESC, id DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "external_id!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "wanted_attempts",
+            "name": "external_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "10b4b7328b7ce624359d1a2520acc452107e1a730d5fe4cbc05742784fe071cb"
+}

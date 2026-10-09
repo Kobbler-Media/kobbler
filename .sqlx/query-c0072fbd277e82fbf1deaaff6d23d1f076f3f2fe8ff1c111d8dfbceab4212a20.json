@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE discord_show_threads\n        SET card_message_id = $3, card_entity_id = $4\n        WHERE agent_id = $1 AND show_id = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c0072fbd277e82fbf1deaaff6d23d1f076f3f2fe8ff1c111d8dfbceab4212a20"
+}

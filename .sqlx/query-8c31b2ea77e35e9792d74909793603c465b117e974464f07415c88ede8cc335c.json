@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH input_ids AS (SELECT unnest($1::uuid[]) AS id)\n        SELECT i.id AS \"id!\", 'book' AS \"entity_type!\", b.title AS \"name!\"\n          FROM input_ids i JOIN books b ON b.id = i.id\n        UNION ALL\n        SELECT i.id, 'shelf', s.name\n          FROM input_ids i JOIN shelves s ON s.id = i.id\n        UNION ALL\n        SELECT i.id, 'series', s.name\n          FROM input_ids i JOIN series s ON s.id = i.id\n        UNION ALL\n        SELECT i.id, 'author', a.name\n          FROM input_ids i JOIN authors a ON a.id = i.id\n        UNION ALL\n        SELECT i.id, 'device', d.name\n          FROM input_ids i JOIN devices d ON d.id = i.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "entity_type!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "name!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "8c31b2ea77e35e9792d74909793603c465b117e974464f07415c88ede8cc335c"
+}

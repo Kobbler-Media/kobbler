@@ -1,0 +1,172 @@
+# Kobbler — core stack.
+#
+# Everything a working Kobbler install needs and nothing else: PostgreSQL,
+# NATS (job queue), Meilisearch (search index), the Rust API and the SvelteKit
+# web UI. No GPU required.
+#
+#   cp .env.example .env      # then edit the secrets at the top
+#   make up                    # first run also builds kobbler-tools:latest,
+#                              # the API's base image (Calibre, FFmpeg,
+#                              # chromaprint) — several minutes, once
+#
+# The web UI is on http://localhost:5173 and the API on http://localhost:6766.
+#
+# Optional GPU engines (text-to-speech, speech-to-text, image embeddings) live
+# in the opt-in overlay:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+#
+# koblem (generative media) and kobload (acquisition) are separate projects with
+# their own compose stacks. Kobbler talks to them over HTTP — point the
+# `koblem_service_url` / Kobload settings at wherever you run them.
+
+services:
+  nats:
+    image: nats:2.14.4-alpine
+    restart: unless-stopped
+    command: ["--jetstream", "--store_dir=/data", "-m", "8222", "--auth", "${NATS_TOKEN}"]
+    volumes:
+      - nats_data:/data
+    ports:
+      - "${NATS_MONITOR_PORT:-8222}:8222"
+      - "${NATS_PORT:-4222}:4222"
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.54.3
+    restart: unless-stopped
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_EXPERIMENTAL_ALLOWED_IP_NETWORKS=any
+      - MEILI_UPGRADE_DB=true
+    volumes:
+      - meili_data:/meili_data
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Add `ports: ["${MEILI_PORT:-7700}:7700"]` to expose the UI for debugging.
+
+  db:
+    image: postgres:18.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kobbler
+      POSTGRES_USER: kobbler
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kobbler}
+    volumes:
+      - kobbler_pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kobbler -d kobbler"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  api:
+    # Images are named for ghcr.io/kobbler-media. `up` builds locally if the
+    # image is not present; once images are published, `docker compose pull`
+    # grabs them instead. Set KOBBLER_REGISTRY to push to a fork's registry.
+    image: ${KOBBLER_REGISTRY:-ghcr.io/kobbler-media}/kobbler:latest
+    init: true
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      target: prod
+      additional_contexts:
+        # Sibling checkout of the koblibs crates — see README.md.
+        koblibs: ${KOBLIBS_DIR:-../koblibs}
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    environment:
+      DATABASE_URL: postgres://kobbler:${POSTGRES_PASSWORD:-kobbler}@db:5432/kobbler
+      STORAGE_ROOT: /data
+      CONFIG_PATH: /config/kobbler.toml
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
+      RUST_LOG: ${RUST_LOG:-info,api=info,tower_http=info}
+      KOBBLER_HTTP_TRACE: ${KOBBLER_HTTP_TRACE:-0}
+      KOBBLER_DOWNLOAD_TRACE: ${KOBBLER_DOWNLOAD_TRACE:-0}
+      # Conversion tools; empty = search PATH. The native kob-ebook pipeline
+      # handles EPUB/MOBI/AZW3 in-process — ebook-convert is only the fallback
+      # for PDF/FB2/RTF/TXT/HTML/DOCX/LIT/PDB.
+      EBOOK_CONVERT_PATH: ${EBOOK_CONVERT_PATH:-}
+      EBOOK_META_PATH: ${EBOOK_META_PATH:-}
+      NATS_URL: ${NATS_URL:-nats://${NATS_TOKEN}@nats:4222}
+      MEILI_URL: ${MEILI_URL:-http://meilisearch:7700}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      KOBBLER_WEB_ORIGINS: ${KOBBLER_WEB_ORIGINS:-}
+      KOBBLER_PIN_SERVICE_URL: ${KOBBLER_PIN_SERVICE_URL:-}
+      # Quiet hours are wall-clock times, judged in the user's own timezone when
+      # `users.timezone` is set and in THIS container's otherwise. Set TZ to your
+      # household's zone or quiet hours will be silencing the wrong half of the day.
+      TZ: ${TZ:-UTC}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    ports:
+      - "${KOBBLER_API_PORT:-6766}:8080"
+      - "${KOBBLER_PROXY_PORT:-6767}:6767"
+    volumes:
+      - kobbler_data:/data
+      - ./config:/config
+      # Your library. Point KOBBLER_MEDIA_ROOT at wherever your books, audiobooks
+      # and video actually live; add further `- /host/path:/media/<name>:ro` lines
+      # for libraries on other disks. Watch/library paths configured in the UI are
+      # container paths, i.e. under /media.
+      - ${KOBBLER_MEDIA_ROOT:-./data/media}:/media
+    # Hardware transcoding. Uncomment the block that matches your host — neither
+    # is required, Kobbler falls back to software transcoding.
+    #
+    # devices:
+    #   - /dev/dri:/dev/dri              # Intel/AMD VA-API
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia           # NVIDIA NVENC/NVDEC
+    #           count: 1
+    #           capabilities: [gpu, video]
+    depends_on:
+      db:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      meilisearch:
+        condition: service_healthy
+
+  web:
+    image: ${KOBBLER_REGISTRY:-ghcr.io/kobbler-media}/kobbler-web:latest
+    build:
+      context: ./web
+      additional_contexts:
+        koblibs: ${KOBLIBS_DIR:-../koblibs}
+      target: prod
+    restart: unless-stopped
+    ports:
+      - "${KOBBLER_WEB_PORT:-5173}:80"
+    depends_on:
+      - api
+
+volumes:
+  nats_data:
+  meili_data:
+  kobbler_pg:
+  kobbler_data:

@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.id, s.user_id, s.endpoint, s.p256dh, s.auth, s.user_agent, s.created_at\n        FROM webpush_subscriptions s\n        JOIN users u ON u.id = s.user_id\n        WHERE u.role = ANY($1)\n        ORDER BY s.created_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "endpoint",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "endpoint"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "p256dh",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "p256dh"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "auth",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "auth"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "user_agent",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "user_agent"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "webpush_subscriptions",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "e412116a606d5443a9b8feab28b48192e92526b3b3ed787d594d05a4ae0fa7e9"
+}

@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            a.id,\n            a.name,\n            CASE WHEN (a.images->'profile'->>'source_url' IS NOT NULL OR a.images->'profile'->>'cached_at' IS NOT NULL)\n                 THEN '/api/v1/library/authors/' || a.id || '/image'\n                 ELSE NULL\n            END as image_url,\n            COALESCE(\n                (SELECT COUNT(DISTINCT ba.book_id)\n                 FROM book_authors ba\n                 JOIN books b ON b.id = ba.book_id\n                 WHERE ba.author_id = a.id AND (EXISTS (SELECT 1 FROM book_files bf2 WHERE bf2.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af2 WHERE af2.book_id = b.id))),\n                0\n            ) as \"book_count!\",\n            a.is_monitored\n        FROM authors a\n        WHERE a.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "image_url",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "book_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_monitored",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "authors",
+            "name": "is_monitored"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      null,
+      false
+    ]
+  },
+  "hash": "a4a20f5f7724d94ea4c10a023d8af35edb625f159afd3addec66813c225a70b7"
+}

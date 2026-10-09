@@ -1,0 +1,91 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            (SELECT COUNT(*) FROM books b\n             WHERE EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)\n                OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)\n            ) AS \"books!\",\n            (SELECT COUNT(DISTINCT af.book_id) FROM audiobook_files af) AS \"audiobooks!\",\n            (SELECT COUNT(DISTINCT ba.author_id) FROM book_authors ba) AS \"authors!\",\n            (SELECT COUNT(DISTINCT bs.series_id) FROM book_series bs) AS \"series!\",\n            (SELECT COUNT(*) FROM movies m\n             WHERE EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = m.id AND mf.available)\n            ) AS \"movies!\",\n            (SELECT COUNT(*) FROM tv_shows WHERE content_category = 'tv') AS \"tv_shows!\",\n            (SELECT COUNT(*) FROM tv_shows WHERE content_category = 'sport') AS \"sports!\",\n            (SELECT COUNT(DISTINCT tefe.episode_id)\n             FROM tv_episode_file_episodes tefe\n             JOIN tv_episode_files tef ON tef.id = tefe.episode_file_id AND tef.available\n            ) AS \"episodes_available!\",\n            (SELECT COUNT(*) FROM books WHERE want_status NOT IN ('none', 'skipped')) AS \"books_wanted!\",\n            (SELECT COUNT(*) FROM movies WHERE want_status NOT IN ('none', 'skipped')) AS \"movies_wanted!\",\n            (SELECT COUNT(*) FROM tv_episodes WHERE want_status NOT IN ('none', 'skipped')) AS \"episodes_wanted!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "books!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "audiobooks!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "authors!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "series!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "movies!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "tv_shows!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "sports!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "episodes_available!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "books_wanted!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "movies_wanted!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "episodes_wanted!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "5220e58aae6a3cff960ce517bcd73f5b8411d00662df90de03c0753411bf6e88"
+}

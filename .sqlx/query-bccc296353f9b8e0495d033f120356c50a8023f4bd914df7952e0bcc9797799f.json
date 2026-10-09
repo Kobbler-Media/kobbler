@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO person_dismissed_credits (person_id, tmdb_id, media_type)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (person_id, tmdb_id, media_type) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bccc296353f9b8e0495d033f120356c50a8023f4bd914df7952e0bcc9797799f"
+}

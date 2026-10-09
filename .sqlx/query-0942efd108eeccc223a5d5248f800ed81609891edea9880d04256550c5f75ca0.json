@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO chat_watches (\n            id, transport, target, message_id, entity_kind, entity_id, label, user_id, expires_at\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW() + ($9::double precision * INTERVAL '1 second'))\n        ON CONFLICT (transport, (target ->> 'space'), COALESCE(target ->> 'thread', ''), entity_id)\n        DO UPDATE SET\n            message_id = COALESCE(EXCLUDED.message_id, chat_watches.message_id),\n            label = EXCLUDED.label,\n            entity_kind = EXCLUDED.entity_kind,\n            user_id = COALESCE(EXCLUDED.user_id, chat_watches.user_id),\n            expires_at = GREATEST(chat_watches.expires_at, EXCLUDED.expires_at),\n            last_state = NULL,\n            last_edit_at = NULL\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "chat_watches",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0942efd108eeccc223a5d5248f800ed81609891edea9880d04256550c5f75ca0"
+}

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT max_concurrent_io FROM media_roots WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "max_concurrent_io",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "media_roots",
+            "name": "max_concurrent_io"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3a9fcf16b5e63e2c56c88ac4c58ad3caac2d840e3eabcc08074cfb8de247bcbd"
+}

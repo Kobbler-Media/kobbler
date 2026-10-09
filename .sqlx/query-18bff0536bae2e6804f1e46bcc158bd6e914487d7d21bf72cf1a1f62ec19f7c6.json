@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM proxy_logs",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "18bff0536bae2e6804f1e46bcc158bd6e914487d7d21bf72cf1a1f62ec19f7c6"
+}

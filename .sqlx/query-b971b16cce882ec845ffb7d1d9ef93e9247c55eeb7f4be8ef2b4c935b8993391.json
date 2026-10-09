@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, format, source_path, file_path AS \"file_path?\"\n        FROM audiobook_files\n        WHERE id = $1 AND book_id = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "format",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "format"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "source_path"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "file_path?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "file_path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b971b16cce882ec845ffb7d1d9ef93e9247c55eeb7f4be8ef2b4c935b8993391"
+}

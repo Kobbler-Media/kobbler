@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE authors SET name = $2, normalized_name = $3, updated_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b10b2963871a1f2cba4c1f94314baf2a8ab3dd4dd7bbe20441ab6e73284aefd4"
+}
