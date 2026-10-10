@@ -258,3 +258,51 @@ async fn test_image_reads_are_public_and_writes_are_not() {
         );
     }
 }
+
+// =============================================================================
+// Legacy backdrop sizes
+// =============================================================================
+
+#[tokio::test]
+async fn legacy_w780_backdrops_are_refetched_at_w1280() {
+    let server = TestServer::start_api_only().await;
+    let movie = uuid::Uuid::parse_str(&create_movie(&server, "Small Backdrop").await).unwrap();
+    let show = uuid::Uuid::parse_str(&create_show(&server, "Small Backdrop Show").await).unwrap();
+    let legacy = json!({
+        "poster": {"source_url": "https://image.tmdb.org/t/p/w780/p.jpg", "cached_at": "2026-01-01T00:00:00Z"},
+        "backdrop": {"source_url": "https://image.tmdb.org/t/p/w780/b.jpg", "cached_at": "2026-01-01T00:00:00Z"}
+    });
+    for table in ["movies", "tv_shows"] {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {table} SET images = $1"
+        )))
+        .bind(&legacy)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+    }
+
+    sqlx::raw_sql(include_str!("../migrations/0182_full_size_backdrops.sql"))
+        .execute(&server.pool)
+        .await
+        .unwrap();
+
+    for (table, id) in [("movies", movie), ("tv_shows", show)] {
+        let images: Value = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT images FROM {table} WHERE id = $1"
+        )))
+        .bind(id)
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            images["backdrop"],
+            json!({"source_url": "https://image.tmdb.org/t/p/w1280/b.jpg"}),
+            "{table}: backdrop must point at w1280 and drop cached_at so the stale file is replaced"
+        );
+        assert_eq!(
+            images["poster"], legacy["poster"],
+            "{table}: posters are untouched"
+        );
+    }
+}
