@@ -498,6 +498,7 @@ impl TmdbProvider {
                     .and_then(|y| y.parse().ok()),
                 description: m.overview,
                 poster_url: Self::poster_url(m.poster_path.as_deref()),
+                backdrop_url: Self::backdrop_url(m.backdrop_path.as_deref()),
                 rating: m.vote_average.map(|r| r / 2.0),
                 rating_count: m.vote_count,
                 identifiers: VideoIdentifiers {
@@ -566,6 +567,7 @@ impl TmdbProvider {
                 status: None,
                 description: s.overview,
                 poster_url: Self::poster_url(s.poster_path.as_deref()),
+                backdrop_url: Self::backdrop_url(s.backdrop_path.as_deref()),
                 network: None,
                 rating: s.vote_average.map(|r| r / 2.0),
                 rating_count: s.vote_count,
@@ -1296,6 +1298,7 @@ struct TmdbMovieSearchItem {
     overview: Option<String>,
     release_date: Option<String>,
     poster_path: Option<String>,
+    backdrop_path: Option<String>,
     vote_average: Option<f64>,
     vote_count: Option<i32>,
     #[serde(default)]
@@ -1314,6 +1317,7 @@ struct TmdbTvSearchItem {
     overview: Option<String>,
     first_air_date: Option<String>,
     poster_path: Option<String>,
+    backdrop_path: Option<String>,
     vote_average: Option<f64>,
     vote_count: Option<i32>,
     #[serde(default)]
@@ -1694,6 +1698,28 @@ mod tests {
                 ]
             }]
         })
+    }
+
+    #[test]
+    fn list_results_carry_full_size_backdrops() {
+        let movies: TmdbSearchResponse = serde_json::from_value(serde_json::json!({
+            "results": [{"id": 1, "title": "M", "poster_path": "/p.jpg", "backdrop_path": "/b.jpg"}]
+        }))
+        .unwrap();
+        let shows: TmdbTvSearchResponse = serde_json::from_value(serde_json::json!({
+            "results": [{"id": 2, "name": "S", "poster_path": "/p.jpg", "backdrop_path": "/b.jpg"}]
+        }))
+        .unwrap();
+
+        let expected = Some(format!("{IMAGE_BASE}w1280/b.jpg"));
+        assert_eq!(
+            TmdbProvider::movies_from_search(movies)[0].backdrop_url,
+            expected
+        );
+        assert_eq!(
+            TmdbProvider::tv_from_search(shows)[0].backdrop_url,
+            expected
+        );
     }
 
     #[test]

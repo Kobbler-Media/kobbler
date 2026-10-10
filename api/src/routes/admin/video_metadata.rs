@@ -455,6 +455,7 @@ mod tests {
             year: Some(1999),
             description: None,
             poster_url: None,
+            backdrop_url: None,
             rating: None,
             rating_count: None,
             identifiers: VideoIdentifiers {

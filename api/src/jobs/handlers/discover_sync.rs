@@ -68,7 +68,7 @@ fn movie_to_discover_item(m: MovieResult) -> DiscoverItem {
         year: m.year.map(|y| y as i32),
         description: m.description,
         poster_url: m.poster_url,
-        backdrop_url: None,
+        backdrop_url: m.backdrop_url,
         genres: m.genres,
         rating: m.rating,
         rating_count: m.rating_count,
@@ -86,7 +86,7 @@ fn tv_to_discover_item(s: TvShowResult) -> DiscoverItem {
         year: s.year.map(|y| y as i32),
         description: s.description,
         poster_url: s.poster_url,
-        backdrop_url: None,
+        backdrop_url: s.backdrop_url,
         genres: s.genres,
         rating: s.rating,
         rating_count: s.rating_count,
@@ -310,5 +310,33 @@ impl JobHandler for DiscoverSyncHandler {
             "items": item_count,
             "errors": sync_errors,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discover_items_keep_the_backdrop() {
+        let movie: MovieResult = serde_json::from_value(json!({
+            "provider": "tmdb", "provider_id": "1", "title": "M",
+            "backdrop_url": "https://image.tmdb.org/t/p/w1280/m.jpg"
+        }))
+        .unwrap();
+        let show: TvShowResult = serde_json::from_value(json!({
+            "provider": "tmdb", "provider_id": "2", "title": "S",
+            "backdrop_url": "https://image.tmdb.org/t/p/w1280/s.jpg"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            movie_to_discover_item(movie).backdrop_url.as_deref(),
+            Some("https://image.tmdb.org/t/p/w1280/m.jpg")
+        );
+        assert_eq!(
+            tv_to_discover_item(show).backdrop_url.as_deref(),
+            Some("https://image.tmdb.org/t/p/w1280/s.jpg")
+        );
     }
 }

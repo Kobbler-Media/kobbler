@@ -1055,6 +1055,7 @@ export type MovieSearchResult = {
   title: string;
   year: number | null;
   poster_url: string | null;
+  backdrop_url: string | null;
   description: string | null;
   rating: number | null;
   rating_count: number | null;
@@ -1071,6 +1072,7 @@ export type TvSearchResult = {
   title: string;
   year: number | null;
   poster_url: string | null;
+  backdrop_url: string | null;
   description: string | null;
   rating: number | null;
   rating_count: number | null;

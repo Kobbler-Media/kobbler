@@ -220,6 +220,7 @@ impl VideoMetadataProvider for TvdbProvider {
                     status: crate::repositories::normalize_show_status(s.status),
                     description: s.overview.or(s.translated_overview),
                     poster_url: s.image_url.map(|u| image_url(&u)),
+                    backdrop_url: None,
                     network: s.network,
                     rating: None,
                     rating_count: None,

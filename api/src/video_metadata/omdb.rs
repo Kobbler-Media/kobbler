@@ -138,6 +138,7 @@ impl VideoMetadataProvider for OmdbProvider {
                 .and_then(|y| y.parse().ok()),
             description: resp.plot,
             poster_url: resp.poster.filter(|p| p != "N/A"),
+            backdrop_url: None,
             rating,
             rating_count,
             identifiers: VideoIdentifiers {

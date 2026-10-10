@@ -152,6 +152,8 @@ pub struct MovieResult {
     pub year: Option<u16>,
     pub description: Option<String>,
     pub poster_url: Option<String>,
+    #[serde(default)]
+    pub backdrop_url: Option<String>,
     pub rating: Option<f64>,
     pub rating_count: Option<i32>,
     #[serde(default)]
@@ -172,6 +174,8 @@ pub struct TvShowResult {
     pub status: Option<String>,
     pub description: Option<String>,
     pub poster_url: Option<String>,
+    #[serde(default)]
+    pub backdrop_url: Option<String>,
     pub network: Option<String>,
     pub rating: Option<f64>,
     pub rating_count: Option<i32>,

@@ -947,6 +947,7 @@ impl VideoMetadataProvider for TheSportsDbProvider {
                     status: Some("continuing".to_string()),
                     description: l.str_description_en,
                     poster_url: l.str_poster.or(l.str_badge),
+                    backdrop_url: None,
                     network: l.str_sport,
                     rating: None,
                     rating_count: None,

@@ -168,6 +168,7 @@ impl VideoMetadataProvider for TvMazeProvider {
                     status: crate::repositories::normalize_show_status(s.status),
                     description: s.summary.map(|s| strip_html_tags(&s)),
                     poster_url: s.image.and_then(|img| img.medium.or(img.original)),
+                    backdrop_url: None,
                     network: s.network.map(|n| n.name),
                     rating: s.rating.and_then(|r| r.average).map(|r| r / 2.0),
                     rating_count: None,
