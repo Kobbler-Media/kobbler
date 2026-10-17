@@ -29,7 +29,6 @@ pub struct MovieEnrichPayload {
 pub struct MovieEnrichHandler {
     pool: PgPool,
     nats: Publisher,
-    #[allow(dead_code)]
     storage_root: String,
     library_events: tokio::sync::broadcast::Sender<crate::LibraryEvent>,
     runtime_config: crate::RuntimeConfigManager,
@@ -76,6 +75,14 @@ impl JobHandler for MovieEnrichHandler {
         info!(job_id = %job_id, movie_id = %payload.movie_id, "Starting movie enrichment");
 
         enrich_movie(&self.pool, payload.movie_id, false).await?;
+        images::warm_entity_images(
+            &self.pool,
+            &self.storage_root,
+            "movies",
+            payload.movie_id,
+            images::MOVIE_ART,
+        )
+        .await;
 
         nats_jobs::check_cancelled(&cancel)?;
 

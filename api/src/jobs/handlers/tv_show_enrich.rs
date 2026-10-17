@@ -33,7 +33,6 @@ pub struct TvShowEnrichPayload {
 pub struct TvShowEnrichHandler {
     pool: PgPool,
     nats: Publisher,
-    #[allow(dead_code)]
     storage_root: String,
     library_events: tokio::sync::broadcast::Sender<crate::LibraryEvent>,
     runtime_config: crate::RuntimeConfigManager,
@@ -86,6 +85,14 @@ impl JobHandler for TvShowEnrichHandler {
         // request for one season came back offering two others. Say what was written
         // either way; the error still propagates, so the retry is unchanged.
         let enriched = enrich_tv_show(&self.pool, payload.show_id, payload.invalidate_cache).await;
+        crate::images::warm_entity_images(
+            &self.pool,
+            &self.storage_root,
+            "tv_shows",
+            payload.show_id,
+            crate::images::SHOW_ART,
+        )
+        .await;
         let _ = self
             .library_events
             .send(crate::LibraryEvent::tv_show_updated(payload.show_id));

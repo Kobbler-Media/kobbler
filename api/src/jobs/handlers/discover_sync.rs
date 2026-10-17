@@ -103,11 +103,39 @@ fn tv_to_discover_item(s: TvShowResult) -> DiscoverItem {
 pub struct DiscoverSyncHandler {
     pool: PgPool,
     config: RuntimeConfigManager,
+    storage_root: String,
 }
 
 impl DiscoverSyncHandler {
-    pub fn new(pool: PgPool, config: RuntimeConfigManager) -> Self {
-        Self { pool, config }
+    pub fn new(pool: PgPool, config: RuntimeConfigManager, storage_root: String) -> Self {
+        Self {
+            pool,
+            config,
+            storage_root,
+        }
+    }
+
+    /// Every shelf picture onto disk before the first viewer asks for it.
+    async fn warm_art(&self) {
+        let sections = match metadata_cache::list_by_provider(&self.pool, DISCOVER_PROVIDER).await {
+            Ok(sections) => sections,
+            Err(e) => {
+                warn!("Failed to read discover shelves to warm their art: {e}");
+                return;
+            }
+        };
+        let sections: Vec<DiscoverSection> = sections
+            .into_iter()
+            .filter_map(|(_, value)| serde_json::from_value(value).ok())
+            .collect();
+        let srcs: Vec<String> = sections
+            .into_iter()
+            .flat_map(|s| s.items)
+            .flat_map(|item| [item.backdrop_url, item.poster_url])
+            .flatten()
+            .collect();
+        crate::discover_art::warm_and_prune(&self.storage_root, srcs.iter().map(String::as_str))
+            .await;
     }
 
     async fn cache_section(
@@ -346,6 +374,7 @@ impl JobHandler for DiscoverSyncHandler {
         info!(job_id = %job_id, "Running discover content sync");
 
         let (item_count, sync_errors) = self.sync_tmdb().await;
+        self.warm_art().await;
 
         if !sync_errors.is_empty() {
             for err in &sync_errors {

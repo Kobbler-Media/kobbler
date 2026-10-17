@@ -1236,6 +1236,14 @@ pub async fn refresh_metadata(
     crate::jobs::handlers::movie_enrich::enrich_movie(&state.pool, id, true)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to enrich movie: {e}")))?;
+    images::warm_entity_images(
+        &state.pool,
+        &state.config.storage_root,
+        "movies",
+        id,
+        images::MOVIE_ART,
+    )
+    .await;
 
     let _ = state.library_events.send(LibraryEvent::movie_updated(id));
 

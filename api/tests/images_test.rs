@@ -306,3 +306,115 @@ async fn legacy_w780_backdrops_are_refetched_at_w1280() {
         );
     }
 }
+
+/// Enrichment puts the poster and backdrop on disk up front, so the first viewer to scroll
+/// past a title is not the one who waits on TMDB.
+#[tokio::test]
+async fn warming_caches_poster_and_backdrop_once() {
+    use api::images::{ImageType, cached_image_exists, warm_entity_images};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = TestServer::start_api_only().await;
+    let mock = MockServer::start().await;
+    for file in ["/p.jpg", "/b.jpg"] {
+        Mock::given(method("GET"))
+            .and(path(file))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(minimal_jpeg()))
+            .expect(2)
+            .mount(&mock)
+            .await;
+    }
+    let images = json!({
+        "poster": {"source_url": format!("{}/p.jpg", mock.uri())},
+        "backdrop": {"source_url": format!("{}/b.jpg", mock.uri())}
+    });
+    let movie = uuid::Uuid::parse_str(&create_movie(&server, "Warm Me").await).unwrap();
+    let show = uuid::Uuid::parse_str(&create_show(&server, "Warm Me Too").await).unwrap();
+    let storage = server.storage_root();
+
+    for (table, id, poster, backdrop) in [
+        (
+            "movies",
+            movie,
+            ImageType::MoviePoster,
+            ImageType::MovieBackdrop,
+        ),
+        (
+            "tv_shows",
+            show,
+            ImageType::TvShowPoster,
+            ImageType::TvShowBackdrop,
+        ),
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {table} SET images = $1 WHERE id = $2"
+        )))
+        .bind(&images)
+        .bind(id)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+        let keys = [("poster", poster), ("backdrop", backdrop)];
+        warm_entity_images(&server.pool, &storage, table, id, &keys).await;
+        warm_entity_images(&server.pool, &storage, table, id, &keys).await;
+
+        assert!(cached_image_exists(&storage, poster, id), "{table} poster");
+        assert!(
+            cached_image_exists(&storage, backdrop, id),
+            "{table} backdrop"
+        );
+        let stored: Value = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT images FROM {table} WHERE id = $1"
+        )))
+        .bind(id)
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+        assert!(
+            stored["backdrop"]["cached_at"].is_string(),
+            "{table}: {stored}"
+        );
+    }
+}
+
+/// Titles enriched before warming existed get their art on disk from the daily sweep.
+#[tokio::test]
+async fn the_art_sweep_warms_what_is_not_on_disk_yet() {
+    use api::images::{ImageType, cached_image_exists};
+    use api::jobs::handlers::ArtWarmHandler;
+    use api::jobs::worker::JobHandler;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = TestServer::start_api_only().await;
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/b.jpg"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(minimal_jpeg()))
+        .mount(&mock)
+        .await;
+    let movie = uuid::Uuid::parse_str(&create_movie(&server, "Old Title").await).unwrap();
+    create_stub_movie_file(&server.pool, movie).await;
+    sqlx::query("UPDATE movies SET images = $1 WHERE id = $2")
+        .bind(json!({ "backdrop": { "source_url": format!("{}/b.jpg", mock.uri()) } }))
+        .bind(movie)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+
+    ArtWarmHandler::new(server.pool.clone(), server.storage_root())
+        .execute(
+            uuid::Uuid::now_v7(),
+            json!({}),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+    assert!(cached_image_exists(
+        &server.storage_root(),
+        ImageType::MovieBackdrop,
+        movie
+    ));
+}

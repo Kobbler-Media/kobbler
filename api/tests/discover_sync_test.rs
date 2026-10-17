@@ -17,7 +17,11 @@ async fn tmdb_enabled_with_no_api_key_is_a_quiet_no_op() {
     // Fresh DB: TMDB is `enabled = true` (migration default) with `config = '{}'`
     // — no api_key. This is every fresh install's state, not a misconfiguration.
 
-    let handler = DiscoverSyncHandler::new(server.pool.clone(), server.runtime_config.clone());
+    let handler = DiscoverSyncHandler::new(
+        server.pool.clone(),
+        server.runtime_config.clone(),
+        server.storage_root(),
+    );
 
     let result = handler
         .execute(Uuid::now_v7(), json!({}), CancellationToken::new())
@@ -73,10 +77,14 @@ async fn sync_builds_flagged_kids_shelves_from_filtered_queries() {
         .mount(&mock)
         .await;
 
-    DiscoverSyncHandler::new(server.pool.clone(), server.runtime_config.clone())
-        .execute(Uuid::now_v7(), json!({}), CancellationToken::new())
-        .await
-        .unwrap();
+    DiscoverSyncHandler::new(
+        server.pool.clone(),
+        server.runtime_config.clone(),
+        server.storage_root(),
+    )
+    .execute(Uuid::now_v7(), json!({}), CancellationToken::new())
+    .await
+    .unwrap();
 
     let sections = api::repositories::metadata_cache::list_by_provider(&server.pool, "discover")
         .await

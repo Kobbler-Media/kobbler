@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::LibraryEvent;
+use crate::discover_art::art_url;
 use crate::images::ImageEntry;
 use crate::jobs::handlers::discover_sync::{DISCOVER_PROVIDER, DiscoverItem, DiscoverSection};
 use crate::jobs::{self, JobContext};
@@ -110,7 +111,9 @@ pub async fn list_discover(State(state): State<AppState>, auth: AuthUser) -> imp
             let items = section
                 .items
                 .into_iter()
-                .map(|item| {
+                .map(|mut item| {
+                    item.poster_url = item.poster_url.as_deref().map(art_url);
+                    item.backdrop_url = item.backdrop_url.as_deref().map(art_url);
                     let status = extract_tmdb_id(&item.identifiers).and_then(|id| {
                         match item.media_type.as_str() {
                             "movie" => movie_status.get(&id),
@@ -285,7 +288,9 @@ async fn get_video_detail(
 
     match media_type {
         "movie" => match registry.get_movie(provider, provider_id).await {
-            Ok(details) => {
+            Ok(mut details) => {
+                details.poster_url = details.poster_url.as_deref().map(art_url);
+                details.backdrop_url = details.backdrop_url.as_deref().map(art_url);
                 let library_status = batch_movie_status(pool, &[provider_id.to_string()]).await;
                 let status = library_status.get(provider_id);
                 Json(json!({
@@ -305,7 +310,9 @@ async fn get_video_detail(
                 .into_response(),
         },
         "tv" => match registry.get_tv_show(provider, provider_id).await {
-            Ok(details) => {
+            Ok(mut details) => {
+                details.poster_url = details.poster_url.as_deref().map(art_url);
+                details.backdrop_url = details.backdrop_url.as_deref().map(art_url);
                 let library_status = batch_tv_status(pool, &[provider_id.to_string()]).await;
                 let status = library_status.get(provider_id);
                 Json(json!({

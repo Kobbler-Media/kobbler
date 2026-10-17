@@ -33,6 +33,7 @@ mod database_cleanup_test;
 mod debrid_stream_test;
 mod deterministic_selection_test;
 mod diagnostics_test;
+mod discover_art_test;
 mod discover_sync_test;
 mod e2e_want_flow_test;
 mod edit_roles_test;

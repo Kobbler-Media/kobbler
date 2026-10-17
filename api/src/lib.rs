@@ -12,6 +12,7 @@ pub mod config;
 pub mod convert;
 pub mod corruption;
 pub mod db;
+pub mod discover_art;
 pub mod ebook;
 pub mod enrichment_config;
 pub mod events;
@@ -258,6 +259,7 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/admin/discover",
             get(discover_routes::list_discover),
         )
+        .route(discover_art::ART_ROUTE, get(discover_art::serve))
         .route(
             "/api/v1/admin/discover/refresh",
             post(discover_routes::refresh_discover),

@@ -403,6 +403,73 @@ pub async fn try_cache_image(
     }
 }
 
+/// Pause after each art download made ahead of a viewer. The image CDN takes no API key,
+/// but a first sweep over a whole library is a thousand-odd requests, and spread out they
+/// look like a household browsing rather than a scraper.
+pub const ART_DOWNLOAD_PACE: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The art a browse page's backdrop and grid use, in the order a viewer sees it.
+pub const MOVIE_ART: &[(&str, ImageType)] = &[
+    ("backdrop", ImageType::MovieBackdrop),
+    ("poster", ImageType::MoviePoster),
+];
+pub const SHOW_ART: &[(&str, ImageType)] = &[
+    ("backdrop", ImageType::TvShowBackdrop),
+    ("poster", ImageType::TvShowPoster),
+];
+
+/// Puts an entity's images on disk now rather than on first view: the backdrop behind a
+/// browse page changes with every card a viewer passes. Keys already cached are left
+/// alone, and a failed download is logged, not raised; the lazy path still covers it.
+/// Each download is followed by [`ART_DOWNLOAD_PACE`].
+///
+/// `table` is a code constant (`movies`, `tv_shows`), never input.
+pub async fn warm_entity_images(
+    pool: &sqlx::PgPool,
+    storage_root: &str,
+    table: &str,
+    entity_id: Uuid,
+    keys: &[(&str, ImageType)],
+) {
+    let images: ImageMap = match sqlx::query_scalar::<_, serde_json::Value>(sqlx::AssertSqlSafe(
+        format!("SELECT images FROM {table} WHERE id = $1"),
+    ))
+    .bind(entity_id)
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(Some(value)) => serde_json::from_value(value).unwrap_or_default(),
+        Ok(None) => return,
+        Err(e) => {
+            debug!(table, entity_id = %entity_id, error = %e, "Failed to read images to warm");
+            return;
+        }
+    };
+    for &(key, image_type) in keys {
+        let Some(entry) = images.get(key) else {
+            continue;
+        };
+        if entry.cached_at.is_some() && cached_image_exists(storage_root, image_type, entity_id) {
+            continue;
+        }
+        let Some(url) = entry.source_url.as_deref().filter(|u| !u.is_empty()) else {
+            continue;
+        };
+        let fetched = cache_image(storage_root, image_type, entity_id, url).await;
+        tokio::time::sleep(ART_DOWNLOAD_PACE).await;
+        match fetched {
+            Ok(_) => {
+                if let Err(e) = mark_cached(pool, table, entity_id, key).await {
+                    debug!(table, key, entity_id = %entity_id, error = %e, "Failed to mark image cached");
+                }
+            }
+            Err(e) => {
+                debug!(table, key, entity_id = %entity_id, url, error = %e, "Failed to warm image")
+            }
+        }
+    }
+}
+
 /// Build an [`ImageMap`] from a provider's generic image list.
 ///
 /// Takes the first image of each `image_type` as the primary `source_url`.

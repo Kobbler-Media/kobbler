@@ -15,6 +15,7 @@ use crate::repositories::{
 
 use crate::RuntimeConfigManager;
 use crate::jobs::handlers::{
+    ArtWarmHandler,
     AudiobookConvertHandler,
     AudiobookProbeHandler,
     AudiobookTranscribeHandler,
@@ -405,6 +406,7 @@ pub async fn start_nats_worker(
     worker.register_handler(HandlerAdapter::new(DiscoverSyncHandler::new(
         pool.clone(),
         runtime_config.clone(),
+        storage_root.clone(),
     )));
     worker.register_handler(HandlerAdapter::new(TvWantHandler::new(
         pool.clone(),
@@ -470,6 +472,10 @@ pub async fn start_nats_worker(
         storage_root.clone(),
     )));
     worker.register_handler(HandlerAdapter::new(EpisodeCacheMigrateHandler::new(
+        pool.clone(),
+        storage_root.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(ArtWarmHandler::new(
         pool.clone(),
         storage_root.clone(),
     )));
@@ -992,6 +998,18 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
             "kobbler",
             "episode_cache_migrate",
             std::time::Duration::from_secs(30 * 24 * 3600), // every 30 days
+        )
+        .run_immediately(),
+    );
+
+    // Library art onto disk for titles enriched before enrichment warmed it. On startup
+    // too, so the first run after an upgrade fills in what is already there.
+    scheduler.register(
+        ScheduledJob::new(
+            "art-warm",
+            "kobbler",
+            "art_warm",
+            std::time::Duration::from_secs(24 * 3600), // daily
         )
         .run_immediately(),
     );

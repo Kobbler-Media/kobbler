@@ -1,5 +1,6 @@
 //! Job handlers for different job types.
 
+mod art_warm;
 mod audiobook_convert;
 mod audiobook_probe;
 mod audiobook_transcribe;
@@ -98,6 +99,7 @@ mod livetv_retention;
 mod livetv_scan;
 
 // Handler exports
+pub use art_warm::ArtWarmHandler;
 pub use audiobook_convert::AudiobookConvertHandler;
 pub use audiobook_probe::AudiobookProbeHandler;
 pub use audiobook_transcribe::AudiobookTranscribeHandler;
