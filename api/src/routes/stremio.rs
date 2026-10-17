@@ -483,6 +483,7 @@ async fn try_resolve_option(
     let auth = crate::routes::PlaybackAuth {
         user_id,
         role: "admin".to_string(),
+        is_kids: false,
     };
     let body = crate::routes::admin::debrid_stream::StreamResolveBody {
         debrid_provider_id,
@@ -636,6 +637,7 @@ pub async fn stream_file(
     let auth = crate::routes::PlaybackAuth {
         user_id: Uuid::nil(),
         role: "stremio".to_string(),
+        is_kids: false,
     };
     let resp = crate::routes::admin::debrid_stream::stream_play(
         State(state),

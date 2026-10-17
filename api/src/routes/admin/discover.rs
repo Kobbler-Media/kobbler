@@ -63,7 +63,7 @@ pub async fn list_discover(State(state): State<AppState>, auth: AuthUser) -> imp
     let pool = &state.pool;
 
     // Load library sections (watch next + recently added)
-    let (watch_next, recently_added) = fetch_home_sections(&state, auth.user_id)
+    let (watch_next, recently_added) = fetch_home_sections(&state, auth.user_id, auth.is_kids)
         .await
         .unwrap_or_default();
 
@@ -81,6 +81,7 @@ pub async fn list_discover(State(state): State<AppState>, auth: AuthUser) -> imp
         .into_iter()
         .filter_map(|(_key, value)| serde_json::from_value(value).ok())
         .collect();
+    sections.retain(|s| s.kids == auth.is_kids);
     sections.sort_by_key(|s| s.sort_order);
 
     // Collect all TMDB IDs across all sections for batch library lookup
@@ -172,10 +173,19 @@ pub async fn refresh_discover(State(state): State<AppState>, auth: AuthUser) -> 
 /// Does NOT create a library entry.
 pub async fn get_discover_detail(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path((media_type, provider, provider_id)): Path<(String, String, String)>,
 ) -> impl IntoResponse {
     let pool = &state.pool;
+
+    if auth.is_kids
+        && !(provider == "tmdb"
+            && crate::kids::discover_title_allowed(pool, &media_type, &provider_id)
+                .await
+                .unwrap_or(false))
+    {
+        return (StatusCode::NOT_FOUND, "not available on a Kids profile").into_response();
+    }
 
     match media_type.as_str() {
         "movie" | "tv" => get_video_detail(pool, &media_type, &provider, &provider_id).await,

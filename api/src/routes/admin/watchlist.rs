@@ -56,9 +56,26 @@ pub async fn list_watchlist(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<Vec<WatchlistEntry>>, AppError> {
-    let rows = watchlist::list_for_user(&state.pool, auth.user_id)
+    let mut rows = watchlist::list_for_user(&state.pool, auth.user_id)
         .await
         .map_err(|e| AppError::Internal(format!("Watchlist query failed: {e}")))?;
+    if auth.is_kids {
+        let ids = |media_type: &str| -> Vec<Uuid> {
+            rows.iter()
+                .filter(|r| r.media_type == media_type)
+                .map(|r| r.media_id)
+                .collect()
+        };
+        let filter_failed =
+            |e: sqlx::Error| AppError::Internal(format!("Watchlist filter failed: {e}"));
+        let movies = crate::kids::allowed_movie_ids(&state.pool, &ids(watchlist::MOVIE))
+            .await
+            .map_err(filter_failed)?;
+        let shows = crate::kids::allowed_show_ids(&state.pool, &ids(watchlist::SHOW))
+            .await
+            .map_err(filter_failed)?;
+        rows.retain(|r| movies.contains(&r.media_id) || shows.contains(&r.media_id));
+    }
 
     let entries = rows
         .into_iter()

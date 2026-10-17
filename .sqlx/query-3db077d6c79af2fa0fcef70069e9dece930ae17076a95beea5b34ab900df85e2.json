@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, email, role, display_name, timezone FROM users ORDER BY created_at DESC",
+  "query": "SELECT id, email, role, display_name, timezone, is_kids FROM users ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,17 @@
             "name": "timezone"
           }
         }
+      },
+      {
+        "ordinal": 5,
+        "name": "is_kids",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "is_kids"
+          }
+        }
       }
     ],
     "parameters": {
@@ -67,8 +78,9 @@
       false,
       false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "1c2ab41242530b7443ebf4ff3caeb7219abee32189c110afb403da581407574b"
+  "hash": "3db077d6c79af2fa0fcef70069e9dece930ae17076a95beea5b34ab900df85e2"
 }

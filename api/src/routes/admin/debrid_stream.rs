@@ -114,9 +114,12 @@ struct DebridStatusRow {
 /// POST /api/v1/admin/stream/search
 pub async fn stream_search(
     State(state): State<AppState>,
-    _auth: PlaybackAuth,
+    auth: PlaybackAuth,
     Json(body): Json<StreamSearchBody>,
 ) -> impl IntoResponse {
+    if auth.is_kids && !kids_may_search(&state.pool, &body).await {
+        return (StatusCode::NOT_FOUND, "not available on a Kids profile").into_response();
+    }
     let runtime = state.runtime_config.get().await;
     let client = match build_kobload_client(&runtime) {
         Ok(c) => c,
@@ -383,6 +386,9 @@ pub async fn stream_resolve(
     auth: PlaybackAuth,
     Json(body): Json<StreamResolveBody>,
 ) -> impl IntoResponse {
+    if auth.is_kids && !kids_may_resolve(&state.pool, &body).await {
+        return (StatusCode::NOT_FOUND, "not available on a Kids profile").into_response();
+    }
     let runtime = state.runtime_config.get().await;
 
     // === Session dedup: prevent duplicate sessions for the same torrent file ===
@@ -1346,6 +1352,43 @@ pub async fn stream_resolve(
     });
 
     response
+}
+
+async fn kids_may_search(pool: &sqlx::PgPool, body: &StreamSearchBody) -> bool {
+    let allowed = if let Some(movie_id) = body.movie_id {
+        crate::kids::movie_allowed(pool, movie_id).await
+    } else if let Some(episode_id) = body.episode_id {
+        crate::kids::episode_allowed(pool, episode_id).await
+    } else if let Some(tmdb_id) = body.tmdb_id {
+        let media_type = body.media_type.as_deref().unwrap_or("movie");
+        crate::kids::discover_title_allowed(pool, media_type, &tmdb_id.to_string()).await
+    } else {
+        Ok(false)
+    };
+    allowed.unwrap_or(false)
+}
+
+async fn kids_may_resolve(pool: &sqlx::PgPool, body: &StreamResolveBody) -> bool {
+    let library_id = body.media_id.filter(|id| !id.is_nil());
+    let tmdb_id = body
+        .auto_create
+        .as_ref()
+        .and_then(|a| a.identifiers.as_ref())
+        .and_then(|ids| ids.get("tmdb_id"))
+        .and_then(|v| {
+            v.as_str()
+                .map(String::from)
+                .or_else(|| v.as_i64().map(|n| n.to_string()))
+        });
+    let allowed = match (body.media_type.as_str(), library_id, tmdb_id) {
+        ("movie", Some(id), _) => crate::kids::movie_allowed(pool, id).await,
+        ("episode", Some(id), _) => crate::kids::episode_allowed(pool, id).await,
+        (media_type, None, Some(tmdb_id)) => {
+            crate::kids::discover_title_allowed(pool, media_type, &tmdb_id).await
+        }
+        _ => Ok(false),
+    };
+    allowed.unwrap_or(false)
 }
 
 /// Metadata for auto-creating a movie/show when streaming from discover.

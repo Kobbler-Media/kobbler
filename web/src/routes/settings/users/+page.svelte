@@ -37,12 +37,14 @@
   let newUserName = $state('');
   let newUserPassword = $state('');
   let newUserRole = $state('viewer');
+  let newUserKids = $state(false);
   let editingUserId = $state<string | null>(null);
   let editingUserEmail = $state('');
   let editingUserName = $state('');
   let editingUserTimezone = $state('');
   let editingUserPassword = $state('');
   let editingUserRole = $state('');
+  let editingUserKids = $state(false);
   let deletingUserId = $state<string | null>(null);
   let deletingUserEmail = $state('');
   let deleting = $state(false);
@@ -58,13 +60,14 @@
     }
     loading = true;
     try {
-      await api.createUser(newUserEmail, newUserPassword, newUserRole, newUserName);
+      await api.createUser(newUserEmail, newUserPassword, newUserRole, newUserName, newUserKids);
       showMessage('User created');
       await loadUsers();
       newUserEmail = '';
       newUserName = '';
       newUserPassword = '';
       newUserRole = 'viewer';
+      newUserKids = false;
       showNewUserForm = false;
     } catch (e) {
       showMessage(e instanceof Error ? e.message : 'Create user failed');
@@ -96,6 +99,7 @@
       role?: string;
       display_name?: string;
       timezone?: string;
+      is_kids?: boolean;
     } = {};
     if (editingUserEmail) updates.email = editingUserEmail;
     if (editingUserPassword) updates.password = editingUserPassword;
@@ -103,6 +107,7 @@
     // Sent even when blank: that is how a name or a zone is cleared.
     updates.display_name = editingUserName;
     updates.timezone = editingUserTimezone;
+    updates.is_kids = editingUserKids;
     loading = true;
     try {
       await api.updateUser(userId, updates);
@@ -167,6 +172,16 @@
             newUserRole = v;
           }}
         />
+        <label class="check-field">
+          <input type="checkbox" bind:checked={newUserKids} />
+          <span>
+            Kids profile
+            <span class="muted">
+              Only titles rated PG-13 / TV-14 and under, or allowed by hand. No Live TV, IPTV or
+              chat.
+            </span>
+          </span>
+        </label>
         <button class="btn" type="button" onclick={handleCreateUser} disabled={loading}>
           Create user
         </button>
@@ -222,6 +237,16 @@
                     editingUserRole = v;
                   }}
                 />
+                <label class="check-field">
+                  <input type="checkbox" bind:checked={editingUserKids} />
+                  <span>
+                    Kids profile
+                    <span class="muted">
+                      Only titles rated PG-13 / TV-14 and under, or allowed by hand. No Live TV,
+                      IPTV or chat.
+                    </span>
+                  </span>
+                </label>
                 <div class="edit-buttons">
                   <button
                     class="btn small"
@@ -255,6 +280,7 @@
                     class:admin={user.role === 'admin'}
                     class:contributor={user.role === 'contributor'}>{user.role}</span
                   >
+                  {#if user.is_kids}<span class="role-badge kids">Kids</span>{/if}
                 </div>
                 {#if user.display_name || user.timezone}
                   <div class="user-sub muted">
@@ -275,6 +301,7 @@
                     editingUserTimezone = user.timezone ?? '';
                     editingUserPassword = '';
                     editingUserRole = user.role;
+                    editingUserKids = user.is_kids;
                   }}
                 >
                   Edit
@@ -528,6 +555,29 @@
   .role-badge.contributor {
     background: var(--accent-2, #22c55e);
     color: white;
+  }
+
+  .role-badge.kids {
+    background: var(--accent-3, #f59e0b);
+    color: white;
+  }
+
+  .new-user-form .check-field,
+  .user-edit-form .check-field {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--ink);
+  }
+
+  .check-field input {
+    margin-top: 3px;
+  }
+
+  .check-field .muted {
+    display: block;
+    font-size: 12px;
   }
 
   .form-field-label {

@@ -543,7 +543,6 @@ async fn main() {
 
         tokio::spawn(async move {
             use api::notifications::{resolve_entity, translate_event};
-            use api::repositories::user_notifications::{self, CreateUserNotification};
 
             api::events::run_subscriber("notification dispatcher", rx, async move |event| {
                 // Skip our own NotificationCreated events to avoid infinite loop
@@ -632,36 +631,21 @@ async fn main() {
                         details: resolved.as_ref().and_then(|r| r.details.clone()),
                     };
 
-                    // Create in-app notifications for all users
-                    match sqlx::query_scalar!("SELECT id FROM users")
-                        .fetch_all(&pool_clone)
-                        .await
+                    if let Err(e) = api::notifications::in_app::notify_household(
+                        &pool_clone,
+                        &api::notifications::in_app::InAppNotification {
+                            title: translated.title.clone(),
+                            message: message.clone(),
+                            entity_type: entity_type.clone(),
+                            entity_id,
+                            entity_url: url.clone(),
+                        },
+                    )
+                    .await
                     {
-                        Ok(user_ids) => {
-                            for user_id in user_ids {
-                                if let Err(e) = user_notifications::create(
-                                    &pool_clone,
-                                    CreateUserNotification {
-                                        user_id,
-                                        title: translated.title.clone(),
-                                        message: message.clone(),
-                                        entity_type: entity_type.clone(),
-                                        entity_id,
-                                        entity_url: url.clone(),
-                                    },
-                                )
-                                .await
-                                {
-                                    tracing::warn!(error = %e, "Failed to create in-app notification");
-                                }
-                            }
-                            let _ = library_events_tx
-                                .send(api::events::LibraryEvent::NotificationCreated);
-                        }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "Failed to query users for in-app notifications");
-                        }
+                        tracing::warn!(error = %e, "Failed to create in-app notifications");
                     }
+                    let _ = library_events_tx.send(api::events::LibraryEvent::NotificationCreated);
 
                     // Query enabled agents that have this trigger
                     let agents =

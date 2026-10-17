@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT t.user_id, u.role\n        FROM auth_tokens t\n        JOIN users u ON u.id = t.user_id\n        WHERE t.token_hash = $1 AND t.revoked = FALSE AND t.scope = 'admin' AND t.expires_at > NOW()",
+  "query": "SELECT pt.user_id, u.role, u.is_kids\n        FROM playback_tokens pt\n        JOIN users u ON u.id = pt.user_id\n        WHERE pt.token = $1 AND pt.expires_at > NOW()",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "auth_tokens",
+            "table": "playback_tokens",
             "name": "user_id"
           }
         }
@@ -24,6 +24,17 @@
             "name": "role"
           }
         }
+      },
+      {
+        "ordinal": 2,
+        "name": "is_kids",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "is_kids"
+          }
+        }
       }
     ],
     "parameters": {
@@ -33,8 +44,9 @@
     },
     "nullable": [
       false,
+      false,
       false
     ]
   },
-  "hash": "3feb0e88cee0ca1a514023fdd6067f5aceb79a7f568b77754412640cbf0edf6a"
+  "hash": "68da7c9f1285742a23c7c177589fb38ff7e7b515329ea42395fc05775b7af074"
 }

@@ -89,6 +89,7 @@ pub struct WatchlistMovieRow {
 pub async fn in_progress_movies<'e, E>(
     exec: E,
     user_id: Uuid,
+    kids_only: bool,
 ) -> Result<Vec<InProgressMovieRow>, sqlx::Error>
 where
     E: Executor<'e, Database = Postgres>,
@@ -116,10 +117,12 @@ where
           AND ws.position_seconds IS NOT NULL
           AND ws.position_seconds >= 60
           AND ws.watched = FALSE
+          AND ($2 = FALSE OR kids_allowed(m.kids_override, m.content_rating))
         ORDER BY ws.updated_at DESC
         LIMIT 20
         "#,
         user_id,
+        kids_only,
     )
     .fetch_all(exec)
     .await
@@ -136,6 +139,7 @@ where
 pub async fn watch_next_episodes<'e, E>(
     exec: E,
     user_id: Uuid,
+    kids_only: bool,
 ) -> Result<Vec<WatchNextEpisodeRow>, sqlx::Error>
 where
     E: Executor<'e, Database = Postgres>,
@@ -245,7 +249,8 @@ where
         JOIN tv_shows tshow ON tshow.id = c.show_id
             AND tshow.content_category IN ('tv', 'sport')
         JOIN show_activity sa ON sa.show_id = c.show_id
-        WHERE
+        WHERE ($2 = FALSE OR kids_allowed(tshow.kids_override, tshow.content_rating))
+          AND (
             sa.last_activity >= NOW() - INTERVAL '14 days'
             OR EXISTS (
                 SELECT 1 FROM last_watched lw
@@ -278,10 +283,12 @@ where
                       )
                   )
             )
+          )
         ORDER BY sa.last_activity DESC
         LIMIT 20
         "#,
         user_id,
+        kids_only,
     )
     .fetch_all(exec)
     .await
@@ -371,7 +378,7 @@ where
     .await
 }
 
-pub async fn recent_movies<'e, E>(exec: E) -> Result<Vec<MovieRow>, sqlx::Error>
+pub async fn recent_movies<'e, E>(exec: E, kids_only: bool) -> Result<Vec<MovieRow>, sqlx::Error>
 where
     E: Executor<'e, Database = Postgres>,
 {
@@ -386,10 +393,12 @@ where
             MAX(mf.created_at) as "added_at!: OffsetDateTime"
         FROM movies m
         JOIN movie_files mf ON mf.movie_id = m.id AND mf.available = true
+        WHERE $1 = FALSE OR kids_allowed(m.kids_override, m.content_rating)
         GROUP BY m.id, m.title, m.year, m.images
         ORDER BY MAX(mf.created_at) DESC
         LIMIT 12
         "#,
+        kids_only,
     )
     .fetch_all(exec)
     .await
@@ -398,6 +407,7 @@ where
 pub async fn recent_episodes<'e, E>(
     exec: E,
     content_category: &str,
+    kids_only: bool,
 ) -> Result<Vec<EpisodeRow>, sqlx::Error>
 where
     E: Executor<'e, Database = Postgres>,
@@ -430,12 +440,14 @@ where
             JOIN tv_seasons ts ON te.season_id = ts.id
             JOIN tv_shows tshow ON ts.show_id = tshow.id
             WHERE tef.available = true AND tshow.content_category = $1
+              AND ($2 = FALSE OR kids_allowed(tshow.kids_override, tshow.content_rating))
             ORDER BY tshow.id, tef.created_at DESC
         ) sub
         ORDER BY sub.added_at DESC
         LIMIT 12
         "#,
         content_category,
+        kids_only,
     )
     .fetch_all(exec)
     .await
@@ -450,6 +462,7 @@ where
 pub async fn watchlist_shows<'e, E>(
     exec: E,
     user_id: Uuid,
+    kids_only: bool,
 ) -> Result<Vec<WatchlistShowRow>, sqlx::Error>
 where
     E: Executor<'e, Database = Postgres>,
@@ -474,6 +487,7 @@ where
         WHERE w.user_id = $1
           AND w.media_type = 'show'
           AND tshow.content_category IN ('tv', 'sport')
+          AND ($2 = FALSE OR kids_allowed(tshow.kids_override, tshow.content_rating))
           AND NOT EXISTS (
               SELECT 1
               FROM tv_watch_states ws
@@ -484,6 +498,7 @@ where
         ORDER BY w.media_id, ts.season_sort_order, te.episode_sort_order
         "#,
         user_id,
+        kids_only,
     )
     .fetch_all(exec)
     .await?;
@@ -495,6 +510,7 @@ where
 pub async fn watchlist_movies<'e, E>(
     exec: E,
     user_id: Uuid,
+    kids_only: bool,
 ) -> Result<Vec<WatchlistMovieRow>, sqlx::Error>
 where
     E: Executor<'e, Database = Postgres>,
@@ -512,6 +528,7 @@ where
         JOIN movies m ON m.id = w.media_id
         WHERE w.user_id = $1
           AND w.media_type = 'movie'
+          AND ($2 = FALSE OR kids_allowed(m.kids_override, m.content_rating))
           AND NOT EXISTS (
               SELECT 1 FROM movie_watch_states ws
               WHERE ws.movie_id = m.id
@@ -521,6 +538,7 @@ where
         ORDER BY w.added_at DESC
         "#,
         user_id,
+        kids_only,
     )
     .fetch_all(exec)
     .await?;

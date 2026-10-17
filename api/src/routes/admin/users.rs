@@ -21,6 +21,8 @@ pub struct CreateUserRequest {
     pub password: String,
     pub role: Option<String>,
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub is_kids: bool,
 }
 
 #[derive(Serialize)]
@@ -48,6 +50,7 @@ pub struct UserSummary {
     pub role: String,
     pub display_name: Option<String>,
     pub timezone: Option<String>,
+    pub is_kids: bool,
 }
 
 #[derive(Deserialize)]
@@ -57,6 +60,7 @@ pub struct UpdateUserRequest {
     pub role: Option<String>,
     pub display_name: Option<String>,
     pub timezone: Option<String>,
+    pub is_kids: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -101,6 +105,7 @@ pub async fn list_users(State(state): State<AppState>, auth: AuthUser) -> impl I
                     role: u.role,
                     display_name: u.display_name,
                     timezone: u.timezone,
+                    is_kids: u.is_kids,
                 })
                 .collect::<Vec<_>>();
             AxumJson(users).into_response()
@@ -160,6 +165,18 @@ pub async fn create_user(
             .is_err()
     {
         tracing::error!(user_id = %user_id, "created user but failed to set display name");
+    }
+
+    if payload.is_kids
+        && repositories::users::set_kids(&state.pool, user_id, true)
+            .await
+            .is_err()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to mark kids profile",
+        )
+            .into_response();
     }
 
     AxumJson(CreateUserResponse { user_id }).into_response()
@@ -366,6 +383,18 @@ pub async fn update_user(
         {
             return (StatusCode::INTERNAL_SERVER_ERROR, "failed to update role").into_response();
         }
+    }
+
+    if let Some(is_kids) = payload.is_kids
+        && repositories::users::set_kids(&state.pool, user_id, is_kids)
+            .await
+            .is_err()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to update kids profile",
+        )
+            .into_response();
     }
 
     // Return updated user

@@ -79,13 +79,16 @@ where
 }
 
 /// Validate an admin token and return the associated user_id and role.
-pub async fn validate_admin_token<'e, E>(exec: E, token: &str) -> Result<Option<(Uuid, String)>>
+pub async fn validate_admin_token<'e, E>(
+    exec: E,
+    token: &str,
+) -> Result<Option<(Uuid, String, bool)>>
 where
     E: Executor<'e, Database = Postgres>,
 {
     let token_hash = hash_token(token);
     let row = sqlx::query!(
-        r#"SELECT t.user_id, u.role
+        r#"SELECT t.user_id, u.role, u.is_kids
         FROM auth_tokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = $1 AND t.revoked = FALSE AND t.scope = 'admin' AND t.expires_at > NOW()"#,
@@ -93,7 +96,7 @@ where
     )
     .fetch_optional(exec)
     .await?;
-    Ok(row.map(|r| (r.user_id, r.role)))
+    Ok(row.map(|r| (r.user_id, r.role, r.is_kids)))
 }
 
 /// None when the token is unknown, revoked, or already expired - an expired token must go

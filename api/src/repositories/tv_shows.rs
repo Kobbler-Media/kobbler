@@ -119,6 +119,8 @@ pub struct TvShowDetail {
     pub rating: Option<f64>,
     pub rating_count: Option<i32>,
     pub content_rating: Option<String>,
+    pub kids_override: Option<bool>,
+    pub kids_allowed: bool,
     pub network: Option<String>,
     pub is_monitored: bool,
     pub auto_want_mode: String,
@@ -174,6 +176,8 @@ pub struct TvShowListFilters {
     pub content_category: Option<String>,
     /// "title" (default) or "created_at".
     pub sort: Option<String>,
+    pub genre: Option<String>,
+    pub kids_only: bool,
 }
 
 /// Lightweight struct for monitor job.
@@ -365,6 +369,7 @@ pub async fn get_with_details(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<Tv
         SELECT id, title, sort_title, original_title, year, status,
                description, images, identifiers,
                genres, rating, rating_count, content_rating, network,
+               kids_override, kids_allowed(kids_override, content_rating) AS "kids_allowed!",
                is_monitored, auto_want_mode, quality_profile_id, preferred_languages, media_root_id,
                first_aired, last_aired, next_airing, runtime, total_episode_count,
                content_category, sport_metadata, streamed_at,
@@ -476,6 +481,8 @@ pub async fn get_with_details(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<Tv
         rating: r.rating,
         rating_count: r.rating_count,
         content_rating: r.content_rating,
+        kids_override: r.kids_override,
+        kids_allowed: r.kids_allowed,
         network: r.network,
         is_monitored: r.is_monitored,
         auto_want_mode: r.auto_want_mode,
@@ -551,6 +558,7 @@ pub async fn get_metadata(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<TvShow
         SELECT id, title, sort_title, original_title, year, status,
                description, images, identifiers,
                genres, rating, rating_count, content_rating, network,
+               kids_override, kids_allowed(kids_override, content_rating) AS "kids_allowed!",
                is_monitored, auto_want_mode, quality_profile_id, preferred_languages, media_root_id,
                first_aired, last_aired, next_airing, runtime, total_episode_count,
                content_category, sport_metadata, streamed_at,
@@ -582,6 +590,8 @@ pub async fn get_metadata(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<TvShow
         rating: r.rating,
         rating_count: r.rating_count,
         content_rating: r.content_rating,
+        kids_override: r.kids_override,
+        kids_allowed: r.kids_allowed,
         network: r.network,
         is_monitored: r.is_monitored,
         auto_want_mode: r.auto_want_mode,
@@ -605,6 +615,47 @@ pub async fn get_metadata(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<TvShow
 }
 
 /// List TV shows with optional filters and cursor-based pagination.
+fn push_list_filters(sql: &mut String, params: &mut Vec<String>, filters: &TvShowListFilters) {
+    if let Some(ref cat) = filters.content_category {
+        params.push(cat.clone());
+        sql.push_str(&format!(" AND content_category = ${}", params.len()));
+    }
+
+    if let Some(ref status) = filters.status {
+        params.push(status.clone());
+        sql.push_str(&format!(" AND status = ${}", params.len()));
+    }
+
+    if let Some(monitored) = filters.monitored {
+        sql.push_str(&format!(" AND is_monitored = {monitored}"));
+    }
+
+    if let Some(ref q) = filters.search {
+        let trimmed = q.trim();
+        if !trimmed.is_empty() {
+            params.push(format!("%{}%", trimmed));
+            sql.push_str(&format!(" AND title ILIKE ${}", params.len()));
+        }
+    }
+
+    if let Some(genre) = filters
+        .genre
+        .as_deref()
+        .map(str::trim)
+        .filter(|g| !g.is_empty())
+    {
+        params.push(genre.to_string());
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM unnest(tv_shows.genres) g WHERE lower(g) = lower(${}))",
+            params.len()
+        ));
+    }
+
+    if filters.kids_only {
+        sql.push_str(&format!(" AND {}", crate::kids::allowed_sql("tv_shows")));
+    }
+}
+
 pub async fn list<'e, E>(exec: E, filters: &TvShowListFilters) -> Result<Vec<TvShowRow>>
 where
     E: Executor<'e, Database = Postgres>,
@@ -634,35 +685,7 @@ where
         "#,
     );
     let mut params: Vec<String> = Vec::new();
-
-    if let Some(ref cat) = filters.content_category {
-        params.push(cat.clone());
-        let idx = params.len();
-        sql.push_str(&format!(" AND content_category = ${}", idx));
-    }
-
-    if let Some(ref status) = filters.status {
-        params.push(status.clone());
-        let idx = params.len();
-        sql.push_str(&format!(" AND status = ${}", idx));
-    }
-
-    if let Some(monitored) = filters.monitored {
-        if monitored {
-            sql.push_str(" AND is_monitored = TRUE");
-        } else {
-            sql.push_str(" AND is_monitored = FALSE");
-        }
-    }
-
-    if let Some(ref q) = filters.search {
-        let trimmed = q.trim();
-        if !trimmed.is_empty() {
-            params.push(format!("%{}%", trimmed));
-            let idx = params.len();
-            sql.push_str(&format!(" AND title ILIKE ${}", idx));
-        }
-    }
+    push_list_filters(&mut sql, &mut params, filters);
 
     let sort_mode = filters.sort.as_deref().unwrap_or("title");
     let sort_by_title = sort_mode == "title";
@@ -737,35 +760,7 @@ where
 {
     let mut sql = String::from("SELECT COUNT(*) as count FROM tv_shows WHERE TRUE");
     let mut params: Vec<String> = Vec::new();
-
-    if let Some(ref cat) = filters.content_category {
-        params.push(cat.clone());
-        let idx = params.len();
-        sql.push_str(&format!(" AND content_category = ${}", idx));
-    }
-
-    if let Some(ref status) = filters.status {
-        params.push(status.clone());
-        let idx = params.len();
-        sql.push_str(&format!(" AND status = ${}", idx));
-    }
-
-    if let Some(monitored) = filters.monitored {
-        if monitored {
-            sql.push_str(" AND is_monitored = TRUE");
-        } else {
-            sql.push_str(" AND is_monitored = FALSE");
-        }
-    }
-
-    if let Some(ref q) = filters.search {
-        let trimmed = q.trim();
-        if !trimmed.is_empty() {
-            params.push(format!("%{}%", trimmed));
-            let idx = params.len();
-            sql.push_str(&format!(" AND title ILIKE ${}", idx));
-        }
-    }
+    push_list_filters(&mut sql, &mut params, filters);
 
     let mut q = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
     for param in &params {
@@ -1428,6 +1423,7 @@ pub async fn first_by_letter<'e, E>(
     exec: E,
     letter: &str,
     content_category: Option<&str>,
+    kids_only: bool,
 ) -> Result<Option<FirstByLetterResult>>
 where
     E: Executor<'e, Database = Postgres>,
@@ -1444,12 +1440,17 @@ where
         Some(_) => format!(" AND content_category = ${next_param}"),
         None => String::new(),
     };
+    let kids_condition = if kids_only {
+        format!(" AND {}", crate::kids::allowed_sql("tv_shows"))
+    } else {
+        String::new()
+    };
 
     let mut query = sqlx::query(sqlx::AssertSqlSafe(format!(
         r#"
         SELECT id, title
         FROM tv_shows
-        WHERE {letter_condition}{category_condition}
+        WHERE {letter_condition}{category_condition}{kids_condition}
         ORDER BY COALESCE(sort_title, title) ASC
         LIMIT 1
         "#
@@ -1466,4 +1467,45 @@ where
         id: r.get("id"),
         title: r.get("title"),
     }))
+}
+
+/// Never touched by enrichment or a metadata refresh: this is the admin's decision.
+pub async fn set_kids_override<'e, E>(
+    exec: E,
+    id: Uuid,
+    kids_override: Option<bool>,
+) -> Result<bool>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let result = sqlx::query!(
+        "UPDATE tv_shows SET kids_override = $1 WHERE id = $2",
+        kids_override,
+        id
+    )
+    .execute(exec)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Every genre on the browse page, alphabetical, with how many titles carry it.
+pub async fn genre_counts<'e, E>(exec: E, kids_only: bool) -> Result<Vec<(String, i64)>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let kids_condition = if kids_only {
+        format!(" AND {}", crate::kids::allowed_sql("tv_shows"))
+    } else {
+        String::new()
+    };
+    let sql = format!(
+        "SELECT g AS name, COUNT(*) AS count
+         FROM tv_shows, unnest(tv_shows.genres) g
+         WHERE tv_shows.content_category = 'tv'{kids_condition}
+         GROUP BY g
+         ORDER BY lower(g)"
+    );
+    Ok(sqlx::query_as::<_, (String, i64)>(sqlx::AssertSqlSafe(sql))
+        .fetch_all(exec)
+        .await?)
 }

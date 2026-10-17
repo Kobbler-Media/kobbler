@@ -40,6 +40,8 @@
   import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
   import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
+  import KidsAccess from '../shared/KidsAccess.svelte';
+  import { getAuthState } from '$lib/stores/auth.svelte';
 
   interface Props {
     movie: Movie;
@@ -76,6 +78,8 @@
     onWatchlistToggle,
     initialPlaybackSession
   }: Props = $props();
+
+  const auth = getAuthState();
 
   let files = $state<MovieFile[]>([]);
   let watchState = $state<MovieWatchState | null>(null);
@@ -439,6 +443,16 @@
           />
         </div>
       {/if}
+      {#if auth.isAdmin}
+        <div class="hero-kids">
+          <KidsAccess
+            kind="movie"
+            id={movie.id}
+            override={movie.kids_override}
+            allowed={movie.kids_allowed}
+          />
+        </div>
+      {/if}
     {/snippet}
   </EntityHero>
 
@@ -641,6 +655,10 @@
 
   .hero-genres {
     margin-top: 6px;
+  }
+
+  .hero-kids {
+    margin-top: 10px;
   }
 
   .btn {

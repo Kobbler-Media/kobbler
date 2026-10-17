@@ -77,6 +77,7 @@ export type UserSummary = {
   display_name?: string | null;
   // IANA zone name; null means quiet hours fall back to the server's zone.
   timezone?: string | null;
+  is_kids: boolean;
 };
 
 export type ChatIdentityStatus = 'disabled' | 'awaiting_first_message' | 'active';
@@ -1266,6 +1267,9 @@ export type Movie = {
   rating: number | null;
   rating_count: number | null;
   content_rating: string | null;
+  // null defers to content_rating; only an admin sets it, and metadata never does.
+  kids_override?: boolean | null;
+  kids_allowed?: boolean;
   runtime: number | null;
   is_in_library: boolean;
   want_status: string;
@@ -1382,6 +1386,8 @@ export type TvShow = {
   rating: number | null;
   rating_count: number | null;
   content_rating: string | null;
+  kids_override?: boolean | null;
+  kids_allowed?: boolean;
   network: string | null;
   is_monitored: boolean;
   auto_want_mode: string;

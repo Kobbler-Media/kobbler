@@ -114,7 +114,8 @@ pub async fn resolve(pool: &PgPool, sender: &ChatSender<'_>) -> Result<Resolutio
         chat_identities::resolve(pool, sender.transport, sender.external_id, sender.email).await?;
 
     if let Some(identity) = found {
-        if !identity.enabled {
+        // Chat can search and suggest anything in the library, so a Kids profile has none.
+        if !identity.enabled || identity.user_is_kids {
             return Ok(Resolution::Disabled);
         }
 
@@ -130,6 +131,7 @@ pub async fn resolve(pool: &PgPool, sender: &ChatSender<'_>) -> Result<Resolutio
             auth: AuthUser {
                 user_id: identity.user_id,
                 role: effective_role(&identity.user_role, &identity.max_role),
+                is_kids: false,
             },
         }));
     }

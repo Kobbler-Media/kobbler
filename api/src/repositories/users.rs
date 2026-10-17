@@ -198,6 +198,7 @@ pub struct UserSummary {
     pub role: String,
     pub display_name: Option<String>,
     pub timezone: Option<String>,
+    pub is_kids: bool,
 }
 
 /// List all users.
@@ -206,7 +207,7 @@ where
     E: Executor<'e, Database = Postgres>,
 {
     let rows = sqlx::query!(
-        "SELECT id, email, role, display_name, timezone FROM users ORDER BY created_at DESC",
+        "SELECT id, email, role, display_name, timezone, is_kids FROM users ORDER BY created_at DESC",
     )
     .fetch_all(exec)
     .await?;
@@ -219,6 +220,7 @@ where
             role: r.role,
             display_name: r.display_name,
             timezone: r.timezone,
+            is_kids: r.is_kids,
         })
         .collect())
 }
@@ -236,6 +238,20 @@ where
 }
 
 /// Update a user's role.
+pub async fn set_kids<'e, E>(exec: E, user_id: Uuid, is_kids: bool) -> Result<bool>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let result = sqlx::query!(
+        "UPDATE users SET is_kids = $1 WHERE id = $2",
+        is_kids,
+        user_id
+    )
+    .execute(exec)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn update_role<'e, E>(exec: E, user_id: Uuid, role: &str) -> Result<bool>
 where
     E: Executor<'e, Database = Postgres>,

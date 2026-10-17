@@ -46,6 +46,7 @@ pub struct MeResponse {
     pub timezone: Option<String>,
     pub avatar_url: Option<String>,
     pub has_pin: bool,
+    pub is_kids: bool,
     /// Cast needs this at boot for every role, and the full system config is
     /// admin-only, so it rides along here.
     pub cast_receiver_app_id: Option<String>,
@@ -142,6 +143,7 @@ pub async fn me(State(state): State<AppState>, auth: crate::routes::AuthUser) ->
                 timezone,
                 avatar_url,
                 has_pin,
+                is_kids: auth.is_kids,
                 cast_receiver_app_id,
             })
             .into_response()

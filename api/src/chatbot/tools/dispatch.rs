@@ -152,6 +152,7 @@ mod tests {
         AuthUser {
             user_id: Uuid::now_v7(),
             role: "viewer".to_string(),
+            is_kids: false,
         }
     }
 
@@ -159,6 +160,7 @@ mod tests {
         AuthUser {
             user_id: Uuid::now_v7(),
             role: "contributor".to_string(),
+            is_kids: false,
         }
     }
 

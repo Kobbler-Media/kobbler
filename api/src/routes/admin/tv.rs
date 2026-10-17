@@ -40,6 +40,7 @@ use crate::video_metadata::thesportsdb::parse_sport_event_details;
 // =============================================================================
 
 pub enum AppError {
+    Forbidden,
     NotFound(String),
     BadRequest(String),
     Internal(String),
@@ -48,6 +49,7 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match self {
+            AppError::Forbidden => (StatusCode::FORBIDDEN, "forbidden".to_string()),
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
@@ -71,6 +73,7 @@ pub struct ListShowsQuery {
     pub around: Option<String>,
     pub around_before: Option<i64>,
     pub sort: Option<String>,
+    pub genre: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -115,6 +118,8 @@ struct ShowDetailResponse {
     rating: Option<f64>,
     rating_count: Option<i32>,
     content_rating: Option<String>,
+    kids_override: Option<bool>,
+    kids_allowed: bool,
     network: Option<String>,
     is_monitored: bool,
     auto_want_mode: String,
@@ -249,6 +254,10 @@ pub struct CreateShowRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateShowRequest {
+    /// Whether a Kids profile may see this title regardless of its rating; `null` defers
+    /// to the rating again. Admin only.
+    #[serde(default, deserialize_with = "crate::serde_patch::double_option")]
+    pub kids_override: Option<Option<bool>>,
     pub title: Option<String>,
     pub sort_title: Option<String>,
     pub original_title: Option<String>,
@@ -387,7 +396,7 @@ pub struct EpisodeFilePath {
 /// GET /api/v1/admin/tv/shows
 pub async fn list_shows(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(params): Query<ListShowsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let limit = params.limit.unwrap_or(50).min(200);
@@ -422,6 +431,8 @@ pub async fn list_shows(
             cursor_id: Some(around_id),
             direction: PaginationDirection::Backward,
             content_category: Some("tv".to_string()),
+            genre: params.genre.clone(),
+            kids_only: auth.is_kids,
             ..Default::default()
         };
         let mut before_rows = tv_shows::list(&state.pool, &before_filters)
@@ -457,6 +468,8 @@ pub async fn list_shows(
             direction: PaginationDirection::Forward,
             cursor_inclusive,
             content_category: Some("tv".to_string()),
+            genre: params.genre.clone(),
+            kids_only: auth.is_kids,
             ..Default::default()
         };
 
@@ -533,6 +546,8 @@ pub async fn list_shows(
         cursor_inclusive: false,
         content_category: Some("tv".to_string()),
         sort: params.sort,
+        genre: params.genre.clone(),
+        kids_only: auth.is_kids,
     };
 
     let total_count = if is_first_page {
@@ -761,6 +776,7 @@ pub async fn get_show(
     let detail = tv_shows::get_with_details(&state.pool, id)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get show: {e}")))?
+        .filter(|d| !auth.is_kids || d.kids_allowed)
         .ok_or_else(|| AppError::NotFound("Show not found".into()))?;
 
     let mut response = show_detail_to_response(detail);
@@ -787,10 +803,14 @@ pub async fn get_show(
 /// PATCH /api/v1/admin/tv/shows/:id
 pub async fn update_show(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateShowRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    if body.kids_override.is_some() && auth.require_admin().is_err() {
+        return Err(AppError::Forbidden);
+    }
+    let kids_override = body.kids_override;
     let mut img_map = std::collections::HashMap::new();
     if let Some(url) = body.poster_url {
         img_map.insert(
@@ -857,6 +877,12 @@ pub async fn update_show(
 
     if !updated {
         return Err(AppError::NotFound("Show not found".into()));
+    }
+
+    if let Some(kids_override) = kids_override {
+        tv_shows::set_kids_override(&state.pool, id, kids_override)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to set kids override: {e}")))?;
     }
 
     let _ = state.library_events.send(LibraryEvent::tv_show_updated(id));
@@ -1225,6 +1251,13 @@ pub async fn get_season(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get season: {e}")))?
         .ok_or_else(|| AppError::NotFound("Season not found".into()))?;
+    if auth.is_kids
+        && !crate::kids::show_allowed(&state.pool, season.show_id)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to check season: {e}")))?
+    {
+        return Err(AppError::NotFound("Season not found".into()));
+    }
 
     let episodes = tv_episodes::list_by_season(&state.pool, id)
         .await
@@ -1462,13 +1495,20 @@ pub async fn set_season_auto_want(
 /// GET /api/v1/admin/tv/episodes/:id
 pub async fn get_episode(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     let episode = tv_episodes::get(&state.pool, id)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get episode: {e}")))?
         .ok_or_else(|| AppError::NotFound("Episode not found".into()))?;
+    if auth.is_kids
+        && !crate::kids::episode_allowed(&state.pool, id)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to check episode: {e}")))?
+    {
+        return Err(AppError::NotFound("Episode not found".into()));
+    }
 
     Ok(Json(episode_row_to_response(episode)))
 }
@@ -2583,6 +2623,13 @@ pub async fn bulk_episodes(
     auth: AuthUser,
     Json(body): Json<BulkEpisodeRequest>,
 ) -> Result<impl IntoResponse, AppError> {
+    let own_watch_marks = matches!(
+        body.action,
+        BulkEpisodeAction::MarkWatched | BulkEpisodeAction::MarkUnwatched
+    );
+    if !own_watch_marks && auth.require_contributor().is_err() {
+        return Err(AppError::Forbidden);
+    }
     if body.episode_ids.is_empty() {
         return Err(AppError::BadRequest("episode_ids must not be empty".into()));
     }
@@ -3240,7 +3287,7 @@ struct FirstByLetterResponse {
 /// GET /api/v1/admin/tv/shows/first-by-letter?letter=A
 pub async fn first_by_letter(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(params): Query<FirstByLetterQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let letter = params.letter.trim().to_uppercase();
@@ -3252,7 +3299,7 @@ pub async fn first_by_letter(
         return Err(AppError::BadRequest("letter must be A-Z or #".into()));
     }
 
-    match tv_shows::first_by_letter(&state.pool, &letter, Some("tv")).await {
+    match tv_shows::first_by_letter(&state.pool, &letter, Some("tv"), auth.is_kids).await {
         Ok(Some(result)) => Ok(Json(FirstByLetterResponse {
             id: result.id,
             title: result.title,
@@ -3273,9 +3320,21 @@ struct AvailableLettersResponse {
 /// GET /api/v1/admin/tv/shows/available-letters
 pub async fn available_letters(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
 ) -> Result<impl IntoResponse, AppError> {
     use crate::search::TvShowSearchFilters;
+
+    // The index knows nothing of Kids profiles; their bar comes from the rule in SQL.
+    if auth.is_kids {
+        let letters = crate::repositories::letters::available_letters(
+            &state.pool,
+            "tv_shows b",
+            &["b.content_category = 'tv'", crate::kids::KIDS_ALLOWED_B],
+        )
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))?;
+        return Ok(Json(AvailableLettersResponse { letters }));
+    }
 
     let filters = TvShowSearchFilters::default();
     let letters = match state.search.get_available_tv_show_letters(filters).await {
@@ -3859,6 +3918,8 @@ fn show_detail_to_response(detail: tv_shows::TvShowDetail) -> ShowDetailResponse
         rating: detail.rating,
         rating_count: detail.rating_count,
         content_rating: detail.content_rating,
+        kids_override: detail.kids_override,
+        kids_allowed: detail.kids_allowed,
         network: detail.network,
         is_monitored: detail.is_monitored,
         auto_want_mode: detail.auto_want_mode,
@@ -4249,4 +4310,29 @@ pub async fn set_skip_segments(
     }
 
     StatusCode::NO_CONTENT.into_response()
+}
+
+#[derive(Debug, Serialize)]
+struct GenreCount {
+    name: String,
+    count: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct GenresResponse {
+    genres: Vec<GenreCount>,
+}
+
+/// GET /api/v1/admin/tv/shows/genres
+pub async fn genres(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<impl IntoResponse, AppError> {
+    let genres = tv_shows::genre_counts(&state.pool, auth.is_kids)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to list genres: {e}")))?
+        .into_iter()
+        .map(|(name, count)| GenreCount { name, count })
+        .collect();
+    Ok(Json(GenresResponse { genres }))
 }

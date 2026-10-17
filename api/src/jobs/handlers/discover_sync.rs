@@ -14,6 +14,7 @@ use crate::jobs::JobResult;
 use crate::jobs::worker::JobHandler;
 use crate::repositories::{metadata_cache, video_metadata_providers};
 use crate::runtime_config::RuntimeConfigManager;
+use crate::video_metadata::tmdb::DiscoverQuery;
 use crate::video_metadata::types::MovieResult;
 use crate::video_metadata::types::TvShowResult;
 
@@ -29,6 +30,9 @@ pub struct DiscoverSection {
     pub title: String,
     pub section_key: String,
     pub sort_order: i32,
+    /// Built from rating- and genre-filtered queries, and the only shelves a Kids profile gets.
+    #[serde(default)]
+    pub kids: bool,
     pub items: Vec<DiscoverItem>,
 }
 
@@ -208,6 +212,7 @@ impl DiscoverSyncHandler {
                 title: title.to_string(),
                 section_key: key.to_string(),
                 sort_order: *order,
+                kids: false,
                 items,
             };
             if let Err(e) = self.cache_section(&section, expires).await {
@@ -221,35 +226,82 @@ impl DiscoverSyncHandler {
         let services = &rt_config.discover_streaming_services;
 
         // Clean up old service rows before writing new ones
-        if let Err(e) =
-            metadata_cache::delete_by_prefix(&self.pool, DISCOVER_PROVIDER, "service_").await
-        {
-            errors.push(format!("Failed to clean old service rows: {e}"));
+        for prefix in ["service_", "kids_service_"] {
+            if let Err(e) =
+                metadata_cache::delete_by_prefix(&self.pool, DISCOVER_PROVIDER, prefix).await
+            {
+                errors.push(format!("Failed to clean old {prefix} rows: {e}"));
+            }
         }
 
+        let mut shelves: Vec<(String, String, i32, DiscoverQuery<'_>)> = vec![
+            (
+                "kids_movies".into(),
+                "Family Movies".into(),
+                0,
+                DiscoverQuery {
+                    provider_id: None,
+                    region,
+                    kids: true,
+                },
+            ),
+            (
+                "kids_tv".into(),
+                "Kids TV".into(),
+                1,
+                DiscoverQuery {
+                    provider_id: None,
+                    region,
+                    kids: true,
+                },
+            ),
+        ];
         for (i, service) in services.iter().enumerate() {
             let sort_order = 10 + i as i32;
-            let section_key = format!("service_{}", service.id);
-            let title = format!("Popular on {}", service.name);
+            for kids in [false, true] {
+                let (key, title) = if kids {
+                    (
+                        format!("kids_service_{}", service.id),
+                        format!("Kids on {}", service.name),
+                    )
+                } else {
+                    (
+                        format!("service_{}", service.id),
+                        format!("Popular on {}", service.name),
+                    )
+                };
+                shelves.push((
+                    key,
+                    title,
+                    sort_order,
+                    DiscoverQuery {
+                        provider_id: Some(service.id),
+                        region,
+                        kids,
+                    },
+                ));
+            }
+        }
 
-            // Fetch TV + movies for this service, combine into one section
+        for (section_key, title, sort_order, query) in shelves {
+            // A kids-wide shelf is one medium each; a service shelf mixes both, as the
+            // service's own home screen does.
+            let (want_tv, want_movies) = match section_key.as_str() {
+                "kids_movies" => (false, true),
+                "kids_tv" => (true, false),
+                _ => (true, true),
+            };
             let mut items = Vec::new();
-
-            match tmdb.discover_tv_by_provider(service.id, region).await {
-                Ok(shows) => {
-                    items.extend(shows.into_iter().map(tv_to_discover_item));
-                }
-                Err(e) => {
-                    errors.push(format!("TMDB discover TV for {}: {e}", service.name));
+            if want_tv {
+                match tmdb.discover_tv(&query).await {
+                    Ok(shows) => items.extend(shows.into_iter().map(tv_to_discover_item)),
+                    Err(e) => errors.push(format!("TMDB discover TV for {title}: {e}")),
                 }
             }
-
-            match tmdb.discover_movies_by_provider(service.id, region).await {
-                Ok(movies) => {
-                    items.extend(movies.into_iter().map(movie_to_discover_item));
-                }
-                Err(e) => {
-                    errors.push(format!("TMDB discover movies for {}: {e}", service.name));
+            if want_movies {
+                match tmdb.discover_movies(&query).await {
+                    Ok(movies) => items.extend(movies.into_iter().map(movie_to_discover_item)),
+                    Err(e) => errors.push(format!("TMDB discover movies for {title}: {e}")),
                 }
             }
 
@@ -262,6 +314,7 @@ impl DiscoverSyncHandler {
                 title,
                 section_key,
                 sort_order,
+                kids: query.kids,
                 items,
             };
             if let Err(e) = self.cache_section(&section, expires).await {

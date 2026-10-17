@@ -25,10 +25,12 @@ pub mod http;
 pub mod images;
 pub mod iptv;
 pub mod jobs;
+pub mod kids;
 pub mod kobload;
 pub mod kobload_bridge;
 pub mod kobo;
 pub mod kobo_handler;
+pub mod library_edits;
 pub mod livetv;
 pub mod media_cache;
 pub mod media_interpreter;
@@ -44,6 +46,7 @@ pub mod routes;
 pub mod runtime_config;
 pub mod search;
 pub mod serde_date;
+pub mod serde_patch;
 pub mod serde_pg;
 pub mod sidecar;
 pub mod skip_detect;
@@ -1107,6 +1110,7 @@ pub fn create_router(state: AppState) -> Router {
             get(movie_routes::available_letters),
         )
         .route("/api/v1/admin/movies/facets", get(movie_routes::facets))
+        .route("/api/v1/admin/movies/genres", get(movie_routes::genres))
         .route(
             "/api/v1/admin/movies/{id}/tracks",
             get(movie_routes::get_movie_tracks),
@@ -1205,6 +1209,7 @@ pub fn create_router(state: AppState) -> Router {
             get(tv_routes::available_letters),
         )
         .route("/api/v1/admin/tv/shows/facets", get(tv_routes::facets))
+        .route("/api/v1/admin/tv/shows/genres", get(tv_routes::genres))
         // TV Seasons
         .route(
             "/api/v1/admin/tv/shows/{id}/seasons",
@@ -2209,6 +2214,14 @@ pub fn create_router(state: AppState) -> Router {
             "/stremio/{api_key}/file/{session_id}",
             get(stremio_routes::stream_file),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            kids::deny_kids_surfaces,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            library_edits::require_editor,
+        ))
         .layer(DefaultBodyLimit::max(state.config.http_max_body_bytes))
         .layer(cors)
         .with_state(state)

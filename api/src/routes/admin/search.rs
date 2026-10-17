@@ -34,7 +34,7 @@ fn default_limit() -> usize {
 /// `remaining` contains all other results in relevance order.
 pub async fn search(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(query): Query<SearchQuery>,
 ) -> impl IntoResponse {
     if query.q.trim().is_empty() {
@@ -46,7 +46,15 @@ pub async fn search(
     }
 
     match state.search.unified_search(&query.q, query.limit).await {
-        Ok(result) => Json(result).into_response(),
+        Ok(mut result) => {
+            if auth.is_kids
+                && let Err(e) = crate::kids::filter_search(&state.pool, &mut result).await
+            {
+                tracing::error!(error = %e, "Kids search filter failed");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+            Json(result).into_response()
+        }
         Err(e) => {
             tracing::error!(error = %e, "Search query failed");
             (

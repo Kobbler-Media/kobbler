@@ -64,7 +64,7 @@ pub struct CalendarItem {
 /// GET /api/v1/admin/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD
 pub async fn get_calendar(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     axum::extract::Query(params): axum::extract::Query<CalendarQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let from = time::Date::parse(
@@ -91,9 +91,14 @@ pub async fn get_calendar(
     })
     .map_err(|_| AppError::BadRequest(format!("Invalid 'to' date: {}", params.to)))?;
 
-    let items = items_between(&state, from, to)
+    let mut items = items_between(&state, from, to)
         .await
         .map_err(|e| AppError::Internal(format!("Calendar query failed: {e}")))?;
+    if auth.is_kids {
+        keep_kids_items(&state.pool, &mut items)
+            .await
+            .map_err(|e| AppError::Internal(format!("Calendar filter failed: {e}")))?;
+    }
 
     Ok(Json(CalendarResponse { items }))
 }
@@ -122,6 +127,29 @@ pub async fn items_between(
     items.extend(book_items);
     items.sort_by(|a, b| a.date.cmp(&b.date).then_with(|| a.title.cmp(&b.title)));
     Ok(items)
+}
+
+async fn keep_kids_items(pool: &sqlx::PgPool, items: &mut Vec<CalendarItem>) -> sqlx::Result<()> {
+    // Episode items carry their show's content category ("tv" / "sport") as media_type.
+    let is_episode = |i: &CalendarItem| matches!(i.media_type.as_str(), "tv" | "sport");
+    let movie_ids: Vec<Uuid> = items
+        .iter()
+        .filter(|i| i.media_type == "movie")
+        .map(|i| i.id)
+        .collect();
+    let episode_ids: Vec<Uuid> = items
+        .iter()
+        .filter(|i| is_episode(i))
+        .map(|i| i.id)
+        .collect();
+    let movies = crate::kids::allowed_movie_ids(pool, &movie_ids).await?;
+    let episodes = crate::kids::allowed_episode_ids(pool, &episode_ids).await?;
+    items.retain(|i| match i.media_type.as_str() {
+        "movie" => movies.contains(&i.id),
+        _ if is_episode(i) => episodes.contains(&i.id),
+        _ => true,
+    });
+    Ok(())
 }
 
 // =============================================================================

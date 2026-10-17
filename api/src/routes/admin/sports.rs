@@ -330,7 +330,7 @@ const EVENT_IMAGE_BASE: &str = "/api/v1/admin/sports/events/";
 /// GET /api/v1/admin/sports/leagues
 pub async fn list_leagues(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(params): Query<ListLeaguesQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let limit = params.limit.unwrap_or(50).min(200);
@@ -364,6 +364,7 @@ pub async fn list_leagues(
             cursor_id: Some(around_id),
             direction: PaginationDirection::Backward,
             content_category: Some(CONTENT_CATEGORY.to_string()),
+            kids_only: auth.is_kids,
             ..Default::default()
         };
         let mut before_rows = tv_shows::list(&state.pool, &before_filters)
@@ -398,6 +399,7 @@ pub async fn list_leagues(
             direction: PaginationDirection::Forward,
             cursor_inclusive,
             content_category: Some(CONTENT_CATEGORY.to_string()),
+            kids_only: auth.is_kids,
             ..Default::default()
         };
 
@@ -474,6 +476,7 @@ pub async fn list_leagues(
         direction,
         content_category: Some(CONTENT_CATEGORY.to_string()),
         sort: params.sort,
+        kids_only: auth.is_kids,
         ..Default::default()
     };
 
@@ -676,6 +679,7 @@ pub async fn get_league(
     let detail = tv_shows::get_metadata(&state.pool, id)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get league: {e}")))?
+        .filter(|d| !auth.is_kids || d.kids_allowed)
         .ok_or_else(|| AppError::NotFound("League not found".into()))?;
     let tallies = tv_shows::episode_tallies(&state.pool, id, auth.user_id)
         .await
@@ -1152,7 +1156,7 @@ struct FirstByLetterResponse {
 /// GET /api/v1/admin/sports/leagues/first-by-letter?letter=A
 pub async fn first_by_letter(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Query(params): Query<FirstByLetterQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let letter = params.letter.trim().to_uppercase();
@@ -1164,7 +1168,9 @@ pub async fn first_by_letter(
         return Err(AppError::BadRequest("letter must be A-Z or #".into()));
     }
 
-    match tv_shows::first_by_letter(&state.pool, &letter, Some(CONTENT_CATEGORY)).await {
+    match tv_shows::first_by_letter(&state.pool, &letter, Some(CONTENT_CATEGORY), auth.is_kids)
+        .await
+    {
         Ok(Some(result)) => Ok(Json(FirstByLetterResponse {
             id: result.id,
             title: result.title,
@@ -1185,15 +1191,17 @@ struct AvailableLettersResponse {
 /// GET /api/v1/admin/sports/leagues/available-letters
 pub async fn available_letters(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
 ) -> Result<impl IntoResponse, AppError> {
-    let letters = crate::repositories::letters::available_letters(
-        &state.pool,
-        "tv_shows b",
-        &["b.content_category = 'sport'"],
-    )
-    .await
-    .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))?;
+    let conditions: &[&'static str] = if auth.is_kids {
+        &["b.content_category = 'sport'", crate::kids::KIDS_ALLOWED_B]
+    } else {
+        &["b.content_category = 'sport'"]
+    };
+    let letters =
+        crate::repositories::letters::available_letters(&state.pool, "tv_shows b", conditions)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))?;
 
     Ok(Json(AvailableLettersResponse { letters }))
 }

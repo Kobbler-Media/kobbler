@@ -33,12 +33,12 @@ where
 
 /// Validate a playback token and return the associated (user_id, role).
 /// Returns None if token is missing, expired, or invalid.
-pub async fn validate<'e, E>(exec: E, token: &str) -> Result<Option<(Uuid, String)>>
+pub async fn validate<'e, E>(exec: E, token: &str) -> Result<Option<(Uuid, String, bool)>>
 where
     E: Executor<'e, Database = Postgres>,
 {
     let row = sqlx::query!(
-        r#"SELECT pt.user_id, u.role
+        r#"SELECT pt.user_id, u.role, u.is_kids
         FROM playback_tokens pt
         JOIN users u ON u.id = pt.user_id
         WHERE pt.token = $1 AND pt.expires_at > NOW()"#,
@@ -46,7 +46,7 @@ where
     )
     .fetch_optional(exec)
     .await?;
-    Ok(row.map(|r| (r.user_id, r.role)))
+    Ok(row.map(|r| (r.user_id, r.role, r.is_kids)))
 }
 
 /// Revoke a playback token by deleting it.

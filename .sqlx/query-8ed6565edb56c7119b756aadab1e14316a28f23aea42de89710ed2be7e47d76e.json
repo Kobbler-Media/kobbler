@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            m.id AS \"movie_id!\",\n            m.title AS \"title!\",\n            m.year,\n            m.images AS \"images!: serde_json::Value\",\n            w.added_at AS \"added_at!\"\n        FROM watchlist_items w\n        JOIN movies m ON m.id = w.media_id\n        WHERE w.user_id = $1\n          AND w.media_type = 'movie'\n          AND NOT EXISTS (\n              SELECT 1 FROM movie_watch_states ws\n              WHERE ws.movie_id = m.id\n                AND ws.user_id = $1\n                AND (ws.watched = TRUE OR COALESCE(ws.position_seconds, 0) >= 60)\n          )\n        ORDER BY w.added_at DESC\n        ",
+  "query": "\n        SELECT\n            m.id,\n            m.title,\n            m.year,\n            m.images as \"images: serde_json::Value\",\n            MAX(mf.created_at) as \"added_at!: OffsetDateTime\"\n        FROM movies m\n        JOIN movie_files mf ON mf.movie_id = m.id AND mf.available = true\n        WHERE $1 = FALSE OR kids_allowed(m.kids_override, m.content_rating)\n        GROUP BY m.id, m.title, m.year, m.images\n        ORDER BY MAX(mf.created_at) DESC\n        LIMIT 12\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "movie_id!",
+        "name": "id",
         "type_info": "Uuid",
         "origin": {
           "Table": {
@@ -16,7 +16,7 @@
       },
       {
         "ordinal": 1,
-        "name": "title!",
+        "name": "title",
         "type_info": "Text",
         "origin": {
           "Table": {
@@ -38,7 +38,7 @@
       },
       {
         "ordinal": 3,
-        "name": "images!: serde_json::Value",
+        "name": "images: serde_json::Value",
         "type_info": "Jsonb",
         "origin": {
           "Table": {
@@ -49,19 +49,14 @@
       },
       {
         "ordinal": 4,
-        "name": "added_at!",
+        "name": "added_at!: OffsetDateTime",
         "type_info": "Timestamptz",
-        "origin": {
-          "Table": {
-            "table": "watchlist_items",
-            "name": "added_at"
-          }
-        }
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
-        "Uuid"
+        "Bool"
       ]
     },
     "nullable": [
@@ -69,8 +64,8 @@
       false,
       true,
       false,
-      false
+      null
     ]
   },
-  "hash": "64016ea8d319ec6810642fc36e11e1ebccae422f2cbfb6ad2d0d2c7f43e60f83"
+  "hash": "8ed6565edb56c7119b756aadab1e14316a28f23aea42de89710ed2be7e47d76e"
 }

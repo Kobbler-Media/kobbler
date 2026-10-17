@@ -8,6 +8,7 @@ let role = $state<UserRole>('');
 let email = $state('');
 let avatarUrl = $state('');
 let hasPin = $state(false);
+let isKids = $state(false);
 let timezone = $state('');
 let castReceiverAppId = $state('');
 let loginError = $state('');
@@ -35,6 +36,9 @@ export function getAuthState() {
     },
     get hasPin() {
       return hasPin;
+    },
+    get isKids() {
+      return isKids;
     },
     get timezone() {
       return timezone;
@@ -71,6 +75,10 @@ export function setHasPin(value: boolean) {
   hasPin = value;
 }
 
+export function setIsKids(value: boolean) {
+  isKids = value;
+}
+
 export function setTimezone(value: string) {
   timezone = value;
 }
@@ -93,6 +101,7 @@ export function clearAuth() {
   email = '';
   avatarUrl = '';
   hasPin = false;
+  isKids = false;
   timezone = '';
   castReceiverAppId = '';
   loginError = '';

@@ -432,10 +432,17 @@
 
   // Filtered items
   const filteredLibraryItems = $derived(filterItems(libraryItems));
-  const filteredMediaItems = $derived(filterItems(mediaItems));
-  const filteredLivetvItems = $derived(filterItems(livetvItems));
-  const filteredLiveItems = $derived(filterItems(liveItems));
-  const filteredActivityItems = $derived(filterItems(activityItems));
+  const filteredMediaItems = $derived(
+    filterItems(authState.isKids ? mediaItems.filter((i) => i.href !== '/sports') : mediaItems)
+  );
+  // The server refuses live and IPTV routes for a Kids profile; no point offering them.
+  const filteredLivetvItems = $derived(authState.isKids ? [] : filterItems(livetvItems));
+  const filteredLiveItems = $derived(authState.isKids ? [] : filterItems(liveItems));
+  const filteredActivityItems = $derived(
+    filterItems(
+      authState.isKids ? activityItems.filter((i) => i.href !== '/activity') : activityItems
+    )
+  );
   const filteredSettingsItems = $derived(filterItems(settingsItems));
   const filteredSettingsCore = $derived(filterItems(settingsCoreItems));
   const filteredSettingsAccess = $derived(filterItems(settingsAccessItems));

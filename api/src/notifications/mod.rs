@@ -2,6 +2,7 @@ pub mod types;
 
 pub mod discord;
 pub mod google_chat;
+pub mod in_app;
 mod plex;
 pub mod prefs;
 mod pushover;

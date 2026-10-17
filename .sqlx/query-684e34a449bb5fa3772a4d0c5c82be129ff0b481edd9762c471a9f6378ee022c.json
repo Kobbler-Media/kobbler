@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT ci.id, ci.user_id, u.role AS user_role, ci.max_role, ci.enabled, ci.external_id\n        FROM chat_identities ci\n        JOIN users u ON u.id = ci.user_id\n        WHERE ci.transport = $1\n          AND (\n                ($2::text IS NOT NULL AND ci.external_id = $2)\n             OR ($3::text IS NOT NULL AND lower(ci.address) = lower($3))\n             OR ($2::text IS NOT NULL AND lower(ci.address) = lower($2))\n          )\n        ORDER BY ($2::text IS NOT NULL AND ci.external_id = $2) DESC, ci.created_at ASC, ci.id ASC\n        LIMIT 1\n        ",
+  "query": "\n        SELECT ci.id, ci.user_id, u.role AS user_role, u.is_kids AS user_is_kids, ci.max_role,\n               ci.enabled, ci.external_id\n        FROM chat_identities ci\n        JOIN users u ON u.id = ci.user_id\n        WHERE ci.transport = $1\n          AND (\n                ($2::text IS NOT NULL AND ci.external_id = $2)\n             OR ($3::text IS NOT NULL AND lower(ci.address) = lower($3))\n             OR ($2::text IS NOT NULL AND lower(ci.address) = lower($2))\n          )\n        ORDER BY ($2::text IS NOT NULL AND ci.external_id = $2) DESC, ci.created_at ASC, ci.id ASC\n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,17 @@
       },
       {
         "ordinal": 3,
+        "name": "user_is_kids",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "is_kids"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "max_role",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "enabled",
         "type_info": "Bool",
         "origin": {
@@ -59,7 +70,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "external_id",
         "type_info": "Text",
         "origin": {
@@ -83,8 +94,9 @@
       false,
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "3147b8bdb5f7b00783b832cbe422c9c5a210395e948f3f628591404d4a336658"
+  "hash": "684e34a449bb5fa3772a4d0c5c82be129ff0b481edd9762c471a9f6378ee022c"
 }

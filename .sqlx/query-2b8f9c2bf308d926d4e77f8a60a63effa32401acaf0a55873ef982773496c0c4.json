@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            sub.show_id as \"show_id!\",\n            sub.show_title as \"show_title!\",\n            sub.show_images as \"show_images!: serde_json::Value\",\n            sub.season_identifier as \"season_identifier!\",\n            sub.episode_id as \"episode_id!\",\n            sub.episode_identifier as \"episode_identifier!\",\n            sub.episode_title,\n            sub.added_at as \"added_at!\"\n        FROM (\n            SELECT DISTINCT ON (tshow.id)\n                tshow.id as show_id,\n                tshow.title as show_title,\n                tshow.images as show_images,\n                ts.season_identifier,\n                te.id as episode_id,\n                te.episode_identifier,\n                te.title as episode_title,\n                tef.created_at as added_at\n            FROM tv_episode_files tef\n            JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id\n            JOIN tv_episodes te ON te.id = tefe.episode_id\n            JOIN tv_seasons ts ON te.season_id = ts.id\n            JOIN tv_shows tshow ON ts.show_id = tshow.id\n            WHERE tef.available = true AND tshow.content_category = $1\n            ORDER BY tshow.id, tef.created_at DESC\n        ) sub\n        ORDER BY sub.added_at DESC\n        LIMIT 12\n        ",
+  "query": "\n        SELECT\n            sub.show_id as \"show_id!\",\n            sub.show_title as \"show_title!\",\n            sub.show_images as \"show_images!: serde_json::Value\",\n            sub.season_identifier as \"season_identifier!\",\n            sub.episode_id as \"episode_id!\",\n            sub.episode_identifier as \"episode_identifier!\",\n            sub.episode_title,\n            sub.added_at as \"added_at!\"\n        FROM (\n            SELECT DISTINCT ON (tshow.id)\n                tshow.id as show_id,\n                tshow.title as show_title,\n                tshow.images as show_images,\n                ts.season_identifier,\n                te.id as episode_id,\n                te.episode_identifier,\n                te.title as episode_title,\n                tef.created_at as added_at\n            FROM tv_episode_files tef\n            JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id\n            JOIN tv_episodes te ON te.id = tefe.episode_id\n            JOIN tv_seasons ts ON te.season_id = ts.id\n            JOIN tv_shows tshow ON ts.show_id = tshow.id\n            WHERE tef.available = true AND tshow.content_category = $1\n              AND ($2 = FALSE OR kids_allowed(tshow.kids_override, tshow.content_rating))\n            ORDER BY tshow.id, tef.created_at DESC\n        ) sub\n        ORDER BY sub.added_at DESC\n        LIMIT 12\n        ",
   "describe": {
     "columns": [
       {
@@ -94,7 +94,8 @@
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Text",
+        "Bool"
       ]
     },
     "nullable": [
@@ -108,5 +109,5 @@
       false
     ]
   },
-  "hash": "ed41cd33eeb84666a76babed5cdc74b5940e11e56ff5f467afc3549cd15d6e8e"
+  "hash": "2b8f9c2bf308d926d4e77f8a60a63effa32401acaf0a55873ef982773496c0c4"
 }

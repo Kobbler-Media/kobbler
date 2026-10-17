@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, title, sort_title, original_title, year, runtime,\n               description, tagline, images, identifiers,\n               genres, rating, rating_count, content_rating,\n               release_date, is_released, quality_profile_id, preferred_languages,\n               media_root_id,\n               EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id) AS \"is_in_library!\",\n               want_status, streamed_at, created_at, updated_at\n        FROM movies\n        WHERE id = $1\n        ",
+  "query": "\n        SELECT id, title, sort_title, original_title, year, status,\n               description, images, identifiers,\n               genres, rating, rating_count, content_rating, network,\n               kids_override, kids_allowed(kids_override, content_rating) AS \"kids_allowed!\",\n               is_monitored, auto_want_mode, quality_profile_id, preferred_languages, media_root_id,\n               first_aired, last_aired, next_airing, runtime, total_episode_count,\n               content_category, sport_metadata, streamed_at,\n               created_at, updated_at\n        FROM tv_shows\n        WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "id"
           }
         }
@@ -20,7 +20,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "title"
           }
         }
@@ -31,7 +31,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "sort_title"
           }
         }
@@ -42,7 +42,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "original_title"
           }
         }
@@ -53,19 +53,19 @@
         "type_info": "Int4",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "year"
           }
         }
       },
       {
         "ordinal": 5,
-        "name": "runtime",
-        "type_info": "Int4",
+        "name": "status",
+        "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "movies",
-            "name": "runtime"
+            "table": "tv_shows",
+            "name": "status"
           }
         }
       },
@@ -75,189 +75,266 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "description"
           }
         }
       },
       {
         "ordinal": 7,
-        "name": "tagline",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "movies",
-            "name": "tagline"
-          }
-        }
-      },
-      {
-        "ordinal": 8,
         "name": "images",
         "type_info": "Jsonb",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "images"
           }
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "identifiers",
         "type_info": "Jsonb",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "identifiers"
           }
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "genres",
         "type_info": "TextArray",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "genres"
           }
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "rating",
         "type_info": "Float8",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "rating"
           }
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "rating_count",
         "type_info": "Int4",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "rating_count"
           }
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "content_rating",
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "content_rating"
           }
         }
       },
       {
-        "ordinal": 14,
-        "name": "release_date",
-        "type_info": "Date",
+        "ordinal": 13,
+        "name": "network",
+        "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "movies",
-            "name": "release_date"
+            "table": "tv_shows",
+            "name": "network"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "kids_override",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "kids_override"
           }
         }
       },
       {
         "ordinal": 15,
-        "name": "is_released",
+        "name": "kids_allowed!",
         "type_info": "Bool",
-        "origin": {
-          "Table": {
-            "table": "movies",
-            "name": "is_released"
-          }
-        }
+        "origin": "Expression"
       },
       {
         "ordinal": 16,
-        "name": "quality_profile_id",
-        "type_info": "Uuid",
+        "name": "is_monitored",
+        "type_info": "Bool",
         "origin": {
           "Table": {
-            "table": "movies",
-            "name": "quality_profile_id"
+            "table": "tv_shows",
+            "name": "is_monitored"
           }
         }
       },
       {
         "ordinal": 17,
-        "name": "preferred_languages",
-        "type_info": "TextArray",
+        "name": "auto_want_mode",
+        "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "movies",
-            "name": "preferred_languages"
+            "table": "tv_shows",
+            "name": "auto_want_mode"
           }
         }
       },
       {
         "ordinal": 18,
-        "name": "media_root_id",
+        "name": "quality_profile_id",
         "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "movies",
-            "name": "media_root_id"
+            "table": "tv_shows",
+            "name": "quality_profile_id"
           }
         }
       },
       {
         "ordinal": 19,
-        "name": "is_in_library!",
-        "type_info": "Bool",
-        "origin": "Expression"
+        "name": "preferred_languages",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "preferred_languages"
+          }
+        }
       },
       {
         "ordinal": 20,
-        "name": "want_status",
-        "type_info": "Text",
+        "name": "media_root_id",
+        "type_info": "Uuid",
         "origin": {
           "Table": {
-            "table": "movies",
-            "name": "want_status"
+            "table": "tv_shows",
+            "name": "media_root_id"
           }
         }
       },
       {
         "ordinal": 21,
-        "name": "streamed_at",
-        "type_info": "Timestamptz",
+        "name": "first_aired",
+        "type_info": "Date",
         "origin": {
           "Table": {
-            "table": "movies",
-            "name": "streamed_at"
+            "table": "tv_shows",
+            "name": "first_aired"
           }
         }
       },
       {
         "ordinal": 22,
-        "name": "created_at",
-        "type_info": "Timestamptz",
+        "name": "last_aired",
+        "type_info": "Date",
         "origin": {
           "Table": {
-            "table": "movies",
-            "name": "created_at"
+            "table": "tv_shows",
+            "name": "last_aired"
           }
         }
       },
       {
         "ordinal": 23,
+        "name": "next_airing",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "next_airing"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
+        "name": "runtime",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "runtime"
+          }
+        }
+      },
+      {
+        "ordinal": 25,
+        "name": "total_episode_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "total_episode_count"
+          }
+        }
+      },
+      {
+        "ordinal": 26,
+        "name": "content_category",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "content_category"
+          }
+        }
+      },
+      {
+        "ordinal": 27,
+        "name": "sport_metadata",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "sport_metadata"
+          }
+        }
+      },
+      {
+        "ordinal": 28,
+        "name": "streamed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "streamed_at"
+          }
+        }
+      },
+      {
+        "ordinal": 29,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 30,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
-            "table": "movies",
+            "table": "tv_shows",
             "name": "updated_at"
           }
         }
@@ -276,12 +353,8 @@
       true,
       true,
       true,
-      true,
       false,
       false,
-      true,
-      true,
-      true,
       true,
       true,
       true,
@@ -290,10 +363,21 @@
       true,
       null,
       false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
       true,
       false,
       false
     ]
   },
-  "hash": "69306adae0a6880b43b83507d086a27a2f1a51f542ac1c83f0f6f08cf36746bd"
+  "hash": "770f24c198c54cd7c8f7ccb86486c0384bdf026e9113fea8cafb1d5656733ba5"
 }

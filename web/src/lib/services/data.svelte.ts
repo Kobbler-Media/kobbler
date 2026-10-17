@@ -9,6 +9,7 @@ import {
   setEmail,
   setAvatarUrl,
   setHasPin,
+  setIsKids,
   setTimezone,
   setCastReceiverAppId,
   clearAuth
@@ -63,6 +64,7 @@ export async function checkAuth(): Promise<boolean> {
       setEmail(data.email || '');
       setAvatarUrl(data.avatar_url || '');
       setHasPin(Boolean(data.has_pin));
+      setIsKids(Boolean(data.is_kids));
       setTimezone(data.timezone || '');
       setCastReceiverAppId(data.cast_receiver_app_id || '');
       // Sessions have a fixed expiry and nothing else renews them, so a browser that

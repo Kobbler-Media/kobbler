@@ -102,6 +102,33 @@ impl VideoProviderFactory for TmdbFactory {
 // Provider
 // ============================================================================
 
+// Same ceiling as a Kids profile (migration 0183), narrowed to family and animation so
+// the shelf is children's titles rather than every PG-13 blockbuster.
+const KIDS_MOVIE_FILTER: &str =
+    "&certification_country=US&certification.lte=PG-13&with_genres=10751%7C16";
+// TMDB's TV discover has no certification filter; its Kids and Family genres stand in.
+const KIDS_TV_FILTER: &str = "&with_genres=10762%7C10751";
+
+pub struct DiscoverQuery<'a> {
+    /// A TMDB watch-provider id; `None` spans every service.
+    pub provider_id: Option<i32>,
+    pub region: &'a str,
+    pub kids: bool,
+}
+
+impl DiscoverQuery<'_> {
+    fn common_params(&self) -> String {
+        let mut params = String::from("sort_by=popularity.desc&language=en-US");
+        if let Some(provider_id) = self.provider_id {
+            params.push_str(&format!(
+                "&with_watch_providers={provider_id}&watch_region={}&with_watch_monetization_types=flatrate",
+                self.region
+            ));
+        }
+        params
+    }
+}
+
 pub struct TmdbProvider {
     client: reqwest::Client,
     api_key: String,
@@ -313,17 +340,16 @@ impl TmdbProvider {
     // Discover by streaming service (not on the trait — TMDB-specific)
     // ========================================================================
 
-    /// Discover popular movies available on a specific streaming service.
-    pub async fn discover_movies_by_provider(
+    /// Popular movies, narrowed to one streaming service and/or to kids titles.
+    pub async fn discover_movies(
         &self,
-        provider_id: i32,
-        region: &str,
+        query: &DiscoverQuery<'_>,
     ) -> Result<Vec<MovieResult>, VideoProviderError> {
         let key = self.require_key()?;
-        let url = format!(
-            "{}/discover/movie?with_watch_providers={}&watch_region={}&sort_by=popularity.desc&with_watch_monetization_types=flatrate&language=en-US",
-            self.base_url, provider_id, region,
-        );
+        let mut url = format!("{}/discover/movie?{}", self.base_url, query.common_params());
+        if query.kids {
+            url.push_str(KIDS_MOVIE_FILTER);
+        }
         let resp: TmdbSearchResponse = self
             .get(&url, key)
             .send()
@@ -335,17 +361,16 @@ impl TmdbProvider {
         Ok(Self::movies_from_search(resp))
     }
 
-    /// Discover popular TV shows available on a specific streaming service.
-    pub async fn discover_tv_by_provider(
+    /// Popular TV shows, narrowed to one streaming service and/or to kids titles.
+    pub async fn discover_tv(
         &self,
-        provider_id: i32,
-        region: &str,
+        query: &DiscoverQuery<'_>,
     ) -> Result<Vec<TvShowResult>, VideoProviderError> {
         let key = self.require_key()?;
-        let url = format!(
-            "{}/discover/tv?with_watch_providers={}&watch_region={}&sort_by=popularity.desc&with_watch_monetization_types=flatrate&language=en-US",
-            self.base_url, provider_id, region,
-        );
+        let mut url = format!("{}/discover/tv?{}", self.base_url, query.common_params());
+        if query.kids {
+            url.push_str(KIDS_TV_FILTER);
+        }
         let resp: TmdbTvSearchResponse = self
             .get(&url, key)
             .send()

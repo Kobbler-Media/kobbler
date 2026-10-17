@@ -851,9 +851,42 @@ async fn get_library_credits(
 /// GET /api/v1/admin/people/:id/filmography
 pub async fn get_filmography(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
+    let mut filmography = build_filmography(&state, id).await?;
+    if auth.is_kids {
+        keep_kids_credits(&state.pool, &mut filmography.credits)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to filter credits: {e}")))?;
+    }
+    Ok(Json(filmography))
+}
+
+/// A credit outside the library has no rating we hold, so a Kids profile sees only the
+/// library titles the rule allows.
+async fn keep_kids_credits(
+    pool: &sqlx::PgPool,
+    credits: &mut Vec<FilmographyCreditResponse>,
+) -> sqlx::Result<()> {
+    let ids = |media_type: &str| -> Vec<Uuid> {
+        credits
+            .iter()
+            .filter(|c| c.media_type == media_type)
+            .filter_map(|c| c.library_id)
+            .collect()
+    };
+    let movies = crate::kids::allowed_movie_ids(pool, &ids("movie")).await?;
+    let shows = crate::kids::allowed_show_ids(pool, &ids("tv")).await?;
+    credits.retain(|c| match (c.media_type.as_str(), c.library_id) {
+        ("movie", Some(id)) => movies.contains(&id),
+        ("tv", Some(id)) => shows.contains(&id),
+        _ => false,
+    });
+    Ok(())
+}
+
+async fn build_filmography(state: &AppState, id: Uuid) -> Result<FilmographyResponse, AppError> {
     let person = people::get(&state.pool, id)
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get person: {e}")))?
@@ -870,9 +903,9 @@ pub async fn get_filmography(
     let Some(tmdb_id) = tmdb_id else {
         // No TMDB ID — return library credits only
         let library_credits = get_library_credits(&state.pool, id, &empty_set, &empty_set).await?;
-        return Ok(Json(FilmographyResponse {
+        return Ok(FilmographyResponse {
             credits: library_credits,
-        }));
+        });
     };
 
     let registry = VideoProviderRegistry::new(state.pool.clone());
@@ -883,9 +916,9 @@ pub async fn get_filmography(
             // Fall back to library credits
             let library_credits =
                 get_library_credits(&state.pool, id, &empty_set, &empty_set).await?;
-            return Ok(Json(FilmographyResponse {
+            return Ok(FilmographyResponse {
                 credits: library_credits,
-            }));
+            });
         }
     };
 
@@ -1088,7 +1121,7 @@ pub async fn get_filmography(
     let library_only = get_library_credits(&state.pool, id, &movie_tmdb_ids, &tv_tmdb_ids).await?;
     credits.extend(library_only);
 
-    Ok(Json(FilmographyResponse { credits }))
+    Ok(FilmographyResponse { credits })
 }
 
 // =============================================================================

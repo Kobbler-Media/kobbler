@@ -209,6 +209,7 @@ pub struct ResolvedIdentity {
     pub id: Uuid,
     pub user_id: Uuid,
     pub user_role: String,
+    pub user_is_kids: bool,
     pub max_role: String,
     pub enabled: bool,
     pub external_id: Option<String>,
@@ -235,7 +236,8 @@ where
 {
     let row = sqlx::query!(
         r#"
-        SELECT ci.id, ci.user_id, u.role AS user_role, ci.max_role, ci.enabled, ci.external_id
+        SELECT ci.id, ci.user_id, u.role AS user_role, u.is_kids AS user_is_kids, ci.max_role,
+               ci.enabled, ci.external_id
         FROM chat_identities ci
         JOIN users u ON u.id = ci.user_id
         WHERE ci.transport = $1
@@ -258,6 +260,7 @@ where
         id: r.id,
         user_id: r.user_id,
         user_role: r.user_role,
+        user_is_kids: r.user_is_kids,
         max_role: r.max_role,
         enabled: r.enabled,
         external_id: r.external_id,

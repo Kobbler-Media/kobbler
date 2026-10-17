@@ -963,11 +963,12 @@ export async function createUser(
   email: string,
   password: string,
   role: string = 'viewer',
-  display_name?: string
+  display_name?: string,
+  is_kids: boolean = false
 ): Promise<{ user_id: string }> {
   return request('/api/v1/admin/users', {
     method: 'POST',
-    body: JSON.stringify({ email, password, role, display_name })
+    body: JSON.stringify({ email, password, role, display_name, is_kids })
   });
 }
 
@@ -979,6 +980,7 @@ export async function updateUser(
     role?: string;
     display_name?: string;
     timezone?: string;
+    is_kids?: boolean;
   }
 ): Promise<{ user_id: string; email: string; role: string }> {
   return request(`/api/v1/admin/users/${userId}`, {

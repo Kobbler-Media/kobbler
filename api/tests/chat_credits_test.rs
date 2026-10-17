@@ -35,6 +35,7 @@ fn auth(user_id: Uuid, role: &str) -> AuthUser {
     AuthUser {
         user_id,
         role: role.to_string(),
+        is_kids: false,
     }
 }
 

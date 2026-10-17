@@ -98,6 +98,8 @@ pub struct MovieDetail {
     pub rating: Option<f64>,
     pub rating_count: Option<i32>,
     pub content_rating: Option<String>,
+    pub kids_override: Option<bool>,
+    pub kids_allowed: bool,
     pub release_date: Option<time::Date>,
     pub is_released: Option<bool>,
     pub quality_profile_id: Option<Uuid>,
@@ -126,6 +128,8 @@ pub struct MovieListFilters {
     pub cursor_inclusive: bool,
     /// "title" (default) or "created_at".
     pub sort: Option<String>,
+    pub genre: Option<String>,
+    pub kids_only: bool,
 }
 
 /// Cast input for replace_cast.
@@ -272,6 +276,7 @@ pub async fn get_with_details(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<Mo
         SELECT id, title, sort_title, original_title, year, runtime,
                description, tagline, images, identifiers,
                genres, rating, rating_count, content_rating,
+               kids_override, kids_allowed(kids_override, content_rating) AS "kids_allowed!",
                release_date, is_released, quality_profile_id, preferred_languages,
                media_root_id,
                EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id) AS "is_in_library!",
@@ -308,6 +313,8 @@ pub async fn get_with_details(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<Mo
         rating: r.rating,
         rating_count: r.rating_count,
         content_rating: r.content_rating,
+        kids_override: r.kids_override,
+        kids_allowed: r.kids_allowed,
         release_date: r.release_date,
         is_released: r.is_released,
         quality_profile_id: r.quality_profile_id,
@@ -324,6 +331,45 @@ pub async fn get_with_details(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<Mo
 }
 
 /// List movies with optional filters and cursor-based pagination.
+fn push_list_filters(sql: &mut String, params: &mut Vec<String>, filters: &MovieListFilters) {
+    if let Some(ref status) = filters.want_status {
+        params.push(status.clone());
+        sql.push_str(&format!(" AND want_status = ${}", params.len()));
+    }
+
+    if let Some(in_lib) = filters.is_in_library {
+        let negate = if in_lib { "" } else { "NOT " };
+        sql.push_str(&format!(
+            " AND {negate}EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id)"
+        ));
+    }
+
+    if let Some(ref q) = filters.search {
+        let trimmed = q.trim();
+        if !trimmed.is_empty() {
+            params.push(format!("%{}%", trimmed));
+            sql.push_str(&format!(" AND title ILIKE ${}", params.len()));
+        }
+    }
+
+    if let Some(genre) = filters
+        .genre
+        .as_deref()
+        .map(str::trim)
+        .filter(|g| !g.is_empty())
+    {
+        params.push(genre.to_string());
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM unnest(movies.genres) g WHERE lower(g) = lower(${}))",
+            params.len()
+        ));
+    }
+
+    if filters.kids_only {
+        sql.push_str(&format!(" AND {}", crate::kids::allowed_sql("movies")));
+    }
+}
+
 pub async fn list<'e, E>(exec: E, filters: &MovieListFilters) -> Result<Vec<MovieRow>>
 where
     E: Executor<'e, Database = Postgres>,
@@ -339,33 +385,7 @@ where
         "#,
     );
     let mut params: Vec<String> = Vec::new();
-
-    if let Some(ref status) = filters.want_status {
-        params.push(status.clone());
-        let idx = params.len();
-        sql.push_str(&format!(" AND want_status = ${}", idx));
-    }
-
-    if let Some(in_lib) = filters.is_in_library {
-        if in_lib {
-            sql.push_str(
-                " AND EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id)",
-            );
-        } else {
-            sql.push_str(
-                " AND NOT EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id)",
-            );
-        }
-    }
-
-    if let Some(ref q) = filters.search {
-        let trimmed = q.trim();
-        if !trimmed.is_empty() {
-            params.push(format!("%{}%", trimmed));
-            let idx = params.len();
-            sql.push_str(&format!(" AND title ILIKE ${}", idx));
-        }
-    }
+    push_list_filters(&mut sql, &mut params, filters);
 
     let sort_by_created = filters.sort.as_deref() == Some("created_at");
 
@@ -429,33 +449,7 @@ where
 {
     let mut sql = String::from("SELECT COUNT(*) as count FROM movies WHERE TRUE");
     let mut params: Vec<String> = Vec::new();
-
-    if let Some(ref status) = filters.want_status {
-        params.push(status.clone());
-        let idx = params.len();
-        sql.push_str(&format!(" AND want_status = ${}", idx));
-    }
-
-    if let Some(in_lib) = filters.is_in_library {
-        if in_lib {
-            sql.push_str(
-                " AND EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id)",
-            );
-        } else {
-            sql.push_str(
-                " AND NOT EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id)",
-            );
-        }
-    }
-
-    if let Some(ref q) = filters.search {
-        let trimmed = q.trim();
-        if !trimmed.is_empty() {
-            params.push(format!("%{}%", trimmed));
-            let idx = params.len();
-            sql.push_str(&format!(" AND title ILIKE ${}", idx));
-        }
-    }
+    push_list_filters(&mut sql, &mut params, filters);
 
     let mut q = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()));
     for param in &params {
@@ -945,7 +939,11 @@ pub struct FirstByLetterResult {
 ///
 /// # Arguments
 /// * `letter` - The letter to search for (A-Z, or "#" for non-alphabetic)
-pub async fn first_by_letter<'e, E>(exec: E, letter: &str) -> Result<Option<FirstByLetterResult>>
+pub async fn first_by_letter<'e, E>(
+    exec: E,
+    letter: &str,
+    kids_only: bool,
+) -> Result<Option<FirstByLetterResult>>
 where
     E: Executor<'e, Database = Postgres>,
 {
@@ -955,11 +953,17 @@ where
         "UPPER(LEFT(COALESCE(sort_title, title), 1)) = $1"
     };
 
+    let kids_condition = if kids_only {
+        format!(" AND {}", crate::kids::allowed_sql("movies"))
+    } else {
+        String::new()
+    };
+
     let mut query = sqlx::query(sqlx::AssertSqlSafe(format!(
         r#"
         SELECT id, title
         FROM movies
-        WHERE {letter_condition}
+        WHERE {letter_condition}{kids_condition}
         ORDER BY COALESCE(sort_title, title) ASC
         LIMIT 1
         "#
@@ -1051,4 +1055,45 @@ where
         .await?;
 
     Ok(row.unwrap_or(serde_json::json!([])))
+}
+
+/// Never touched by enrichment or a metadata refresh: this is the admin's decision.
+pub async fn set_kids_override<'e, E>(
+    exec: E,
+    id: Uuid,
+    kids_override: Option<bool>,
+) -> Result<bool>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let result = sqlx::query!(
+        "UPDATE movies SET kids_override = $1 WHERE id = $2",
+        kids_override,
+        id
+    )
+    .execute(exec)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// Every genre on the browse page, alphabetical, with how many titles carry it.
+pub async fn genre_counts<'e, E>(exec: E, kids_only: bool) -> Result<Vec<(String, i64)>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let kids_condition = if kids_only {
+        format!(" AND {}", crate::kids::allowed_sql("movies"))
+    } else {
+        String::new()
+    };
+    let sql = format!(
+        "SELECT g AS name, COUNT(*) AS count
+         FROM movies, unnest(movies.genres) g
+         WHERE EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id){kids_condition}
+         GROUP BY g
+         ORDER BY lower(g)"
+    );
+    Ok(sqlx::query_as::<_, (String, i64)>(sqlx::AssertSqlSafe(sql))
+        .fetch_all(exec)
+        .await?)
 }

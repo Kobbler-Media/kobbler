@@ -398,6 +398,10 @@ pub async fn create_session(
     auth: PlaybackAuth,
     Json(req): Json<CreateSessionRequest>,
 ) -> impl IntoResponse {
+    if auth.is_kids && !kids_may_play(&state.pool, &req).await {
+        return (StatusCode::NOT_FOUND, "not available on a Kids profile").into_response();
+    }
+
     let file_id = match resolve_session_file_id(&state, &req).await {
         Ok(id) => id,
         Err(resp) => return resp,
@@ -4155,6 +4159,30 @@ type FileMetaTuple = (
 /// nothing about the files behind it, and making it go and ask put a whole round trip
 /// between the tap and the first byte. The choice is the server's anyway — the newest
 /// available file — so it is made here rather than mirrored in every client.
+async fn kids_may_play(pool: &sqlx::PgPool, req: &CreateSessionRequest) -> bool {
+    let parse = |id: Option<&str>| id.and_then(|id| Uuid::parse_str(id).ok());
+    let allowed = match (
+        req.media_type,
+        parse(req.file_id.as_deref()),
+        parse(req.media_id.as_deref()),
+    ) {
+        (MediaType::Movie, Some(file_id), _) => {
+            crate::kids::movie_file_allowed(pool, file_id).await
+        }
+        (MediaType::Episode, Some(file_id), _) => {
+            crate::kids::episode_file_allowed(pool, file_id).await
+        }
+        (MediaType::Movie, None, Some(movie_id)) => {
+            crate::kids::movie_allowed(pool, movie_id).await
+        }
+        (MediaType::Episode, None, Some(episode_id)) => {
+            crate::kids::episode_allowed(pool, episode_id).await
+        }
+        _ => Ok(false),
+    };
+    allowed.unwrap_or(false)
+}
+
 async fn resolve_session_file_id(
     state: &AppState,
     req: &CreateSessionRequest,

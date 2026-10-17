@@ -137,9 +137,9 @@ pub async fn get_dashboard(
         fetch_read_next(&state, auth.user_id),
         crate::repositories::dashboard::recent_books(&state.pool, false),
         crate::repositories::dashboard::recent_books(&state.pool, true),
-        crate::repositories::dashboard::recent_movies(&state.pool),
-        crate::repositories::dashboard::recent_episodes(&state.pool, "tv"),
-        crate::repositories::dashboard::recent_episodes(&state.pool, "sport"),
+        crate::repositories::dashboard::recent_movies(&state.pool, auth.is_kids),
+        crate::repositories::dashboard::recent_episodes(&state.pool, "tv", auth.is_kids),
+        crate::repositories::dashboard::recent_episodes(&state.pool, "sport", auth.is_kids),
     )
     .map_err(|e| AppError::Internal(format!("Dashboard query failed: {e}")))?;
 
@@ -263,12 +263,13 @@ pub async fn get_dashboard(
 async fn fetch_watch_next(
     state: &AppState,
     user_id: Uuid,
+    kids_only: bool,
 ) -> Result<Vec<WatchNextItem>, sqlx::Error> {
     let (movies, episodes, watchlist_shows, watchlist_movies) = tokio::try_join!(
-        crate::repositories::dashboard::in_progress_movies(&state.pool, user_id),
-        crate::repositories::dashboard::watch_next_episodes(&state.pool, user_id),
-        crate::repositories::dashboard::watchlist_shows(&state.pool, user_id),
-        crate::repositories::dashboard::watchlist_movies(&state.pool, user_id),
+        crate::repositories::dashboard::in_progress_movies(&state.pool, user_id, kids_only),
+        crate::repositories::dashboard::watch_next_episodes(&state.pool, user_id, kids_only),
+        crate::repositories::dashboard::watchlist_shows(&state.pool, user_id, kids_only),
+        crate::repositories::dashboard::watchlist_movies(&state.pool, user_id, kids_only),
     )?;
 
     // Merge in-progress + up-next + watchlist into WatchNextItem, sort by updated_at DESC.
@@ -503,13 +504,14 @@ pub(crate) fn format_sport_label(
 pub async fn fetch_home_sections(
     state: &AppState,
     user_id: Uuid,
+    kids_only: bool,
 ) -> Result<(Vec<WatchNextItem>, Vec<RecentItem>), sqlx::Error> {
     let (watch_next, book_rows, movie_rows, tv_rows, sport_rows) = tokio::try_join!(
-        fetch_watch_next(state, user_id),
+        fetch_watch_next(state, user_id, kids_only),
         crate::repositories::dashboard::recent_books(&state.pool, false),
-        crate::repositories::dashboard::recent_movies(&state.pool),
-        crate::repositories::dashboard::recent_episodes(&state.pool, "tv"),
-        crate::repositories::dashboard::recent_episodes(&state.pool, "sport"),
+        crate::repositories::dashboard::recent_movies(&state.pool, kids_only),
+        crate::repositories::dashboard::recent_episodes(&state.pool, "tv", kids_only),
+        crate::repositories::dashboard::recent_episodes(&state.pool, "sport", kids_only),
     )?;
 
     let mut unified: Vec<RecentItem> = Vec::new();

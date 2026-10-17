@@ -31,6 +31,7 @@ use crate::repositories::{auth_tokens, ingest_tokens, playback_tokens};
 pub struct AuthUser {
     pub user_id: Uuid,
     pub role: String,
+    pub is_kids: bool,
 }
 
 impl AuthUser {
@@ -88,7 +89,11 @@ where
             .unwrap_or_default();
 
         match require_auth_token(&app_state, &token).await {
-            Some((user_id, role)) => Ok(AuthUser { user_id, role }),
+            Some((user_id, role, is_kids)) => Ok(AuthUser {
+                user_id,
+                role,
+                is_kids,
+            }),
             None => Err(AuthRejection),
         }
     }
@@ -126,6 +131,7 @@ where
 pub struct PlaybackAuth {
     pub user_id: Uuid,
     pub role: String,
+    pub is_kids: bool,
 }
 
 impl PlaybackAuth {
@@ -164,8 +170,12 @@ where
 
         // Bearer/cookie auth first — kobapp's own authenticated calls to these
         // same routes (not just the Cast receiver's) take this path.
-        if let Some((user_id, role)) = require_auth_token(&app_state, &token).await {
-            return Ok(PlaybackAuth { user_id, role });
+        if let Some((user_id, role, is_kids)) = require_auth_token(&app_state, &token).await {
+            return Ok(PlaybackAuth {
+                user_id,
+                role,
+                is_kids,
+            });
         }
 
         // Fall back to ?token= (Cast receiver, libVLC/ExoPlayer/MobileVLCKit —
@@ -175,10 +185,14 @@ where
                 if let Some(val) = pair.strip_prefix("token=") {
                     let val = val.trim();
                     if !val.is_empty()
-                        && let Ok(Some((user_id, role))) =
+                        && let Ok(Some((user_id, role, is_kids))) =
                             playback_tokens::validate(&app_state.pool, val).await
                     {
-                        return Ok(PlaybackAuth { user_id, role });
+                        return Ok(PlaybackAuth {
+                            user_id,
+                            role,
+                            is_kids,
+                        });
                     }
                 }
             }
@@ -241,7 +255,7 @@ pub fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
 ///
 /// There is one way to fail and nothing to say about it — an unusable token is an
 /// unusable token — so the absence is the whole answer.
-pub async fn require_auth_token(state: &AppState, token: &str) -> Option<(Uuid, String)> {
+pub async fn require_auth_token(state: &AppState, token: &str) -> Option<(Uuid, String, bool)> {
     if token.is_empty() {
         return None;
     }
@@ -254,7 +268,9 @@ pub async fn require_auth_token(state: &AppState, token: &str) -> Option<(Uuid, 
 /// Validate an auth token and return only the user_id.
 /// Used by routes that do manual token validation (covers, images).
 pub async fn require_admin_token(state: &AppState, token: &str) -> Option<Uuid> {
-    require_auth_token(state, token).await.map(|(uid, _)| uid)
+    require_auth_token(state, token)
+        .await
+        .map(|(uid, _, _)| uid)
 }
 
 /// Extractor for ingest token authentication.

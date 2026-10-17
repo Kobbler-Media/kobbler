@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use time::OffsetDateTime;
@@ -696,26 +696,18 @@ pub struct CuratedPatch {
     pub favourite: Option<bool>,
     #[serde(default)]
     pub sort_order: Option<i32>,
-    #[serde(default, deserialize_with = "double_option")]
+    #[serde(default, deserialize_with = "crate::serde_patch::double_option")]
     pub display_name: Option<Option<String>>,
-    #[serde(default, deserialize_with = "double_option")]
+    #[serde(default, deserialize_with = "crate::serde_patch::double_option")]
     pub logo_url: Option<Option<String>>,
     #[serde(default)]
     pub kind: Option<String>,
-    #[serde(default, deserialize_with = "double_option")]
+    #[serde(default, deserialize_with = "crate::serde_patch::double_option")]
     pub region: Option<Option<String>>,
-    #[serde(default, deserialize_with = "double_option")]
+    #[serde(default, deserialize_with = "crate::serde_patch::double_option")]
     pub network: Option<Option<String>>,
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
-}
-
-fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
-where
-    T: Deserialize<'de>,
-    D: Deserializer<'de>,
-{
-    Option::deserialize(de).map(Some)
 }
 
 const SCAN_DERIVED_KEYS: &[&str] = &[

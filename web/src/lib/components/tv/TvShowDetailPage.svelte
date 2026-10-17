@@ -18,6 +18,8 @@
   import { EpisodeBulkSelection } from '$lib/utils/episode-bulk.svelte';
   import BulkSelectToggle from '$lib/components/shared/BulkSelectToggle.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
+  import KidsAccess from '../shared/KidsAccess.svelte';
+  import { getAuthState } from '$lib/stores/auth.svelte';
   import { formatShowStatus, formatDuration } from '$lib/utils/format';
   import { hasOutstandingWants } from '$lib/utils/want-status';
   import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
@@ -79,6 +81,8 @@
     onWatchlistToggle,
     onReload
   }: Props = $props();
+
+  const auth = getAuthState();
 
   const bulk = new EpisodeBulkSelection({
     onDone: async () => {
@@ -556,6 +560,16 @@
         <div class="section compact-section">
           <div class="label">Genres</div>
           <GenreChips genres={show.genres} size="small" clickable={!!onGenreClick} {onGenreClick} />
+        </div>
+      {/if}
+      {#if auth.isAdmin}
+        <div class="section compact-section">
+          <KidsAccess
+            kind="tv"
+            id={show.id}
+            override={show.kids_override}
+            allowed={show.kids_allowed}
+          />
         </div>
       {/if}
     </div>

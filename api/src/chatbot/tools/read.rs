@@ -655,7 +655,7 @@ pub async fn recently_added(state: &AppState, args: &Value) -> ToolOutcome {
         }
     }
     if matches!(media_type, "any" | "movie") {
-        match dashboard::recent_movies(&state.pool).await {
+        match dashboard::recent_movies(&state.pool, false).await {
             Ok(rows) => items.extend(rows.into_iter().map(|r| {
                 (
                     r.added_at,
@@ -684,7 +684,7 @@ pub async fn recently_added(state: &AppState, args: &Value) -> ToolOutcome {
         if !wanted {
             continue;
         }
-        match dashboard::recent_episodes(&state.pool, category).await {
+        match dashboard::recent_episodes(&state.pool, category, false).await {
             Ok(rows) => items.extend(rows.into_iter().map(|r| {
                 let label = format!("S{}E{}", r.season_identifier, r.episode_identifier);
                 (
