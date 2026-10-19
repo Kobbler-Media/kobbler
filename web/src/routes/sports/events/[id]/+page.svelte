@@ -719,15 +719,6 @@
     margin-bottom: 12px;
   }
 
-  .hero-meta-snippet {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 14px;
-    font-weight: 500;
-  }
-
   .sep {
     opacity: 0.5;
   }

@@ -921,10 +921,15 @@
   }
 
   .credit-poster {
+    display: block;
     width: 56px;
     height: 84px;
     border-radius: 8px;
     object-fit: cover;
+    overflow: hidden;
+    background: var(--bg-2);
+    font-size: 10px;
+    color: var(--muted);
   }
 
   .credit-poster-placeholder {

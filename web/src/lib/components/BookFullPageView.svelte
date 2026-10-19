@@ -236,18 +236,15 @@
       <div class="hero-authors">
         {#if book.authors && book.authors.length > 0}
           {#each book.authors as author, i (author.id || author.name)}
-            {#if i > 0},
-            {/if}
             {#if onAuthorClick && author.id}
               <button
                 type="button"
                 class="author-link"
-                onclick={() => onAuthorClick?.(author.name, author.id!)}
+                class:separated={i < book.authors.length - 1}
+                onclick={() => onAuthorClick?.(author.name, author.id!)}>{author.name}</button
               >
-                {author.name}
-              </button>
             {:else}
-              <span>{author.name}</span>
+              <span class:separated={i < book.authors.length - 1}>{author.name}</span>
             {/if}
           {/each}
         {/if}
@@ -665,13 +662,11 @@
     font-weight: 500;
   }
 
-  .hero-meta-snippet {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  /* Inside the button, so a wrapped line never starts with an orphaned comma. */
+  .hero-authors .separated::after {
+    content: ',';
+    margin-right: 0.3em;
     color: var(--muted);
-    font-size: 14px;
-    font-weight: 500;
   }
 
   .sep {
@@ -685,6 +680,7 @@
   .author-link,
   .series-link {
     font-size: inherit;
+    text-align: inherit;
     color: var(--accent);
     background: none;
     border: none;

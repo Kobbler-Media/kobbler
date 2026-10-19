@@ -600,6 +600,81 @@ async fn genre_lists_count_only_what_the_profile_can_see() {
     }
 }
 
+/// Each genre tile carries the backdrop of a random title in it the profile can see.
+#[tokio::test]
+async fn genre_backdrops_come_from_visible_titles_with_one() {
+    let server = TestServer::start_api_only().await;
+    let kids = kids_client(&server, "kid@test.com").await;
+    let cached = json!({ "backdrop": { "cached_at": "2024-01-01T00:00:00Z" } });
+    let sourced = json!({ "backdrop": { "source_url": "https://img.test/b.jpg" } });
+    let unusable = json!({ "backdrop": { "source_url": "" }, "poster": { "cached_at": "2024-01-01T00:00:00Z" } });
+
+    for (table, base) in [
+        ("movies", "/api/v1/admin/movies"),
+        ("tv_shows", "/api/v1/admin/tv/shows"),
+    ] {
+        let seed = |title: &'static str,
+                    rating: &'static str,
+                    genres: &'static [&'static str],
+                    images: Value| {
+            let server = &server;
+            async move {
+                let id = if table == "movies" {
+                    seed_movie(server, title, Some(rating), genres, None).await
+                } else {
+                    seed_show(server, title, Some(rating), genres, None).await
+                };
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE {table} SET images = $1 WHERE id = $2"
+                )))
+                .bind(&images)
+                .bind(id)
+                .execute(&server.pool)
+                .await
+                .unwrap();
+                format!("{base}/{id}/backdrop")
+            }
+        };
+        let toybox = seed("Toybox", "G", &["Family"], cached.clone()).await;
+        let toons = seed("Tiny Toons", "TV-Y7", &["Family"], sourced.clone()).await;
+        seed("Blank Family", "G", &["Family"], unusable.clone()).await;
+        let gore = seed("Gorefest", "R", &["Horror"], cached.clone()).await;
+        seed("Teddy Scare", "G", &["Horror"], json!({})).await;
+        seed("Reel", "G", &["Documentary"], unusable.clone()).await;
+
+        let path = format!("{base}/genres");
+        let admin = server.admin_client();
+        for _ in 0..10 {
+            for (client, who) in [(&admin, "adult"), (&kids, "kids")] {
+                let resp = client.get(&path).await;
+                resp.assert_ok();
+                let body = resp.json::<Value>();
+                let backdrop = |name: &str| -> Value {
+                    body["genres"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|g| g["name"] == name)
+                        .unwrap_or_else(|| panic!("{who} {path}: no {name} in {body}"))["backdrop_url"]
+                        .clone()
+                };
+                let family = backdrop("Family");
+                assert!(
+                    family == json!(toybox) || family == json!(toons),
+                    "{who} {path}: Family backdrop {family}"
+                );
+                let horror = if who == "adult" {
+                    json!(gore)
+                } else {
+                    Value::Null
+                };
+                assert_eq!(backdrop("Horror"), horror, "{who} {path}");
+                assert_eq!(backdrop("Documentary"), Value::Null, "{who} {path}");
+            }
+        }
+    }
+}
+
 /// "Now available" lands in every household inbox, but a Kids profile only hears about
 /// titles it could open.
 #[tokio::test]

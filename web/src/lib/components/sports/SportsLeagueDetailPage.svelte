@@ -426,15 +426,6 @@
     padding: 24px;
   }
 
-  .hero-meta-snippet {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 14px;
-    font-weight: 500;
-  }
-
   .syncing-indicator {
     display: inline-flex;
     align-items: center;

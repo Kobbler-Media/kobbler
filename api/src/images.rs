@@ -47,6 +47,14 @@ impl ImageEntry {
     }
 }
 
+/// SQL predicate mirroring [`ImageEntry::has_image`] for `{table}.images -> key`.
+pub fn has_image_sql(table: &str, key: &str) -> String {
+    format!(
+        "({table}.images->'{key}'->>'cached_at' IS NOT NULL \
+         OR COALESCE({table}.images->'{key}'->>'source_url', '') <> '')"
+    )
+}
+
 /// Container for all images on an entity. Stored as JSONB, deserialized with serde.
 pub type ImageMap = HashMap<String, ImageEntry>;
 

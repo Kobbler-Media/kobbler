@@ -4316,6 +4316,7 @@ pub async fn set_skip_segments(
 struct GenreCount {
     name: String,
     count: i64,
+    backdrop_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -4332,7 +4333,11 @@ pub async fn genres(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to list genres: {e}")))?
         .into_iter()
-        .map(|(name, count)| GenreCount { name, count })
+        .map(|(name, count, backdrop_id)| GenreCount {
+            name,
+            count,
+            backdrop_url: backdrop_id.map(|id| format!("/api/v1/admin/tv/shows/{id}/backdrop")),
+        })
         .collect();
     Ok(Json(GenresResponse { genres }))
 }

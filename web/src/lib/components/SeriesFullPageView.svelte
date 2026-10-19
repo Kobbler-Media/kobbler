@@ -521,15 +521,17 @@
     color: var(--muted);
   }
 
+  /* Subgrid keeps the status and action columns aligned across rows that have no actions. */
   .book-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) 80px auto;
+    row-gap: 4px;
   }
 
   .book-list-item {
+    grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: 40px 1fr 80px auto;
+    grid-template-columns: subgrid;
     gap: 16px;
     padding: 12px;
     border-radius: 12px;
@@ -578,6 +580,7 @@
   .book-list-meta {
     font-size: 12px;
     color: var(--muted);
+    white-space: nowrap;
   }
 
   .status-pill {
@@ -662,6 +665,16 @@
 
     .sidebar-column {
       order: -1;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .card-section {
+      padding: 16px 10px;
+    }
+
+    .book-list-item {
+      gap: 10px;
     }
   }
 </style>

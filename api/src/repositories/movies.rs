@@ -1076,8 +1076,12 @@ where
     Ok(result.rows_affected() > 0)
 }
 
-/// Every genre on the browse page, alphabetical, with how many titles carry it.
-pub async fn genre_counts<'e, E>(exec: E, kids_only: bool) -> Result<Vec<(String, i64)>>
+/// Every genre on the browse page, alphabetical, with how many titles carry it and a random
+/// one of those titles that has a backdrop.
+pub async fn genre_counts<'e, E>(
+    exec: E,
+    kids_only: bool,
+) -> Result<Vec<(String, i64, Option<Uuid>)>>
 where
     E: Executor<'e, Database = Postgres>,
 {
@@ -1086,14 +1090,18 @@ where
     } else {
         String::new()
     };
+    let has_backdrop = crate::images::has_image_sql("movies", "backdrop");
     let sql = format!(
-        "SELECT g AS name, COUNT(*) AS count
+        "SELECT g AS name, COUNT(*) AS count,
+                (array_agg(movies.id ORDER BY random()) FILTER (WHERE {has_backdrop}))[1] AS backdrop_id
          FROM movies, unnest(movies.genres) g
          WHERE EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id){kids_condition}
          GROUP BY g
          ORDER BY lower(g)"
     );
-    Ok(sqlx::query_as::<_, (String, i64)>(sqlx::AssertSqlSafe(sql))
-        .fetch_all(exec)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, (String, i64, Option<Uuid>)>(sqlx::AssertSqlSafe(sql))
+            .fetch_all(exec)
+            .await?,
+    )
 }

@@ -39,8 +39,8 @@ async fn create_season(pool: &sqlx::PgPool, show_id: Uuid, season_num: i32) -> U
 async fn create_episode(pool: &sqlx::PgPool, season_id: Uuid, episode_num: i32) -> Uuid {
     let id = Uuid::now_v7();
     sqlx::query(
-        "INSERT INTO tv_episodes (id, season_id, episode_identifier, episode_sort_order, title)
-         VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO tv_episodes (id, season_id, episode_identifier, episode_sort_order, title, air_date)
+         VALUES ($1, $2, $3, $4, $5, '2020-01-01')",
     )
     .bind(id)
     .bind(season_id)
@@ -60,6 +60,12 @@ async fn get_episode_watch_state(server: &TestServer, episode_id: Uuid) -> Value
             "/api/v1/admin/tv/episodes/{episode_id}/watch-state"
         ))
         .await;
+    resp.assert_ok();
+    resp.json()
+}
+
+async fn put_watch_state(server: &TestServer, path: &str, body: Value) -> Value {
+    let resp = server.admin_client().put_json(path, &body).await;
     resp.assert_ok();
     resp.json()
 }
@@ -345,4 +351,66 @@ async fn test_bulk_watch_nonexistent_season() {
         )
         .await;
     resp.assert_status(StatusCode::NOT_FOUND);
+}
+
+/// Rewatch: unwatching a show (or its only season) starts it over — no half-watched
+/// episode left to resume, and Continue points back at S1E1.
+#[tokio::test]
+async fn bulk_unwatch_starts_the_show_over() {
+    let server = TestServer::start_api_only().await;
+    let pool = &server.pool;
+
+    for scope in ["show", "season"] {
+        let show_id = create_show(&server, &format!("Rewatch by {scope}")).await;
+        let s1 = create_season(pool, show_id, 1).await;
+        let mut episodes = Vec::new();
+        for n in 1..=4 {
+            episodes.push(create_episode(pool, s1, n).await);
+        }
+        for ep in &episodes[..2] {
+            put_watch_state(
+                &server,
+                &format!("/api/v1/admin/tv/episodes/{ep}/watch-state"),
+                json!({ "watched": true }),
+            )
+            .await;
+        }
+        put_watch_state(
+            &server,
+            &format!("/api/v1/admin/tv/episodes/{}/watch-state", episodes[2]),
+            json!({ "watched": false, "position_seconds": 300 }),
+        )
+        .await;
+
+        let path = match scope {
+            "show" => format!("/api/v1/admin/tv/shows/{show_id}/watch-state"),
+            _ => format!("/api/v1/admin/tv/seasons/{s1}/watch-state"),
+        };
+        let body = put_watch_state(&server, &path, json!({ "watched": false })).await;
+        assert_eq!(
+            body["updated_count"], 2,
+            "{scope}: only watched episodes sync"
+        );
+
+        for ep in &episodes {
+            let ws = get_episode_watch_state(&server, *ep).await;
+            assert!(
+                ws.is_null() || (ws["watched"] == false && ws["position_seconds"].is_null()),
+                "{scope}: episode {ep} should be fresh, got {ws}"
+            );
+        }
+
+        let detail = server
+            .admin_client()
+            .get(&format!("/api/v1/admin/tv/shows/{show_id}"))
+            .await;
+        detail.assert_ok();
+        let cont = &detail.json::<Value>()["continue_episode"];
+        assert_eq!(
+            cont["episode_id"],
+            json!(episodes[0]),
+            "{scope}: continue should restart at S1E1, got {cont}"
+        );
+        assert_eq!(cont["position_seconds"], 0, "{scope}");
+    }
 }

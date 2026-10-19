@@ -12,7 +12,7 @@
   import ContentPageView from '$lib/components/ContentPageView.svelte';
   import GenreChips from '$lib/components/GenreChips.svelte';
   import DualRatingStars from '$lib/components/DualRatingStars.svelte';
-  import { SearchSelect } from '@koblibs/ui';
+  import { DeleteConfirmModal, SearchSelect } from '@koblibs/ui';
   import TvSeasonAccordion from './TvSeasonAccordion.svelte';
   import EpisodeBatchActions from './EpisodeBatchActions.svelte';
   import { EpisodeBulkSelection } from '$lib/utils/episode-bulk.svelte';
@@ -45,6 +45,7 @@
     onEdit?: () => void;
     onAddSeason?: () => void;
     onBulkWatchToggle?: (watched: boolean) => void;
+    onRewatch?: () => Promise<void>;
     onBulkSeasonWatchToggle?: (seasonId: string, watched: boolean) => void;
     onCastClick?: (personId: string, personName: string) => void;
     onGenreClick?: (genre: string) => void;
@@ -68,6 +69,7 @@
     onUnwantEpisode,
     onWatchToggle,
     onBulkWatchToggle,
+    onRewatch,
     onBulkSeasonWatchToggle,
     onSearchReleases,
     onClose,
@@ -92,6 +94,23 @@
   });
 
   const allEpisodes = $derived(show.seasons?.flatMap((s) => s.episodes ?? []) ?? []);
+  const hasWatchHistory = $derived(
+    allEpisodes.some((e) => e.watched === true || (e.watch_position_seconds ?? 0) > 0)
+  );
+
+  let confirmingRewatch = $state(false);
+  let rewatching = $state(false);
+
+  async function confirmRewatch() {
+    if (!onRewatch) return;
+    rewatching = true;
+    try {
+      await onRewatch();
+      confirmingRewatch = false;
+    } finally {
+      rewatching = false;
+    }
+  }
 
   let expandedSeasons = $state<Set<string>>(new Set());
   let showRating = $state<number | null>(null);
@@ -467,6 +486,13 @@
         </button>
       {/if}
 
+      {#if onRewatch && hasWatchHistory}
+        <button class="btn btn-outline" type="button" onclick={() => (confirmingRewatch = true)}>
+          <span class="material-icons-outlined">restart_alt</span>
+          Rewatch from the start
+        </button>
+      {/if}
+
       {#if onAddSeason}
         <button class="btn btn-outline" type="button" onclick={onAddSeason}>
           <span class="material-icons-outlined">add</span>
@@ -626,6 +652,18 @@
   </div>
 </ContentPageView>
 
+{#if confirmingRewatch}
+  <DeleteConfirmModal
+    title="Rewatch from the start"
+    message={`Rewatch ${show.title}? Every episode goes back to unwatched and Resume starts again from the first episode.`}
+    confirmLabel="Start over"
+    danger={false}
+    loading={rewatching}
+    onConfirm={confirmRewatch}
+    onCancel={() => (confirmingRewatch = false)}
+  />
+{/if}
+
 {#if playback.isActive}
   <VideoPlayer
     sessionResponse={playback.session!}
@@ -683,15 +721,6 @@
 
   .compact-section {
     padding: 8px 0;
-  }
-
-  .hero-meta-snippet {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 14px;
-    font-weight: 500;
   }
 
   .sep {
@@ -878,6 +907,7 @@
   }
 
   .cast-photo {
+    flex-shrink: 0;
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -932,5 +962,10 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .section-head .label {
+    margin-bottom: 0;
   }
 </style>

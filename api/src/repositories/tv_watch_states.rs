@@ -221,9 +221,8 @@ where
     Ok(rows)
 }
 
-/// Bulk mark all episodes in a show as unwatched for a user.
-/// Only updates rows that are currently watched. Clears watched_at and position.
-/// Returns the list of affected episode IDs (for Trakt sync).
+/// Bulk mark all episodes in a show as unwatched for a user, clearing saved positions too
+/// so the show starts over. Returns only the episodes that were watched (for Trakt sync).
 pub async fn bulk_mark_show_unwatched<'e, E>(
     exec: E,
     show_id: Uuid,
@@ -234,12 +233,15 @@ where
 {
     let rows = sqlx::query_scalar::<_, Uuid>(
         r#"
-        UPDATE tv_watch_states ws
-        SET watched = FALSE, watched_at = NULL, position_seconds = NULL, updated_at = NOW()
-        FROM tv_episodes e
-        JOIN tv_seasons s ON s.id = e.season_id
-        WHERE ws.episode_id = e.id AND s.show_id = $1 AND ws.user_id = $2 AND ws.watched = TRUE
-        RETURNING ws.episode_id
+        WITH cleared AS (
+            UPDATE tv_watch_states ws
+            SET watched = FALSE, watched_at = NULL, position_seconds = NULL, updated_at = NOW()
+            FROM tv_episodes e
+            JOIN tv_seasons s ON s.id = e.season_id
+            WHERE ws.episode_id = e.id AND s.show_id = $1 AND ws.user_id = $2 AND (ws.watched OR ws.position_seconds IS NOT NULL)
+            RETURNING ws.episode_id, OLD.watched AS was_watched
+        )
+        SELECT episode_id FROM cleared WHERE was_watched
         "#,
     )
     .bind(show_id)
@@ -285,9 +287,8 @@ where
     Ok(rows)
 }
 
-/// Bulk mark all episodes in a season as unwatched for a user.
-/// Only updates rows that are currently watched. Clears watched_at and position.
-/// Returns the list of affected episode IDs (for Trakt sync).
+/// Bulk mark all episodes in a season as unwatched for a user, clearing saved positions too.
+/// Returns only the episodes that were watched (for Trakt sync).
 pub async fn bulk_mark_season_unwatched<'e, E>(
     exec: E,
     season_id: Uuid,
@@ -298,11 +299,14 @@ where
 {
     let rows = sqlx::query_scalar::<_, Uuid>(
         r#"
-        UPDATE tv_watch_states ws
-        SET watched = FALSE, watched_at = NULL, position_seconds = NULL, updated_at = NOW()
-        FROM tv_episodes e
-        WHERE ws.episode_id = e.id AND e.season_id = $1 AND ws.user_id = $2 AND ws.watched = TRUE
-        RETURNING ws.episode_id
+        WITH cleared AS (
+            UPDATE tv_watch_states ws
+            SET watched = FALSE, watched_at = NULL, position_seconds = NULL, updated_at = NOW()
+            FROM tv_episodes e
+            WHERE ws.episode_id = e.id AND e.season_id = $1 AND ws.user_id = $2 AND (ws.watched OR ws.position_seconds IS NOT NULL)
+            RETURNING ws.episode_id, OLD.watched AS was_watched
+        )
+        SELECT episode_id FROM cleared WHERE was_watched
         "#,
     )
     .bind(season_id)

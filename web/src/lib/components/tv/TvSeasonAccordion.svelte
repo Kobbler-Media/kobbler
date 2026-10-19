@@ -161,6 +161,7 @@
 
 <style>
   .season-accordion {
+    container-type: inline-size;
     border: 1px solid var(--ring);
     border-radius: 12px;
     overflow: hidden;
@@ -227,6 +228,7 @@
   }
 
   .season-title {
+    white-space: nowrap;
     font-size: 14px;
     font-weight: 700;
     color: var(--ink);
@@ -239,6 +241,7 @@
   }
 
   .episode-count {
+    white-space: nowrap;
     font-size: 12px;
     color: var(--muted);
   }
@@ -276,7 +279,10 @@
     .season-header {
       padding: 12px 10px;
     }
+  }
 
+  /* The seasons card sits in a narrow grid column at laptop widths, not just on phones. */
+  @container (max-width: 560px) {
     .season-info {
       flex-direction: column;
       align-items: flex-start;

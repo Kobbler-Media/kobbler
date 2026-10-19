@@ -242,6 +242,17 @@
     }
   };
 
+  const handleRewatch = async () => {
+    if (!show) return;
+    try {
+      await api.bulkUpdateShowWatchState(show.id, false);
+      showMessage(`${show.title} reset — Resume starts from the first episode`);
+      await loadShow(show.id);
+    } catch (e) {
+      showMessage(e instanceof Error ? e.message : 'Failed to reset watch progress');
+    }
+  };
+
   const handleBulkSeasonWatch = async (seasonId: string, watched: boolean) => {
     try {
       const result = await api.bulkUpdateSeasonWatchState(seasonId, watched);
@@ -529,6 +540,7 @@
     onUnwantEpisode={handleUnwantEpisode}
     onWatchToggle={handleWatchToggle}
     onBulkWatchToggle={handleBulkShowWatch}
+    onRewatch={handleRewatch}
     onBulkSeasonWatchToggle={handleBulkSeasonWatch}
     onSearchReleases={statsState.stats.kobload_configured ? handleSearchReleases : undefined}
     onClose={handleClose}

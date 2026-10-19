@@ -631,15 +631,6 @@
     padding: 24px;
   }
 
-  .hero-meta-snippet {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 14px;
-    font-weight: 500;
-  }
-
   .sep {
     opacity: 0.5;
   }
@@ -739,6 +730,12 @@
 
     .actions-column {
       order: -1;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .hero-kids :global(.kids-access) {
+      justify-content: center;
     }
   }
 </style>

@@ -203,6 +203,11 @@
     width: 100%;
   }
 
+  /* Clears the floating glass buttons ContentPageView pins to the top-right corner. */
+  .entity-hero:not(.embedded) .hero-content {
+    padding-top: 68px;
+  }
+
   .entity-hero.embedded .hero-content {
     padding: 24px 20px 20px;
     max-width: none;
@@ -367,17 +372,25 @@
     font-weight: 400;
   }
 
-  .hero-meta-snippet {
+  .hero-meta-snippet,
+  .hero-meta-snippet :global(.hero-meta-snippet) {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px 8px;
     color: var(--muted);
     font-size: 14px;
+    font-weight: 500;
+  }
+
+  .hero-meta-snippet :global(.hero-meta-snippet > span) {
+    white-space: nowrap;
   }
 
   /* Actions */
   .hero-actions {
     display: flex;
+    align-items: center;
     gap: 12px;
     margin-top: 8px;
     flex-wrap: wrap;
@@ -426,12 +439,18 @@
       text-align: center;
     }
 
+    .hero-details {
+      align-self: stretch;
+    }
+
     .hero-header-row {
       flex-direction: column;
       align-items: center;
     }
 
     .hero-meta-row,
+    .hero-meta-snippet,
+    .hero-meta-snippet :global(.hero-meta-snippet),
     .hero-actions {
       justify-content: center;
     }

@@ -698,15 +698,6 @@
     min-width: 0;
   }
 
-  .hero-meta-snippet {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 14px;
-    font-weight: 500;
-  }
-
   .card-section {
     background: var(--card);
     border: 1px solid var(--ring);
