@@ -24,7 +24,9 @@
   import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
   import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
   import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
-  import WatchToggle from '$lib/components/shared/WatchToggle.svelte';
+  import HeroActions from '$lib/components/shared/HeroActions.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import { formatCalendarDate } from '$lib/utils/format';
   import FilesList from '$lib/components/shared/FilesList.svelte';
   import EntityHero from '$lib/components/shared/EntityHero.svelte';
   import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
@@ -426,78 +428,79 @@
       description={event.description}
     >
       {#snippet meta()}
-        <div class="hero-meta-snippet">
+        <MetaLine>
           {#if parentLeague}
             <a href="/sports/{parentLeague.id}" class="breadcrumb-link">{parentLeague.title}</a>
-            <span class="sep">&middot;</span>
           {/if}
           {#if parentSeason}
             <a href="/sports/seasons/{parentSeason.id}" class="breadcrumb-link"
               >Season {parentSeason.season_sort_order}</a
             >
-            <span class="sep">&middot;</span>
           {/if}
           <span>Event {event!.episode_sort_order}</span>
-          {#if event!.air_date}
-            <span class="sep">&middot;</span>
-            <span>{event!.air_date}</span>
-          {/if}
-          {#if event!.runtime}
-            <span class="sep">&middot;</span>
-            <span>{event!.runtime}m</span>
-          {/if}
-        </div>
+          {#if event!.air_date}<span>{formatCalendarDate(event!.air_date)}</span>{/if}
+          {#if event!.runtime}<span>{event!.runtime}m</span>{/if}
+        </MetaLine>
       {/snippet}
 
       {#snippet actions()}
-        {#if files.length > 0}
-          <PlaybackArea
-            positionSeconds={watchState?.position_seconds ?? null}
-            totalSeconds={event!.runtime ? event!.runtime * 60 : null}
-            watched={watchState?.watched ?? false}
-            loading={playback.startingFileId !== null}
-            variant="hero"
-            onPlay={() =>
-              playback.play(files[0].id, undefined, watchState?.position_seconds ?? undefined)}
-          />
-        {:else if stats.stats.kobload_configured}
-          <PlaybackArea
-            mode="stream"
-            positionSeconds={watchState?.position_seconds ?? null}
-            totalSeconds={event!.runtime ? event!.runtime * 60 : null}
-            watched={watchState?.watched ?? false}
-            loading={stream.resolving || stream.streamLoading}
-            variant="hero"
-            onPlay={stream.autoPlay}
-            onPickStream={stream.openModal}
-          />
-        {/if}
-
-        <WatchToggle
-          watched={watchState?.watched ?? false}
-          loading={loadingWatch}
-          onToggle={toggleWatched}
-        />
-
-        {#if isActivelyWanted(event!.want_status)}
-          <button class="btn btn-outline" type="button" onclick={handleUnwant}>
-            <span class="material-icons-outlined">close</span> Remove from Wanted
-          </button>
-        {:else if !event!.is_in_library}
-          <button class="btn btn-primary" type="button" onclick={handleWant}>
-            <span class="material-icons-outlined">bookmark_add</span> Want
-          </button>
-        {/if}
-
-        {#if stats.stats.kobload_configured}
-          <button class="btn btn-outline" type="button" onclick={() => (showReleaseSearch = true)}>
-            <span class="material-icons-outlined">search</span> Search Releases
-          </button>
-        {/if}
-
-        <button class="btn btn-danger-icon" type="button" onclick={handleDelete} title="Delete">
-          <span class="material-icons-outlined">delete</span>
-        </button>
+        <HeroActions
+          actions={[
+            {
+              label: watchState?.watched ? 'Watched' : 'Not Watched',
+              icon: watchState?.watched ? 'visibility' : 'visibility_off',
+              active: watchState?.watched ?? false,
+              busy: loadingWatch,
+              pinned: true,
+              onSelect: toggleWatched
+            },
+            isActivelyWanted(event!.want_status)
+              ? { label: 'Remove from Wanted', icon: 'close', onSelect: handleUnwant }
+              : !event!.is_in_library && {
+                  label: 'Want',
+                  icon: 'bookmark_add',
+                  tone: 'primary',
+                  onSelect: handleWant
+                },
+            stats.stats.kobload_configured && {
+              label: 'Search Releases',
+              icon: 'search',
+              onSelect: () => (showReleaseSearch = true)
+            },
+            {
+              label: 'Delete',
+              icon: 'delete',
+              tone: 'danger',
+              iconOnly: true,
+              onSelect: handleDelete
+            }
+          ]}
+        >
+          {#snippet primary()}
+            {#if files.length > 0}
+              <PlaybackArea
+                positionSeconds={watchState?.position_seconds ?? null}
+                totalSeconds={event!.runtime ? event!.runtime * 60 : null}
+                watched={watchState?.watched ?? false}
+                loading={playback.startingFileId !== null}
+                variant="hero"
+                onPlay={() =>
+                  playback.play(files[0].id, undefined, watchState?.position_seconds ?? undefined)}
+              />
+            {:else if stats.stats.kobload_configured}
+              <PlaybackArea
+                mode="stream"
+                positionSeconds={watchState?.position_seconds ?? null}
+                totalSeconds={event!.runtime ? event!.runtime * 60 : null}
+                watched={watchState?.watched ?? false}
+                loading={stream.resolving || stream.streamLoading}
+                variant="hero"
+                onPlay={stream.autoPlay}
+                onPickStream={stream.openModal}
+              />
+            {/if}
+          {/snippet}
+        </HeroActions>
       {/snippet}
     </EntityHero>
 
@@ -523,12 +526,13 @@
         {/if}
       </div>
 
-      <div class="actions-column">
+      <div class="actions-column side-first">
         {#if files.length > 0}
           <div class="section card-section">
             <div class="label">Files</div>
             <FilesList
               {files}
+              noun="event"
               {deletingFileId}
               startingPlaybackFileId={playback.startingFileId}
               onPlay={(fileId) => playback.play(fileId)}
@@ -688,21 +692,6 @@
     border-color: var(--error, #ef4444);
   }
 
-  .full-page-main-grid {
-    display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .details-column,
-  .actions-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    min-width: 0;
-  }
-
   .card-section {
     background: var(--card);
     border: 1px solid var(--ring);
@@ -717,10 +706,6 @@
     text-transform: uppercase;
     letter-spacing: 0.1em;
     margin-bottom: 12px;
-  }
-
-  .sep {
-    opacity: 0.5;
   }
 
   .breadcrumb-link {
@@ -762,35 +747,5 @@
   .btn-primary {
     background: var(--accent);
     color: var(--bg);
-  }
-
-  .btn-danger-icon {
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: transparent;
-    border: 1px solid var(--ring);
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .btn-danger-icon:hover {
-    border-color: var(--danger);
-    color: var(--danger);
-    background: rgba(239, 68, 68, 0.1);
-  }
-
-  @media (max-width: 1100px) {
-    .full-page-main-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .actions-column {
-      order: -1;
-    }
   }
 </style>

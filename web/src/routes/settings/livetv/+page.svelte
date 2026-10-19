@@ -9,6 +9,7 @@
   import { getLivetvState, fetchLivetvTuners, setLivetvTuners } from '$lib/stores/livetv.svelte';
   import * as api from '$lib/api/client';
   import type { SystemConfig, SystemConfigUpdate } from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { LivetvDiscoveredTuner } from '$lib/types';
 
   const livetv = getLivetvState();
@@ -40,7 +41,7 @@
   const tuner = $derived(livetv.primary);
 
   const tunerLine = $derived.by(() => {
-    if (!tuner) return 'No tuner registered.';
+    if (!tuner) return ['No tuner registered.'];
     const parts = [tuner.friendly_name || tuner.model_number, tuner.device_id];
     try {
       parts.push(new URL(tuner.base_url).hostname);
@@ -48,18 +49,18 @@
       parts.push(tuner.base_url);
     }
     if (tuner.firmware_version) parts.push(`firmware ${tuner.firmware_version}`);
-    return parts.filter(Boolean).join(' · ');
+    return parts;
   });
 
   const scanLine = $derived.by(() => {
-    if (!tuner) return '';
+    if (!tuner) return [];
     const parts = [
       `${tuner.channel_count} service${tuner.channel_count === 1 ? '' : 's'}`,
       `${tuner.enabled_channel_count} enabled`
     ];
     if (tuner.last_scan_at) parts.push(`scanned ${formatAge(tuner.last_scan_at)}`);
     if (tuner.last_guide_sync_at) parts.push(`guide synced ${formatAge(tuner.last_guide_sync_at)}`);
-    return `${parts.join(' · ')} · one tuner per stream, even on the same multiplex.`;
+    return [...parts, 'one tuner per stream, even on the same multiplex.'];
   });
 
   async function loadConfig() {
@@ -193,7 +194,7 @@
           <div class="block-head">
             <span class="block-title">Tuner</span>
           </div>
-          <span class="block-sub">{tunerLine}</span>
+          <span class="block-sub"><MetaLine items={tunerLine} /></span>
 
           {#if tuner}
             <div class="tuner-row">
@@ -207,7 +208,7 @@
               </button>
               <button type="button" class="btn-sec small" onclick={syncGuide}>Sync guide</button>
             </div>
-            <span class="fine">{scanLine}</span>
+            <span class="fine"><MetaLine items={scanLine} /></span>
             <div class="tuner-list">
               {#each livetv.tuners as t (t.id)}
                 <div class="tuner-item">
@@ -265,7 +266,7 @@
           <div class="options" role="radiogroup" aria-label="Guide source">
             <OptionRow
               label="Tuner guide feed"
-              meta="free · 48 h · artwork + episode numbers"
+              meta={['free', '48 h', 'artwork + episode numbers']}
               selected={guideSource === 'tuner'}
               isDefault
               disabled={savingKey === 'guide'}
@@ -273,7 +274,7 @@
             />
             <OptionRow
               label="SiliconDust DVR subscription"
-              meta="~$35/yr · 14 days"
+              meta={['~$35/yr', '14 days']}
               selected={guideSource === 'silicondust'}
               disabled={savingKey === 'guide'}
               onSelect={() => save('guide', { livetv_guide_source: 'silicondust' })}

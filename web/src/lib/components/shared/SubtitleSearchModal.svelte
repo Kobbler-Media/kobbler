@@ -6,6 +6,7 @@
     downloadSubtitleToSession
   } from '$lib/api/client';
   import { showMessage } from '$lib/context/app.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { SubtitleSearchResult, PlaybackSubtitleTrack } from '$lib/types';
 
   interface Props {
@@ -150,13 +151,15 @@
                   <span class="badge hi">HI</span>
                 {/if}
                 <span class="result-meta muted">
-                  {result.provider}
-                  {#if result.download_count}
-                    &middot; {result.download_count.toLocaleString()} downloads
-                  {/if}
-                  {#if result.rating}
-                    &middot; {result.rating.toFixed(1)}
-                  {/if}
+                  <MetaLine
+                    items={[
+                      result.provider,
+                      result.download_count
+                        ? `${result.download_count.toLocaleString()} downloads`
+                        : null,
+                      result.rating ? result.rating.toFixed(1) : null
+                    ]}
+                  />
                 </span>
               </div>
               <button

@@ -14,6 +14,7 @@
   import { showMessage } from '$lib/context/app.svelte';
   import { openLivetvChannel } from '$lib/stores/livetvPlayer.svelte';
   import * as api from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { LivetvOnNow, LivetvOnNowItem } from '$lib/types';
 
   let data = $state<LivetvOnNow | null>(null);
@@ -34,10 +35,11 @@
   });
 
   const generatedLabel = $derived.by(() => {
-    if (!data) return 'ranked from your own watch history, nothing leaves the house';
-    const d = new Date(data.generated_at);
-    const when = isNaN(d.getTime()) ? '' : `${clock.format(d)} · `;
-    return `${when}ranked from your own watch history, nothing leaves the house`;
+    const d = data ? new Date(data.generated_at) : null;
+    return [
+      d && !isNaN(d.getTime()) ? clock.format(d) : null,
+      'ranked from your own watch history, nothing leaves the house'
+    ];
   });
 
   const groups = $derived(data?.groups.filter((g) => g.items.length > 0) ?? []);
@@ -116,7 +118,7 @@
   <header class="head">
     <div class="titles">
       <h1>On now</h1>
-      <span class="subtitle">{generatedLabel}</span>
+      <span class="subtitle"><MetaLine items={generatedLabel} /></span>
     </div>
     <div class="head-actions">
       <a class="link-chip" href="/livetv">Full guide</a>

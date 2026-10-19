@@ -4,6 +4,7 @@
   import { showMessage } from '$lib/context/app.svelte';
   import { getAuthState } from '$lib/stores/auth.svelte';
   import * as api from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type {
     ChatFactKind,
     ChatMemoryResponse,
@@ -314,7 +315,9 @@
           <div class="row">
             <div class="row-main">
               <div class="row-sub muted">
-                {session.transport} · {formatFull(session.closed_at ?? session.created_at)}
+                <MetaLine
+                  items={[session.transport, formatFull(session.closed_at ?? session.created_at)]}
+                />
               </div>
               <div class="summary">{session.summary}</div>
             </div>

@@ -8,6 +8,7 @@
   import { DeleteConfirmModal } from '@koblibs/ui';
   import { showMessage } from '$lib/context/app.svelte';
   import { updateUrlParams } from '$lib/utils/url-state';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import * as api from '$lib/api/client';
   import type {
     LivetvChannel,
@@ -58,12 +59,10 @@
       draft.channel_ids.length > 0
   );
 
-  const headerLine = $derived(
-    [
-      `${rules.length} rule${rules.length === 1 ? '' : 's'}`,
-      `${rules.reduce((n, r) => n + (r.queued_count ?? 0), 0)} recordings queued`
-    ].join(' · ')
-  );
+  const headerLine = $derived([
+    `${rules.length} rule${rules.length === 1 ? '' : 's'}`,
+    `${rules.reduce((n, r) => n + (r.queued_count ?? 0), 0)} recordings queued`
+  ]);
 
   function toInput(rule: LivetvSeriesRule): LivetvSeriesRuleInput {
     return {
@@ -223,7 +222,7 @@
   <header class="head">
     <div class="titles">
       <h1>Series rules</h1>
-      <span class="subtitle">{headerLine}</span>
+      <span class="subtitle"><MetaLine items={headerLine} /></span>
     </div>
     <div class="head-actions">
       <a class="link-chip" href="/livetv/recordings">Recordings</a>

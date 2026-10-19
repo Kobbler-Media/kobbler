@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TvEpisode } from '$lib/types';
   import { getWantStatusDisplay, isActivelyWanted } from '$lib/utils/want-status';
+  import { formatCalendarDate } from '$lib/utils/format';
 
   interface Props {
     episode: TvEpisode;
@@ -47,15 +48,7 @@
       : 'Missing'
   );
 
-  const formattedAirDate = $derived(
-    episode.air_date
-      ? new Date(episode.air_date).toLocaleDateString(undefined, {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric'
-        })
-      : null
-  );
+  const formattedAirDate = $derived(formatCalendarDate(episode.air_date, 'short'));
 
   const runtimeDisplay = $derived(episode.runtime ? `${episode.runtime}m` : null);
   const isWatched = $derived(episode.watched === true);

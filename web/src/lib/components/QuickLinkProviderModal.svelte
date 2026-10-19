@@ -6,6 +6,7 @@
    */
   import type { MetadataResult } from '$lib/api/client';
   import { getProviderCode, getProviderColor } from '$lib/utils/format';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
 
   interface Props {
     bookTitle: string;
@@ -164,22 +165,26 @@
                     <span class="source-tag" style="background: {getProviderColor(result.provider)}"
                       >{getProviderCode(result.provider)}</span
                     >
-                    {result.authors?.join(', ') || 'Unknown Author'}
-                    {#if result.publish_date}
-                      &middot; {result.publish_date.substring(0, 4)}
-                    {/if}
-                    {#if result.series}
-                      &middot; {result.series}
-                      {#if result.series_index}{` #${result.series_index}`}{/if}
-                    {/if}
+                    <MetaLine
+                      items={[
+                        result.authors?.join(', ') || 'Unknown Author',
+                        result.publish_date?.substring(0, 4),
+                        result.series && result.series_index
+                          ? `${result.series} #${result.series_index}`
+                          : result.series
+                      ]}
+                    />
                   </div>
                   {#if result.external_id || result.rating}
                     <div class="search-result-meta secondary">
-                      {#if result.external_id}ID: {result.external_id}{/if}
-                      {#if result.rating}
-                        &middot; {result.rating.toFixed(2)} ★
-                        {#if result.rating_count}({(result.rating_count / 1000).toFixed(0)}k){/if}
-                      {/if}
+                      <MetaLine
+                        items={[
+                          result.external_id && `ID: ${result.external_id}`,
+                          result.rating
+                            ? `${result.rating.toFixed(2)} ★${result.rating_count ? ` (${(result.rating_count / 1000).toFixed(0)}k)` : ''}`
+                            : null
+                        ]}
+                      />
                     </div>
                   {/if}
                 </div>

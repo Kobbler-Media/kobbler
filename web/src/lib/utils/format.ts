@@ -13,6 +13,59 @@ export function formatDate(dateStr: string | null, fallback = 'Never'): string {
   return new Date(dateStr).toLocaleString();
 }
 
+// Bare YYYY-MM-DD values are calendar dates, not instants: `new Date('1970-02-03')` is UTC
+// midnight, which local-time formatting shows as the 2nd anywhere west of Greenwich.
+const BARE_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function parseCalendarDate(value: string): Date | null {
+  const ymd = BARE_DATE.exec(value);
+  if (ymd) return new Date(Date.UTC(+ymd[1], +ymd[2] - 1, +ymd[3]));
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function formatCalendarDate(
+  value: string | null | undefined,
+  month: 'long' | 'short' = 'long'
+): string | null {
+  if (!value) return null;
+  const date = parseCalendarDate(value);
+  if (!date) return value;
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month,
+    year: 'numeric',
+    timeZone: BARE_DATE.test(value) ? 'UTC' : undefined
+  });
+}
+
+export function yearsBetween(from: string, to?: string | null): number | null {
+  const start = parseCalendarDate(from);
+  const end = to ? parseCalendarDate(to) : new Date();
+  if (!start || !end) return null;
+  let years = end.getUTCFullYear() - start.getUTCFullYear();
+  const beforeAnniversary =
+    end.getUTCMonth() < start.getUTCMonth() ||
+    (end.getUTCMonth() === start.getUTCMonth() && end.getUTCDate() < start.getUTCDate());
+  if (beforeAnniversary) years--;
+  return years >= 0 ? years : null;
+}
+
+export function formatLifeDates(
+  birth: string | null | undefined,
+  death: string | null | undefined
+): string[] {
+  const age = birth ? yearsBetween(birth, death) : null;
+  const lines: string[] = [];
+  if (birth) {
+    lines.push(`Born ${formatCalendarDate(birth)}${!death && age !== null ? ` (age ${age})` : ''}`);
+  }
+  if (death) {
+    lines.push(`Died ${formatCalendarDate(death)}${age !== null ? ` (aged ${age})` : ''}`);
+  }
+  return lines;
+}
+
 /**
  * Format a date as a relative time (e.g., "2 hours ago")
  * @param dateStr - ISO date string

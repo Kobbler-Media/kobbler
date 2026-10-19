@@ -1,7 +1,9 @@
 <script lang="ts">
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+
   interface Props {
     label: string;
-    meta?: string;
+    meta?: string | string[];
     selected: boolean;
     isDefault?: boolean;
     disabled?: boolean;
@@ -27,7 +29,7 @@
   {/if}
   <span class="spacer"></span>
   {#if meta}
-    <span class="meta">{meta}</span>
+    <span class="meta"><MetaLine items={[meta].flat()} /></span>
   {/if}
 </button>
 
@@ -95,5 +97,6 @@
     color: var(--muted);
     opacity: 0.8;
     text-align: right;
+    --meta-line-justify: flex-end;
   }
 </style>

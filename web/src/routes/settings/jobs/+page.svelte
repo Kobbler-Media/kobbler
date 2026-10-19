@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { getJobConcurrency, updateJobConcurrency } from '$lib/api/client';
   import type { JobConcurrencyItem } from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import { showMessage } from '$lib/context/app.svelte';
 
   let concurrencyJobs = $state<JobConcurrencyItem[]>([]);
@@ -107,12 +108,14 @@
                 <div class="concurrency-name">{job.name}</div>
                 <div class="concurrency-desc muted">{job.description}</div>
                 <div class="concurrency-meta muted">
-                  {job.resource_notes}
-                  {#if job.pending > 0 || job.running > 0}
-                    <span class="queue-counts">
-                      · {job.running} running, {job.pending} pending
-                    </span>
-                  {/if}
+                  <MetaLine>
+                    {#if job.resource_notes}<span>{job.resource_notes}</span>{/if}
+                    {#if job.pending > 0 || job.running > 0}
+                      <span class="queue-counts">
+                        {job.running} running, {job.pending} pending
+                      </span>
+                    {/if}
+                  </MetaLine>
                 </div>
               </div>
               <div class="concurrency-controls">

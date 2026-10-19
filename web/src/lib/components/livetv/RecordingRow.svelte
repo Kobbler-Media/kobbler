@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import { formatSize } from '$lib/utils/format';
   import type { LivetvRecording } from '$lib/types';
 
@@ -37,17 +38,17 @@
     const from = clock(recording.actual_start ?? recording.scheduled_start);
     const to = clock(recording.scheduled_end);
     parts.push(`${day ? `${day} ` : ''}${from} – ${to}`);
-    return parts.filter(Boolean).join(' · ');
+    return parts;
   });
 
   const detail = $derived.by(() => {
     if (inProgress) {
       const mins =
         recording.seconds_on_disk != null ? Math.floor(recording.seconds_on_disk / 60) : null;
-      if (!recording.playable_from_start) return 'buffering — not yet playable from the start';
-      return mins != null
-        ? `watch from the start — ${mins} min already on disk`
-        : 'watch from the start';
+      if (!recording.playable_from_start) return ['buffering — not yet playable from the start'];
+      return [
+        mins != null ? `watch from the start — ${mins} min already on disk` : 'watch from the start'
+      ];
     }
     const parts: string[] = [];
     if (recording.duration_seconds) {
@@ -60,7 +61,7 @@
       breaks > 0 ? `${breaks} ad break${breaks === 1 ? '' : 's'} marked` : 'no ads detected'
     );
     if (recording.size_bytes) parts.push(formatSize(recording.size_bytes));
-    return parts.join(' · ');
+    return parts;
   });
 
   const progressPct = $derived.by(() => {
@@ -90,8 +91,10 @@
       {/if}
       <span class="title">{recording.title}</span>
     </div>
-    <span class="meta">{meta}</span>
-    <span class="detail">{failed ? (recording.error ?? 'Recording failed') : detail}</span>
+    <span class="meta"><MetaLine items={meta} /></span>
+    <span class="detail">
+      {#if failed}{recording.error ?? 'Recording failed'}{:else}<MetaLine items={detail} />{/if}
+    </span>
     <div class="progress-track">
       <div class="progress-fill" class:live={inProgress} style:width="{progressPct}%"></div>
     </div>

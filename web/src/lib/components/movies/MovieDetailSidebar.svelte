@@ -412,6 +412,7 @@
     {#if files.length > 0}
       <FilesList
         {files}
+        noun="movie"
         {deletingFileId}
         startingPlaybackFileId={playback.startingFileId}
         onPlay={(fileId) => playback.play(fileId)}

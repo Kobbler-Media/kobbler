@@ -3,6 +3,8 @@
   import type { TvShow, TvSeason } from '$lib/types';
   import ContentPageView from '$lib/components/ContentPageView.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
+  import HeroActions from '../shared/HeroActions.svelte';
+  import MetaLine from '../shared/MetaLine.svelte';
   import GenreChips from '$lib/components/GenreChips.svelte';
   import { SearchSelect } from '@koblibs/ui';
   import { InfiniteScroll } from '@koblibs/ui';
@@ -146,14 +148,6 @@
   const handleAutoWantChange = (value: string) => {
     onMonitorToggle(league.is_monitored, value);
   };
-
-  const metaSnippet = $derived.by(() => {
-    const parts: string[] = [];
-    if (league.network) parts.push(league.network);
-    if (league.status) parts.push(league.status);
-    if (eventCount > 0) parts.push(`${eventCount} events`);
-    return parts.join(' · ');
-  });
 </script>
 
 <ContentPageView
@@ -176,67 +170,45 @@
     ratingCount={league.rating_count}
   >
     {#snippet meta()}
-      <div class="hero-meta-snippet">
-        {metaSnippet}
-        {#if syncing}
-          <span class="syncing-indicator">
-            <span class="material-icons-outlined spin">sync</span> Syncing
-          </span>
-        {/if}
-      </div>
+      <MetaLine items={[league.network, league.status, eventCount > 0 && `${eventCount} events`]} />
+      {#if syncing}
+        <span class="syncing-indicator">
+          <span class="material-icons-outlined spin">sync</span> Syncing
+        </span>
+      {/if}
     {/snippet}
 
     {#snippet actions()}
-      <button
-        class="monitor-btn"
-        class:active={league.is_monitored}
-        type="button"
-        onclick={handleMonitorChange}
-      >
-        <span class="material-icons-outlined">
-          {league.is_monitored ? 'star' : 'star_outline'}
-        </span>
-        {league.is_monitored ? 'Monitored' : 'Monitor'}
-      </button>
-
-      <div class="auto-want-wrapper">
-        <SearchSelect
-          items={autoWantOptions}
-          value={autoWantMode}
-          onchange={handleAutoWantChange}
-        />
-      </div>
-
-      <button class="btn btn-outline" type="button" onclick={onWantAllMissing}>
-        <span class="material-icons-outlined">library_add</span>
-        Want Missing
-      </button>
-
-      {#if anyWanted}
-        <button
-          class="btn btn-outline"
-          type="button"
-          title="Drop every outstanding want on this league"
-          onclick={onUnwantAll}
-        >
-          <span class="material-icons-outlined">playlist_remove</span>
-          Unwant All
-        </button>
-      {/if}
-
-      <button class="btn btn-outline" type="button" onclick={() => onBulkWatchToggle(!allWatched)}>
-        <span class="material-icons-outlined">
-          {allWatched ? 'visibility_off' : 'visibility'}
-        </span>
-        {allWatched ? 'Mark Unwatched' : 'Mark Watched'}
-      </button>
-
-      {#if onAddSeason}
-        <button class="btn btn-outline" type="button" onclick={onAddSeason}>
-          <span class="material-icons-outlined">add</span>
-          Add Season
-        </button>
-      {/if}
+      <HeroActions
+        actions={[
+          {
+            label: league.is_monitored ? 'Monitored' : 'Monitor',
+            icon: league.is_monitored ? 'star' : 'star_outline',
+            active: league.is_monitored,
+            pinned: true,
+            onSelect: handleMonitorChange
+          },
+          { label: 'Want Missing', icon: 'library_add', onSelect: onWantAllMissing },
+          anyWanted && {
+            label: 'Unwant All',
+            icon: 'playlist_remove',
+            title: 'Drop every outstanding want on this league',
+            onSelect: onUnwantAll
+          },
+          {
+            label: allWatched ? 'Mark Unwatched' : 'Mark Watched',
+            icon: allWatched ? 'visibility_off' : 'visibility',
+            onSelect: () => onBulkWatchToggle(!allWatched)
+          },
+          onAddSeason && { label: 'Add Season', icon: 'add', onSelect: onAddSeason }
+        ]}
+        menuItems={autoWantOptions.map((o) => ({
+          section: 'Auto-want',
+          label: o.label,
+          checked: autoWantMode === o.value,
+          onSelect: () => handleAutoWantChange(o.value)
+        }))}
+      />
     {/snippet}
   </EntityHero>
 
@@ -404,21 +376,6 @@
 </ContentPageView>
 
 <style>
-  .full-page-main-grid {
-    display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .details-column,
-  .actions-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    min-width: 0;
-  }
-
   .card-section {
     background: var(--card);
     border: 1px solid var(--ring);
@@ -447,37 +404,6 @@
     to {
       transform: rotate(360deg);
     }
-  }
-
-  .monitor-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
-    border-radius: 100px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    border: 1px solid var(--ring);
-    background: var(--bg-2);
-    color: var(--muted);
-    transition: all 0.2s;
-  }
-
-  .monitor-btn:hover {
-    border-color: var(--accent);
-    color: var(--ink);
-    transform: translateY(-1px);
-  }
-
-  .monitor-btn.active {
-    background: var(--accent-dim);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  .auto-want-wrapper {
-    min-width: 160px;
   }
 
   .btn {
@@ -684,12 +610,6 @@
     font-size: 11px;
     color: var(--muted);
     font-weight: 400;
-  }
-
-  @media (max-width: 1100px) {
-    .full-page-main-grid {
-      grid-template-columns: 1fr;
-    }
   }
 
   @media (max-width: 768px) {

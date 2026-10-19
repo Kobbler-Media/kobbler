@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MetaLine from './MetaLine.svelte';
   import type { Book } from '$lib/types';
   import {
     getBookListStatusBadge,
@@ -58,15 +59,12 @@
   <div class="book-list-info">
     <div class="book-list-title">{book.title}</div>
     <div class="book-list-meta">
-      {#if showSeriesIndex && book.series_index}
-        #{book.series_index}
-      {/if}
-      {#if showSeriesIndex && book.series_index && showPubdate && book.pubdate}
-        ·
-      {/if}
-      {#if showPubdate && book.pubdate}
-        {new Date(book.pubdate).getFullYear()}
-      {/if}
+      <MetaLine
+        items={[
+          showSeriesIndex && book.series_index && `#${book.series_index}`,
+          showPubdate && book.pubdate && new Date(book.pubdate).getFullYear()
+        ]}
+      />
     </div>
   </div>
   <span class="status-pill {statusClass}" class:pulse={showPulse}>{statusText}</span>

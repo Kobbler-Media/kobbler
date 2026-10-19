@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Book, AuthorSummary, LoadState } from '$lib/types';
   import IdentifierLinks from '$lib/components/IdentifierLinks.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import { SearchSelect } from '@koblibs/ui';
   import * as api from '$lib/api/client';
   import { updateWantStatus } from '$lib/stores/wantStatus.svelte';
@@ -219,11 +220,14 @@
 <EntityHero title={author.name} coverUrl={author.image_url} avatar={true} embedded={true}>
   {#snippet subtitle()}
     <div class="hero-meta">
-      {author.total_book_count > author.book_count
-        ? `${author.book_count} of ${author.total_book_count} books`
-        : `${author.book_count} books`}{author.total_series_count
-        ? ` · ${author.total_series_count} series`
-        : ''}
+      <MetaLine
+        items={[
+          author.total_book_count > author.book_count
+            ? `${author.book_count} of ${author.total_book_count} books`
+            : `${author.book_count} books`,
+          author.total_series_count && `${author.total_series_count} series`
+        ]}
+      />
     </div>
   {/snippet}
 

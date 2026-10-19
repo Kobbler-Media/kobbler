@@ -7,7 +7,7 @@
   import { Modal } from '@koblibs/ui';
   import { getVideoSeasonDetails } from '$lib/api/client';
   import { showMessage } from '$lib/context/app.svelte';
-  import { getProviderColor } from '$lib/utils/format';
+  import { formatCalendarDate, getProviderColor } from '$lib/utils/format';
   import type { SeasonDetailResult } from '$lib/types';
 
   interface Props {
@@ -138,7 +138,7 @@
           </div>
           <div class="provider-details">
             {#if result.air_date}
-              <span class="detail">Aired: {result.air_date}</span>
+              <span class="detail">Aired: {formatCalendarDate(result.air_date, 'short')}</span>
             {/if}
             {#if result.episodes.length > 0}
               <span class="detail">{result.episodes.length} episodes</span>

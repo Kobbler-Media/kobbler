@@ -15,6 +15,7 @@
   import { DeleteConfirmModal } from '@koblibs/ui';
   import { showMessage } from '$lib/context/app.svelte';
   import { getLivetvState, fetchLivetvTuners, fetchLivetvLeases } from '$lib/stores/livetv.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import * as api from '$lib/api/client';
   import type { LivetvRecording } from '$lib/types';
 
@@ -39,15 +40,11 @@
 
   const bytesUsed = $derived(recordings.reduce((n, r) => n + (r.size_bytes ?? 0), 0));
 
-  const headerLine = $derived(
-    [
-      `${inProgress.length} recording now`,
-      `${queued.length} queued`,
-      bytesUsed > 0 ? `${formatSize(bytesUsed)} used` : null
-    ]
-      .filter(Boolean)
-      .join(' · ')
-  );
+  const headerLine = $derived([
+    `${inProgress.length} recording now`,
+    `${queued.length} queued`,
+    bytesUsed > 0 ? `${formatSize(bytesUsed)} used` : null
+  ]);
 
   async function load() {
     const gen = ++loadGeneration;
@@ -116,7 +113,7 @@
   <header class="head">
     <div class="titles">
       <h1>Recordings</h1>
-      <span class="subtitle">{headerLine}</span>
+      <span class="subtitle"><MetaLine items={headerLine} /></span>
     </div>
     <a class="link-chip" href="/livetv/series-rules">Series rules</a>
   </header>

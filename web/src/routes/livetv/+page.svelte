@@ -21,6 +21,7 @@
   import { openLivetvChannel, preWarmLivetvChannel } from '$lib/stores/livetvPlayer.svelte';
   import { updateUrlParams } from '$lib/utils/url-state';
   import * as api from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type {
     LivetvChannel,
     LivetvFacets,
@@ -142,7 +143,7 @@
     if (tuner) parts.push(tuner.friendly_name || tuner.model_number || tuner.device_id);
     parts.push(`${channels.length} channel${channels.length === 1 ? '' : 's'}`);
     if (guideHorizon) parts.push(`guide to ${guideHorizon}`);
-    return parts.join(' · ');
+    return parts;
   });
 
   async function loadChannels() {
@@ -281,7 +282,7 @@
   <header class="head">
     <div class="titles">
       <h1>Live TV</h1>
-      <span class="subtitle">{subtitle}</span>
+      <span class="subtitle"><MetaLine items={subtitle} /></span>
     </div>
     <div class="head-actions">
       <label class="search">

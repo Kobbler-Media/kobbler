@@ -12,8 +12,9 @@
   import ReadingSection from './ReadingSection.svelte';
   import DualRatingStars from './DualRatingStars.svelte';
   import EntityHero from './shared/EntityHero.svelte';
+  import MetaLine from './shared/MetaLine.svelte';
   import UpgradeStatusBadge from './shared/UpgradeStatusBadge.svelte';
-  import { formatSize } from '$lib/utils/format';
+  import { formatCalendarDate, formatSize } from '$lib/utils/format';
   import WantedStatusPanel from './WantedStatusPanel.svelte';
   import MoveToMediaRootModal from './MoveToMediaRootModal.svelte';
   import SelectDevicesModal from './SelectDevicesModal.svelte';
@@ -197,15 +198,6 @@
     }
   }
 
-  const formatDate = (date: string | null | undefined) => {
-    if (!date) return 'Unknown';
-    return new Date(date).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
-  };
-
   const hasDevices = $derived(bookDeviceStatus !== null && bookDeviceStatus.devices.length > 0);
   const isOwned = $derived(context === 'library' && book.is_in_library !== false);
   const coverUrl = $derived(
@@ -252,7 +244,7 @@
     {/snippet}
 
     {#snippet meta()}
-      <div class="hero-meta-snippet">
+      <MetaLine>
         {#if book.series_name}
           <div class="hero-series">
             {#if book.series_id && onSeriesClick}
@@ -272,11 +264,9 @@
             {/if}
           </div>
         {/if}
-        {#if book.series_name && book.publisher}<span class="sep">·</span>{/if}
         {#if book.publisher}<span>{book.publisher}</span>{/if}
-        {#if (book.series_name || book.publisher) && book.pubdate}<span class="sep">·</span>{/if}
         {#if book.pubdate}<span>{new Date(book.pubdate).getFullYear()}</span>{/if}
-      </div>
+      </MetaLine>
     {/snippet}
 
     {#snippet ratingContent()}
@@ -309,7 +299,7 @@
           {#if book.pubdate}
             <div>
               <div class="meta-label">Published</div>
-              <div class="value">{formatDate(book.pubdate)}</div>
+              <div class="value">{formatCalendarDate(book.pubdate) ?? 'Unknown'}</div>
             </div>
           {/if}
           {#if book.page_count}
@@ -342,7 +332,7 @@
           {/if}
           <div>
             <div class="meta-label">Added</div>
-            <div class="value">{formatDate(book.created_at)}</div>
+            <div class="value">{formatCalendarDate(book.created_at) ?? 'Unknown'}</div>
           </div>
         </div>
         {#if book.is_abridged || book.has_audiobook}
@@ -430,7 +420,7 @@
     </div>
 
     <!-- Right Column: Reading & Files -->
-    <div class="actions-column">
+    <div class="actions-column side-first">
       <!-- Reading section (library context only) -->
       {#if context === 'library' && !readingDataLoading}
         <div class="section card-section accent-border">
@@ -625,21 +615,6 @@
 {/if}
 
 <style>
-  .full-page-main-grid {
-    display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .details-column,
-  .actions-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    min-width: 0;
-  }
-
   .card-section {
     background: var(--card);
     border: 1px solid var(--ring);
@@ -667,10 +642,6 @@
     content: ',';
     margin-right: 0.3em;
     color: var(--muted);
-  }
-
-  .sep {
-    opacity: 0.5;
   }
 
   .hero-series {
@@ -958,16 +929,6 @@
   .device-remove-btn:hover {
     background: rgba(239, 68, 68, 0.1);
     color: var(--danger);
-  }
-
-  @media (max-width: 1100px) {
-    .full-page-main-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .actions-column {
-      order: -1;
-    }
   }
 
   @media (max-width: 768px) {

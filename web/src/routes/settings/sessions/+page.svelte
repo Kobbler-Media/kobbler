@@ -3,6 +3,7 @@
   import { getAuthState } from '$lib/stores/auth.svelte';
   import { showMessage } from '$lib/context/app.svelte';
   import * as api from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { SessionSummary } from '$lib/types';
 
   const auth = getAuthState();
@@ -134,16 +135,22 @@
                 >{/if}
             </div>
             <div class="session-meta muted">
-              {kindLabel(session.client_kind)}
-              {#if showEveryone && auth.isAdmin}
-                · {owner(session)}{/if}
-              · last used {relative(session.last_used_at)}
-              · {expiryLabel(session.expires_at)}
+              <MetaLine
+                items={[
+                  kindLabel(session.client_kind),
+                  showEveryone && auth.isAdmin && owner(session),
+                  `last used ${relative(session.last_used_at)}`,
+                  expiryLabel(session.expires_at)
+                ]}
+              />
             </div>
             <div class="session-meta muted">
-              Linked {new Date(session.created_at).toLocaleDateString()}
-              {#if session.created_by_email}
-                · provisioned by {session.created_by_email}{/if}
+              <MetaLine
+                items={[
+                  `Linked ${new Date(session.created_at).toLocaleDateString()}`,
+                  session.created_by_email && `provisioned by ${session.created_by_email}`
+                ]}
+              />
             </div>
           </div>
           <div class="session-actions">

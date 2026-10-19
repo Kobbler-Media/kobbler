@@ -2,6 +2,7 @@
   import type { ActivityEvent, LoadState } from '$lib/types';
   import { InfiniteScroll } from '@koblibs/ui';
   import { createDelayedLoading } from '$lib/utils/delayed-loading.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
 
   type ViewEntityHandler = (url: string) => void;
 
@@ -162,17 +163,17 @@
                     {/if}
                   </div>
                   <div class="event-meta">
-                    <span class="event-kind-label" style:color={config.color}>{config.label}</span>
-                    {#if event.entity_type}
-                      <span class="meta-sep">·</span>
-                      <span>{ENTITY_LABELS[event.entity_type] ?? event.entity_type}</span>
-                    {/if}
-                    {#if event.subtitle}
-                      <span class="meta-sep">·</span>
-                      <span>{event.subtitle}</span>
-                    {/if}
-                    <span class="meta-sep">·</span>
-                    <span>{relativeTime(event.created_at)}</span>
+                    <MetaLine>
+                      <span class="event-kind-label" style:color={config.color}>{config.label}</span
+                      >
+                      {#if event.entity_type}
+                        <span>{ENTITY_LABELS[event.entity_type] ?? event.entity_type}</span>
+                      {/if}
+                      {#if event.subtitle}
+                        <span>{event.subtitle}</span>
+                      {/if}
+                      <span>{relativeTime(event.created_at)}</span>
+                    </MetaLine>
                   </div>
                 </div>
               </div>
@@ -352,22 +353,18 @@
   }
 
   .event-meta {
-    display: flex;
-    align-items: center;
-    gap: 5px;
     color: var(--muted);
     font-size: 11px;
     overflow: hidden;
     white-space: nowrap;
-    text-overflow: ellipsis;
+  }
+
+  .event-meta :global(.meta-line) {
+    flex-wrap: nowrap;
   }
 
   .event-kind-label {
     font-weight: 600;
-  }
-
-  .meta-sep {
-    opacity: 0.4;
   }
 
   @media (max-width: 768px) {
@@ -378,6 +375,9 @@
 
     .event-meta {
       white-space: normal;
+    }
+
+    .event-meta :global(.meta-line) {
       flex-wrap: wrap;
     }
   }

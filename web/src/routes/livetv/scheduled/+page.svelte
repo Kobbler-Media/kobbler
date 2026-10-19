@@ -11,6 +11,7 @@
   import ScheduledRow from '$lib/components/livetv/ScheduledRow.svelte';
   import { DeleteConfirmModal } from '@koblibs/ui';
   import { showMessage } from '$lib/context/app.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import * as api from '$lib/api/client';
   import type { LivetvRecording, LivetvSeriesRule } from '$lib/types';
 
@@ -43,15 +44,11 @@
 
   const ruleQueueCount = $derived(rules.reduce((n, r) => n + (r.queued_count ?? 0), 0));
 
-  const headerLine = $derived(
-    [
-      `${queued.length} queued`,
-      rules.length > 0 ? `${rules.length} series rule${rules.length === 1 ? '' : 's'}` : null,
-      ruleQueueCount > 0 ? `${ruleQueueCount} from rules` : null
-    ]
-      .filter(Boolean)
-      .join(' · ')
-  );
+  const headerLine = $derived([
+    `${queued.length} queued`,
+    rules.length > 0 ? `${rules.length} series rule${rules.length === 1 ? '' : 's'}` : null,
+    ruleQueueCount > 0 ? `${ruleQueueCount} from rules` : null
+  ]);
 
   async function load() {
     const gen = ++loadGeneration;
@@ -113,7 +110,7 @@
   <header class="head">
     <div class="titles">
       <h1>Scheduled</h1>
-      <span class="subtitle">{headerLine}</span>
+      <span class="subtitle"><MetaLine items={headerLine} /></span>
     </div>
     <a class="link-chip" href="/livetv/series-rules">Series rules</a>
   </header>

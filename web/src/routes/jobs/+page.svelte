@@ -10,6 +10,7 @@
   import { onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
   import { onJobChange } from '$lib/stores/jobs.svelte';
   import { entityRoute, entityTypeLabel } from '$lib/utils/entity-routes';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { Job } from '$lib/types';
 
   const jobsPageSize = 20;
@@ -187,7 +188,7 @@
     return formatJobType(job.job_type);
   }
 
-  function formatResultSummary(result: Record<string, unknown>): string | null {
+  function formatResultSummary(result: Record<string, unknown>): string[] | null {
     const parts: string[] = [];
     if (typeof result.processed === 'number' && typeof result.total === 'number') {
       parts.push(`${result.processed}/${result.total} processed`);
@@ -200,7 +201,7 @@
     if (typeof result.skipped === 'number' && result.skipped > 0) {
       parts.push(`${result.skipped} skipped`);
     }
-    return parts.length > 0 ? parts.join(' · ') : null;
+    return parts.length > 0 ? parts : null;
   }
 </script>
 
@@ -264,13 +265,13 @@
         {/if}
 
         <div class="job-meta muted">
-          Created: {formatJobDate(job.created_at)}
-          {#if job.started_at}
-            · Started: {formatJobDate(job.started_at)}
-          {/if}
-          {#if job.completed_at}
-            · Completed: {formatJobDate(job.completed_at)}
-          {/if}
+          <MetaLine
+            items={[
+              `Created: ${formatJobDate(job.created_at)}`,
+              job.started_at && `Started: ${formatJobDate(job.started_at)}`,
+              job.completed_at && `Completed: ${formatJobDate(job.completed_at)}`
+            ]}
+          />
         </div>
       </div>
     </div>
@@ -286,7 +287,7 @@
         {#if resultSummary}
           <div class="job-detail-section">
             <span class="detail-label">Summary:</span>
-            <div class="result-summary">{resultSummary}</div>
+            <div class="result-summary"><MetaLine items={resultSummary} /></div>
           </div>
         {/if}
         {#if job.payload && Object.keys(job.payload).length > 0}

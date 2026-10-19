@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatSize } from '$lib/utils/format';
   import QualityBadge from './QualityBadge.svelte';
-  import FileActionsDropdown from './FileActionsDropdown.svelte';
+  import OverflowMenu from './OverflowMenu.svelte';
   import UpgradeStatusBadge from './UpgradeStatusBadge.svelte';
 
   interface FileItem {
@@ -15,6 +15,7 @@
 
   interface Props {
     files: FileItem[];
+    noun: string;
     deletingFileId: string | null;
     startingPlaybackFileId: string | null;
     upgradeUntil?: string | null;
@@ -29,6 +30,7 @@
 
   let {
     files,
+    noun,
     deletingFileId,
     startingPlaybackFileId,
     upgradeUntil = null,
@@ -64,6 +66,7 @@
           <button
             class="icon-btn play-file-btn"
             title="Play"
+            aria-label="Play"
             onclick={() => onPlay(file.id)}
             disabled={isStarting}
           >
@@ -74,31 +77,42 @@
             {/if}
           </button>
           <QualityBadge quality={file.quality ?? null} source={file.source_type ?? null} />
-          {#if onMove}
-            <button class="icon-btn" title="Move to another entity" onclick={() => onMove(file.id)}>
-              <span class="material-icons-outlined">swap_horiz</span>
-            </button>
-          {/if}
-          {#if onSearchReleases || onRejectAndResearch}
-            <FileActionsDropdown
-              {onSearchReleases}
-              {onRejectAndResearch}
-              onReplace={onReplace ? () => onReplace(file.id) : undefined}
-              {rejecting}
-            />
-          {/if}
-          <button
-            class="icon-btn"
-            title="Remove file"
-            onclick={() => onDelete(file.id)}
-            disabled={isDeleting}
-          >
-            {#if isDeleting}
-              <span class="material-icons-outlined">hourglass_empty</span>
-            {:else}
-              <span class="material-icons-outlined">delete_outline</span>
-            {/if}
-          </button>
+          <OverflowMenu
+            variant="icon"
+            icon="more_vert"
+            label="File actions"
+            busy={isDeleting || rejecting}
+            items={[
+              onSearchReleases && {
+                label: 'Search releases',
+                icon: 'search',
+                onSelect: onSearchReleases
+              },
+              onRejectAndResearch && {
+                label: 'Reject & re-search',
+                icon: 'block',
+                danger: true,
+                onSelect: onRejectAndResearch
+              },
+              onReplace && {
+                label: 'Replace file',
+                icon: 'find_replace',
+                danger: true,
+                onSelect: () => onReplace(file.id)
+              },
+              onMove && {
+                label: `Move to another ${noun}`,
+                icon: 'drive_file_move',
+                onSelect: () => onMove(file.id)
+              },
+              {
+                label: 'Remove file',
+                icon: 'delete_outline',
+                danger: true,
+                onSelect: () => onDelete(file.id)
+              }
+            ]}
+          />
         </div>
       </div>
     {/each}

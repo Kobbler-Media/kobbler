@@ -19,6 +19,7 @@
   import { getLivetvState, fetchLivetvTuners } from '$lib/stores/livetv.svelte';
   import { openLivetvChannel, preWarmLivetvChannel } from '$lib/stores/livetvPlayer.svelte';
   import { updateUrlParams } from '$lib/utils/url-state';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import * as api from '$lib/api/client';
   import type { LivetvBulkAction, LivetvChannel, LivetvFacet, LivetvFacets } from '$lib/types';
 
@@ -91,7 +92,7 @@
 
   const headerLine = $derived.by(() => {
     const tuner = livetv.primary;
-    if (!tuner) return 'No tuner registered yet';
+    if (!tuner) return ['No tuner registered yet'];
     const parts = [tuner.friendly_name || tuner.model_number, tuner.device_id];
     try {
       parts.push(new URL(tuner.base_url).hostname);
@@ -99,7 +100,7 @@
       // base_url may be a bare host during manual registration
     }
     if (tuner.last_scan_at) parts.push(`scanned ${formatAge(tuner.last_scan_at)}`);
-    return parts.filter(Boolean).join(' · ');
+    return parts;
   });
 
   function queryParams() {
@@ -300,7 +301,7 @@
   <header class="head">
     <div class="titles">
       <h1>Channels</h1>
-      <span class="subtitle">{headerLine}</span>
+      <span class="subtitle"><MetaLine items={headerLine} /></span>
     </div>
     <div class="head-actions">
       <button type="button" class="btn-sec" disabled={!livetv.primary} onclick={rescan}>

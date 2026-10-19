@@ -16,6 +16,7 @@
     type StremioApiKey,
     type StremioAccount
   } from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import { formatTimeAgo } from '$lib/stores/jobs.svelte';
 
   const auth = getAuthState();
@@ -289,10 +290,14 @@
                 <span class="field-label">Linked account</span>
                 <span>{stremioAccount.email}</span>
                 <span class="field-hint">
-                  {stremioAccount.item_count} titles ·
-                  {stremioAccount.last_synced_at
-                    ? `synced ${formatTimeAgo(stremioAccount.last_synced_at)}`
-                    : 'not synced yet'}
+                  <MetaLine
+                    items={[
+                      `${stremioAccount.item_count} titles`,
+                      stremioAccount.last_synced_at
+                        ? `synced ${formatTimeAgo(stremioAccount.last_synced_at)}`
+                        : 'not synced yet'
+                    ]}
+                  />
                 </span>
                 {#if stremioAccount.last_error}
                   <div class="warning-box">{stremioAccount.last_error}</div>

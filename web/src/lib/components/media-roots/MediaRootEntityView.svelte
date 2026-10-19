@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { MediaRootFile, MediaRootFileLite, EntityGroupSummary } from '$lib/types';
   import { untrack } from 'svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import {
     listEntityGroups,
     listMediaRootFilesLite,
@@ -769,7 +770,7 @@
               onReassign?.(group.group_key, rootId);
             }}
           >
-            <span class="material-icons-outlined">swap_horiz</span>
+            <span class="material-icons-outlined">drive_file_move</span>
           </button>
         {/if}
       </span>
@@ -1045,11 +1046,14 @@
                         ? 'Added'
                         : 'Mixed'}
                 </span>
-                <span class="group-count"
-                  >{series.books.length}
-                  {series.books.length === 1 ? 'book' : 'books'} &middot; {series.totalFiles}
-                  {series.totalFiles === 1 ? 'file' : 'files'}</span
-                >
+                <span class="group-count">
+                  <MetaLine
+                    items={[
+                      `${series.books.length} ${series.books.length === 1 ? 'book' : 'books'}`,
+                      `${series.totalFiles} ${series.totalFiles === 1 ? 'file' : 'files'}`
+                    ]}
+                  />
+                </span>
                 {#if series.reviewCount > 0 && series.reviewCount < series.totalFiles}
                   <span class="review-count">{series.reviewCount} review</span>
                 {/if}
@@ -1072,7 +1076,7 @@
                     handleReassignSeries(series);
                   }}
                 >
-                  <span class="material-icons-outlined">swap_horiz</span>
+                  <span class="material-icons-outlined">drive_file_move</span>
                 </button>
               {/if}
               <button
@@ -1226,7 +1230,7 @@
                           onReassign?.(group.group_key, rootId);
                         }}
                       >
-                        <span class="material-icons-outlined">swap_horiz</span>
+                        <span class="material-icons-outlined">drive_file_move</span>
                       </button>
                     {/if}
                   </span>

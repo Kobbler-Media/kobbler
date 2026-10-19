@@ -1,4 +1,6 @@
 <script lang="ts">
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import { formatCalendarDate } from '$lib/utils/format';
   import { onMount } from 'svelte';
   import type { TvEpisode, TvEpisodeFile, TvWatchState } from '$lib/types';
   import {
@@ -191,11 +193,7 @@
   <div class="header-section">
     {#if leagueTitle || seasonTitle}
       <div class="breadcrumb">
-        {#if leagueTitle}{leagueTitle}{/if}
-        {#if leagueTitle && seasonTitle}
-          &middot;
-        {/if}
-        {#if seasonTitle}{seasonTitle}{/if}
+        <MetaLine items={[leagueTitle, seasonTitle]} />
       </div>
     {/if}
     <h2 class="event-title">
@@ -204,7 +202,7 @@
     <div class="panel-meta-row">
       <span class="panel-meta-item">Round {event.episode_sort_order}</span>
       {#if event.air_date}
-        <span class="panel-meta-item">{event.air_date}</span>
+        <span class="panel-meta-item">{formatCalendarDate(event.air_date, 'short')}</span>
       {/if}
       {#if event.runtime}
         <span class="panel-meta-item">{event.runtime}m</span>
@@ -278,6 +276,7 @@
     {#if files.length > 0}
       <FilesList
         {files}
+        noun="event"
         {deletingFileId}
         startingPlaybackFileId={playback.startingFileId}
         onPlay={(fileId) => playback.play(fileId)}

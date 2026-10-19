@@ -29,7 +29,6 @@
   import ContentPageView from '$lib/components/ContentPageView.svelte';
   import PersonCard from '$lib/components/shared/PersonCard.svelte';
   import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
-  import WatchToggle from '$lib/components/shared/WatchToggle.svelte';
   import FilesList from '$lib/components/shared/FilesList.svelte';
   import GenreChips from '$lib/components/GenreChips.svelte';
   import { isActivelyWanted } from '$lib/utils/want-status';
@@ -40,6 +39,8 @@
   import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
   import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
+  import HeroActions from '../shared/HeroActions.svelte';
+  import MetaLine from '../shared/MetaLine.svelte';
   import KidsAccess from '../shared/KidsAccess.svelte';
   import { getAuthState } from '$lib/stores/auth.svelte';
 
@@ -355,84 +356,75 @@
     {/snippet}
 
     {#snippet actions()}
-      {#if files.length > 0}
-        <PlaybackArea
-          positionSeconds={watchState?.position_seconds ?? null}
-          totalSeconds={movie.runtime ? movie.runtime * 60 : null}
-          watched={watchState?.watched ?? false}
-          loading={playback.startingFileId !== null}
-          variant="hero"
-          onPlay={() =>
-            playback.play(
-              files[0].id,
-              undefined,
-              watchState?.watched ? undefined : (watchState?.position_seconds ?? undefined)
-            )}
-        />
-      {:else if stats.kobload_configured}
-        <PlaybackArea
-          mode="stream"
-          positionSeconds={watchState?.position_seconds ?? null}
-          totalSeconds={movie.runtime ? movie.runtime * 60 : null}
-          watched={watchState?.watched ?? false}
-          loading={stream.resolving || stream.streamLoading}
-          variant="hero"
-          onPlay={stream.autoPlay}
-          onPickStream={stream.openModal}
-        />
-      {/if}
-
-      <WatchToggle
-        watched={watchState?.watched ?? false}
-        loading={loadingWatch}
-        onToggle={toggleWatched}
-      />
-
-      {#if onWatchlistToggle}
-        <button
-          class="btn btn-outline"
-          class:watchlist-active={movie.in_watchlist}
-          type="button"
-          onclick={() => onWatchlistToggle?.(!movie.in_watchlist)}
-          title={movie.in_watchlist
-            ? 'Remove from your watch list'
-            : 'Add to your watch list — shows up in Up Next'}
-        >
-          <span class="material-icons-outlined">
-            {movie.in_watchlist ? 'playlist_add_check' : 'playlist_add'}
-          </span>
-          {movie.in_watchlist ? 'On My List' : 'Want to Watch'}
-        </button>
-      {/if}
-
-      {#if isActivelyWanted(movie.want_status)}
-        <button class="btn btn-outline" type="button" onclick={onUnwant}>
-          <span class="material-icons-outlined">close</span>
-          Remove from Wanted
-        </button>
-      {:else if !movie.is_in_library}
-        <button class="btn btn-primary" type="button" onclick={onWant}>
-          <span class="material-icons-outlined">bookmark_add</span>
-          Want
-        </button>
-      {/if}
-
-      <button class="btn btn-danger-icon" type="button" onclick={onDelete} title="Delete">
-        <span class="material-icons-outlined">delete</span>
-      </button>
+      <HeroActions
+        actions={[
+          {
+            label: watchState?.watched ? 'Watched' : 'Not Watched',
+            icon: watchState?.watched ? 'visibility' : 'visibility_off',
+            active: watchState?.watched ?? false,
+            busy: loadingWatch,
+            pinned: true,
+            onSelect: toggleWatched
+          },
+          onWatchlistToggle && {
+            label: movie.in_watchlist ? 'On My List' : 'Want to Watch',
+            icon: movie.in_watchlist ? 'playlist_add_check' : 'playlist_add',
+            title: movie.in_watchlist
+              ? 'Remove from your watch list'
+              : 'Add to your watch list — shows up in Up Next',
+            active: movie.in_watchlist,
+            pinned: true,
+            onSelect: () => onWatchlistToggle(!movie.in_watchlist)
+          },
+          isActivelyWanted(movie.want_status)
+            ? { label: 'Remove from Wanted', icon: 'close', onSelect: onUnwant }
+            : !movie.is_in_library && {
+                label: 'Want',
+                icon: 'bookmark_add',
+                tone: 'primary',
+                onSelect: onWant
+              },
+          { label: 'Delete', icon: 'delete', tone: 'danger', iconOnly: true, onSelect: onDelete }
+        ]}
+      >
+        {#snippet primary()}
+          {#if files.length > 0}
+            <PlaybackArea
+              positionSeconds={watchState?.position_seconds ?? null}
+              totalSeconds={movie.runtime ? movie.runtime * 60 : null}
+              watched={watchState?.watched ?? false}
+              loading={playback.startingFileId !== null}
+              variant="hero"
+              onPlay={() =>
+                playback.play(
+                  files[0].id,
+                  undefined,
+                  watchState?.watched ? undefined : (watchState?.position_seconds ?? undefined)
+                )}
+            />
+          {:else if stats.kobload_configured}
+            <PlaybackArea
+              mode="stream"
+              positionSeconds={watchState?.position_seconds ?? null}
+              totalSeconds={movie.runtime ? movie.runtime * 60 : null}
+              watched={watchState?.watched ?? false}
+              loading={stream.resolving || stream.streamLoading}
+              variant="hero"
+              onPlay={stream.autoPlay}
+              onPickStream={stream.openModal}
+            />
+          {/if}
+        {/snippet}
+      </HeroActions>
     {/snippet}
 
     {#snippet meta()}
-      <div class="hero-meta-snippet">
+      <MetaLine>
         {#if movie.year}<span>{movie.year}</span>{/if}
-        {#if movie.year && (runtime || movie.content_rating || director)}<span class="sep">·</span
-          >{/if}
         {#if runtime}<span>{runtime}</span>{/if}
-        {#if runtime && (movie.content_rating || director)}<span class="sep">·</span>{/if}
         {#if movie.content_rating}<span class="content-rating">{movie.content_rating}</span>{/if}
-        {#if movie.content_rating && director}<span class="sep">·</span>{/if}
         {#if director}<span>Directed by <strong>{director}</strong></span>{/if}
-      </div>
+      </MetaLine>
       {#if movie.genres && movie.genres.length > 0}
         <div class="hero-genres">
           <GenreChips
@@ -489,13 +481,14 @@
       {/if}
     </div>
 
-    <div class="actions-column">
+    <div class="actions-column side-first">
       <!-- Files -->
       {#if files.length > 0}
         <div class="section card-section">
           <div class="label">Files</div>
           <FilesList
             {files}
+            noun="movie"
             {deletingFileId}
             startingPlaybackFileId={playback.startingFileId}
             onPlay={(fileId) => playback.play(fileId)}
@@ -609,30 +602,11 @@
 {/if}
 
 <style>
-  .full-page-main-grid {
-    display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .details-column,
-  .actions-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    min-width: 0;
-  }
-
   .card-section {
     background: var(--card);
     border: 1px solid var(--ring);
     border-radius: 16px;
     padding: 24px;
-  }
-
-  .sep {
-    opacity: 0.5;
   }
 
   .content-rating {
@@ -650,45 +624,6 @@
 
   .hero-kids {
     margin-top: 10px;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
-    border-radius: 100px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s;
-  }
-
-  .btn-outline.watchlist-active {
-    background: var(--accent-dim);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  .btn-danger-icon {
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: transparent;
-    border: 1px solid var(--ring);
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .btn-danger-icon:hover {
-    border-color: var(--danger);
-    color: var(--danger);
-    background: rgba(239, 68, 68, 0.1);
   }
 
   .label {
@@ -721,16 +656,6 @@
   .cast-btn:hover {
     background: var(--bg-2);
     transform: translateY(-2px);
-  }
-
-  @media (max-width: 1100px) {
-    .full-page-main-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .actions-column {
-      order: -1;
-    }
   }
 
   @media (max-width: 768px) {

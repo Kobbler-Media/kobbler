@@ -6,6 +6,7 @@
   import { untrack } from 'svelte';
   import type { AuthorSummary, LoadState } from '$lib/types';
   import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
 
   interface Props {
     authors: AuthorSummary[];
@@ -144,11 +145,14 @@
               <div class="author-info">
                 <div class="meta-primary">{author.name}</div>
                 <div class="meta-secondary">
-                  {author.total_book_count > author.book_count
-                    ? `${author.book_count} of ${author.total_book_count} books`
-                    : `${author.book_count} books`}{author.total_series_count
-                    ? ` · ${author.total_series_count} series`
-                    : ''}
+                  <MetaLine
+                    items={[
+                      author.total_book_count > author.book_count
+                        ? `${author.book_count} of ${author.total_book_count} books`
+                        : `${author.book_count} books`,
+                      author.total_series_count ? `${author.total_series_count} series` : null
+                    ]}
+                  />
                 </div>
               </div>
             </button>
@@ -347,6 +351,7 @@
   .meta-secondary {
     font-size: 12px;
     color: var(--muted);
+    --meta-line-justify: center;
   }
 
   .monitored-indicator {

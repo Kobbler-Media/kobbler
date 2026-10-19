@@ -9,7 +9,7 @@
   import { getBookStatusBadge } from '$lib/utils/book-status';
   import ReadingSection from './ReadingSection.svelte';
   import EntityHero from './shared/EntityHero.svelte';
-  import { formatSize } from '$lib/utils/format';
+  import { formatCalendarDate, formatSize } from '$lib/utils/format';
   import SelectDevicesModal from './SelectDevicesModal.svelte';
 
   type Context = 'library' | 'monitored' | 'ingest';
@@ -283,17 +283,6 @@
     return stripped;
   });
 
-  // Format date
-  const formatDate = (dateStr: string | null): string => {
-    if (!dateStr) return 'Unknown';
-    try {
-      const date = new Date(dateStr);
-      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-    } catch {
-      return dateStr;
-    }
-  };
-
   // Whether any devices exist in the system (for hiding sync UI)
   const hasDevices = $derived(bookDeviceStatus !== null && bookDeviceStatus.devices.length > 0);
 
@@ -492,7 +481,9 @@
         </div>
         <div>
           <div class="label">Published</div>
-          <div class="value">{formatDate(normalizedData.pubdate)}</div>
+          <div class="value">
+            {formatCalendarDate(normalizedData.pubdate, 'short') ?? 'Unknown'}
+          </div>
         </div>
         {#if context !== 'ingest' || normalizedData.pageCount}
           <div>

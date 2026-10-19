@@ -28,6 +28,7 @@
   } from '$lib/api/client';
   import { showMessage } from '$lib/context/app.svelte';
   import AddEntityModal from '$lib/components/AddEntityModal.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
 
   type Tab = 'provider' | 'library';
 
@@ -115,8 +116,8 @@
     );
   }
 
-  function interpretationSummary(): string {
-    if (!interpretation) return '';
+  function interpretationSummary(): string[] {
+    if (!interpretation) return [];
     const parts: string[] = [];
     if (interpretation.authors) {
       const authors = interpretation.authors as string[];
@@ -133,7 +134,7 @@
     if (interpretation.episode != null)
       parts.push(`E${String(interpretation.episode).padStart(2, '0')}`);
     if (interpretation.resolution) parts.push(String(interpretation.resolution));
-    return parts.join(' \u00b7 ');
+    return parts;
   }
 
   // ---- Provider search ----
@@ -437,8 +438,8 @@
           <div class="parsed">{totalFileCount} files in this group</div>
         {:else}
           <div class="file-name">{file.file_name}</div>
-          {#if interpretationSummary()}
-            <div class="parsed">{interpretationSummary()}</div>
+          {#if interpretationSummary().length > 0}
+            <div class="parsed"><MetaLine items={interpretationSummary()} /></div>
           {/if}
         {/if}
       </div>

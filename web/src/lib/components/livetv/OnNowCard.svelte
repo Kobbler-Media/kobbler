@@ -1,5 +1,6 @@
 <script lang="ts">
   import ConfidenceDots from './ConfidenceDots.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import { networkTint } from './tint';
   import type { LivetvOnNowItem } from '$lib/types';
 
@@ -28,15 +29,11 @@
       : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  const timing = $derived(
-    [
-      `${clock(item.guide.start_time)} – ${clock(item.guide.end_time)}`,
-      item.minutes_left != null ? `${item.minutes_left} min left` : null,
-      item.guide.episode_number
-    ]
-      .filter(Boolean)
-      .join(' · ')
-  );
+  const timing = $derived([
+    `${clock(item.guide.start_time)} – ${clock(item.guide.end_time)}`,
+    item.minutes_left != null ? `${item.minutes_left} min left` : null,
+    item.guide.episode_number
+  ]);
 </script>
 
 <article class="card" class:compact>
@@ -60,7 +57,7 @@
 
   <div class="body">
     <span class="title">{item.guide.title}</span>
-    <span class="timing">{timing}</span>
+    <span class="timing"><MetaLine items={timing} /></span>
     {#if !compact && item.guide.synopsis}
       <span class="synopsis">{item.guide.synopsis}</span>
     {/if}

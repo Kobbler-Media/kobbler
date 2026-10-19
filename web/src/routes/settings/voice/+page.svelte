@@ -12,6 +12,7 @@
     type FaPlayback
   } from '@koblibs/ui';
   import { showMessage } from '$lib/context/app.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import {
     listVoicePresets,
     createVoicePreset,
@@ -810,13 +811,15 @@
           <div class="ab-selected">
             <div class="ab-selected-header">
               <div class="ab-selected-title">
-                <strong>{abSelected.title}</strong>
-                {#if abSelected.author}<span class="muted"> — {abSelected.author}</span>{/if}
-                {#if abSelected.narrator}
-                  <span class="muted small">
-                    · narrated by {abSelected.narrator}
+                <MetaLine>
+                  <span>
+                    <strong>{abSelected.title}</strong>
+                    {#if abSelected.author}<span class="muted"> — {abSelected.author}</span>{/if}
                   </span>
-                {/if}
+                  {#if abSelected.narrator}
+                    <span class="muted small">narrated by {abSelected.narrator}</span>
+                  {/if}
+                </MetaLine>
               </div>
               <button
                 type="button"
@@ -960,19 +963,21 @@
         />
       </div>
       <div class="preview-meta">
-        <span class="preview-state">{testFa.state}</span>
-        {#if testFa.words.length > 0}
-          <span>· {testFa.words.length} words</span>
-        {/if}
-        {#if testFa.timings.ttfaMs != null}
-          <span>· TTFA {Math.round(testFa.timings.ttfaMs)} ms</span>
-        {/if}
-        {#if testFa.timings.firstAlignMs != null}
-          <span>· first align {Math.round(testFa.timings.firstAlignMs)} ms</span>
-        {/if}
-        {#if testFa.timings.audioMs != null}
-          <span>· audio {(testFa.timings.audioMs / 1000).toFixed(2)} s</span>
-        {/if}
+        <MetaLine>
+          <span class="preview-state">{testFa.state}</span>
+          {#if testFa.words.length > 0}
+            <span>{testFa.words.length} words</span>
+          {/if}
+          {#if testFa.timings.ttfaMs != null}
+            <span>TTFA {Math.round(testFa.timings.ttfaMs)} ms</span>
+          {/if}
+          {#if testFa.timings.firstAlignMs != null}
+            <span>first align {Math.round(testFa.timings.firstAlignMs)} ms</span>
+          {/if}
+          {#if testFa.timings.audioMs != null}
+            <span>audio {(testFa.timings.audioMs / 1000).toFixed(2)} s</span>
+          {/if}
+        </MetaLine>
         {#if testFa.state === 'playing' || testFa.state === 'paused'}
           <button class="btn alt small" type="button" onclick={stopTest}>Stop</button>
         {/if}

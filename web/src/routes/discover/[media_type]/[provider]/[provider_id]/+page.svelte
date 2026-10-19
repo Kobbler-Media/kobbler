@@ -16,7 +16,7 @@
     type DiscoverEpisode
   } from '$lib/api/client';
   import type { MovieWatchState, PlaybackSessionResponse } from '$lib/types';
-  import { formatDuration } from '$lib/utils/format';
+  import { formatCalendarDate, formatDuration } from '$lib/utils/format';
   import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
   import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
   import { showMessage } from '$lib/context/app.svelte';
@@ -673,7 +673,8 @@
                               >{ep.title ?? `Episode ${ep.episode_number}`}</span
                             >
                             {#if ep.air_date}
-                              <span class="ep-date">{ep.air_date}</span>
+                              <span class="ep-date">{formatCalendarDate(ep.air_date, 'short')}</span
+                              >
                             {/if}
                           </div>
                           <div class="ep-actions">

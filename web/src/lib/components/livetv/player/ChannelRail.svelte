@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { LivetvChannel } from '$lib/types';
   import FacetPills from '../FacetPills.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import { networkTint } from '../tint';
 
   interface Props {
@@ -82,13 +83,16 @@
     <div class="head-line">
       <span class="head-title">Channels</span>
       <span class="head-count">
-        {#if layout === 'strip'}{facetLabel} ·
-        {/if}{rows.length} of {totalCount}
-        {#if layout === 'rail'}shown{/if}
+        <MetaLine>
+          {#if layout === 'strip'}<span>{facetLabel}</span>{/if}
+          <span
+            >{rows.length} of {totalCount}{#if layout === 'rail'}&nbsp;shown{/if}</span
+          >
+        </MetaLine>
       </span>
       <span class="grow"></span>
       {#if layout === 'strip'}
-        <span class="hint">&larr; &rarr; to browse &middot; Enter to switch</span>
+        <span class="hint"><MetaLine items={['← → to browse', 'Enter to switch']} /></span>
       {/if}
       <button type="button" class="close" onclick={onClose} aria-label="Hide the channel list">
         <span class="material-icons-outlined">close</span>
@@ -106,7 +110,7 @@
         />
       </label>
       <FacetPills options={facetOptions} value={facet} onChange={onFacet} />
-      <span class="hint">&uarr; &darr; to browse &middot; Enter to switch</span>
+      <span class="hint"><MetaLine items={['↑ ↓ to browse', 'Enter to switch']} /></span>
     {/if}
   </div>
 

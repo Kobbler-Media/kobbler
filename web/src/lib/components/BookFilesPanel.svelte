@@ -4,7 +4,8 @@
   import type { BookFileInfo, AudioFileInfo, AudioSummary } from '$lib/types';
   import type { SearchSelectItem } from '@koblibs/ui';
   import { showMessage } from '$lib/context/app.svelte';
-  import FileActionsDropdown from './shared/FileActionsDropdown.svelte';
+  import OverflowMenu from './shared/OverflowMenu.svelte';
+  import MetaLine from './shared/MetaLine.svelte';
   import MoveFileModal from './shared/MoveFileModal.svelte';
 
   interface Props {
@@ -153,7 +154,9 @@
       <div class="file-box" class:unavailable={!file.available}>
         <div class="file-info">
           <div class="file-name" title={file.file_path}>{file.filename}</div>
-          <div class="file-meta">{file.format} · {formatSize(file.size_bytes)}</div>
+          <div class="file-meta">
+            <MetaLine items={[file.format, formatSize(file.size_bytes)]} />
+          </div>
           {#if file.source_metadata?.release_title}
             <div class="release-title" title={file.source_metadata.release_title}>
               {file.source_metadata.release_title}
@@ -164,37 +167,47 @@
           <button
             class="icon-btn small"
             title="Read in browser"
+            aria-label="Read in browser"
             onclick={() => goto(`/library/books/${bookId}/read?format=${file.format}`)}
           >
             <span class="material-icons-outlined">auto_stories</span>
           </button>
-          {#if onSearchReleases}
-            <FileActionsDropdown
-              onSearchReleases={() => onSearchReleases?.()}
-              onRejectAndResearch={handleRejectAndResearch}
-              onReplace={() => handleReplace(file.id)}
-              {rejecting}
-            />
-          {/if}
-          <button
-            class="icon-btn small"
-            title="Move to another book"
-            onclick={() => handleMoveFile(file.id)}
-          >
-            <span class="material-icons-outlined">swap_horiz</span>
-          </button>
-          <button
-            class="icon-btn small"
-            title="Remove file"
-            onclick={() => handleDelete(file.id)}
-            disabled={isDeleting}
-          >
-            {#if isDeleting}
-              <span class="material-icons-outlined">hourglass_empty</span>
-            {:else}
-              <span class="material-icons-outlined">delete_outline</span>
-            {/if}
-          </button>
+          <OverflowMenu
+            variant="icon"
+            icon="more_vert"
+            label="File actions"
+            busy={isDeleting || rejecting}
+            items={[
+              onSearchReleases && {
+                label: 'Search releases',
+                icon: 'search',
+                onSelect: onSearchReleases
+              },
+              onSearchReleases && {
+                label: 'Reject & re-search',
+                icon: 'block',
+                danger: true,
+                onSelect: handleRejectAndResearch
+              },
+              onSearchReleases && {
+                label: 'Replace file',
+                icon: 'find_replace',
+                danger: true,
+                onSelect: () => handleReplace(file.id)
+              },
+              {
+                label: 'Move to another book',
+                icon: 'drive_file_move',
+                onSelect: () => handleMoveFile(file.id)
+              },
+              {
+                label: 'Remove file',
+                icon: 'delete_outline',
+                danger: true,
+                onSelect: () => handleDelete(file.id)
+              }
+            ]}
+          />
         </div>
       </div>
     {/each}
@@ -207,17 +220,23 @@
         <div class="audio-summary-row">
           <span class="material-icons-outlined audio-icon">headphones</span>
           <span class="audio-summary-text">
-            {audioSummary.count}
-            {audioSummary.format} file{audioSummary.count !== 1 ? 's' : ''}
-            · {formatSize(audioSummary.total_size)}
-            {#if audioSummary.total_duration_seconds}
-              · {formatDuration(audioSummary.total_duration_seconds)}
-            {/if}
+            <MetaLine
+              items={[
+                `${audioSummary.count} ${audioSummary.format} file${audioSummary.count !== 1 ? 's' : ''}`,
+                formatSize(audioSummary.total_size),
+                formatDuration(audioSummary.total_duration_seconds)
+              ]}
+            />
           </span>
         </div>
       </div>
       <div class="file-actions">
-        <a class="icon-btn small" href="/library/books/{bookId}/listen" title="Listen">
+        <a
+          class="icon-btn small"
+          href="/library/books/{bookId}/listen"
+          title="Listen"
+          aria-label="Listen"
+        >
           <span class="material-icons-outlined">play_arrow</span>
         </a>
         {#if audioFiles.length > 1}
@@ -239,10 +258,9 @@
           <div class="file-info">
             <div class="file-name">{af.filename}</div>
             <div class="file-meta">
-              {af.format} · {formatSize(af.file_size)}
-              {#if af.duration_seconds}
-                · {formatDuration(af.duration_seconds)}
-              {/if}
+              <MetaLine
+                items={[af.format, formatSize(af.file_size), formatDuration(af.duration_seconds)]}
+              />
             </div>
           </div>
         </div>

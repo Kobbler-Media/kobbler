@@ -1,8 +1,10 @@
 <script lang="ts">
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+
   interface Props {
     title: string;
     times: string;
-    sub: string;
+    sub: (string | null | undefined)[];
     nextLine: string;
     leftLine: string;
     bufferedTitle: string;
@@ -20,7 +22,7 @@
       </span>
       <span class="title">{title}</span>
       {#if times}<span class="times">{times}</span>{/if}
-      {#if sub}<span class="sub">{sub}</span>{/if}
+      {#if sub.some(Boolean)}<span class="sub"><MetaLine items={sub} /></span>{/if}
     </div>
     {#if nextLine}
       <span class="next">{nextLine}</span>

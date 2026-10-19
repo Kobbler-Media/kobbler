@@ -24,6 +24,7 @@
   import LivePlayerControls from './LivePlayerControls.svelte';
   import ChannelRail from './ChannelRail.svelte';
   import { preloadHls, createLiveHls, type LiveHlsHandle } from './liveHls';
+  import { portal } from '$lib/utils/portal';
 
   interface Props {
     channel: LivetvChannel;
@@ -133,9 +134,7 @@
       : ''
   );
 
-  const programmeSub = $derived(
-    [nowEntry?.episode_number, nowEntry?.genres?.[0]].filter(Boolean).join(' · ')
-  );
+  const programmeSub = $derived([nowEntry?.episode_number, nowEntry?.genres?.[0]]);
 
   const nextLine = $derived(
     nextEntry ? `Next ${timeFmt.format(new Date(nextEntry.start_time))}   ${nextEntry.title}` : ''
@@ -193,15 +192,6 @@
       return `${c.lcn ?? ''} ${c.name} ${c.network ?? ''}`.toLowerCase().includes(query);
     });
   });
-
-  function portal(node: HTMLElement) {
-    document.body.appendChild(node);
-    return {
-      destroy() {
-        node.remove();
-      }
-    };
-  }
 
   async function attachPlaylist(next: LivetvSession) {
     if (!videoEl || destroyed) return;

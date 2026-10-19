@@ -5,6 +5,7 @@
   import { loadUsers, showMessage } from '$lib/context/app.svelte';
   import { getAuthState } from '$lib/stores/auth.svelte';
   import { DeleteConfirmModal, SearchSelect, type SearchSelectItem } from '@koblibs/ui';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import * as api from '$lib/api/client';
 
   const auth = getAuthState();
@@ -284,9 +285,7 @@
                 </div>
                 {#if user.display_name || user.timezone}
                   <div class="user-sub muted">
-                    {user.display_name ? user.email : ''}{user.display_name && user.timezone
-                      ? ' · '
-                      : ''}{user.timezone ?? ''}
+                    <MetaLine items={[user.display_name && user.email, user.timezone]} />
                   </div>
                 {/if}
               </div>

@@ -207,6 +207,7 @@
   .content-page-body {
     flex: 1;
     position: relative;
+    container: content-page / inline-size;
   }
 
   .content-page-footer {

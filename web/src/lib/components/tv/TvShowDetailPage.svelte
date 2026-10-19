@@ -12,12 +12,14 @@
   import ContentPageView from '$lib/components/ContentPageView.svelte';
   import GenreChips from '$lib/components/GenreChips.svelte';
   import DualRatingStars from '$lib/components/DualRatingStars.svelte';
-  import { DeleteConfirmModal, SearchSelect } from '@koblibs/ui';
+  import { DeleteConfirmModal } from '@koblibs/ui';
   import TvSeasonAccordion from './TvSeasonAccordion.svelte';
   import EpisodeBatchActions from './EpisodeBatchActions.svelte';
   import { EpisodeBulkSelection } from '$lib/utils/episode-bulk.svelte';
   import BulkSelectToggle from '$lib/components/shared/BulkSelectToggle.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
+  import HeroActions from '../shared/HeroActions.svelte';
+  import MetaLine from '../shared/MetaLine.svelte';
   import KidsAccess from '../shared/KidsAccess.svelte';
   import { getAuthState } from '$lib/stores/auth.svelte';
   import { formatShowStatus, formatDuration } from '$lib/utils/format';
@@ -395,128 +397,91 @@
     {/snippet}
 
     {#snippet actions()}
-      {#if continueEpisode}
-        <button
-          class="continue-btn"
-          type="button"
-          onclick={() => handlePlayEpisode(continueEpisode.id)}
-        >
-          <div class="continue-btn-main">
-            <span class="material-icons-outlined">play_arrow</span>
-            {continueEpisode.isResume ? 'Resume' : 'Play Next'}
-          </div>
-          <span class="continue-btn-episode">{continueEpisode.label}</span>
-          {#if continueEpisode.isResume}
-            <div class="continue-progress">
-              <div class="continue-progress-fill" style="width: {continueProgressPercent}%"></div>
-            </div>
-            <span class="continue-progress-label">
-              {formatDuration(continueEpisode.positionSeconds)}{continueEpisode.totalSeconds
-                ? ` / ${formatDuration(continueEpisode.totalSeconds)}`
-                : ''}
-            </span>
-          {/if}
-        </button>
-      {/if}
-
-      {#if onWatchlistToggle}
-        <button
-          class="watchlist-btn"
-          class:active={show.in_watchlist}
-          type="button"
-          onclick={handleWatchlistChange}
-          title={show.in_watchlist
-            ? 'Remove from your watch list'
-            : 'Add to your watch list — shows up in Up Next'}
-        >
-          <span class="material-icons-outlined">
-            {show.in_watchlist ? 'playlist_add_check' : 'playlist_add'}
-          </span>
-          {show.in_watchlist ? 'On My List' : 'Want to Watch'}
-        </button>
-      {/if}
-
-      <button
-        class="monitor-btn"
-        class:active={show.is_monitored}
-        type="button"
-        onclick={handleMonitorChange}
+      <HeroActions
+        actions={[
+          onWatchlistToggle && {
+            label: show.in_watchlist ? 'On My List' : 'Want to Watch',
+            icon: show.in_watchlist ? 'playlist_add_check' : 'playlist_add',
+            title: show.in_watchlist
+              ? 'Remove from your watch list'
+              : 'Add to your watch list — shows up in Up Next',
+            active: show.in_watchlist,
+            pinned: true,
+            onSelect: handleWatchlistChange
+          },
+          {
+            label: show.is_monitored ? 'Monitored' : 'Monitor',
+            icon: show.is_monitored ? 'star' : 'star_outline',
+            active: show.is_monitored,
+            pinned: true,
+            onSelect: handleMonitorChange
+          },
+          { label: 'Want Missing', icon: 'library_add', onSelect: onWantAllMissing },
+          anyWanted && {
+            label: 'Unwant All',
+            icon: 'playlist_remove',
+            title: 'Drop every outstanding want on this show',
+            onSelect: onUnwantAll
+          },
+          onBulkWatchToggle && {
+            label: allWatched ? 'Mark Unwatched' : 'Mark Watched',
+            icon: allWatched ? 'visibility_off' : 'visibility',
+            onSelect: () => onBulkWatchToggle(!allWatched)
+          },
+          onRewatch &&
+            hasWatchHistory && {
+              label: 'Rewatch from the start',
+              icon: 'restart_alt',
+              onSelect: () => (confirmingRewatch = true)
+            },
+          onAddSeason && { label: 'Add Season', icon: 'add', onSelect: onAddSeason }
+        ]}
+        menuItems={autoWantOptions.map((o) => ({
+          section: 'Auto-want',
+          label: o.label,
+          checked: autoWantMode === o.value,
+          onSelect: () => handleAutoWantChange(o.value)
+        }))}
       >
-        <span class="material-icons-outlined">
-          {show.is_monitored ? 'star' : 'star_outline'}
-        </span>
-        {show.is_monitored ? 'Monitored' : 'Monitor'}
-      </button>
-
-      <div class="auto-want-wrapper">
-        <SearchSelect
-          items={autoWantOptions}
-          value={autoWantMode}
-          onchange={handleAutoWantChange}
-        />
-      </div>
-
-      <button class="btn btn-outline" type="button" onclick={onWantAllMissing}>
-        <span class="material-icons-outlined">library_add</span>
-        Want Missing
-      </button>
-
-      {#if anyWanted}
-        <button
-          class="btn btn-outline"
-          type="button"
-          title="Drop every outstanding want on this show"
-          onclick={onUnwantAll}
-        >
-          <span class="material-icons-outlined">playlist_remove</span>
-          Unwant All
-        </button>
-      {/if}
-
-      {#if onBulkWatchToggle}
-        <button
-          class="btn btn-outline"
-          type="button"
-          onclick={() => onBulkWatchToggle!(!allWatched)}
-        >
-          <span class="material-icons-outlined">
-            {allWatched ? 'visibility_off' : 'visibility'}
-          </span>
-          {allWatched ? 'Mark Unwatched' : 'Mark Watched'}
-        </button>
-      {/if}
-
-      {#if onRewatch && hasWatchHistory}
-        <button class="btn btn-outline" type="button" onclick={() => (confirmingRewatch = true)}>
-          <span class="material-icons-outlined">restart_alt</span>
-          Rewatch from the start
-        </button>
-      {/if}
-
-      {#if onAddSeason}
-        <button class="btn btn-outline" type="button" onclick={onAddSeason}>
-          <span class="material-icons-outlined">add</span>
-          Add Season
-        </button>
-      {/if}
+        {#snippet primary()}
+          {#if continueEpisode}
+            <button
+              class="continue-btn"
+              type="button"
+              onclick={() => handlePlayEpisode(continueEpisode.id)}
+            >
+              <div class="continue-btn-main">
+                <span class="material-icons-outlined">play_arrow</span>
+                {continueEpisode.isResume ? 'Resume' : 'Play Next'}
+              </div>
+              <span class="continue-btn-episode">{continueEpisode.label}</span>
+              {#if continueEpisode.isResume}
+                <div class="continue-progress">
+                  <div
+                    class="continue-progress-fill"
+                    style="width: {continueProgressPercent}%"
+                  ></div>
+                </div>
+                <span class="continue-progress-label">
+                  {formatDuration(continueEpisode.positionSeconds)}{continueEpisode.totalSeconds
+                    ? ` / ${formatDuration(continueEpisode.totalSeconds)}`
+                    : ''}
+                </span>
+              {/if}
+            </button>
+          {/if}
+        {/snippet}
+      </HeroActions>
     {/snippet}
 
     {#snippet meta()}
-      <div class="hero-meta-snippet">
+      <MetaLine>
         {#if show.year}<span>{show.year}</span>{/if}
-        {#if show.year && (show.network || show.status || show.content_rating || runtimeDisplay)}<span
-            class="sep">·</span
-          >{/if}
         {#if show.network}<span>{show.network}</span>{/if}
-        {#if show.network && (show.status || show.content_rating || runtimeDisplay)}<span
-            class="sep">·</span
-          >{/if}
         {#if show.status}<span class="status-pill">{formatShowStatus(show.status)}</span>{/if}
-        {#if show.status && (show.content_rating || runtimeDisplay)}<span class="sep">·</span>{/if}
         {#if show.content_rating}<span class="content-rating">{show.content_rating}</span>{/if}
-        {#if show.content_rating && runtimeDisplay}<span class="sep">·</span>{/if}
         {#if runtimeDisplay}<span>{runtimeDisplay}</span>{/if}
-      </div>
+      </MetaLine>
     {/snippet}
   </EntityHero>
 
@@ -697,21 +662,6 @@
 {/if}
 
 <style>
-  .full-page-main-grid {
-    display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .details-column,
-  .actions-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    min-width: 0;
-  }
-
   .card-section {
     background: var(--card);
     border: 1px solid var(--ring);
@@ -721,10 +671,6 @@
 
   .compact-section {
     padding: 8px 0;
-  }
-
-  .sep {
-    opacity: 0.5;
   }
 
   .content-rating {
@@ -815,53 +761,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .monitor-btn,
-  .watchlist-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
-    border-radius: 100px;
-    border: 1px solid var(--ring);
-    background: var(--bg-2);
-    color: var(--muted);
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 700;
-    transition: all 0.2s;
-  }
-
-  .monitor-btn:hover,
-  .watchlist-btn:hover {
-    border-color: var(--accent);
-    color: var(--ink);
-    transform: translateY(-1px);
-  }
-
-  .monitor-btn.active,
-  .watchlist-btn.active {
-    background: var(--accent-dim);
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  .auto-want-wrapper {
-    min-width: 160px;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
-    border-radius: 100px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s;
-  }
-
   .label {
     font-size: 11px;
     font-weight: 800;
@@ -878,8 +777,8 @@
   }
 
   .cast-grid {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 8px;
   }
 
@@ -942,12 +841,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  @media (max-width: 1100px) {
-    .full-page-main-grid {
-      grid-template-columns: 1fr;
-    }
   }
 
   /* Phone widths: trim the section padding so season rows keep to one line. */

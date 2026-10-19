@@ -7,6 +7,7 @@
   import DiscordSetup from '$lib/components/chat/DiscordSetup.svelte';
   import GoogleChatSetup from '$lib/components/chat/GoogleChatSetup.svelte';
   import * as api from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { ChatIdentitiesResponse, ChatIdentity, ChatPendingPairing } from '$lib/types';
 
   const auth = getAuthState();
@@ -240,9 +241,7 @@
                   <span class="badge">{minutesLeft(pairing)}</span>
                 </div>
                 <div class="row-sub muted">
-                  {pairing.transport} · {pairing.external_id}{pairing.space
-                    ? ` · ${pairing.space}`
-                    : ''}
+                  <MetaLine items={[pairing.transport, pairing.external_id, pairing.space]} />
                 </div>
               </div>
               {#if approvingId === pairing.id}
@@ -466,8 +465,13 @@
                     <span class="badge role">{identity.effective_role}</span>
                   </div>
                   <div class="row-sub muted">
-                    {identity.user_display_name || identity.user_email} ({identity.user_role}) ·
-                    ceiling {identity.max_role} · last seen {formatWhen(identity.last_seen_at)}
+                    <MetaLine
+                      items={[
+                        `${identity.user_display_name || identity.user_email} (${identity.user_role})`,
+                        `ceiling ${identity.max_role}`,
+                        `last seen ${formatWhen(identity.last_seen_at)}`
+                      ]}
+                    />
                   </div>
                   {#if !identity.external_id}
                     <div class="row-sub muted">

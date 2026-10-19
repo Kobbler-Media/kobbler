@@ -3,6 +3,8 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import ContentPageView from '$lib/components/ContentPageView.svelte';
+  import HeroActions from '$lib/components/shared/HeroActions.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import EntityHero from '$lib/components/shared/EntityHero.svelte';
   import SeasonForm from '$lib/components/tv/SeasonForm.svelte';
   import type { SeasonFormData } from '$lib/components/tv/SeasonForm.svelte';
@@ -19,7 +21,7 @@
   import * as api from '$lib/api/client';
   import { SearchSelect } from '@koblibs/ui';
   import { watchStateVersion } from '$lib/stores/watchState.svelte';
-  import { formatEpisodeSearchTitle } from '$lib/utils/format';
+  import { formatCalendarDate, formatEpisodeSearchTitle, pluralize } from '$lib/utils/format';
   import { hasOutstandingWants, unwantMessage } from '$lib/utils/want-status';
   import type { TvSeason, TvShow, SeasonDetailResult } from '$lib/types';
 
@@ -230,14 +232,6 @@
   );
 
   const anyWanted = $derived(hasOutstandingWants(sortedEpisodes));
-
-  const metaSnippet = $derived(() => {
-    const parts: string[] = [];
-    if (season?.air_date) parts.push(season.air_date);
-    const count = season?.episodes.length ?? 0;
-    parts.push(`${count} episode${count !== 1 ? 's' : ''}`);
-    return parts.join(' · ');
-  });
 
   const autoWantOptions = [
     { value: 'inherit', label: 'Inherit' },
@@ -456,37 +450,38 @@
       hideRating={true}
     >
       {#snippet meta()}
-        <div class="hero-meta-snippet">
-          {metaSnippet()}
-        </div>
+        <MetaLine
+          items={[
+            formatCalendarDate(season!.air_date),
+            pluralize(season!.episodes.length, 'episode')
+          ]}
+        />
       {/snippet}
 
       {#snippet actions()}
-        <button class="btn btn-primary" type="button" onclick={handleWantSeason}>
-          <span class="material-icons-outlined">bookmark_add</span>
-          Want Missing
-        </button>
-        {#if anyWanted}
-          <button
-            class="btn btn-outline"
-            type="button"
-            title="Drop every outstanding want in this season"
-            onclick={handleUnwantSeason}
-          >
-            <span class="material-icons-outlined">playlist_remove</span>
-            Unwant All
-          </button>
-        {/if}
-        <button
-          class="btn btn-outline"
-          type="button"
-          onclick={() => handleBulkSeasonWatch(!allWatched)}
-        >
-          <span class="material-icons-outlined">
-            {allWatched ? 'visibility_off' : 'visibility'}
-          </span>
-          {allWatched ? 'Mark Unwatched' : 'Mark Watched'}
-        </button>
+        <HeroActions
+          actions={[
+            {
+              label: 'Want Missing',
+              icon: 'bookmark_add',
+              tone: 'primary',
+              pinned: true,
+              onSelect: handleWantSeason
+            },
+            {
+              label: allWatched ? 'Mark Unwatched' : 'Mark Watched',
+              icon: allWatched ? 'visibility_off' : 'visibility',
+              pinned: true,
+              onSelect: () => handleBulkSeasonWatch(!allWatched)
+            },
+            anyWanted && {
+              label: 'Unwant All',
+              icon: 'playlist_remove',
+              title: 'Drop every outstanding want in this season',
+              onSelect: handleUnwantSeason
+            }
+          ]}
+        />
       {/snippet}
     </EntityHero>
 
@@ -538,7 +533,7 @@
         </div>
       </div>
 
-      <div class="actions-column">
+      <div class="actions-column side-first">
         <div class="card-section">
           <div class="label">Manage</div>
           <div class="manage-actions">
@@ -627,6 +622,10 @@
 {/if}
 
 <style>
+  .full-page-main-grid {
+    --detail-side-width: 340px;
+  }
+
   .loading-state {
     display: flex;
     align-items: center;
@@ -681,21 +680,6 @@
   .btn-danger:hover {
     background: rgba(239, 68, 68, 0.1);
     border-color: var(--error, #ef4444);
-  }
-
-  .full-page-main-grid {
-    display: grid;
-    grid-template-columns: 1fr 340px;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .details-column,
-  .actions-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    min-width: 0;
   }
 
   .card-section {
@@ -790,16 +774,6 @@
   .btn-primary {
     background: var(--accent);
     color: var(--bg);
-  }
-
-  @media (max-width: 1100px) {
-    .full-page-main-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .actions-column {
-      order: -1;
-    }
   }
 
   /* Phone widths: trim the section padding so episode rows have room. */

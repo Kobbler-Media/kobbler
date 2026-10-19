@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { EnrichedDownload } from '$lib/api/client';
   import * as downloadsStore from '$lib/stores/downloads.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
 
   type ViewFilter = 'all' | 'active' | 'completed' | 'failed';
 
@@ -277,35 +278,33 @@
                     {download.media?.title || download.name}
                   </a>
                   <div class="download-meta">
-                    {#if download.media?.subtitle}
-                      <span class="subtitle">{download.media.subtitle}</span>
-                    {/if}
-                    {#if download.media?.author}
-                      {#if download.media?.subtitle}
-                        <span class="separator">·</span>
-                      {/if}
-                      <a
-                        href={download.media.author_id
-                          ? `/authors/${download.media.author_id}`
-                          : '#'}
-                        class="byline-link"
-                      >
-                        {download.media.author}
-                      </a>
-                    {/if}
-                    {#if download.media?.series}
-                      {#if download.media?.author || download.media?.subtitle}
-                        <span class="separator">·</span>
-                      {/if}
-                      <a
-                        href={download.media.series_id
-                          ? `/series/${download.media.series_id}`
-                          : '#'}
-                        class="byline-link"
-                      >
-                        {download.media
-                          .series}{#if download.media.series_index}{` #${download.media.series_index}`}{/if}
-                      </a>
+                    {#if download.media?.subtitle || download.media?.author || download.media?.series}
+                      <MetaLine>
+                        {#if download.media?.subtitle}
+                          <span class="subtitle">{download.media.subtitle}</span>
+                        {/if}
+                        {#if download.media?.author}
+                          <a
+                            href={download.media.author_id
+                              ? `/authors/${download.media.author_id}`
+                              : '#'}
+                            class="byline-link"
+                          >
+                            {download.media.author}
+                          </a>
+                        {/if}
+                        {#if download.media?.series}
+                          <a
+                            href={download.media.series_id
+                              ? `/series/${download.media.series_id}`
+                              : '#'}
+                            class="byline-link"
+                          >
+                            {download.media
+                              .series}{#if download.media.series_index}{` #${download.media.series_index}`}{/if}
+                          </a>
+                        {/if}
+                      </MetaLine>
                     {/if}
                     {#if download.protocol}
                       <span class="protocol-badge">{download.protocol}</span>
@@ -316,16 +315,16 @@
                       <div class="progress-fill" style:width="{download.progress}%"></div>
                     </div>
                     <div class="download-status">
-                      {Math.round(download.progress)}%
-                      {#if size}
-                        · {formatSize((download.progress / 100) * size)} of {formatSize(size)}
-                      {/if}
-                      {#if speed}
-                        · {speed}
-                      {/if}
-                      {#if eta}
-                        · ~{eta}
-                      {/if}
+                      <MetaLine
+                        items={[
+                          `${Math.round(download.progress)}%`,
+                          size
+                            ? `${formatSize((download.progress / 100) * size)} of ${formatSize(size)}`
+                            : null,
+                          speed,
+                          eta && `~${eta}`
+                        ]}
+                      />
                     </div>
                   {:else}
                     <div class="download-status pending">
@@ -407,18 +406,26 @@
                   {#if callbackFailed}
                     <div class="download-status failed">
                       <span class="material-icons-outlined">error_outline</span>
-                      Ingest failed: {download.callback_error}
-                      · {formatRelativeTime(download.updated_at)}
+                      <MetaLine
+                        items={[
+                          `Ingest failed: ${download.callback_error}`,
+                          formatRelativeTime(download.updated_at)
+                        ]}
+                      />
                     </div>
                   {:else}
                     <div class="download-status complete">
                       <span class="material-icons-outlined"
                         >{download.status === 'needs_review' ? 'rate_review' : 'check'}</span
                       >
-                      {download.status === 'needs_review'
-                        ? 'Queued for ingest'
-                        : 'Added to library'}
-                      · {formatRelativeTime(download.updated_at)}
+                      <MetaLine
+                        items={[
+                          download.status === 'needs_review'
+                            ? 'Queued for ingest'
+                            : 'Added to library',
+                          formatRelativeTime(download.updated_at)
+                        ]}
+                      />
                     </div>
                     {#if download.status === 'needs_review'}
                       <span class="review-note">Sent to ingest queue</span>
@@ -488,8 +495,12 @@
                   {/if}
                   <div class="download-status failed">
                     <span class="material-icons-outlined">error_outline</span>
-                    {download.error || 'Download failed'}
-                    · {formatRelativeTime(download.updated_at)}
+                    <MetaLine
+                      items={[
+                        download.error || 'Download failed',
+                        formatRelativeTime(download.updated_at)
+                      ]}
+                    />
                   </div>
                 </div>
                 <div class="download-actions">
@@ -700,11 +711,6 @@
 
   .subtitle {
     color: var(--muted);
-  }
-
-  .separator {
-    color: var(--muted);
-    opacity: 0.5;
   }
 
   /* Uses global .progress-track and .progress-fill */

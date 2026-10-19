@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { LivetvChannel, LivetvGuideEntry } from '$lib/types';
   import RecordButton from './RecordButton.svelte';
   import { genreTint } from './tint';
@@ -26,15 +27,11 @@
     return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
   });
 
-  const timing = $derived(
-    [
-      `${timeFmt.format(new Date(entry.start_time))} – ${timeFmt.format(new Date(entry.end_time))}`,
-      channel.name,
-      durationLabel
-    ]
-      .filter(Boolean)
-      .join(' · ')
-  );
+  const timing = $derived([
+    `${timeFmt.format(new Date(entry.start_time))} – ${timeFmt.format(new Date(entry.end_time))}`,
+    channel.name,
+    durationLabel
+  ]);
 
   const subtitle = $derived(
     [entry.episode_number, entry.episode_title].filter(Boolean).join(' · ')
@@ -56,7 +53,7 @@
       {#if genre}
         <span class="genre" style:background={genreTint(genre)}>{genre.toUpperCase()}</span>
       {/if}
-      <span class="timing">{timing}</span>
+      <span class="timing"><MetaLine items={timing} /></span>
       {#if entry.repeat_count > 0}
         <span class="repeat"
           >{entry.repeat_count} other airing{entry.repeat_count === 1 ? '' : 's'}</span

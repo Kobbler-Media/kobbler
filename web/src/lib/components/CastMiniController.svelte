@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import { getCastState, endCastSession, castSendMessage } from '$lib/stores/cast.svelte';
 
   const cast = getCastState();
@@ -49,9 +50,12 @@
         {#if cast.mediaState?.metadata?.title}
           <span class="cast-title">{cast.mediaState.metadata.title}</span>
           <span class="cast-subtitle">
-            {cast.deviceName ?? 'Cast device'} &middot; {formatTime(cast.mediaState.currentTime)} / {formatTime(
-              cast.mediaState.duration
-            )}
+            <MetaLine
+              items={[
+                cast.deviceName ?? 'Cast device',
+                `${formatTime(cast.mediaState.currentTime)} / ${formatTime(cast.mediaState.duration)}`
+              ]}
+            />
           </span>
         {:else}
           <span class="cast-device">{cast.deviceName ?? 'Cast device'}</span>

@@ -7,7 +7,8 @@
   import { isActivelyWanted } from '$lib/utils/want-status';
   import EntityHero from '$lib/components/shared/EntityHero.svelte';
   import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
-  import WatchToggle from '$lib/components/shared/WatchToggle.svelte';
+  import HeroActions from '$lib/components/shared/HeroActions.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import FilesList from '$lib/components/shared/FilesList.svelte';
   import EpisodeForm from '$lib/components/tv/EpisodeForm.svelte';
   import type { EpisodeFormData } from '$lib/components/tv/EpisodeForm.svelte';
@@ -25,7 +26,7 @@
   import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
   import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
   import * as api from '$lib/api/client';
-  import { formatEpisodeSearchTitle } from '$lib/utils/format';
+  import { formatCalendarDate, formatEpisodeSearchTitle } from '$lib/utils/format';
   import type {
     TvEpisode,
     TvEpisodeFile,
@@ -481,53 +482,57 @@
       hideRating={true}
     >
       {#snippet actions()}
-        {#if files.length > 0}
-          <PlaybackArea
-            positionSeconds={watchState?.position_seconds ?? null}
-            totalSeconds={episode!.runtime ? episode!.runtime * 60 : null}
-            watched={watchState?.watched ?? false}
-            loading={playback.startingFileId !== null}
-            variant="hero"
-            onPlay={() =>
-              playback.play(files[0].id, undefined, watchState?.position_seconds ?? undefined)}
-          />
-        {:else if statsState.stats.kobload_configured}
-          <PlaybackArea
-            mode="stream"
-            positionSeconds={watchState?.position_seconds ?? null}
-            totalSeconds={episode!.runtime ? episode!.runtime * 60 : null}
-            watched={watchState?.watched ?? false}
-            loading={stream.resolving || stream.streamLoading}
-            variant="hero"
-            onPlay={stream.autoPlay}
-            onPickStream={stream.openModal}
-          />
-        {/if}
-
-        <WatchToggle
-          watched={watchState?.watched ?? false}
-          loading={loadingWatch}
-          onToggle={toggleWatched}
-        />
-
-        {#if isActivelyWanted(episode!.want_status)}
-          <button class="btn btn-outline" type="button" onclick={handleUnwant}>
-            <span class="material-icons-outlined">close</span>
-            Remove from Wanted
-          </button>
-        {:else if !episode!.is_in_library}
-          <button class="btn btn-primary" type="button" onclick={handleWant}>
-            <span class="material-icons-outlined">bookmark_add</span>
-            Want
-          </button>
-        {/if}
-
-        {#if files.length === 0 && statsState.stats.kobload_configured}
-          <button class="btn btn-outline" type="button" onclick={() => (showReleaseSearch = true)}>
-            <span class="material-icons-outlined">search</span>
-            Search Releases
-          </button>
-        {/if}
+        <HeroActions
+          actions={[
+            {
+              label: watchState?.watched ? 'Watched' : 'Not Watched',
+              icon: watchState?.watched ? 'visibility' : 'visibility_off',
+              active: watchState?.watched ?? false,
+              busy: loadingWatch,
+              pinned: true,
+              onSelect: toggleWatched
+            },
+            isActivelyWanted(episode!.want_status)
+              ? { label: 'Remove from Wanted', icon: 'close', onSelect: handleUnwant }
+              : !episode!.is_in_library && {
+                  label: 'Want',
+                  icon: 'bookmark_add',
+                  tone: 'primary',
+                  onSelect: handleWant
+                },
+            files.length === 0 &&
+              statsState.stats.kobload_configured && {
+                label: 'Search Releases',
+                icon: 'search',
+                onSelect: () => (showReleaseSearch = true)
+              }
+          ]}
+        >
+          {#snippet primary()}
+            {#if files.length > 0}
+              <PlaybackArea
+                positionSeconds={watchState?.position_seconds ?? null}
+                totalSeconds={episode!.runtime ? episode!.runtime * 60 : null}
+                watched={watchState?.watched ?? false}
+                loading={playback.startingFileId !== null}
+                variant="hero"
+                onPlay={() =>
+                  playback.play(files[0].id, undefined, watchState?.position_seconds ?? undefined)}
+              />
+            {:else if statsState.stats.kobload_configured}
+              <PlaybackArea
+                mode="stream"
+                positionSeconds={watchState?.position_seconds ?? null}
+                totalSeconds={episode!.runtime ? episode!.runtime * 60 : null}
+                watched={watchState?.watched ?? false}
+                loading={stream.resolving || stream.streamLoading}
+                variant="hero"
+                onPlay={stream.autoPlay}
+                onPickStream={stream.openModal}
+              />
+            {/if}
+          {/snippet}
+        </HeroActions>
       {/snippet}
 
       {#snippet meta()}
@@ -539,17 +544,13 @@
               <a href="/tv/seasons/{parentSeason.id}">Season {parentSeason.season_sort_order}</a>
             </div>
           {/if}
-          <div class="episode-meta-line">
-            <span>Episode {episode!.episode_sort_order}</span>
-            {#if episode!.air_date}
-              <span class="sep">&middot;</span>
-              <span>{episode!.air_date}</span>
-            {/if}
-            {#if episode!.runtime}
-              <span class="sep">&middot;</span>
-              <span>{episode!.runtime}m</span>
-            {/if}
-          </div>
+          <MetaLine
+            items={[
+              `Episode ${episode!.episode_sort_order}`,
+              formatCalendarDate(episode!.air_date),
+              episode!.runtime && `${episode!.runtime}m`
+            ]}
+          />
         </div>
       {/snippet}
     </EntityHero>
@@ -564,12 +565,13 @@
         {/if}
       </div>
 
-      <div class="actions-column">
+      <div class="actions-column side-first">
         {#if files.length > 0}
           <div class="card-section">
             <div class="label">Files</div>
             <FilesList
               {files}
+              noun="episode"
               {deletingFileId}
               startingPlaybackFileId={playback.startingFileId}
               onPlay={(fileId) => playback.play(fileId)}
@@ -714,21 +716,6 @@
   }
 
   /* Two-column layout */
-  .full-page-main-grid {
-    display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .details-column,
-  .actions-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    min-width: 0;
-  }
-
   .card-section {
     background: var(--card);
     border: 1px solid var(--ring);
@@ -757,19 +744,6 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-  }
-
-  .episode-meta-line {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 14px;
-    font-weight: 500;
-  }
-
-  .sep {
-    opacity: 0.5;
   }
 
   /* Breadcrumb in meta snippet */
@@ -843,13 +817,4 @@
   }
 
   /* Responsive */
-  @media (max-width: 1100px) {
-    .full-page-main-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .actions-column {
-      order: -1;
-    }
-  }
 </style>

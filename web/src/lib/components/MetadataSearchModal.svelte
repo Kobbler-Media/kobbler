@@ -12,6 +12,7 @@
     mergeMetadata
   } from '$lib/api/client';
   import { getProviderCode, getProviderColor } from '$lib/utils/format';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
 
   type SearchMode = 'book' | 'author' | 'series';
 
@@ -436,23 +437,27 @@
                     <span class="source-tag" style="background: {getProviderColor(result.provider)}"
                       >{getProviderCode(result.provider)}</span
                     >
-                    {result.authors?.join(', ') || 'Unknown Author'}
-                    {#if result.publish_date}
-                      &middot; {result.publish_date.substring(0, 4)}
-                    {/if}
-                    {#if result.series}
-                      &middot; {result.series}
-                      {#if result.series_index}{` #${result.series_index}`}{/if}
-                    {/if}
+                    <MetaLine
+                      items={[
+                        result.authors?.join(', ') || 'Unknown Author',
+                        result.publish_date?.substring(0, 4),
+                        result.series && result.series_index
+                          ? `${result.series} #${result.series_index}`
+                          : result.series
+                      ]}
+                    />
                   </div>
                   {#if result.external_id || result.isbn}
                     <div class="search-result-meta secondary">
-                      {#if result.external_id}ID: {result.external_id}{/if}
-                      {#if result.isbn}{result.external_id ? ' · ' : ''}ISBN: {result.isbn}{/if}
-                      {#if result.rating}
-                        &middot; {result.rating.toFixed(2)} ★
-                        {#if result.rating_count}({(result.rating_count / 1000).toFixed(0)}k){/if}
-                      {/if}
+                      <MetaLine
+                        items={[
+                          result.external_id && `ID: ${result.external_id}`,
+                          result.isbn && `ISBN: ${result.isbn}`,
+                          result.rating
+                            ? `${result.rating.toFixed(2)} ★${result.rating_count ? ` (${(result.rating_count / 1000).toFixed(0)}k)` : ''}`
+                            : null
+                        ]}
+                      />
                     </div>
                   {/if}
                 </div>
@@ -484,12 +489,12 @@
                     <span class="source-tag" style="background: {getProviderColor(result.provider)}"
                       >{getProviderCode(result.provider)}</span
                     >
-                    {#if result.book_count}
-                      {result.book_count} books
-                    {/if}
-                    {#if result.confidence}
-                      &middot; {Math.round(result.confidence * 100)}% match
-                    {/if}
+                    <MetaLine
+                      items={[
+                        result.book_count ? `${result.book_count} books` : null,
+                        result.confidence ? `${Math.round(result.confidence * 100)}% match` : null
+                      ]}
+                    />
                   </div>
                   {#if result.series_names && result.series_names.length > 0}
                     <div class="search-result-series">
@@ -527,10 +532,12 @@
                     <span class="source-tag" style="background: {getProviderColor(result.provider)}"
                       >{getProviderCode(result.provider)}</span
                     >
-                    {result.authors?.join(', ') || 'Unknown Author'}
-                    {#if result.book_count}
-                      &middot; {result.book_count} books
-                    {/if}
+                    <MetaLine
+                      items={[
+                        result.authors?.join(', ') || 'Unknown Author',
+                        result.book_count ? `${result.book_count} books` : null
+                      ]}
+                    />
                   </div>
                   {#if result.description}
                     <div class="search-result-bio">

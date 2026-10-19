@@ -4,6 +4,8 @@
   import { getPersonFilmography, wantPersonCredit, dismissPersonCredit } from '$lib/api/client';
   import { isActivelyWanted } from '$lib/utils/want-status';
   import { showMessage } from '$lib/context/app.svelte';
+  import { formatLifeDates } from '$lib/utils/format';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
 
   interface Props {
     person: PersonDetail;
@@ -74,11 +76,7 @@
   <div class="header-section">
     {#if person.birth_date || person.death_date}
       <div class="dates">
-        {#if person.birth_date}Born: {person.birth_date}{/if}
-        {#if person.birth_date && person.death_date}
-          &middot;
-        {/if}
-        {#if person.death_date}Died: {person.death_date}{/if}
+        <MetaLine items={formatLifeDates(person.birth_date, person.death_date)} />
       </div>
     {/if}
   </div>

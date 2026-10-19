@@ -4,6 +4,8 @@
   import { goto } from '$app/navigation';
   import ContentPageView from '$lib/components/ContentPageView.svelte';
   import EntityHero from '$lib/components/shared/EntityHero.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import { formatLifeDates } from '$lib/utils/format';
   import IdentifierLinks from '$lib/components/IdentifierLinks.svelte';
   import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
   import PersonForm from '$lib/components/people/PersonForm.svelte';
@@ -354,17 +356,6 @@
     }
   };
 
-  function formatDates(person: PersonDetail): string {
-    const parts: string[] = [];
-    if (person.birth_date) {
-      parts.push(`b. ${person.birth_date}`);
-    }
-    if (person.death_date) {
-      parts.push(`d. ${person.death_date}`);
-    }
-    return parts.join(' · ');
-  }
-
   function getWantStatusBadge(status?: string): { text: string; class: string } | null {
     switch (status) {
       case 'wanted':
@@ -435,26 +426,24 @@
       description={person.bio}
     >
       {#snippet subtitle()}
-        <div class="hero-meta">
+        <MetaLine>
           {#if person?.known_for_department}
             <span class="department-label">{person.known_for_department}</span>
           {/if}
-          {#if person?.known_for_department && (person?.birth_date || person?.death_date)}
-            <span class="meta-sep">·</span>
-          {/if}
-          {#if person?.birth_date || person?.death_date}
-            <span class="dates-text">{formatDates(person!)}</span>
-          {/if}
+          {#each formatLifeDates(person?.birth_date, person?.death_date) as line (line)}
+            <span class="life-detail">{line}</span>
+          {/each}
           {#if person?.place_of_birth}
-            <span class="meta-sep">·</span>
-            <span class="place-text">{person.place_of_birth}</span>
+            <span class="life-detail">{person.place_of_birth}</span>
           {/if}
-        </div>
+        </MetaLine>
       {/snippet}
 
       {#snippet meta()}
         <span class="hero-stat">
-          {libraryMovieCount} movies · {libraryTvCount} TV shows in library
+          <MetaLine
+            items={[`${libraryMovieCount} movies`, `${libraryTvCount} TV shows in library`]}
+          />
         </span>
       {/snippet}
 
@@ -481,7 +470,7 @@
       {/snippet}
     </EntityHero>
 
-    <div class="main-grid page-container">
+    <div class="full-page-main-grid page-container">
       <!-- Left column: Filmography -->
       <div class="filmography-column">
         <div class="section card-section">
@@ -644,7 +633,7 @@
       </div>
 
       <!-- Right column: Monitoring sidebar -->
-      <div class="sidebar-column">
+      <div class="sidebar-column side-first">
         <div class="section card-section accent-border">
           <div class="collection-header">
             <div class="label">Monitoring</div>
@@ -661,9 +650,11 @@
           </div>
 
           <div class="stat-row">
-            <span class="stat-text"
-              >{libraryMovieCount} movies · {libraryTvCount} TV shows in library</span
-            >
+            <span class="stat-text">
+              <MetaLine
+                items={[`${libraryMovieCount} movies`, `${libraryTvCount} TV shows in library`]}
+              />
+            </span>
           </div>
 
           <div class="auto-want-row">
@@ -722,26 +713,12 @@
   }
 
   /* ── Hero extras ── */
-  .hero-meta {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
   .department-label {
     font-weight: 600;
     color: var(--accent);
   }
 
-  .meta-sep {
-    color: var(--muted);
-    opacity: 0.5;
-  }
-
-  .dates-text,
-  .place-text {
-    color: var(--muted);
+  .life-detail {
     font-size: 14px;
   }
 
@@ -784,20 +761,6 @@
   }
 
   /* ── Main grid ── */
-  .main-grid {
-    display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .filmography-column,
-  .sidebar-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-
   .card-section {
     background: var(--card);
     border: 1px solid var(--ring);
@@ -1220,16 +1183,6 @@
   }
 
   /* ── Responsive ── */
-  @media (max-width: 1100px) {
-    .main-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .sidebar-column {
-      order: -1;
-    }
-  }
-
   @media (max-width: 640px) {
     .section-header {
       flex-direction: column;

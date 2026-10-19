@@ -9,6 +9,7 @@
   import { getBookListStatusBadge } from '$lib/utils/book-status';
   import EntityHero from './shared/EntityHero.svelte';
   import ContentPageView from './ContentPageView.svelte';
+  import MetaLine from './shared/MetaLine.svelte';
   import IdentifierLinks from './IdentifierLinks.svelte';
 
   interface Props {
@@ -219,11 +220,14 @@
   <EntityHero title={author.name} coverUrl={getAvatarUrl()} avatar={true} description={author.bio}>
     {#snippet subtitle()}
       <div class="hero-meta">
-        {author.total_book_count > author.book_count
-          ? `${author.book_count} of ${author.total_book_count} books`
-          : `${author.book_count} books`}{author.total_series_count
-          ? ` · ${author.total_series_count} series`
-          : ''}
+        <MetaLine
+          items={[
+            author.total_book_count > author.book_count
+              ? `${author.book_count} of ${author.total_book_count} books`
+              : `${author.book_count} books`,
+            author.total_series_count && `${author.total_series_count} series`
+          ]}
+        />
       </div>
     {/snippet}
 
@@ -283,7 +287,12 @@
                     {group.seriesName}
                   </div>
                   <div class="series-section-meta">
-                    {group.ownedCount} of {group.totalCount} books · {groupProgressPercent}%
+                    <MetaLine
+                      items={[
+                        `${group.ownedCount} of ${group.totalCount} books`,
+                        `${groupProgressPercent}%`
+                      ]}
+                    />
                   </div>
                 </div>
                 <span class="series-section-actions">
@@ -334,12 +343,12 @@
                       <div class="book-list-info">
                         <div class="book-list-title">{book.title}</div>
                         <div class="book-list-meta">
-                          {#if book.series_index}
-                            #{book.series_index}
-                          {/if}
-                          {#if book.pubdate}
-                            · {new Date(book.pubdate).getFullYear()}
-                          {/if}
+                          <MetaLine
+                            items={[
+                              book.series_index && `#${book.series_index}`,
+                              book.pubdate && new Date(book.pubdate).getFullYear()
+                            ]}
+                          />
                         </div>
                       </div>
                       <span class="status-pill {status.class}" class:pulse={isActive(status.class)}
@@ -385,7 +394,7 @@
       </div>
     </div>
 
-    <div class="sidebar-column">
+    <div class="sidebar-column side-first">
       <!-- Combined Collection + Auto-want -->
       <div class="section card-section accent-border">
         <div class="collection-header">
@@ -462,20 +471,6 @@
 </ContentPageView>
 
 <style>
-  .full-page-main-grid {
-    display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: 32px;
-    align-items: start;
-  }
-
-  .books-column,
-  .sidebar-column {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-
   .card-section {
     background: var(--card);
     border: 1px solid var(--ring);
@@ -859,16 +854,6 @@
   .skip-btn:hover:not(:disabled) {
     background: var(--ring);
     color: var(--ink);
-  }
-
-  @media (max-width: 1100px) {
-    .full-page-main-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .sidebar-column {
-      order: -1;
-    }
   }
 
   @media (max-width: 600px) {

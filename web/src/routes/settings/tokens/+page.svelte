@@ -4,6 +4,7 @@
   import { getDevicesState, setCreatedIngestToken } from '$lib/stores/devices.svelte';
   import { loadIngestTokens, showMessage, copyText } from '$lib/context/app.svelte';
   import { getAuthState } from '$lib/stores/auth.svelte';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import * as api from '$lib/api/client';
 
   const auth = getAuthState();
@@ -194,8 +195,12 @@
               {/if}
               <code class="token-value">{token.token}</code>
               <div class="token-meta muted">
-                Created {new Date(token.created_at).toLocaleString()}
-                {token.revoked ? ' · Revoked' : ''}
+                <MetaLine
+                  items={[
+                    `Created ${new Date(token.created_at).toLocaleString()}`,
+                    token.revoked && 'Revoked'
+                  ]}
+                />
               </div>
             </div>
             <div class="token-actions">

@@ -229,7 +229,7 @@
           disabled={bulkLoading}
           onclick={() => onBulkReassign?.([...selectedIds], 'Selected files')}
         >
-          <span class="material-icons-outlined">swap_horiz</span>
+          <span class="material-icons-outlined">drive_file_move</span>
           Reassign
         </button>
       {/if}

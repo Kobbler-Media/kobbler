@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { LivetvRecording, LivetvSeriesRule } from '$lib/types';
 
   interface Props {
@@ -24,16 +25,12 @@
     return `+${before} / +${after} min padding`;
   });
 
-  const meta = $derived(
-    [
-      recording.episode_number,
-      recording.channel_name,
-      `${clock(recording.scheduled_start)} – ${clock(recording.scheduled_end)}`,
-      padding
-    ]
-      .filter(Boolean)
-      .join(' · ')
-  );
+  const meta = $derived([
+    recording.episode_number,
+    recording.channel_name,
+    `${clock(recording.scheduled_start)} – ${clock(recording.scheduled_end)}`,
+    padding
+  ]);
 </script>
 
 <article class="row">
@@ -57,7 +54,7 @@
         <span class="moved">moved by a clash</span>
       {/if}
     </div>
-    <span class="meta">{meta}</span>
+    <span class="meta"><MetaLine items={meta} /></span>
   </div>
   <button type="button" class="ghost-btn" disabled={busy} onclick={() => onCancel(recording)}>
     Cancel

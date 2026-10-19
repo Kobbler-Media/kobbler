@@ -3,6 +3,7 @@
   import { showMessage } from '$lib/context/app.svelte';
   import { formatTimeAgo } from '$lib/stores/jobs.svelte';
   import * as api from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { StremioHistoryItem } from '$lib/api/client';
 
   type Filter = 'available' | 'imported' | 'all';
@@ -168,9 +169,13 @@
                 {#if item.imported}<span class="pill">Imported</span>{/if}
               </span>
               <span class="meta muted">
-                {item.media_type === 'tv' ? 'Series' : 'Movie'} · {item.progress} · {formatTimeAgo(
-                  item.last_watched
-                )}
+                <MetaLine
+                  items={[
+                    item.media_type === 'tv' ? 'Series' : 'Movie',
+                    item.progress,
+                    formatTimeAgo(item.last_watched)
+                  ]}
+                />
               </span>
               {#if item.import_error}
                 <span class="meta import-error">{item.import_error}</span>

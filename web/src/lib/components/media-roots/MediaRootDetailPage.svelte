@@ -333,7 +333,7 @@
                   disabled={searchBulkLoading}
                   onclick={() => onBulkReassign?.([...selectedSearchIds], 'Selected files')}
                 >
-                  <span class="material-icons-outlined">swap_horiz</span>
+                  <span class="material-icons-outlined">drive_file_move</span>
                   Reassign
                 </button>
               {/if}
@@ -388,7 +388,7 @@
                     title="Reassign"
                     onclick={() => onBulkReassign?.([result.id], result.file_name)}
                   >
-                    <span class="material-icons-outlined">swap_horiz</span>
+                    <span class="material-icons-outlined">drive_file_move</span>
                   </button>
                 {/if}
                 <button

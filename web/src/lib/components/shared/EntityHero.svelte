@@ -372,8 +372,7 @@
     font-weight: 400;
   }
 
-  .hero-meta-snippet,
-  .hero-meta-snippet :global(.hero-meta-snippet) {
+  .hero-meta-snippet {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -381,10 +380,6 @@
     color: var(--muted);
     font-size: 14px;
     font-weight: 500;
-  }
-
-  .hero-meta-snippet :global(.hero-meta-snippet > span) {
-    white-space: nowrap;
   }
 
   /* Actions */
@@ -437,6 +432,7 @@
       flex-direction: column;
       align-items: center;
       text-align: center;
+      --meta-line-justify: center;
     }
 
     .hero-details {
@@ -450,7 +446,6 @@
 
     .hero-meta-row,
     .hero-meta-snippet,
-    .hero-meta-snippet :global(.hero-meta-snippet),
     .hero-actions {
       justify-content: center;
     }

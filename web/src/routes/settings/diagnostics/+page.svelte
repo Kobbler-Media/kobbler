@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import * as api from '$lib/api/client';
+  import MetaLine from '$lib/components/shared/MetaLine.svelte';
   import type { PlaybackReport } from '$lib/types';
 
   let reports = $state<PlaybackReport[]>([]);
@@ -113,15 +114,18 @@
                 {#if path}<span class="pill">{path}</span>{/if}
               </div>
               <div class="report-meta muted">
-                {kindLabel(report.client_kind)}
-                {#if report.device_label}· {report.device_label}{/if}
-                {#if report.app_version}· v{report.app_version}{/if}
-                · {relative(report.created_at)}
+                <MetaLine
+                  items={[
+                    kindLabel(report.client_kind),
+                    report.device_label,
+                    report.app_version && `v${report.app_version}`,
+                    relative(report.created_at)
+                  ]}
+                />
               </div>
               {#if report.media_type}
                 <div class="report-meta muted">
-                  {report.media_type}{#if report.media_id}
-                    · {report.media_id}{/if}
+                  <MetaLine items={[report.media_type, report.media_id]} />
                 </div>
               {/if}
             </div>
