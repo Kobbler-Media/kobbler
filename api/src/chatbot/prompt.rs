@@ -133,7 +133,10 @@ mod tests {
     #[test]
     fn the_date_line_names_the_day_in_words() {
         let line = date_line(time::macros::date!(2026 - 10 - 19));
-        assert!(line.starts_with("Today is Monday 19 October 2026."), "{line}");
+        assert!(
+            line.starts_with("Today is Monday 19 October 2026."),
+            "{line}"
+        );
     }
 
     /// Promising what the registry cannot do is the contradiction this model

@@ -722,7 +722,8 @@ mod tests {
     fn usage_is_read_from_the_trailing_chunk_with_no_choices() {
         let mut acc = StreamAccumulator::new();
         acc.push_chunk(&chunk(json!({"content": "Hi"})));
-        let trailer = json!({"choices": [], "usage": {"prompt_tokens": 6956, "completion_tokens": 45}});
+        let trailer =
+            json!({"choices": [], "usage": {"prompt_tokens": 6956, "completion_tokens": 45}});
         assert_eq!(acc.push_chunk(&trailer), None);
         assert_eq!(
             acc.finish().usage,
