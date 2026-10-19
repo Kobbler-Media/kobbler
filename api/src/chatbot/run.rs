@@ -171,7 +171,12 @@ async fn execute(
         })
         .await;
         heartbeat.abort();
-        log.llm_round(round_started.elapsed(), None, None);
+        let usage = completion.as_ref().ok().and_then(|c| c.usage);
+        log.llm_round(
+            round_started.elapsed(),
+            usage.map(|u| u.prompt_tokens),
+            usage.map(|u| u.completion_tokens),
+        );
 
         let completion = match completion {
             Ok(c) => c,

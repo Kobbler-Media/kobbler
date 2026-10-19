@@ -297,6 +297,14 @@ impl ToolCall {
 pub struct Completion {
     pub content: String,
     pub tool_calls: Vec<ToolCall>,
+    /// `None` when the provider ignored `stream_options.include_usage`.
+    pub usage: Option<Usage>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Usage {
+    pub prompt_tokens: i32,
+    pub completion_tokens: i32,
 }
 
 /// Accumulates one streamed completion.
@@ -310,6 +318,7 @@ pub struct StreamAccumulator {
     content: String,
     slots: Vec<ToolCall>,
     by_index: HashMap<u64, usize>,
+    usage: Option<Usage>,
 }
 
 impl StreamAccumulator {
@@ -320,6 +329,15 @@ impl StreamAccumulator {
     /// Fold one `data:` payload in. Returns the user-visible text this chunk
     /// added, if any — `reasoning_content` deliberately returns `None`.
     pub fn push_chunk(&mut self, chunk: &Value) -> Option<String> {
+        // The usage chunk comes last with `choices: []` (OpenAI, TabbyAPI) or rides
+        // on the final delta (llama-server), so it is read before the delta is.
+        if let Some(usage) = chunk.get("usage").filter(|u| !u.is_null()) {
+            let count = |key: &str| usage.get(key).and_then(Value::as_i64).unwrap_or(0) as i32;
+            self.usage = Some(Usage {
+                prompt_tokens: count("prompt_tokens"),
+                completion_tokens: count("completion_tokens"),
+            });
+        }
         let delta = chunk.pointer("/choices/0/delta")?;
 
         if let Some(calls) = delta.get("tool_calls").and_then(Value::as_array) {
@@ -389,6 +407,7 @@ impl StreamAccumulator {
                     c
                 })
                 .collect(),
+            usage: self.usage,
         }
     }
 }
@@ -459,6 +478,7 @@ where
     let mut body = json!({
         "model": cfg.model,
         "stream": true,
+        "stream_options": {"include_usage": true},
         "messages": messages.iter().map(ChatMessage::to_wire).collect::<Vec<_>>(),
     });
     if !tools.is_empty() {
@@ -696,6 +716,21 @@ mod tests {
         assert_eq!(done.tool_calls.len(), 2);
         assert_eq!(done.tool_calls[0].id, "a");
         assert_eq!(done.tool_calls[1].name, "library_stats");
+    }
+
+    #[test]
+    fn usage_is_read_from_the_trailing_chunk_with_no_choices() {
+        let mut acc = StreamAccumulator::new();
+        acc.push_chunk(&chunk(json!({"content": "Hi"})));
+        let trailer = json!({"choices": [], "usage": {"prompt_tokens": 6956, "completion_tokens": 45}});
+        assert_eq!(acc.push_chunk(&trailer), None);
+        assert_eq!(
+            acc.finish().usage,
+            Some(Usage {
+                prompt_tokens: 6956,
+                completion_tokens: 45
+            })
+        );
     }
 
     #[test]
