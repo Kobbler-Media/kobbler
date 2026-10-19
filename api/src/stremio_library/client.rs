@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -100,11 +102,20 @@ impl StremioClient {
             )
             .await?;
         // One malformed entry (a third-party addon's id scheme, a legacy field shape) must not
-        // cost the user the whole row.
-        Ok(items
+        // cost the user the whole row. Stremio can also hold the same title twice.
+        let mut newest: HashMap<String, LibraryItem> = HashMap::new();
+        for item in items
             .into_iter()
-            .filter_map(|v| serde_json::from_value(v).ok())
-            .collect())
+            .filter_map(|v| serde_json::from_value::<LibraryItem>(v).ok())
+        {
+            match newest.get(&item.id) {
+                Some(kept) if kept.mtime >= item.mtime => {}
+                _ => {
+                    newest.insert(item.id.clone(), item);
+                }
+            }
+        }
+        Ok(newest.into_values().collect())
     }
 
     async fn call<T: DeserializeOwned>(

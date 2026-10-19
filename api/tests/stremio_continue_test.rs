@@ -387,3 +387,30 @@ async fn failed_sync_reports_and_keeps_previous_rows() {
         BTreeSet::from(["Halfway Movie".into()])
     );
 }
+
+/// Stremio's library can hold the same title twice; the newer entry wins in both the row and
+/// the history rather than the duplicate failing the sync.
+#[tokio::test]
+async fn duplicate_library_entries_keep_the_newest() {
+    let (server, mock) = linked_server().await;
+    mount_show(
+        &mock,
+        "tt0000002",
+        202,
+        "Resumed Show",
+        "Returning Series",
+        "TV-Y",
+        &[(1, &[(3, "Ep Three", days_from_today(-60))])],
+    )
+    .await;
+    let mut older = library_item("tt0000002", "series", 600_000, Some("tt0000002:1:3"), 2);
+    older["_mtime"] = json!(days_ago(3));
+    let newer = library_item("tt0000002", "series", 1_200_000, Some("tt0000002:1:3"), 1);
+    mount_library(&mock, json!([newer, older])).await;
+
+    let summary = run_sync(&server, &mock).await;
+    assert_eq!(summary["errors"], json!([]), "{summary}");
+    let row = stremio_row(&server.admin_client()).await;
+    assert_eq!(row.len(), 1, "{row:?}");
+    assert_eq!(find(&row, "Resumed Show")["progress_percent"], 20.0);
+}
