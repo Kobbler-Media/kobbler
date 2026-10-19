@@ -10,6 +10,7 @@
 //! first thing to try is deleting a rule, not adding one.
 
 use sqlx::PgPool;
+use time::Date;
 use uuid::Uuid;
 
 use crate::repositories::chat_memory;
@@ -39,6 +40,20 @@ const WHAT_IS_SEARCHABLE: &str = r#"What the library holds:
 
 pub fn system_prompt() -> String {
     format!("{BASE}\n\n{WHAT_IS_SEARCHABLE}")
+}
+
+/// The model's own sense of "now" is its training cutoff, so without this it
+/// calls things unreleased that came out months ago. Date only, no clock time:
+/// the line then changes once a day instead of busting the prefix cache on
+/// every turn.
+pub fn date_line(today: Date) -> String {
+    format!(
+        "Today is {} {} {} {}. Anything dated before today has already happened, whatever your own knowledge says.",
+        today.weekday(),
+        today.day(),
+        today.month(),
+        today.year()
+    )
 }
 
 /// Tier 3 facts, plus the one line carried forward from the last conversation in
@@ -113,6 +128,12 @@ mod tests {
         let prompt = system_prompt();
         assert!(prompt.contains("leave the rest of the sentence behind"));
         assert!(prompt.contains("Which copy to download is yours to choose"));
+    }
+
+    #[test]
+    fn the_date_line_names_the_day_in_words() {
+        let line = date_line(time::macros::date!(2026 - 10 - 19));
+        assert!(line.starts_with("Today is Monday 19 October 2026."), "{line}");
     }
 
     /// Promising what the registry cannot do is the contradiction this model

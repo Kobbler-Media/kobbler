@@ -144,6 +144,11 @@ async fn execute(
         system.push_str("\n\n");
         system.push_str(&memory);
     }
+    let today = crate::notifications::prefs::zone_for_user(&turn.state.pool, turn.auth.user_id)
+        .await
+        .local_date(time::OffsetDateTime::now_utc());
+    system.push_str("\n\n");
+    system.push_str(&prompt::date_line(today));
     let mut messages = vec![ChatMessage::system(system)];
     messages.extend(turn.history.iter().cloned());
     messages.push(ChatMessage::user(&turn.user_message));
