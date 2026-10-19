@@ -229,8 +229,10 @@
     return () => off('stream_warm_ready', cb);
   });
 
-  onMount(() => {
-    loadDetail();
+  onMount(async () => {
+    await loadDetail();
+    const season = Number($page.url.searchParams.get('season'));
+    if (mediaType === 'tv' && season > 0 && detail) toggleSeason(season);
   });
 
   async function loadDetail() {

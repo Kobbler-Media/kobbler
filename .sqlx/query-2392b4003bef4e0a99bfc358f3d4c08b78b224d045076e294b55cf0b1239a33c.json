@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO stremio_history_items (account_id, stremio_id, media_type, name, season,\n                                               episode, marker_watched, watched, position_ms,\n                                               last_watched)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n            ON CONFLICT (account_id, stremio_id) DO UPDATE SET\n                media_type = EXCLUDED.media_type,\n                name = EXCLUDED.name,\n                season = EXCLUDED.season,\n                episode = EXCLUDED.episode,\n                marker_watched = EXCLUDED.marker_watched,\n                watched = EXCLUDED.watched,\n                position_ms = EXCLUDED.position_ms,\n                last_watched = EXCLUDED.last_watched\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2392b4003bef4e0a99bfc358f3d4c08b78b224d045076e294b55cf0b1239a33c"
+}

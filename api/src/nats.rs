@@ -408,6 +408,12 @@ pub async fn start_nats_worker(
         runtime_config.clone(),
         storage_root.clone(),
     )));
+    worker.register_handler(HandlerAdapter::new(
+        crate::jobs::handlers::StremioSyncHandler::new(
+            pool.clone(),
+            app_state.config.stremio_api_url.clone(),
+        ),
+    ));
     worker.register_handler(HandlerAdapter::new(TvWantHandler::new(
         pool.clone(),
         runtime_config.clone(),
@@ -1056,6 +1062,17 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
             "kobbler",
             "discover_sync",
             std::time::Duration::from_secs(6 * 3600), // every 6 hours
+        )
+        .run_immediately(),
+    );
+
+    // Stremio Continue Watching - mirrors linked Stremio accounts onto the home page
+    scheduler.register(
+        ScheduledJob::new(
+            "stremio-sync",
+            "kobbler",
+            "stremio_sync",
+            std::time::Duration::from_secs(600), // every 10 minutes
         )
         .run_immediately(),
     );

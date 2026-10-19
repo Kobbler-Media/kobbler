@@ -121,8 +121,9 @@ pub async fn allowed_episode_ids(pool: &PgPool, ids: &[Uuid]) -> sqlx::Result<Ha
 }
 
 /// A title outside the library has no rating we hold. It is fine for a Kids profile only
-/// when the kids-filtered TMDB queries put it on one of their Discover shelves, or when it
-/// is in the library under a TMDB id the rule allows.
+/// when the kids-filtered TMDB queries put it on one of their Discover shelves, when it
+/// is in the library under a TMDB id the rule allows, or when it is on Stremio Continue
+/// Watching with a TMDB rating the rule allows (and the library has not judged it).
 pub async fn discover_title_allowed(
     pool: &PgPool,
     media_type: &str,
@@ -145,6 +146,18 @@ pub async fn discover_title_allowed(
                SELECT 1 FROM tv_shows
                WHERE $1 = 'tv' AND identifiers->>'tmdb_id' = $2
                  AND kids_allowed(kids_override, content_rating)
+           ) OR (
+               EXISTS (
+                   SELECT 1 FROM stremio_continue_items
+                   WHERE media_type = $1 AND tmdb_id = $2
+                     AND kids_allowed(NULL, content_rating)
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM movies WHERE $1 = 'movie' AND identifiers->>'tmdb_id' = $2
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM tv_shows WHERE $1 = 'tv' AND identifiers->>'tmdb_id' = $2
+               )
            )"#,
     )
     .bind(media_type)

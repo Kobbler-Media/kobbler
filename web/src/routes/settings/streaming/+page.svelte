@@ -8,9 +8,15 @@
     getStremioKeys,
     createStremioKey,
     deleteStremioKey,
+    getStremioAccount,
+    linkStremioAccount,
+    unlinkStremioAccount,
+    syncStremioAccount,
     type SystemConfig,
-    type StremioApiKey
+    type StremioApiKey,
+    type StremioAccount
   } from '$lib/api/client';
+  import { formatTimeAgo } from '$lib/stores/jobs.svelte';
 
   const auth = getAuthState();
 
@@ -24,6 +30,11 @@
   let creatingKey = $state(false);
   let copiedKeyId = $state<string | null>(null);
   let savingPlayback = $state(false);
+
+  let stremioAccount = $state<StremioAccount | null>(null);
+  let stremioEmail = $state('');
+  let stremioPassword = $state('');
+  let linkingStremio = $state(false);
 
   const kobloadUrl = $derived(systemConfig?.kobload_base_url ?? null);
 
@@ -50,7 +61,42 @@
       loading = false;
     }
     await loadStremioKeys();
+    if (auth.isAdmin) {
+      stremioAccount = (await getStremioAccount().catch(() => ({ account: null }))).account;
+    }
   });
+
+  const handleLinkStremio = async () => {
+    linkingStremio = true;
+    try {
+      stremioAccount = (await linkStremioAccount(stremioEmail, stremioPassword)).account;
+      stremioPassword = '';
+      showMessage('Stremio account linked — syncing Continue Watching');
+    } catch (e) {
+      showMessage(e instanceof Error ? e.message : 'Failed to link Stremio account');
+    } finally {
+      linkingStremio = false;
+    }
+  };
+
+  const handleUnlinkStremio = async () => {
+    try {
+      await unlinkStremioAccount();
+      stremioAccount = null;
+      showMessage('Stremio account unlinked');
+    } catch (e) {
+      showMessage(e instanceof Error ? e.message : 'Failed to unlink Stremio account');
+    }
+  };
+
+  const handleSyncStremio = async () => {
+    try {
+      await syncStremioAccount();
+      showMessage('Stremio sync queued');
+    } catch (e) {
+      showMessage(e instanceof Error ? e.message : 'Failed to queue Stremio sync');
+    }
+  };
 
   const savePlaybackDefaults = async () => {
     if (!systemConfig) return;
@@ -229,6 +275,78 @@
             </span>
           </div>
         </div>
+
+        {#if auth.isAdmin}
+          <div class="config-card">
+            <h3>Stremio Continue Watching</h3>
+            <p class="card-description muted">
+              Link a Stremio account to show its Continue Watching as a row on every profile's home
+              page, below Recently Added. Kids profiles only see titles their rating rules allow.
+            </p>
+
+            {#if stremioAccount}
+              <div class="field">
+                <span class="field-label">Linked account</span>
+                <span>{stremioAccount.email}</span>
+                <span class="field-hint">
+                  {stremioAccount.item_count} titles ·
+                  {stremioAccount.last_synced_at
+                    ? `synced ${formatTimeAgo(stremioAccount.last_synced_at)}`
+                    : 'not synced yet'}
+                </span>
+                {#if stremioAccount.last_error}
+                  <div class="warning-box">{stremioAccount.last_error}</div>
+                {/if}
+              </div>
+              <div class="key-actions">
+                <button class="btn btn-primary" type="button" onclick={handleSyncStremio}>
+                  Sync now
+                </button>
+                <button class="btn btn-danger" type="button" onclick={handleUnlinkStremio}>
+                  Unlink
+                </button>
+              </div>
+            {:else}
+              <form
+                onsubmit={(e) => {
+                  e.preventDefault();
+                  handleLinkStremio();
+                }}
+              >
+                <div class="form-group">
+                  <label for="stremio-email">Stremio email</label>
+                  <input
+                    id="stremio-email"
+                    type="email"
+                    class="text-input"
+                    autocomplete="off"
+                    bind:value={stremioEmail}
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="stremio-password">Password</label>
+                  <input
+                    id="stremio-password"
+                    type="password"
+                    class="text-input"
+                    autocomplete="off"
+                    bind:value={stremioPassword}
+                  />
+                  <span class="form-hint">
+                    Used once to sign in. Only Stremio's session key is stored.
+                  </span>
+                </div>
+                <button
+                  class="btn btn-primary"
+                  type="submit"
+                  disabled={linkingStremio || !stremioEmail || !stremioPassword}
+                >
+                  {linkingStremio ? 'Linking...' : 'Link account'}
+                </button>
+              </form>
+            {/if}
+          </div>
+        {/if}
 
         <div class="config-card">
           <h3>Debrid Providers</h3>

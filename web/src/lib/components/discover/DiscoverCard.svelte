@@ -6,13 +6,17 @@
 
   interface Props {
     item: DiscoverItem;
+    subtitle?: string | null;
+    progressPercent?: number | null;
+    season?: number | null;
   }
 
-  let { item }: Props = $props();
+  let { item, subtitle = null, progressPercent = null, season = null }: Props = $props();
 
   const libraryHref = $derived(discoverLibraryRoute(item.media_type, item.library_id));
   const href = $derived(
-    libraryHref ?? `/discover/${item.media_type}/${item.provider}/${item.provider_id}`
+    libraryHref ??
+      `/discover/${item.media_type}/${item.provider}/${item.provider_id}${season ? `?season=${season}` : ''}`
   );
 
   function handleClick() {
@@ -42,6 +46,7 @@
   );
 
   const secondaryText = $derived.by(() => {
+    if (subtitle) return subtitle;
     if (item.media_type === 'book') {
       const authors = item.authors ?? [];
       return authors.length > 0 ? authors.slice(0, 2).join(', ') : null;
@@ -77,6 +82,11 @@
       <span class="chip-pos">
         <span class="status-chip status-wanted">Wanted</span>
       </span>
+    {/if}
+    {#if progressPercent != null}
+      <div class="progress-track">
+        <div class="progress-fill" style="width: {progressPercent}%"></div>
+      </div>
     {/if}
   {/snippet}
   <strong class="card-title">{item.title}</strong>

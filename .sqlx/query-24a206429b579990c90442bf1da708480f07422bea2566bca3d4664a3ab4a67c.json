@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO stremio_history_imports (user_id, account_id, stremio_id)\n        SELECT $2, h.account_id, h.stremio_id\n        FROM stremio_history_items h\n        WHERE h.account_id = $1 AND h.stremio_id = ANY($3) AND h.tmdb_id IS NOT NULL\n          AND ($4 = FALSE\n               OR stremio_title_kids_allowed(h.media_type, h.tmdb_id, h.content_rating))\n        ON CONFLICT (user_id, account_id, stremio_id)\n        DO UPDATE SET last_error = stremio_history_imports.last_error\n        RETURNING stremio_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stremio_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_imports",
+            "name": "stremio_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "24a206429b579990c90442bf1da708480f07422bea2566bca3d4664a3ab4a67c"
+}

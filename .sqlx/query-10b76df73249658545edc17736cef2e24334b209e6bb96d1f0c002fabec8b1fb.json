@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT stremio_id, media_type FROM stremio_history_items\n        WHERE account_id = $1\n          AND (resolved_at IS NULL\n               OR (tmdb_id IS NULL AND resolved_at < NOW() - INTERVAL '7 days'))\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stremio_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "stremio_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "media_type"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "10b76df73249658545edc17736cef2e24334b209e6bb96d1f0c002fabec8b1fb"
+}

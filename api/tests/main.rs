@@ -105,6 +105,8 @@ mod smoke_test;
 mod sport_event_dedupe_test;
 mod sports_tallies_test;
 mod stall_watchdog_test;
+mod stremio_continue_test;
+mod stremio_history_test;
 mod trakt_test;
 mod tv_bulk_episodes_test;
 mod tv_bulk_watch_test;

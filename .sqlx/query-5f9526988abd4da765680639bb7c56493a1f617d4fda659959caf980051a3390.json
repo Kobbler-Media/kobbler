@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO stremio_accounts (id, user_id, email, auth_key)\n        VALUES ($1, NULL, $2, $3)\n        ON CONFLICT ((user_id IS NULL)) WHERE user_id IS NULL\n        DO UPDATE SET email = EXCLUDED.email, auth_key = EXCLUDED.auth_key,\n                      last_error = NULL, updated_at = NOW()\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "stremio_accounts",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5f9526988abd4da765680639bb7c56493a1f617d4fda659959caf980051a3390"
+}

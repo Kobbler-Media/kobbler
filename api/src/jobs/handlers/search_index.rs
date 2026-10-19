@@ -372,6 +372,19 @@ pub fn get_static_pages() -> Vec<PageDocument> {
             icon: "sessions".to_string(),
         },
         PageDocument {
+            id: "stremio-history".to_string(),
+            label: "Stremio History".to_string(),
+            path: "/settings/stremio-history".to_string(),
+            aliases: vec![
+                "stremio".to_string(),
+                "import".to_string(),
+                "watched".to_string(),
+                "migrate".to_string(),
+                "continue watching".to_string(),
+            ],
+            icon: "chatMemory".to_string(),
+        },
+        PageDocument {
             id: "tokens".to_string(),
             label: "API Tokens".to_string(),
             path: "/settings/tokens".to_string(),

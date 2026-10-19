@@ -1,0 +1,172 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT i.user_id, h.stremio_id, h.media_type, h.tmdb_id AS \"tmdb_id!\",\n               h.title AS \"title!\", h.year, h.poster_url, h.season, h.episode,\n               h.marker_watched, h.watched, h.position_ms, h.last_watched\n        FROM stremio_history_imports i\n        JOIN stremio_history_items h\n          ON h.account_id = i.account_id AND h.stremio_id = i.stremio_id\n        WHERE i.account_id = $1\n          AND h.tmdb_id IS NOT NULL AND h.title IS NOT NULL\n          AND (i.applied_watched_at IS NULL OR h.last_watched > i.applied_watched_at)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_imports",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "stremio_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "stremio_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "tmdb_id!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "tmdb_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "poster_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "poster_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "season",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "season"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "episode",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "episode"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "marker_watched",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "marker_watched"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "watched",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "watched"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "position_ms",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "position_ms"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "last_watched",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "last_watched"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "07263b407d010ece91af830724e1cc843290f15d42f06c3ce54989eec1ca42a9"
+}

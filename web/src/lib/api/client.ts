@@ -5643,10 +5643,82 @@ export interface DiscoverSection {
   items: DiscoverItem[];
 }
 
+export interface StremioContinueItem extends DiscoverItem {
+  subtitle: string | null;
+  season: number | null;
+  episode: number | null;
+  progress_percent: number | null;
+  last_watched: string;
+}
+
 export interface DiscoverResponse {
   watch_next: WatchNextItem[];
   recently_added: DashboardRecentItem[];
+  stremio_continue: StremioContinueItem[];
   sections: DiscoverSection[];
+}
+
+export interface StremioAccount {
+  email: string;
+  last_synced_at: string | null;
+  last_error: string | null;
+  item_count: number;
+}
+
+export async function getStremioAccount(): Promise<{ account: StremioAccount | null }> {
+  return request('/api/v1/admin/stremio/account');
+}
+
+export async function linkStremioAccount(
+  email: string,
+  password: string
+): Promise<{ account: StremioAccount | null }> {
+  return request('/api/v1/admin/stremio/account', {
+    method: 'PUT',
+    body: JSON.stringify({ email, password })
+  });
+}
+
+export async function unlinkStremioAccount(): Promise<void> {
+  return request('/api/v1/admin/stremio/account', { method: 'DELETE' });
+}
+
+export async function syncStremioAccount(): Promise<void> {
+  return request('/api/v1/admin/stremio/account/sync', { method: 'POST' });
+}
+
+export interface StremioHistoryItem {
+  stremio_id: string;
+  media_type: 'movie' | 'tv';
+  provider: string;
+  provider_id: string;
+  title: string;
+  year?: number | null;
+  poster_url?: string | null;
+  progress: string;
+  last_watched: string;
+  imported: boolean;
+  import_error?: string | null;
+}
+
+export async function getStremioHistory(): Promise<{
+  linked: boolean;
+  items: StremioHistoryItem[];
+}> {
+  return request('/api/v1/admin/stremio/history');
+}
+
+export async function importStremioHistory(stremioIds: string[]): Promise<{ selected: number }> {
+  return request('/api/v1/admin/stremio/history/imports', {
+    method: 'PUT',
+    body: JSON.stringify({ stremio_ids: stremioIds })
+  });
+}
+
+export async function stopStremioImport(stremioId: string): Promise<void> {
+  return request(`/api/v1/admin/stremio/history/imports/${encodeURIComponent(stremioId)}`, {
+    method: 'DELETE'
+  });
 }
 
 export interface WatchProviderInfo {

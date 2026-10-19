@@ -45,6 +45,8 @@ mod search;
 pub mod sessions;
 pub mod sports;
 pub mod streaming;
+pub mod stremio_account;
+pub mod stremio_history;
 pub mod subtitle_providers;
 pub mod subtitles;
 mod tokens;

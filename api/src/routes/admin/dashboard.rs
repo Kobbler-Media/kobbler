@@ -58,6 +58,20 @@ pub struct WatchNextItem {
     updated_at: OffsetDateTime,
 }
 
+impl WatchNextItem {
+    pub fn library_movie_id(&self) -> Option<Uuid> {
+        (self.media_type == "movie")
+            .then(|| self.media_id.parse().ok())
+            .flatten()
+    }
+
+    pub fn library_episode_id(&self) -> Option<Uuid> {
+        (self.media_type == "episode")
+            .then(|| self.media_id.parse().ok())
+            .flatten()
+    }
+}
+
 #[derive(Serialize)]
 pub struct ReadNextItem {
     media_type: String,
@@ -474,7 +488,7 @@ async fn fetch_read_next(
 }
 
 /// Format an episode label like "S01E03 - Episode Title".
-fn format_episode_label(season: &str, episode: &str, title: Option<&str>) -> String {
+pub(crate) fn format_episode_label(season: &str, episode: &str, title: Option<&str>) -> String {
     let s_num: u32 = season.parse().unwrap_or(0);
     let e_num: u32 = episode.parse().unwrap_or(0);
     let code = format!("S{s_num:02}E{e_num:02}");

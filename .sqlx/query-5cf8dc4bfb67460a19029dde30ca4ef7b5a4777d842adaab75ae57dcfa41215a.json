@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE stremio_accounts\n        SET last_error = $2,\n            last_synced_at = CASE WHEN $2::text IS NULL THEN NOW() ELSE last_synced_at END,\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5cf8dc4bfb67460a19029dde30ca4ef7b5a4777d842adaab75ae57dcfa41215a"
+}

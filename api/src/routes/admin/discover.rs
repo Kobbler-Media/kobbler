@@ -23,12 +23,14 @@ use crate::repositories::{media_roots, metadata_cache, tv_episodes, tv_seasons, 
 use crate::routes::AuthUser;
 use crate::routes::admin::dashboard::{RecentItem, WatchNextItem, fetch_home_sections};
 use crate::routes::admin::library_status::{batch_movie_status, batch_tv_status};
+use crate::stremio_library::home::{StremioContinueItem, continue_watching};
 
 /// Response for `GET /api/v1/admin/discover`.
 #[derive(Serialize)]
 pub struct DiscoverResponse {
     pub watch_next: Vec<WatchNextItem>,
     pub recently_added: Vec<RecentItem>,
+    pub stremio_continue: Vec<StremioContinueItem>,
     pub sections: Vec<DiscoverSectionWithStatus>,
 }
 
@@ -67,6 +69,16 @@ pub async fn list_discover(State(state): State<AppState>, auth: AuthUser) -> imp
     let (watch_next, recently_added) = fetch_home_sections(&state, auth.user_id, auth.is_kids)
         .await
         .unwrap_or_default();
+    let movie_ids: Vec<Uuid> = watch_next
+        .iter()
+        .filter_map(|w| w.library_movie_id())
+        .collect();
+    let episode_ids: Vec<Uuid> = watch_next
+        .iter()
+        .filter_map(|w| w.library_episode_id())
+        .collect();
+    let stremio_continue =
+        continue_watching(pool, auth.user_id, auth.is_kids, &movie_ids, &episode_ids).await;
 
     // Load all cached discover sections
     let cached = match metadata_cache::list_by_provider(pool, DISCOVER_PROVIDER).await {
@@ -141,6 +153,7 @@ pub async fn list_discover(State(state): State<AppState>, auth: AuthUser) -> imp
     Json(DiscoverResponse {
         watch_next,
         recently_added,
+        stremio_continue,
         sections: sections_with_status,
     })
     .into_response()

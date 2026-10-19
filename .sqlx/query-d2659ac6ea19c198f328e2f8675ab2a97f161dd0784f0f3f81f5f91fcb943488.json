@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM tv_episodes te\n            JOIN tv_seasons ts ON ts.id = te.season_id\n            WHERE ts.show_id = $1 AND ts.season_sort_order = $2 AND te.episode_sort_order = $3\n        ) AS \"exists!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d2659ac6ea19c198f328e2f8675ab2a97f161dd0784f0f3f81f5f91fcb943488"
+}

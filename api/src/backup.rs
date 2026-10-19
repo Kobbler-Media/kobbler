@@ -212,6 +212,10 @@ pub const TABLES_IN_ORDER: &[&str] = &[
     "livetv_ad_breaks",
     // Debrid streaming (depends on users)
     "stremio_api_keys",
+    "stremio_accounts",
+    "stremio_continue_items",
+    "stremio_history_items",
+    "stremio_history_imports",
     "debrid_stream_sessions",
     // Depends on debrid_stream_sessions
     "debrid_cache_files",

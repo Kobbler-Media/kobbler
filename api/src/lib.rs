@@ -53,6 +53,7 @@ pub mod sidecar;
 pub mod skip_detect;
 pub mod sse_client;
 pub mod streaming;
+pub mod stremio_library;
 pub mod subtitle_providers;
 pub mod sync;
 pub mod sync_providers;
@@ -1982,6 +1983,28 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/admin/settings/stremio-keys/{key_id}",
             delete(debrid_stream_routes::delete_stremio_key),
+        )
+        .route(
+            "/api/v1/admin/stremio/account",
+            get(routes::admin::stremio_account::get_account)
+                .put(routes::admin::stremio_account::link_account)
+                .delete(routes::admin::stremio_account::unlink_account),
+        )
+        .route(
+            "/api/v1/admin/stremio/account/sync",
+            post(routes::admin::stremio_account::sync_account),
+        )
+        .route(
+            "/api/v1/admin/stremio/history",
+            get(routes::admin::stremio_history::list_history),
+        )
+        .route(
+            "/api/v1/admin/stremio/history/imports",
+            put(routes::admin::stremio_history::select_imports),
+        )
+        .route(
+            "/api/v1/admin/stremio/history/imports/{stremio_id}",
+            delete(routes::admin::stremio_history::deselect_import),
         )
         .route(
             "/api/v1/library/books",

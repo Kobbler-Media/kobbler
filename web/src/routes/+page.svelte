@@ -21,10 +21,12 @@
     getVideoMetadataProviders,
     getMetadataProviders,
     type MetadataResult,
-    type DiscoverResponse
+    type DiscoverResponse,
+    type StremioContinueItem
   } from '$lib/api/client';
   import type { MovieSearchResult, TvSearchResult, WatchNextItem, RecentItem } from '$lib/types';
   import DiscoverRow from '$lib/components/discover/DiscoverRow.svelte';
+  import DiscoverCard from '$lib/components/discover/DiscoverCard.svelte';
   import { watchStateVersion } from '$lib/stores/watchState.svelte';
 
   type TypeFilter = 'all' | 'movies' | 'tv' | 'books';
@@ -70,6 +72,7 @@
   // Library rows
   let watchNext = $state<WatchNextItem[]>([]);
   let recentlyAdded = $state<RecentItem[]>([]);
+  let stremioContinue = $state<StremioContinueItem[]>([]);
 
   const hasDiscoverContent = $derived(discover && (discover.sections?.length ?? 0) > 0);
 
@@ -85,6 +88,7 @@
         discover = data;
         watchNext = data.watch_next ?? [];
         recentlyAdded = data.recently_added ?? [];
+        stremioContinue = data.stremio_continue ?? [];
       })
       .catch((err) => {
         console.error('Failed to load discover lists:', err);
@@ -104,6 +108,7 @@
         discover = data;
         watchNext = data.watch_next ?? [];
         recentlyAdded = data.recently_added ?? [];
+        stremioContinue = data.stremio_continue ?? [];
       })
       .catch((err) => {
         console.error('Failed to load discover lists:', err);
@@ -765,6 +770,19 @@
               <strong class="card-title">{item.title}</strong>
               <div class="card-sub">{item.subtitle}</div>
             </MediaCard>
+          {/each}
+        </ScrollRow>
+      {/if}
+
+      {#if stremioContinue.length > 0}
+        <ScrollRow title="Continue Watching on Stremio" viewAllHref="/settings/stremio-history">
+          {#each stremioContinue as item (item.media_type + ':' + item.provider_id)}
+            <DiscoverCard
+              {item}
+              subtitle={item.subtitle}
+              progressPercent={item.progress_percent}
+              season={item.season}
+            />
           {/each}
         </ScrollRow>
       {/if}

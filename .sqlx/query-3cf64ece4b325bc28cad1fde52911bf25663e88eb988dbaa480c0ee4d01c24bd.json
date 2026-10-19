@@ -1,0 +1,259 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH acct AS (\n            SELECT id FROM stremio_accounts\n            WHERE user_id = $1 OR user_id IS NULL\n            ORDER BY user_id NULLS LAST\n            LIMIT 1\n        )\n        SELECT i.stremio_id, i.media_type, i.kind, i.tmdb_id, i.title, i.year, i.description,\n               i.poster_url, i.backdrop_url, i.genres, i.rating, i.content_rating, i.season,\n               i.episode, i.episode_title, i.air_date, i.season_premiere, i.position_ms,\n               i.duration_ms, i.last_watched\n        FROM stremio_continue_items i\n        JOIN acct ON acct.id = i.account_id\n        LEFT JOIN LATERAL (\n            SELECT m.id, m.kids_override, m.content_rating FROM movies m\n            WHERE i.media_type = 'movie' AND m.identifiers->>'tmdb_id' = i.tmdb_id\n            LIMIT 1\n        ) lm ON TRUE\n        LEFT JOIN LATERAL (\n            SELECT s.id, s.kids_override, s.content_rating FROM tv_shows s\n            WHERE i.media_type = 'tv' AND s.identifiers->>'tmdb_id' = i.tmdb_id\n            LIMIT 1\n        ) ls ON TRUE\n        WHERE (\n            i.media_type = 'movie'\n            OR (\n                (i.kind <> 'new_episode'\n                 OR (i.air_date > i.last_watched::date\n                     AND i.air_date::timestamp + INTERVAL '1 day' <= NOW()))\n                AND (i.last_watched >= NOW() - INTERVAL '14 days'\n                     OR (i.season_premiere AND i.air_date >= CURRENT_DATE - 30))\n            )\n        )\n          AND ($2 = FALSE OR CASE\n                WHEN lm.id IS NOT NULL THEN kids_allowed(lm.kids_override, lm.content_rating)\n                WHEN ls.id IS NOT NULL THEN kids_allowed(ls.kids_override, ls.content_rating)\n                ELSE kids_allowed(NULL, i.content_rating)\n              END)\n          AND (lm.id IS NULL OR NOT lm.id = ANY($3))\n          AND (ls.id IS NULL OR NOT EXISTS (\n                SELECT 1 FROM tv_episodes e\n                JOIN tv_seasons se ON se.id = e.season_id\n                WHERE e.id = ANY($4) AND se.show_id = ls.id\n              ))\n        ORDER BY i.last_watched DESC\n        LIMIT 20\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stremio_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "stremio_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "tmdb_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "tmdb_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "poster_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "poster_url"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "backdrop_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "backdrop_url"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "genres",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "genres"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "rating",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "rating"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "content_rating",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "content_rating"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "season",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "season"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "episode",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "episode"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "episode_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "episode_title"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "air_date",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "air_date"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "season_premiere",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "season_premiere"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "position_ms",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "position_ms"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "duration_ms",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "duration_ms"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "last_watched",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "stremio_continue_items",
+            "name": "last_watched"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3cf64ece4b325bc28cad1fde52911bf25663e88eb988dbaa480c0ee4d01c24bd"
+}

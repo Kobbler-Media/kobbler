@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM stremio_history_items WHERE account_id = $1 AND NOT stremio_id = ANY($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e6dcee8658fd75aed79fdfe7a84ca98c0f92980bf95d5c632e7ea50659b7f1a5"
+}

@@ -34,6 +34,7 @@
     devices: ['kobo', 'reader', 'ereader'],
     tokens: ['api', 'key', 'auth'],
     sessions: ['session', 'device', 'login', 'revoke', 'signed in', 'logout'],
+    'stremio history': ['stremio', 'import', 'watched', 'migrate', 'continue watching'],
     general: ['config', 'configuration', 'system', 'watcher', 'cache', 'pagination'],
     'kobo proxy': ['kobo', 'proxy', 'sync', 'entitlement', 'proxy url'],
     processing: ['enrichment', 'thumbnails', 'skip detection', 'intro', 'credits', 'lufs'],
@@ -344,6 +345,7 @@
     },
     { href: '/settings/devices', label: 'Devices', icon: ICON.devices },
     { href: '/settings/sessions', label: 'Sessions', icon: ICON.sessions },
+    { href: '/settings/stremio-history', label: 'Stremio History', icon: ICON.chatMemory },
     { href: '/settings/tokens', label: 'Tokens', icon: ICON.tokens, minRole: 'admin' },
     { href: '/settings/kobo', label: 'Kobo Proxy', icon: ICON.kobo, minRole: 'admin' }
   ];

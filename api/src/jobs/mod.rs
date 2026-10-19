@@ -322,6 +322,7 @@ const ROUTINE_JOB_TYPES: &[&str] = &[
     "kepub_check",
     "movie_want_check",
     "discover_sync",
+    "stremio_sync",
     "sports_monitor",
     "iptv_sync",
     "iptv_sync_check",

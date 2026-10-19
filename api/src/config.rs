@@ -77,6 +77,7 @@ pub struct Config {
     /// bind-mount that file into the api container at the same path.
     pub nas_health_stats_path: String,
     pub pin_service_url: String,
+    pub stremio_api_url: String,
 }
 
 impl Config {
@@ -138,6 +139,11 @@ impl Config {
             .map(|v| v.trim().trim_end_matches('/').to_string())
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| "https://pin.biboop.com".to_string());
+        let stremio_api_url = env::var("KOBBLER_STREMIO_API_URL")
+            .ok()
+            .map(|v| v.trim().trim_end_matches('/').to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "https://api.strem.io".to_string());
 
         Self {
             database_url,
@@ -156,6 +162,7 @@ impl Config {
             nas_health_monitoring,
             nas_health_stats_path,
             pin_service_url,
+            stremio_api_url,
         }
     }
 

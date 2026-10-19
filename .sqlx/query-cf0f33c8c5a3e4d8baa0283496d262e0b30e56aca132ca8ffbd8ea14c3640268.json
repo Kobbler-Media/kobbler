@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM stremio_history_imports WHERE user_id = $1 AND stremio_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cf0f33c8c5a3e4d8baa0283496d262e0b30e56aca132ca8ffbd8ea14c3640268"
+}

@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, auth_key FROM stremio_accounts ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "stremio_accounts",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "auth_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_accounts",
+            "name": "auth_key"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d052b55e290c24cc1346a286d1540eb7deb3ce67665aece51b7a0c2e9add83bd"
+}

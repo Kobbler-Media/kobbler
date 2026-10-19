@@ -1,0 +1,181 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT h.stremio_id, h.media_type, h.tmdb_id AS \"tmdb_id!\", h.title AS \"title!\",\n                   h.year, h.poster_url, h.season, h.episode, h.marker_watched, h.watched,\n                   h.position_ms, h.last_watched,\n                   (i.user_id IS NOT NULL) AS \"imported!\", i.last_error AS import_error\n            FROM stremio_history_items h\n            LEFT JOIN stremio_history_imports i\n              ON i.account_id = h.account_id AND i.stremio_id = h.stremio_id AND i.user_id = $2\n            WHERE h.account_id = $1\n              AND h.tmdb_id IS NOT NULL AND h.title IS NOT NULL\n              AND ($3 = FALSE\n                   OR stremio_title_kids_allowed(h.media_type, h.tmdb_id, h.content_rating))\n            ORDER BY h.last_watched DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "stremio_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "stremio_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "tmdb_id!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "tmdb_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "title!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "year",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "year"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "poster_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "poster_url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "season",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "season"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "episode",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "episode"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "marker_watched",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "marker_watched"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "watched",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "watched"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "position_ms",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "position_ms"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "last_watched",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "last_watched"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "imported!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 13,
+        "name": "import_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_imports",
+            "name": "last_error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      null,
+      true
+    ]
+  },
+  "hash": "1990e7cd677716a9ae2f72acc4f2f4c40868649b6be500620b21529f5fd25656"
+}

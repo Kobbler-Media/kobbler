@@ -421,6 +421,7 @@ impl TestServer {
             nas_health_monitoring: false,
             nas_health_stats_path: "/proc/fs/cifs/Stats".to_string(),
             pin_service_url: "http://127.0.0.1:9".to_string(),
+            stremio_api_url: "http://127.0.0.1:9".to_string(),
         };
         configure(&mut config);
 

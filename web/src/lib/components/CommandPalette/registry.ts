@@ -333,6 +333,13 @@ export const pages: PageItem[] = [
     icon: icons.sessions
   },
   {
+    id: 'stremio-history',
+    label: 'Stremio History',
+    path: '/settings/stremio-history',
+    aliases: ['stremio', 'import', 'watched', 'migrate', 'continue watching'],
+    icon: icons.chatMemory
+  },
+  {
     id: 'tokens',
     label: 'API Tokens',
     path: '/settings/tokens',

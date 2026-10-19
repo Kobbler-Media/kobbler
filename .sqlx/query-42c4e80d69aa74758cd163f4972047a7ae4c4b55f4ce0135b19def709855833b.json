@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM stremio_accounts WHERE user_id IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "42c4e80d69aa74758cd163f4972047a7ae4c4b55f4ce0135b19def709855833b"
+}
