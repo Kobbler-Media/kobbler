@@ -380,3 +380,63 @@ async fn test_stream_session_endpoints_allow_owner() {
         .await
         .assert_status(StatusCode::NO_CONTENT);
 }
+
+// =============================================================================
+// Stremio /file/{session} must look the session up as the key's owner. It
+// passed a nil user after stream_play became owner-scoped, so every Stremio
+// playback 404'd.
+// =============================================================================
+
+async fn insert_stremio_key(pool: &sqlx::PgPool, user_id: Uuid, api_key: &str) {
+    sqlx::query("INSERT INTO stremio_api_keys (user_id, api_key) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind(api_key)
+        .execute(pool)
+        .await
+        .expect("failed to insert stremio key");
+}
+
+async fn get_status_unauthed(server: &TestServer, path: &str) -> StatusCode {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .unwrap()
+        .get(format!("{}{}", server.api_url, path))
+        .send()
+        .await
+        .expect("request failed")
+        .status()
+}
+
+#[tokio::test]
+async fn test_stremio_file_scoped_to_key_owner() {
+    let server = TestServer::start_api_only().await;
+
+    let alice_id = create_user_with_role(&server, "alice-stremio@test.com", "viewer").await;
+    let bob_id = create_user_with_role(&server, "bob-stremio@test.com", "viewer").await;
+    insert_stremio_key(&server.pool, alice_id, "alice-stremio-key").await;
+    insert_stremio_key(&server.pool, bob_id, "bob-stremio-key").await;
+    let session = insert_session(&server.pool, alice_id, "Alice.Stremio.2025").await;
+
+    // The upstream URL is unreachable, so the owner gets an upstream error —
+    // but never "session not found".
+    assert_ne!(
+        get_status_unauthed(
+            &server,
+            &format!("/stremio/alice-stremio-key/file/{session}")
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+        "owner's stremio key must find the session"
+    );
+    assert_eq!(
+        get_status_unauthed(&server, &format!("/stremio/bob-stremio-key/file/{session}")).await,
+        StatusCode::NOT_FOUND,
+        "another user's stremio key must not reach the session"
+    );
+    assert_eq!(
+        get_status_unauthed(&server, &format!("/stremio/not-a-key/file/{session}")).await,
+        StatusCode::UNAUTHORIZED,
+        "unknown stremio key"
+    );
+}

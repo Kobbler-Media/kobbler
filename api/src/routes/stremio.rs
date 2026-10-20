@@ -611,15 +611,17 @@ pub async fn stream_file(
 ) -> impl IntoResponse {
     info!(session_id = %session_id, "stremio stream_file request");
 
-    if validate_stremio_key(&state.pool, &api_key).await.is_none() {
+    let Some(user_id) = validate_stremio_key(&state.pool, &api_key).await else {
         warn!(session_id = %session_id, "stremio stream_file: invalid API key");
         return StatusCode::UNAUTHORIZED.into_response();
-    }
+    };
 
     info!(session_id = %session_id, "stremio stream_file: key valid, calling stream_play");
 
+    // stream_play scopes the session lookup to its owner; the session was
+    // created under this key's user in try_resolve_option.
     let auth = crate::routes::PlaybackAuth {
-        user_id: Uuid::nil(),
+        user_id,
         role: "stremio".to_string(),
         is_kids: false,
     };
