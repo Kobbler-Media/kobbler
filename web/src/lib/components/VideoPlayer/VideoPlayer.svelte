@@ -563,7 +563,9 @@
   const overlayId = `video-player-${uid()}`;
 
   // Position saving state
-  let lastSavedPosition = 0;
+  // Seeded with where this player opened: the server already holds it, and a tab left
+  // paused while another device moved on must not write it back over the newer save.
+  let lastSavedPosition = untrack(() => Math.floor(initialPosition ?? 0));
   let positionSaveInterval: ReturnType<typeof setInterval> | null = null;
   let markedWatched = false;
   // If the server started the transcode at start_time, no client-side seek needed.
@@ -719,7 +721,7 @@
     if (isLive || castingMode) return; // Receiver saves position directly when casting
     if (handoff) return; // Undecided: this position may be the stale one
     const pos = Math.floor(effectiveTime);
-    if (pos <= 0 || pos === lastSavedPosition || !activeMediaId) return;
+    if (pos <= 0 || Math.abs(pos - lastSavedPosition) <= 1 || !activeMediaId) return;
     lastSavedPosition = pos;
     try {
       if (activeCreationParams.media_type === 'movie') {
@@ -1078,7 +1080,7 @@
       seekOffset = 0;
       currentTime = 0;
       buffered = 0;
-      lastSavedPosition = 0;
+      lastSavedPosition = Math.floor(resumeAt);
       markedWatched = false;
       videoEnded = false;
       showUpNext = false;
@@ -2257,7 +2259,12 @@
     // controls, which bypass togglePlayPause. Reaching the end of the file
     // fires pause before ended; that's the file running out, not intent.
     if (programmaticPauses > 0) programmaticPauses--;
-    else if (!videoEl?.ended) userPaused = true;
+    else if (!videoEl?.ended) {
+      userPaused = true;
+      // A pause is where a viewer most often walks away to another device; the
+      // periodic save could leave the server up to a full interval behind it.
+      savePosition();
+    }
     playing = false;
     controlsVisible = true;
     if (hideTimer) clearTimeout(hideTimer);
