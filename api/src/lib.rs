@@ -19,6 +19,7 @@ pub mod events;
 pub mod ffmpeg;
 pub mod file_config;
 pub mod file_link_mode;
+pub mod for_you;
 pub mod google;
 pub mod gpu;
 pub mod gpu_defaults;

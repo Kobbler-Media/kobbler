@@ -85,6 +85,32 @@ where
     Ok(result.rows_affected())
 }
 
+pub async fn get_many<'e, E>(
+    exec: E,
+    provider_type: &str,
+    query_keys: &[String],
+) -> Result<Vec<(String, Value)>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let rows = sqlx::query!(
+        r#"
+        SELECT query_key, response
+        FROM metadata_cache
+        WHERE provider_type = $1 AND query_key = ANY($2) AND expires_at > NOW()
+        "#,
+        provider_type,
+        query_keys,
+    )
+    .fetch_all(exec)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.query_key, r.response))
+        .collect())
+}
+
 /// Load all non-expired cache entries for a given provider type.
 pub async fn list_by_provider<'e, E>(exec: E, provider_type: &str) -> Result<Vec<(String, Value)>>
 where

@@ -129,41 +129,64 @@ pub async fn discover_title_allowed(
     media_type: &str,
     tmdb_id: &str,
 ) -> sqlx::Result<bool> {
-    let media_type = if media_type == "movie" { "movie" } else { "tv" };
-    sqlx::query_scalar::<_, bool>(
-        r#"SELECT EXISTS (
+    let title = (media_type.to_string(), tmdb_id.to_string());
+    Ok(!discover_titles_allowed(pool, std::slice::from_ref(&title))
+        .await?
+        .is_empty())
+}
+
+/// [`discover_title_allowed`] for many `(media_type, tmdb_id)` pairs in one query; returns the
+/// allowed ones, with `media_type` normalised to `movie` or `tv`.
+pub async fn discover_titles_allowed(
+    pool: &PgPool,
+    titles: &[(String, String)],
+) -> sqlx::Result<HashSet<(String, String)>> {
+    let (media_types, tmdb_ids): (Vec<String>, Vec<String>) = titles
+        .iter()
+        .map(|(media_type, tmdb_id)| {
+            let media_type = if media_type == "movie" { "movie" } else { "tv" };
+            (media_type.to_string(), tmdb_id.clone())
+        })
+        .unzip();
+    let rows = sqlx::query_as::<_, (String, String)>(
+        r#"SELECT t.media_type, t.tmdb_id
+           FROM unnest($1::text[], $2::text[]) AS t(media_type, tmdb_id)
+           WHERE EXISTS (
                SELECT 1 FROM metadata_cache mc,
                     jsonb_array_elements(mc.response->'items') item
                WHERE mc.provider_type = 'discover' AND mc.expires_at > NOW()
                  AND COALESCE((mc.response->>'kids')::boolean, FALSE)
-                 AND item->>'media_type' = $1
-                 AND item->>'provider' = 'tmdb' AND item->>'provider_id' = $2
+                 AND item->>'media_type' = t.media_type
+                 AND item->>'provider' = 'tmdb' AND item->>'provider_id' = t.tmdb_id
            ) OR EXISTS (
                SELECT 1 FROM movies
-               WHERE $1 = 'movie' AND identifiers->>'tmdb_id' = $2
+               WHERE t.media_type = 'movie' AND identifiers->>'tmdb_id' = t.tmdb_id
                  AND kids_allowed(kids_override, content_rating)
            ) OR EXISTS (
                SELECT 1 FROM tv_shows
-               WHERE $1 = 'tv' AND identifiers->>'tmdb_id' = $2
+               WHERE t.media_type = 'tv' AND identifiers->>'tmdb_id' = t.tmdb_id
                  AND kids_allowed(kids_override, content_rating)
            ) OR (
                EXISTS (
                    SELECT 1 FROM stremio_continue_items
-                   WHERE media_type = $1 AND tmdb_id = $2
+                   WHERE media_type = t.media_type AND tmdb_id = t.tmdb_id
                      AND kids_allowed(NULL, content_rating)
                )
                AND NOT EXISTS (
-                   SELECT 1 FROM movies WHERE $1 = 'movie' AND identifiers->>'tmdb_id' = $2
+                   SELECT 1 FROM movies
+                   WHERE t.media_type = 'movie' AND identifiers->>'tmdb_id' = t.tmdb_id
                )
                AND NOT EXISTS (
-                   SELECT 1 FROM tv_shows WHERE $1 = 'tv' AND identifiers->>'tmdb_id' = $2
+                   SELECT 1 FROM tv_shows
+                   WHERE t.media_type = 'tv' AND identifiers->>'tmdb_id' = t.tmdb_id
                )
            )"#,
     )
-    .bind(media_type)
-    .bind(tmdb_id)
-    .fetch_one(pool)
-    .await
+    .bind(&media_types)
+    .bind(&tmdb_ids)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().collect())
 }
 
 /// Drops every hit a Kids profile may not open: movies and shows (and their seasons and

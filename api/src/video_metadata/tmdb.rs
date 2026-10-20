@@ -129,6 +129,23 @@ impl DiscoverQuery<'_> {
     }
 }
 
+/// `Recommendations` is TMDB's what-viewers-also-watched list; `Similar` matches on genres
+/// and keywords, so it is noisier but still has answers for titles too obscure to have the first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TmdbRelation {
+    Recommendations,
+    Similar,
+}
+
+impl TmdbRelation {
+    fn path(self) -> &'static str {
+        match self {
+            Self::Recommendations => "recommendations",
+            Self::Similar => "similar",
+        }
+    }
+}
+
 pub struct TmdbProvider {
     client: reqwest::Client,
     api_key: String,
@@ -272,68 +289,60 @@ impl TmdbProvider {
         }
     }
 
+    async fn movie_list(&self, url: &str) -> Result<Vec<MovieResult>, VideoProviderError> {
+        let key = self.require_key()?;
+        let resp: TmdbSearchResponse = self
+            .get(url, key)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(VideoProviderError::Http)?
+            .json()
+            .await?;
+        Ok(Self::movies_from_search(resp))
+    }
+
+    async fn tv_list(&self, url: &str) -> Result<Vec<TvShowResult>, VideoProviderError> {
+        let key = self.require_key()?;
+        let resp: TmdbTvSearchResponse = self
+            .get(url, key)
+            .send()
+            .await?
+            .error_for_status()
+            .map_err(VideoProviderError::Http)?
+            .json()
+            .await?;
+        Ok(Self::tv_from_search(resp))
+    }
+
     // ========================================================================
     // Discover: trending / popular (not on the trait — TMDB-specific)
     // ========================================================================
 
-    /// Fetch trending movies for the past week.
     pub async fn trending_movies(&self) -> Result<Vec<MovieResult>, VideoProviderError> {
-        let key = self.require_key()?;
-        let url = format!("{}/trending/movie/week?language=en-US", self.base_url);
-        let resp: TmdbSearchResponse = self
-            .get(&url, key)
-            .send()
-            .await?
-            .error_for_status()
-            .map_err(VideoProviderError::Http)?
-            .json()
-            .await?;
-        Ok(Self::movies_from_search(resp))
+        self.movie_list(&format!(
+            "{}/trending/movie/week?language=en-US",
+            self.base_url
+        ))
+        .await
     }
 
-    /// Fetch trending TV shows for the past week.
     pub async fn trending_tv(&self) -> Result<Vec<TvShowResult>, VideoProviderError> {
-        let key = self.require_key()?;
-        let url = format!("{}/trending/tv/week?language=en-US", self.base_url);
-        let resp: TmdbTvSearchResponse = self
-            .get(&url, key)
-            .send()
-            .await?
-            .error_for_status()
-            .map_err(VideoProviderError::Http)?
-            .json()
-            .await?;
-        Ok(Self::tv_from_search(resp))
+        self.tv_list(&format!(
+            "{}/trending/tv/week?language=en-US",
+            self.base_url
+        ))
+        .await
     }
 
-    /// Fetch popular movies.
     pub async fn popular_movies(&self) -> Result<Vec<MovieResult>, VideoProviderError> {
-        let key = self.require_key()?;
-        let url = format!("{}/movie/popular?language=en-US", self.base_url);
-        let resp: TmdbSearchResponse = self
-            .get(&url, key)
-            .send()
-            .await?
-            .error_for_status()
-            .map_err(VideoProviderError::Http)?
-            .json()
-            .await?;
-        Ok(Self::movies_from_search(resp))
+        self.movie_list(&format!("{}/movie/popular?language=en-US", self.base_url))
+            .await
     }
 
-    /// Fetch popular TV shows.
     pub async fn popular_tv(&self) -> Result<Vec<TvShowResult>, VideoProviderError> {
-        let key = self.require_key()?;
-        let url = format!("{}/tv/popular?language=en-US", self.base_url);
-        let resp: TmdbTvSearchResponse = self
-            .get(&url, key)
-            .send()
-            .await?
-            .error_for_status()
-            .map_err(VideoProviderError::Http)?
-            .json()
-            .await?;
-        Ok(Self::tv_from_search(resp))
+        self.tv_list(&format!("{}/tv/popular?language=en-US", self.base_url))
+            .await
     }
 
     // ========================================================================
@@ -345,20 +354,11 @@ impl TmdbProvider {
         &self,
         query: &DiscoverQuery<'_>,
     ) -> Result<Vec<MovieResult>, VideoProviderError> {
-        let key = self.require_key()?;
         let mut url = format!("{}/discover/movie?{}", self.base_url, query.common_params());
         if query.kids {
             url.push_str(KIDS_MOVIE_FILTER);
         }
-        let resp: TmdbSearchResponse = self
-            .get(&url, key)
-            .send()
-            .await?
-            .error_for_status()
-            .map_err(VideoProviderError::Http)?
-            .json()
-            .await?;
-        Ok(Self::movies_from_search(resp))
+        self.movie_list(&url).await
     }
 
     /// Popular TV shows, narrowed to one streaming service and/or to kids titles.
@@ -366,20 +366,41 @@ impl TmdbProvider {
         &self,
         query: &DiscoverQuery<'_>,
     ) -> Result<Vec<TvShowResult>, VideoProviderError> {
-        let key = self.require_key()?;
         let mut url = format!("{}/discover/tv?{}", self.base_url, query.common_params());
         if query.kids {
             url.push_str(KIDS_TV_FILTER);
         }
-        let resp: TmdbTvSearchResponse = self
-            .get(&url, key)
-            .send()
-            .await?
-            .error_for_status()
-            .map_err(VideoProviderError::Http)?
-            .json()
-            .await?;
-        Ok(Self::tv_from_search(resp))
+        self.tv_list(&url).await
+    }
+
+    // ========================================================================
+    // Related titles (not on the trait — TMDB-specific)
+    // ========================================================================
+
+    pub async fn related_movies(
+        &self,
+        tmdb_id: &str,
+        relation: TmdbRelation,
+    ) -> Result<Vec<MovieResult>, VideoProviderError> {
+        self.movie_list(&format!(
+            "{}/movie/{tmdb_id}/{}?language=en-US",
+            self.base_url,
+            relation.path()
+        ))
+        .await
+    }
+
+    pub async fn related_tv(
+        &self,
+        tmdb_id: &str,
+        relation: TmdbRelation,
+    ) -> Result<Vec<TvShowResult>, VideoProviderError> {
+        self.tv_list(&format!(
+            "{}/tv/{tmdb_id}/{}?language=en-US",
+            self.base_url,
+            relation.path()
+        ))
+        .await
     }
 
     /// List available streaming/watch providers for a region.

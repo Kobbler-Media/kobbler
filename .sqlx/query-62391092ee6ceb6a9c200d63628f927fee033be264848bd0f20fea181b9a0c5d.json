@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT query_key, response\n        FROM metadata_cache\n        WHERE provider_type = $1 AND query_key = ANY($2) AND expires_at > NOW()\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "query_key",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "metadata_cache",
+            "name": "query_key"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "response",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "metadata_cache",
+            "name": "response"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "62391092ee6ceb6a9c200d63628f927fee033be264848bd0f20fea181b9a0c5d"
+}

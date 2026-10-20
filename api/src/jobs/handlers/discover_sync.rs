@@ -63,7 +63,7 @@ pub struct DiscoverItem {
     pub identifiers: Value,
 }
 
-fn movie_to_discover_item(m: MovieResult) -> DiscoverItem {
+pub fn movie_to_discover_item(m: MovieResult) -> DiscoverItem {
     DiscoverItem {
         provider: "tmdb".into(),
         provider_id: m.provider_id.clone(),
@@ -81,7 +81,7 @@ fn movie_to_discover_item(m: MovieResult) -> DiscoverItem {
     }
 }
 
-fn tv_to_discover_item(s: TvShowResult) -> DiscoverItem {
+pub fn tv_to_discover_item(s: TvShowResult) -> DiscoverItem {
     DiscoverItem {
         provider: "tmdb".into(),
         provider_id: s.provider_id.clone(),
@@ -128,12 +128,13 @@ impl DiscoverSyncHandler {
             .into_iter()
             .filter_map(|(_, value)| serde_json::from_value(value).ok())
             .collect();
-        let srcs: Vec<String> = sections
+        let mut srcs: Vec<String> = sections
             .into_iter()
             .flat_map(|s| s.items)
             .flat_map(|item| [item.backdrop_url, item.poster_url])
             .flatten()
             .collect();
+        srcs.extend(crate::for_you::art_sources(&self.pool).await);
         crate::discover_art::warm_and_prune(&self.storage_root, srcs.iter().map(String::as_str))
             .await;
     }
@@ -349,6 +350,10 @@ impl DiscoverSyncHandler {
                 errors.push(e);
             }
         }
+
+        let (related, related_errors) = crate::for_you::refresh_related(&self.pool, &tmdb).await;
+        total += related;
+        errors.extend(related_errors);
 
         (total, errors)
     }

@@ -16,13 +16,14 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::LibraryEvent;
 use crate::discover_art::art_url;
+use crate::for_you::ForYouItem;
 use crate::images::ImageEntry;
 use crate::jobs::handlers::discover_sync::{DISCOVER_PROVIDER, DiscoverItem, DiscoverSection};
 use crate::jobs::{self, JobContext};
 use crate::repositories::{media_roots, metadata_cache, tv_episodes, tv_seasons, tv_shows};
 use crate::routes::AuthUser;
 use crate::routes::admin::dashboard::{RecentItem, WatchNextItem, fetch_home_sections};
-use crate::routes::admin::library_status::{batch_movie_status, batch_tv_status};
+use crate::routes::admin::library_status::{LibraryStatus, batch_movie_status, batch_tv_status};
 use crate::stremio_library::home::{StremioContinueItem, continue_watching};
 
 /// Response for `GET /api/v1/admin/discover`.
@@ -31,6 +32,7 @@ pub struct DiscoverResponse {
     pub watch_next: Vec<WatchNextItem>,
     pub recently_added: Vec<RecentItem>,
     pub stremio_continue: Vec<StremioContinueItem>,
+    pub for_you: Vec<ForYouItem>,
     pub sections: Vec<DiscoverSectionWithStatus>,
 }
 
@@ -116,44 +118,27 @@ pub async fn list_discover(State(state): State<AppState>, auth: AuthUser) -> imp
     let movie_status = batch_movie_status(pool, &movie_tmdb_ids).await;
     let tv_status = batch_tv_status(pool, &tv_tmdb_ids).await;
 
-    // Merge status into sections
     let sections_with_status: Vec<DiscoverSectionWithStatus> = sections
         .into_iter()
-        .map(|section| {
-            let items = section
+        .map(|section| DiscoverSectionWithStatus {
+            title: section.title,
+            section_key: section.section_key,
+            sort_order: section.sort_order,
+            items: section
                 .items
                 .into_iter()
-                .map(|mut item| {
-                    item.poster_url = item.poster_url.as_deref().map(art_url);
-                    item.backdrop_url = item.backdrop_url.as_deref().map(art_url);
-                    let status = extract_tmdb_id(&item.identifiers).and_then(|id| {
-                        match item.media_type.as_str() {
-                            "movie" => movie_status.get(&id),
-                            "tv" => tv_status.get(&id),
-                            _ => None,
-                        }
-                    });
-                    DiscoverItemWithStatus {
-                        item,
-                        library_id: status.map(|s| s.id),
-                        want_status: status.and_then(|s| s.want_status.clone()),
-                        is_in_library: status.and_then(|s| s.is_in_library),
-                    }
-                })
-                .collect();
-            DiscoverSectionWithStatus {
-                title: section.title,
-                section_key: section.section_key,
-                sort_order: section.sort_order,
-                items,
-            }
+                .map(|item| with_status(item, &movie_status, &tv_status))
+                .collect(),
         })
         .collect();
+
+    let for_you = crate::for_you::for_you(pool, auth.user_id, auth.is_kids).await;
 
     Json(DiscoverResponse {
         watch_next,
         recently_added,
         stremio_continue,
+        for_you,
         sections: sections_with_status,
     })
     .into_response()
@@ -283,6 +268,45 @@ pub async fn list_watch_providers(
 // ============================================================================
 // Internals
 // ============================================================================
+
+fn with_status(
+    mut item: DiscoverItem,
+    movie_status: &HashMap<String, LibraryStatus>,
+    tv_status: &HashMap<String, LibraryStatus>,
+) -> DiscoverItemWithStatus {
+    item.poster_url = item.poster_url.as_deref().map(art_url);
+    item.backdrop_url = item.backdrop_url.as_deref().map(art_url);
+    let status = extract_tmdb_id(&item.identifiers).and_then(|id| match item.media_type.as_str() {
+        "movie" => movie_status.get(&id),
+        "tv" => tv_status.get(&id),
+        _ => None,
+    });
+    DiscoverItemWithStatus {
+        library_id: status.map(|s| s.id),
+        want_status: status.and_then(|s| s.want_status.clone()),
+        is_in_library: status.and_then(|s| s.is_in_library),
+        item,
+    }
+}
+
+pub async fn attach_status(
+    pool: &sqlx::PgPool,
+    items: Vec<DiscoverItem>,
+) -> Vec<DiscoverItemWithStatus> {
+    let ids_of = |media_type: &str| -> Vec<String> {
+        items
+            .iter()
+            .filter(|i| i.media_type == media_type)
+            .filter_map(|i| extract_tmdb_id(&i.identifiers))
+            .collect()
+    };
+    let movie_status = batch_movie_status(pool, &ids_of("movie")).await;
+    let tv_status = batch_tv_status(pool, &ids_of("tv")).await;
+    items
+        .into_iter()
+        .map(|item| with_status(item, &movie_status, &tv_status))
+        .collect()
+}
 
 fn extract_tmdb_id(identifiers: &Value) -> Option<String> {
     identifiers

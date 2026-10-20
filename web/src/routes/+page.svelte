@@ -22,6 +22,7 @@
     getMetadataProviders,
     type MetadataResult,
     type DiscoverResponse,
+    type ForYouItem,
     type StremioContinueItem
   } from '$lib/api/client';
   import type { MovieSearchResult, TvSearchResult, WatchNextItem, RecentItem } from '$lib/types';
@@ -73,6 +74,7 @@
   let watchNext = $state<WatchNextItem[]>([]);
   let recentlyAdded = $state<RecentItem[]>([]);
   let stremioContinue = $state<StremioContinueItem[]>([]);
+  let forYou = $state<ForYouItem[]>([]);
 
   const hasDiscoverContent = $derived(discover && (discover.sections?.length ?? 0) > 0);
 
@@ -82,14 +84,17 @@
   let movieCallback: ((data: any) => void) | null = null;
   let reconnectHandler: (() => void) | null = null;
 
+  function applyDiscover(data: DiscoverResponse) {
+    discover = data;
+    watchNext = data.watch_next ?? [];
+    recentlyAdded = data.recently_added ?? [];
+    stremioContinue = data.stremio_continue ?? [];
+    forYou = data.for_you ?? [];
+  }
+
   function refreshDiscoverData() {
     getDiscoverLists()
-      .then((data) => {
-        discover = data;
-        watchNext = data.watch_next ?? [];
-        recentlyAdded = data.recently_added ?? [];
-        stremioContinue = data.stremio_continue ?? [];
-      })
+      .then(applyDiscover)
       .catch((err) => {
         console.error('Failed to load discover lists:', err);
       });
@@ -104,12 +109,7 @@
 
   onMount(() => {
     getDiscoverLists()
-      .then((data) => {
-        discover = data;
-        watchNext = data.watch_next ?? [];
-        recentlyAdded = data.recently_added ?? [];
-        stremioContinue = data.stremio_continue ?? [];
-      })
+      .then(applyDiscover)
       .catch((err) => {
         console.error('Failed to load discover lists:', err);
         discover = null;
@@ -503,6 +503,12 @@
   function hasProgress(item: WatchNextItem): boolean {
     return item.progress_percent != null || item.position_seconds != null;
   }
+
+  function becauseLabel(because: string[]): string | null {
+    if (because.length === 0) return null;
+    const more = because.length > 1 ? ` +${because.length - 1}` : '';
+    return `Because you watched ${because[0]}${more}`;
+  }
 </script>
 
 <svelte:window onclick={handleClickOutside} />
@@ -783,6 +789,14 @@
               progressPercent={item.progress_percent}
               season={item.season}
             />
+          {/each}
+        </ScrollRow>
+      {/if}
+
+      {#if forYou.length > 0}
+        <ScrollRow title="For You">
+          {#each forYou as item (item.media_type + ':' + item.provider_id)}
+            <DiscoverCard {item} subtitle={becauseLabel(item.because)} />
           {/each}
         </ScrollRow>
       {/if}

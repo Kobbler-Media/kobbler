@@ -5651,10 +5651,16 @@ export interface StremioContinueItem extends DiscoverItem {
   last_watched: string;
 }
 
+export interface ForYouItem extends DiscoverItem {
+  /** Watched titles that led here, strongest first. */
+  because: string[];
+}
+
 export interface DiscoverResponse {
   watch_next: WatchNextItem[];
   recently_added: DashboardRecentItem[];
   stremio_continue: StremioContinueItem[];
+  for_you: ForYouItem[];
   sections: DiscoverSection[];
 }
 
