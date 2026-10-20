@@ -31,6 +31,7 @@ use crate::jobs::handlers::{
     CrossFormatSyncHandler,
     DatabaseCleanupHandler,
     DebridCacheCleanupHandler,
+    DebridPrewarmHandler,
     DebridProcessHandler,
     DiscoverSyncHandler,
     EbookExtractHandler,
@@ -279,6 +280,9 @@ pub async fn start_nats_worker(
     let initial_scan_complete = app_state.initial_scan_complete.clone();
     let media_root_io_gate = app_state.media_root_io_gate.clone();
     worker.register_handler(HandlerAdapter::new(KobloadIngestHandler::new(
+        app_state.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(DebridPrewarmHandler::new(
         app_state.clone(),
     )));
 

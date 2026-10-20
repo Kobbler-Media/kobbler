@@ -19,8 +19,7 @@
   import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
   import WatchToggle from '$lib/components/shared/WatchToggle.svelte';
   import FilesList from '$lib/components/shared/FilesList.svelte';
-  import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
-  import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
+  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
   import { getStatsState } from '$lib/stores/stats.svelte';
 
   interface Props {
@@ -108,6 +107,7 @@
   $effect(() => {
     const id = event.id;
     if (prevEventId !== undefined && prevEventId !== id) {
+      stream.reset();
       playback.teardownPreWarm();
       loadDetails().then(() => preWarmSession());
     }
@@ -263,7 +263,7 @@
         positionSeconds={watchState?.position_seconds ?? null}
         totalSeconds={event.runtime ? event.runtime * 60 : null}
         watched={watchState?.watched ?? false}
-        loading={stream.resolving || stream.streamLoading}
+        loading={stream.busy}
         variant="panel"
         onPlay={stream.autoPlay}
         onPickStream={stream.openModal}
@@ -324,40 +324,22 @@
 
 {#if playback.isActive}
   <VideoPlayer
-    sessionResponse={playback.session!}
-    creationParams={{
-      media_type: 'episode',
-      file_id: playback.playingFileId!,
-      capabilities: playback.capabilities!
-    }}
+    sessionResponse={playback.session}
+    creationParams={playback.session
+      ? {
+          media_type: 'episode',
+          file_id: playback.playingFileId!,
+          capabilities: playback.capabilities!
+        }
+      : undefined}
     mediaId={event.id}
     initialPosition={watchState?.watched ? undefined : (watchState?.position_seconds ?? undefined)}
-    onClose={playback.close}
+    onClose={stream.cancel}
+    {...stream.playerProps}
   />
 {/if}
 
-{#if stream.showStreamModal}
-  <StreamOptionsModal
-    options={stream.streamOptions}
-    loading={stream.streamLoading}
-    errors={stream.streamErrors}
-    onClose={stream.closeModal}
-    onPlay={stream.playOption}
-  />
-{/if}
-
-{#if stream.isCaching && !playback.isActive}
-  <StreamCachingOverlay
-    progress={stream.cachingProgress ?? 0}
-    error={stream.cachingError}
-    onCancel={stream.closeCachingOverlay}
-    onRetry={stream.retryCaching}
-    onPickStream={() => {
-      stream.closeCachingOverlay();
-      stream.openModal();
-    }}
-  />
-{/if}
+<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
 
 <style>
   .event-detail {

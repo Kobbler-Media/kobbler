@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT info_hash, file_id, debrid_provider, release_title, filename\n        FROM debrid_stream_sessions\n        WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "info_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "info_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "debrid_provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_provider"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "release_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "release_title"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "filename",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "filename"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f3732d832181af07d816c283c9959c2dbdba2fd5efe06def1dbc36fce03c5e78"
+}

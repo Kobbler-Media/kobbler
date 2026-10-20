@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.id\n        FROM tv_episodes cur\n        JOIN tv_seasons cs ON cs.id = cur.season_id\n        JOIN tv_seasons s ON s.show_id = cs.show_id AND NOT s.is_special\n        JOIN tv_episodes e ON e.season_id = s.id\n        WHERE cur.id = $1\n          AND (s.season_sort_order, e.episode_sort_order)\n              > (cs.season_sort_order, cur.episode_sort_order)\n          AND (e.air_date IS NULL OR e.air_date <= CURRENT_DATE)\n        ORDER BY s.season_sort_order, e.episode_sort_order\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a9f852167a8e92a1f4f6048469fd190295b1d35727a7fff2e99155a31fa11cee"
+}

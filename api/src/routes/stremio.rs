@@ -181,6 +181,53 @@ fn stremio_capabilities() -> crate::streaming::decision::ClientCapabilities {
 // Auth Helper
 // =============================================================================
 
+/// The library movie or episode a Stremio id names, when the library has it.
+async fn library_target(
+    pool: &crate::DbPool,
+    media_type: &str,
+    id: &str,
+) -> (Option<Uuid>, Option<Uuid>) {
+    match media_type {
+        "movie" => {
+            let movie_id: Option<Uuid> =
+                sqlx::query_scalar("SELECT id FROM movies WHERE identifiers->>'imdb_id' = $1")
+                    .bind(id)
+                    .fetch_optional(pool)
+                    .await
+                    .ok()
+                    .flatten();
+            (movie_id, None)
+        }
+        "series" => {
+            // "tt1234567:season:episode"
+            let parts: Vec<&str> = id.splitn(3, ':').collect();
+            let [imdb_id, season, episode] = parts[..] else {
+                return (None, None);
+            };
+            let (Ok(sn), Ok(en)) = (season.parse::<i32>(), episode.parse::<i32>()) else {
+                return (None, None);
+            };
+            let episode_id: Option<Uuid> = sqlx::query_scalar(
+                r#"SELECT e.id FROM tv_episodes e
+                   JOIN tv_seasons s ON s.id = e.season_id
+                   JOIN tv_shows sh ON sh.id = s.show_id
+                   WHERE sh.identifiers->>'imdb_id' = $1
+                     AND s.season_identifier = $2
+                     AND e.episode_identifier = $3"#,
+            )
+            .bind(imdb_id)
+            .bind(sn.to_string())
+            .bind(en.to_string())
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+            (None, episode_id)
+        }
+        _ => (None, None),
+    }
+}
+
 async fn validate_stremio_key(pool: &crate::DbPool, api_key: &str) -> Option<Uuid> {
     sqlx::query_scalar!(
         r#"SELECT user_id FROM stremio_api_keys WHERE api_key = $1"#,
@@ -228,16 +275,16 @@ pub async fn stream(
     let mut timings = StremioStreamTimings::default();
 
     let auth_start = std::time::Instant::now();
-    if validate_stremio_key(&state.pool, &api_key).await.is_none() {
+    let Some(user_id) = validate_stremio_key(&state.pool, &api_key).await else {
         return StatusCode::UNAUTHORIZED.into_response();
-    }
+    };
     timings.auth_ms = auth_start.elapsed().as_millis() as u64;
 
     // Strip trailing .json from the id if the router matched it that way
     let id = id.strip_suffix(".json").unwrap_or(&id);
 
     let build_search_start = std::time::Instant::now();
-    let search_request = match media_type.as_str() {
+    let mut search_request = match media_type.as_str() {
         "movie" => match build_movie_search(id, &state).await {
             Ok(r) => r,
             Err(resp) => return resp,
@@ -251,6 +298,14 @@ pub async fn stream(
         }
     };
     timings.build_search_ms = build_search_start.elapsed().as_millis() as u64;
+
+    let preferred_lookup_start = std::time::Instant::now();
+    let (movie_id, episode_id) = library_target(&state.pool, &media_type, id).await;
+    search_request.prefer =
+        crate::debrid_outcomes::search_preference(&state.pool, user_id, movie_id, episode_id)
+            .await
+            .prefer;
+    timings.preferred_lookup_ms = preferred_lookup_start.elapsed().as_millis() as u64;
 
     let runtime = state.runtime_config.get().await;
     let client = match build_kobload_client(&runtime) {
@@ -270,89 +325,13 @@ pub async fn stream(
 
     let base_url = derive_base_url(&headers, &runtime);
 
-    // Reorder results to prefer the last successfully used stream for this media item
-    let preferred_lookup_start = std::time::Instant::now();
-    let mut options = search_result.options;
-    let preferred = match media_type.as_str() {
-        "movie" => {
-            // Look up movie by IMDB ID
-            let movie_id: Option<Uuid> =
-                sqlx::query_scalar("SELECT id FROM movies WHERE identifiers->>'imdb_id' = $1")
-                    .bind(id)
-                    .fetch_optional(&state.pool)
-                    .await
-                    .ok()
-                    .flatten();
-            if let Some(mid) = movie_id {
-                crate::routes::admin::debrid_stream::find_preferred_stream(
-                    &state.pool,
-                    "movie",
-                    mid,
-                )
-                .await
-            } else {
-                None
-            }
-        }
-        "series" => {
-            // Parse "tt1234567:season:episode"
-            let parts: Vec<&str> = id.splitn(3, ':').collect();
-            if parts.len() == 3 {
-                let imdb_id = parts[0];
-                let season_num = parts[1].parse::<i32>().ok();
-                let episode_num = parts[2].parse::<i32>().ok();
-                if let (Some(sn), Some(en)) = (season_num, episode_num) {
-                    let episode_id: Option<Uuid> = sqlx::query_scalar(
-                        r#"SELECT e.id FROM tv_episodes e
-                           JOIN tv_seasons s ON s.id = e.season_id
-                           JOIN tv_shows sh ON sh.id = s.show_id
-                           WHERE sh.identifiers->>'imdb_id' = $1
-                             AND s.season_identifier = $2
-                             AND e.episode_identifier = $3"#,
-                    )
-                    .bind(imdb_id)
-                    .bind(sn.to_string())
-                    .bind(en.to_string())
-                    .fetch_optional(&state.pool)
-                    .await
-                    .ok()
-                    .flatten();
-                    if let Some(eid) = episode_id {
-                        crate::routes::admin::debrid_stream::find_preferred_stream(
-                            &state.pool,
-                            "episode",
-                            eid,
-                        )
-                        .await
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        }
-        _ => None,
-    };
-    timings.preferred_lookup_ms = preferred_lookup_start.elapsed().as_millis() as u64;
-
     let assemble_start = std::time::Instant::now();
-    if let Some((ref pref_hash, pref_file_id)) = preferred
-        && let Some(idx) = options.iter().position(|o| {
-            o.info_hash.as_deref() == Some(pref_hash.as_str())
-                && (pref_file_id.is_none() || o.files.first().map(|f| f.id) == pref_file_id)
-        })
-        && idx > 0
-    {
-        let preferred_opt = options.remove(idx);
-        options.insert(0, preferred_opt);
-        info!(
-            info_hash = %pref_hash,
-            "Stremio: reordered preferred stream to top"
-        );
-    }
+    let options = search_result.options;
+    let failed_ids: std::collections::HashSet<String> = options
+        .iter()
+        .filter(|o| o.playback == Some(nats_jobs::StreamPlayback::Failed))
+        .map(|o| o.id.clone())
+        .collect();
 
     let streams: Vec<StremioStream> = options
         .iter()
@@ -424,7 +403,12 @@ pub async fn stream(
     // Pre-populate fallback chains so play() can retry on failure
     let option_ids: Vec<String> = options.iter().map(|o| o.id.clone()).collect();
     for (i, opt_id) in option_ids.iter().enumerate() {
-        let fallbacks: Vec<String> = option_ids[i + 1..].iter().take(5).cloned().collect();
+        let fallbacks: Vec<String> = option_ids[i + 1..]
+            .iter()
+            .filter(|id| !failed_ids.contains(*id))
+            .take(5)
+            .cloned()
+            .collect();
         state.stremio_play_cache.insert(
             opt_id.clone(),
             CachedStremioRedirect {
@@ -714,6 +698,7 @@ async fn build_movie_search(
             quality_profile_id: movie.quality_profile_id,
             limit: None,
             include_uncached: None,
+            prefer: None,
         })
     } else {
         // Not in library — resolve IMDB ID to metadata via providers
@@ -819,6 +804,7 @@ async fn build_series_search(
             quality_profile_id: s.quality_profile_id,
             limit: None,
             include_uncached: None,
+            prefer: None,
         })
     } else {
         // Not in library — resolve IMDB ID to metadata via providers
@@ -878,6 +864,7 @@ async fn resolve_imdb_movie(
             quality_profile_id: None,
             limit: None,
             include_uncached: None,
+            prefer: None,
         });
     }
 
@@ -909,6 +896,7 @@ async fn resolve_imdb_movie(
             quality_profile_id: None,
             limit: None,
             include_uncached: None,
+            prefer: None,
         });
     }
 
@@ -938,6 +926,7 @@ async fn resolve_imdb_movie(
         quality_profile_id: None,
         limit: None,
         include_uncached: None,
+        prefer: None,
     })
 }
 
@@ -1010,6 +999,7 @@ async fn resolve_imdb_tv_episode(
             quality_profile_id: None,
             limit: None,
             include_uncached: None,
+            prefer: None,
         });
     }
 
@@ -1043,6 +1033,7 @@ async fn resolve_imdb_tv_episode(
             quality_profile_id: None,
             limit: None,
             include_uncached: None,
+            prefer: None,
         });
     }
 
@@ -1075,6 +1066,7 @@ async fn resolve_imdb_tv_episode(
             quality_profile_id: None,
             limit: None,
             include_uncached: None,
+            prefer: None,
         });
     }
 
@@ -1109,6 +1101,7 @@ async fn resolve_imdb_tv_episode(
         quality_profile_id: None,
         limit: None,
         include_uncached: None,
+        prefer: None,
     })
 }
 

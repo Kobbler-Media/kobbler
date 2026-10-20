@@ -172,17 +172,11 @@ export function usePlayback(opts: {
     teardownPreWarmQuietly();
   }
 
-  /** Open the player in pending state — no session yet, waiting for stream resolve. */
   function openPending() {
     teardownPreWarmQuietly();
+    playbackSession = null;
+    playingFileId = null;
     pending = true;
-  }
-
-  /** Close the player if it was opened in pending state and no session arrived. */
-  function closePending() {
-    if (pending) {
-      pending = false;
-    }
   }
 
   /** Start playback from a pre-built session (e.g. debrid stream resolve). */
@@ -222,7 +216,6 @@ export function usePlayback(opts: {
     play,
     playSession,
     openPending,
-    closePending,
     close,
     preWarm,
     teardownPreWarm

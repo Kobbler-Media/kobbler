@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { on, off } from '$lib/services/eventstream.svelte';
   import type { TvEpisode, TvShow, TvWatchState } from '$lib/types';
   import {
     getTvShowRating,
@@ -153,19 +152,6 @@
     onMessage: showMessage
   });
 
-  // Debrid cache warming finishes after stream search has already returned, so
-  // fold its results into the option list: mark verified-cached and promote,
-  // otherwise auto-play keeps walking options warming has proven blocked.
-  $effect(() => {
-    const cb = on(
-      'stream_warm_ready',
-      (data: { info_hash: string; file_id?: number | null; debrid_provider_id: string }) => {
-        stream.markCached(data.info_hash, data.file_id ?? null, data.debrid_provider_id);
-      }
-    );
-    return () => off('stream_warm_ready', cb);
-  });
-
   function findEpisode(episodeId: string) {
     for (const season of show.seasons ?? []) {
       for (const ep of season.episodes) {
@@ -242,10 +228,7 @@
 
   onMount(() => {
     fetchShowRating();
-    return () => {
-      playback.teardownPreWarm();
-      stream.teardown();
-    };
+    return () => playback.teardownPreWarm();
   });
 
   $effect(() => {

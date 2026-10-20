@@ -1,11 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { on, off } from '$lib/services/eventstream.svelte';
   import type {
     Movie,
     MovieFile,
     MovieWatchState,
-    PlaybackSessionResponse,
     SubtitleTrackInfo,
     ExternalSubtitleInfo
   } from '$lib/types';
@@ -23,7 +21,7 @@
   } from '$lib/api/client';
   import { getStatsState } from '$lib/stores/stats.svelte';
   import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
+  import { useStreamPlayback, type StreamHandoff } from '$lib/composables/useStreamPlayback.svelte';
   import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
   import { showMessage } from '$lib/context/app.svelte';
   import ContentPageView from '$lib/components/ContentPageView.svelte';
@@ -36,8 +34,7 @@
   import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
   import SubtitlesList from '$lib/components/shared/SubtitlesList.svelte';
   import SubtitleSearchModal from '$lib/components/shared/SubtitleSearchModal.svelte';
-  import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
-  import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
+  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
   import HeroActions from '../shared/HeroActions.svelte';
   import MetaLine from '../shared/MetaLine.svelte';
@@ -59,7 +56,7 @@
     onMoveFile?: (fileId: string) => void;
     onReanalyze?: (force?: boolean) => void;
     onWatchlistToggle?: (inWatchlist: boolean) => void;
-    initialPlaybackSession?: PlaybackSessionResponse;
+    initialStream?: StreamHandoff;
   }
 
   let {
@@ -77,7 +74,7 @@
     onMoveFile,
     onReanalyze,
     onWatchlistToggle,
-    initialPlaybackSession
+    initialStream
   }: Props = $props();
 
   const auth = getAuthState();
@@ -109,20 +106,9 @@
     getResumePosition: () => watchState?.position_seconds ?? undefined,
     getEstimatedDuration: () => (movie.runtime ? movie.runtime * 60 : undefined),
     playback,
-    onMessage: showMessage
-  });
-
-  // Debrid cache warming finishes after stream search has already returned, so
-  // fold its results into the option list: mark verified-cached and promote,
-  // otherwise auto-play keeps walking options warming has proven blocked.
-  $effect(() => {
-    const cb = on(
-      'stream_warm_ready',
-      (data: { info_hash: string; file_id?: number | null; debrid_provider_id: string }) => {
-        stream.markCached(data.info_hash, data.file_id ?? null, data.debrid_provider_id);
-      }
-    );
-    return () => off('stream_warm_ready', cb);
+    onMessage: showMessage,
+    want: async () => onWant(),
+    canWant: () => !isActivelyWanted(movie.want_status)
   });
 
   const runtime = $derived.by(() => {
@@ -178,16 +164,13 @@
 
   onMount(() => {
     loadDetails().then(() => {
-      if (initialPlaybackSession) {
-        playback.playSession(initialPlaybackSession);
+      if (initialStream) {
+        stream.adoptSession(initialStream);
       } else {
         preWarm();
       }
     });
-    return () => {
-      playback.teardownPreWarm();
-      stream.teardown();
-    };
+    return () => playback.teardownPreWarm();
   });
 
   let prevMovieId: string | undefined;
@@ -408,7 +391,7 @@
               positionSeconds={watchState?.position_seconds ?? null}
               totalSeconds={movie.runtime ? movie.runtime * 60 : null}
               watched={watchState?.watched ?? false}
-              loading={stream.resolving || stream.streamLoading}
+              loading={stream.busy}
               variant="hero"
               onPlay={stream.autoPlay}
               onPickStream={stream.openModal}
@@ -530,18 +513,8 @@
     mediaId={movie.id}
     mediaInfo={{ title: movie.title, artworkUrl: movie.poster_url ?? undefined }}
     initialPosition={watchState?.watched ? undefined : (watchState?.position_seconds ?? undefined)}
-    pendingStatus={stream.pendingStatus ?? undefined}
-    pendingError={stream.cachingError ?? undefined}
-    onClose={() => {
-      stream.abort();
-      playback.close();
-    }}
-    onSwitchStream={stream.handleSwitchStream}
-    onPickStream={() => {
-      stream.closeCachingOverlay();
-      stream.openModal();
-    }}
-    onRetryStream={stream.retryCaching}
+    onClose={stream.cancel}
+    {...stream.playerProps}
   />
 {/if}
 
@@ -578,28 +551,7 @@
   />
 {/if}
 
-{#if stream.showStreamModal}
-  <StreamOptionsModal
-    options={stream.streamOptions}
-    loading={stream.streamLoading}
-    errors={stream.streamErrors}
-    onClose={stream.closeModal}
-    onPlay={stream.playOption}
-  />
-{/if}
-
-{#if stream.isCaching && !playback.isActive}
-  <StreamCachingOverlay
-    progress={stream.cachingProgress ?? 0}
-    error={stream.cachingError}
-    onCancel={stream.closeCachingOverlay}
-    onRetry={stream.retryCaching}
-    onPickStream={() => {
-      stream.closeCachingOverlay();
-      stream.openModal();
-    }}
-  />
-{/if}
+<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
 
 <style>
   .card-section {

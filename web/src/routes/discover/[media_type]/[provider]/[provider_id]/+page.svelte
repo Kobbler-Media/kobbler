@@ -15,14 +15,12 @@
     type DiscoverDetailResponse,
     type DiscoverEpisode
   } from '$lib/api/client';
-  import type { MovieWatchState, PlaybackSessionResponse } from '$lib/types';
+  import type { MovieWatchState } from '$lib/types';
   import { formatCalendarDate, formatDuration } from '$lib/utils/format';
-  import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
-  import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
+  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
   import { showMessage } from '$lib/context/app.svelte';
-  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
+  import { useStreamPlayback, type StreamHandoff } from '$lib/composables/useStreamPlayback.svelte';
   import { getStatsState } from '$lib/stores/stats.svelte';
-  import { on, off } from '$lib/services/eventstream.svelte';
   import { consumeDiscoverPreview } from '$lib/stores/discover-preview.svelte';
   import { discoverLibraryRoute } from '$lib/utils/entity-routes';
 
@@ -52,7 +50,8 @@
     episode_number: number;
   } | null>(null);
 
-  async function handleStreamResolved(session: PlaybackSessionResponse) {
+  async function handleStreamResolved(streamHandoff: StreamHandoff) {
+    const { session } = streamHandoff;
     let mediaId = session.media_id;
     let resolvedMediaType = session.media_type;
     // Resolve may return without media_id (dedup/cache hit). Create the entity ourselves.
@@ -88,7 +87,7 @@
       }
     }
     if (mediaId) {
-      const navState = { playbackSession: session };
+      const navState = { streamHandoff };
       if (resolvedMediaType === 'movie') {
         goto(`/movies/${mediaId}`, { state: navState });
       } else if (resolvedMediaType === 'episode') {
@@ -146,7 +145,12 @@
           : {})
       };
     },
-    onResolved: handleStreamResolved
+    onResolved: handleStreamResolved,
+    want: () =>
+      streamingEpisodeContext
+        ? wantEpisode(streamingEpisodeContext.season_number, streamingEpisodeContext.episode_number)
+        : handleWant(),
+    canWant: () => !!streamingEpisodeContext || !isWanted
   });
 
   const mediaType = $derived($page.params.media_type ?? '');
@@ -215,19 +219,6 @@
   let seasonEpisodes = $state<Map<number, DiscoverEpisode[]>>(new Map());
   let seasonLoading = $state<number | null>(null);
   let wantingEpisodes = $state<Set<string>>(new Set());
-
-  // Listen for debrid cache warming completions — mark the option cached and
-  // promote it, so auto-play picks a verified stream instead of walking options
-  // that warming has since proven blocked.
-  $effect(() => {
-    const cb = on(
-      'stream_warm_ready',
-      (data: { info_hash: string; file_id?: number | null; debrid_provider_id: string }) => {
-        stream.markCached(data.info_hash, data.file_id ?? null, data.debrid_provider_id);
-      }
-    );
-    return () => off('stream_warm_ready', cb);
-  });
 
   onMount(async () => {
     await loadDetail();
@@ -361,15 +352,15 @@
     stream.openModal();
   }
 
-  async function handleEpisodeWant(seasonNumber: number, episode: DiscoverEpisode) {
-    const key = `${seasonNumber}-${episode.episode_number}`;
+  async function wantEpisode(seasonNumber: number, episodeNumber: number) {
+    const key = `${seasonNumber}-${episodeNumber}`;
     wantingEpisodes = new Set([...wantingEpisodes, key]);
     try {
       const result = await wantDiscoverEpisode({
         provider,
         provider_id: providerId,
         season_number: seasonNumber,
-        episode_number: episode.episode_number,
+        episode_number: episodeNumber,
         title,
         year: year ?? undefined,
         identifiers,
@@ -554,9 +545,9 @@
                   class="action-btn action-stream"
                   type="button"
                   onclick={stream.autoPlay}
-                  disabled={stream.streamLoading}
+                  disabled={stream.busy}
                 >
-                  {#if stream.streamLoading}
+                  {#if stream.busy}
                     <div class="btn-spinner stream-spinner"></div>
                     Searching...
                   {:else}
@@ -681,7 +672,7 @@
                             <button
                               class="ep-want-btn"
                               disabled={wantingEpisodes.has(epKey)}
-                              onclick={() => handleEpisodeWant(season.season_number, ep)}
+                              onclick={() => wantEpisode(season.season_number, ep.episode_number)}
                             >
                               {#if wantingEpisodes.has(epKey)}
                                 <div class="ep-spinner"></div>
@@ -742,28 +733,7 @@
   </div>
 {/if}
 
-{#if stream.showStreamModal}
-  <StreamOptionsModal
-    options={stream.streamOptions}
-    loading={stream.streamLoading}
-    errors={stream.streamErrors}
-    onClose={stream.closeModal}
-    onPlay={stream.playOption}
-  />
-{/if}
-
-{#if stream.isCaching}
-  <StreamCachingOverlay
-    progress={stream.cachingProgress ?? 0}
-    error={stream.cachingError}
-    onCancel={stream.closeCachingOverlay}
-    onRetry={stream.retryCaching}
-    onPickStream={() => {
-      stream.closeCachingOverlay();
-      stream.openModal();
-    }}
-  />
-{/if}
+<StreamPlaybackOverlays {stream} />
 
 <style>
   .loading-page,

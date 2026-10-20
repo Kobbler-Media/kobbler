@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, info_hash, debrid_provider, filename, filesize,\n               cache_path AS \"cache_path?\",\n               debrid_url AS \"debrid_url?\",\n               debrid_url_expires_at AS \"debrid_url_expires_at?\"\n        FROM debrid_stream_sessions\n        WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n        ",
+  "query": "\n        SELECT id, info_hash, file_id, debrid_provider, filename, filesize, release_title,\n               cache_path AS \"cache_path?\",\n               debrid_url AS \"debrid_url?\",\n               debrid_url_expires_at AS \"debrid_url_expires_at?\"\n        FROM debrid_stream_sessions\n        WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n        ",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,17 @@
       },
       {
         "ordinal": 2,
+        "name": "file_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "debrid_provider",
         "type_info": "Text",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "filename",
         "type_info": "Text",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "filesize",
         "type_info": "Int8",
         "origin": {
@@ -59,7 +70,18 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
+        "name": "release_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "release_title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
         "name": "cache_path?",
         "type_info": "Text",
         "origin": {
@@ -70,7 +92,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "debrid_url?",
         "type_info": "Text",
         "origin": {
@@ -81,7 +103,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "debrid_url_expires_at?",
         "type_info": "Timestamptz",
         "origin": {
@@ -101,6 +123,8 @@
     "nullable": [
       false,
       true,
+      true,
+      false,
       false,
       false,
       false,
@@ -109,5 +133,5 @@
       true
     ]
   },
-  "hash": "ee388e07f5b6896f491301c63443175a3903c1adf38d7208aa5fcd2271f937b8"
+  "hash": "31f32cafce7bf6c238067c43016ab946bfe40697a3605dba9d1440799ee112fa"
 }

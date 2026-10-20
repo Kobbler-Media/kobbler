@@ -14,6 +14,8 @@ pub mod chat_logs;
 pub mod chat_memory;
 mod config;
 pub mod dashboard;
+pub mod debrid_errors;
+pub mod debrid_outcomes;
 pub mod debrid_stream;
 mod devices;
 pub mod diagnostics;

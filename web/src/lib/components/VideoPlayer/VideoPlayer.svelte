@@ -18,11 +18,11 @@
     getNextEpisode,
     getEpisodeFiles,
     getSeason,
-    streamSearch,
-    streamResolve,
-    isStreamCaching,
-    getPlaybackHandoff
+    getPlaybackHandoff,
+    reportStreamOutcome
   } from '$lib/api/client';
+  import { resolveEpisodeStream } from '$lib/streaming/episodeStream';
+  import type { StreamPlayerFailure } from '$lib/composables/useStreamPlayback.svelte';
   import {
     on as onLibraryEvent,
     off as offLibraryEvent,
@@ -45,7 +45,7 @@
     TvEpisode,
     WatchProgress
   } from '$lib/types';
-  import { detectCapabilities, type ClientCapabilities } from '$lib/utils/media';
+  import type { ClientCapabilities } from '$lib/utils/media';
   import { getCastState, castLoadMedia, endCastSession } from '$lib/stores/cast.svelte';
   import { onStateChange, onMessage as onCastMessage, getDeviceName } from '$lib/cast/sender';
   import { castCapabilities } from '$lib/cast/capabilities';
@@ -73,11 +73,11 @@
     mediaInfo?: MediaInfo;
     initialPosition?: number;
     pendingStatus?: string;
-    pendingError?: string;
     onClose: () => void;
     onSwitchStream?: () => void;
     onPickStream?: () => void;
-    onRetryStream?: () => void;
+    /** Returns true when the host takes over (e.g. tries another release); false keeps the in-player error. */
+    onStreamFailed?: (failure: StreamPlayerFailure) => boolean;
     /**
      * Fired when the player switches to a different episode in-place (Up Next,
      * episode list) so the host page can refresh its own metadata — title,
@@ -110,11 +110,10 @@
     mediaInfo,
     initialPosition,
     pendingStatus,
-    pendingError,
     onClose,
     onSwitchStream,
     onPickStream,
-    onRetryStream,
+    onStreamFailed,
     onEpisodeChange,
     skipButtonTypes,
     autoSkipTypes,
@@ -196,7 +195,9 @@
   let initializedSessionId: string | null = null;
   $effect(() => {
     const sr = sessionResponse;
-    if (sr && sr.session_id !== initializedSessionId) {
+    if (!sr && untrack(() => sessionReady)) {
+      untrack(returnToPending);
+    } else if (sr && sr.session_id !== initializedSessionId) {
       session = sr;
       sessionReady = true;
       if (initialCreationParams) {
@@ -283,6 +284,7 @@
   let vttParsedCues: Array<{ start: number; end: number; text: string }> = [];
   let vttAppliedOffset: number | null = null;
   let error = $state<string | null>(null);
+  let streamStarted = false;
   let loadingMessage = $state<string | null>(null);
   let loadingTimer: ReturnType<typeof setTimeout> | null = null;
   let showSubtitleSearch = $state(false);
@@ -633,8 +635,7 @@
     recoveryTimestamps = recoveryTimestamps.filter((t) => nowMs - t < RECOVERY_WINDOW_MS);
     if (recoveryTimestamps.length >= MAX_RECOVERIES_IN_WINDOW) {
       console.warn('[Player] recovery storm — giving up to avoid an endless loop');
-      error = 'Stream keeps failing — try a different source';
-      loading = false;
+      failPlayback('Stream keeps failing — try a different source', 'recovery_storm');
       return;
     }
     recoveryTimestamps.push(nowMs);
@@ -707,10 +708,11 @@
       }
     }
 
-    error =
-      lastError instanceof Error ? lastError.message : 'Stream failed — try a different source';
-    loading = false;
     recovering = false;
+    failPlayback(
+      lastError instanceof Error ? lastError.message : 'Stream failed — try a different source',
+      'recovery_failed'
+    );
   }
 
   async function savePosition() {
@@ -904,34 +906,10 @@
 
   async function prefetchDebridNextEpisode(episodeId: string) {
     try {
-      const searchResult = await streamSearch({ episode_id: episodeId });
-      const options = searchResult.options;
-      if (options.length === 0) return;
-
-      const maxAttempts = Math.min(options.length, 5);
-      for (let i = 0; i < maxAttempts; i++) {
-        try {
-          const opt = options[i];
-          const resolved = await streamResolve({
-            debrid_provider_id: opt.debrid_provider_id,
-            info_hash: opt.info_hash,
-            file_id: opt.files[0]?.id,
-            media_type: 'episode',
-            media_id: episodeId,
-            release_title: opt.release_title,
-            debrid_provider: opt.debrid_provider,
-            quality: opt.quality,
-            capabilities: detectCapabilities()
-          });
-
-          if (!isStreamCaching(resolved)) {
-            debridPrefetchedSession = resolved;
-            debridPrefetchedEpisodeId = episodeId;
-            break;
-          }
-        } catch {
-          continue;
-        }
+      const resolved = await resolveEpisodeStream(episodeId);
+      if (resolved) {
+        debridPrefetchedSession = resolved;
+        debridPrefetchedEpisodeId = episodeId;
       }
     } catch {
       // Prefetch is best-effort — don't show errors
@@ -1067,38 +1045,9 @@
         debridPrefetchedSession = null;
         debridPrefetchedEpisodeId = null;
       } else if (useDebrid) {
-        // Debrid session without prefetch — resolve on the fly with fallback
-        const searchResult = await streamSearch({ episode_id: next.episode_id });
-        const options = searchResult.options;
-        if (options.length === 0) {
-          throw new Error('No streams available for this episode');
-        }
-        let resolved: PlaybackSessionResponse | null = null;
-        const maxAttempts = Math.min(options.length, 5);
-        for (let i = 0; i < maxAttempts; i++) {
-          try {
-            const opt = options[i];
-            const result = await streamResolve({
-              debrid_provider_id: opt.debrid_provider_id,
-              info_hash: opt.info_hash,
-              file_id: opt.files[0]?.id,
-              media_type: 'episode',
-              media_id: next.episode_id,
-              release_title: opt.release_title,
-              debrid_provider: opt.debrid_provider,
-              quality: opt.quality,
-              capabilities: detectCapabilities()
-            });
-            if (!isStreamCaching(result)) {
-              resolved = result;
-              break;
-            }
-          } catch {
-            continue;
-          }
-        }
+        const resolved = await resolveEpisodeStream(next.episode_id);
         if (!resolved) {
-          throw new Error('No cached streams available for this episode');
+          throw new Error('No ready stream for this episode — try again shortly');
         }
         newSession = resolved;
         newFileId = `debrid-${newSession.session_id}`;
@@ -1124,6 +1073,7 @@
       duration = newSession.duration_seconds;
 
       // Reset playback tracking
+      streamStarted = false;
       userPaused = false;
       seekOffset = 0;
       currentTime = 0;
@@ -1880,6 +1830,49 @@
     }
   }
 
+  function handlePlaying() {
+    if (!isDebridSession || streamStarted || !session.session_id) return;
+    streamStarted = true;
+    reportStreamOutcome(session.session_id, { ok: true }).catch(() => {});
+  }
+
+  function failPlayback(message: string, reason: string) {
+    loading = false;
+    if (isDebridSession && session.session_id) {
+      const sessionId = session.session_id;
+      const reported = streamStarted
+        ? Promise.resolve()
+        : reportStreamOutcome(sessionId, { ok: false, reason }).catch(() => {});
+      if (onStreamFailed?.({ sessionId, started: streamStarted, reason, reported })) {
+        cleanup();
+        return;
+      }
+    }
+    error = message;
+  }
+
+  function returnToPending() {
+    const resumeAt = displayTime;
+    cleanup();
+    // The <video> element unmounts with the session, so its audio graph can't be reused.
+    audioContext?.close();
+    audioContext = null;
+    audioGainNode = null;
+    audioLimiterNode = null;
+    session = placeholderSession();
+    sessionReady = false;
+    initializedSessionId = null;
+    error = null;
+    loading = true;
+    playing = false;
+    streamStarted = false;
+    currentTime = 0;
+    seekOffset = 0;
+    recoveryTimestamps = [];
+    // Carry the position into the next release so a reconnect resumes where it broke.
+    if (resumeAt > 5) pendingResume = resumeAt;
+  }
+
   function setupHlsErrorHandler(hls: Hls, playlistUrl: string) {
     if (!HlsClass) return;
     const Events = HlsClass.Events;
@@ -1918,11 +1911,9 @@
         } catch {
           /* body wasn't JSON — fall through to generic message */
         }
-        const userMessage = mapStreamError(code, message);
         console.warn(`hls.js: terminal stream error code=${code} message=${message}`);
-        error = userMessage;
-        loading = false;
         hls.destroy();
+        failPlayback(mapStreamError(code, message), code || 'server_error');
         return;
       }
 
@@ -1956,8 +1947,7 @@
           })
           .catch((err) => {
             console.warn('hls.js: Tier-3 decode-error recovery failed', err);
-            error = 'Playback error — the stream cannot continue';
-            loading = false;
+            failPlayback('Playback error — the stream cannot continue', 'decode_error');
           });
       } else if (data.type === ErrorTypes.NETWORK_ERROR) {
         // levelEmptyError / levelLoadError are expected when FFmpeg hasn't
@@ -1996,15 +1986,13 @@
         // Debrid sessions can't be recreated server-side — the same broken
         // session would loop forever. Surface the error immediately.
         if (isDebridSession) {
-          error = 'Stream failed \u2014 try a different source';
-          loading = false;
+          failPlayback('Stream failed \u2014 try a different source', 'network_error');
           return;
         }
         recoverSession();
         return;
       } else {
-        error = 'Playback error \u2014 the stream cannot continue';
-        loading = false;
+        failPlayback('Playback error \u2014 the stream cannot continue', 'media_error');
       }
     });
   }
@@ -2330,6 +2318,10 @@
     // recovery and the user sees a false error. Only handle video element
     // errors for direct play where there's no hls.js to recover.
     if (session.method !== 'direct_play') return;
+    if (isDebridSession && onStreamFailed) {
+      failPlayback('Stream failed — try a different source', `media_error_${code}`);
+      return;
+    }
     recoverSession();
   }
 
@@ -2831,38 +2823,21 @@
 >
   {#if !sessionReady}
     <div class="loading-overlay pending-overlay">
-      {#if pendingError}
-        <span class="material-icons-outlined pending-error-icon">error_outline</span>
-        <span class="loading-text">{pendingError}</span>
-        <div class="pending-actions">
-          {#if onRetryStream}
-            <button
-              class="pending-close-btn pending-primary-btn"
-              type="button"
-              onclick={onRetryStream}
-            >
-              Try another
-            </button>
-          {/if}
-          <button class="pending-close-btn" type="button" onclick={onClose}> Close </button>
-        </div>
-      {:else}
-        <span class="material-icons-outlined spinner-icon">refresh</span>
-        {#if pendingStatus}
-          <span class="loading-text">{pendingStatus}</span>
-        {/if}
-        <div class="pending-actions">
-          <button class="pending-close-btn" type="button" onclick={onClose}>
-            <span class="material-icons-outlined">close</span>
-            Cancel
-          </button>
-          {#if onPickStream}
-            <button class="pending-close-btn" type="button" onclick={onPickStream}>
-              Pick stream
-            </button>
-          {/if}
-        </div>
+      <span class="material-icons-outlined spinner-icon">refresh</span>
+      {#if pendingStatus}
+        <span class="loading-text">{pendingStatus}</span>
       {/if}
+      <div class="pending-actions">
+        <button class="pending-close-btn" type="button" onclick={onClose}>
+          <span class="material-icons-outlined">close</span>
+          Cancel
+        </button>
+        {#if onPickStream}
+          <button class="pending-close-btn" type="button" onclick={onPickStream}>
+            Choose a release
+          </button>
+        {/if}
+      </div>
     </div>
   {:else}
     {#if loading}
@@ -2903,6 +2878,7 @@
       style="object-fit: {effectiveObjectFit};"
       ontimeupdate={handleTimeUpdate}
       onplay={handlePlay}
+      onplaying={handlePlaying}
       onpause={handlePause}
       ondurationchange={handleDurationChange}
       onloadeddata={handleLoadedData}
@@ -3206,21 +3182,6 @@
 
   .pending-close-btn .material-icons-outlined {
     font-size: 18px;
-  }
-
-  .pending-primary-btn {
-    background: var(--accent, rgba(99, 102, 241, 0.8));
-    border-color: transparent;
-    color: #fff;
-  }
-
-  .pending-primary-btn:hover {
-    background: var(--accent, rgba(99, 102, 241, 1));
-  }
-
-  .pending-error-icon {
-    font-size: 48px;
-    color: rgba(239, 68, 68, 0.8);
   }
 
   .pending-actions {

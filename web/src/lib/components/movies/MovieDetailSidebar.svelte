@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { on, off } from '$lib/services/eventstream.svelte';
   import type {
     Movie,
     MovieFile,
@@ -16,7 +15,7 @@
     rejectDownload,
     getMovieTracks
   } from '$lib/api/client';
-  import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
+  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
   import { isActivelyWanted } from '$lib/utils/want-status';
   import { showMessage } from '$lib/context/app.svelte';
   import { usePlayback } from '$lib/composables/usePlayback.svelte';
@@ -30,7 +29,6 @@
   import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
   import SubtitlesList from '$lib/components/shared/SubtitlesList.svelte';
   import SubtitleSearchModal from '$lib/components/shared/SubtitleSearchModal.svelte';
-  import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
   import { getStatsState } from '$lib/stores/stats.svelte';
 
   interface Props {
@@ -84,20 +82,9 @@
     getResumePosition: () => watchState?.position_seconds ?? undefined,
     getEstimatedDuration: () => (movie.runtime ? movie.runtime * 60 : undefined),
     playback,
-    onMessage: showMessage
-  });
-
-  // Debrid cache warming finishes after stream search has already returned, so
-  // fold its results into the option list: mark verified-cached and promote,
-  // otherwise auto-play keeps walking options warming has proven blocked.
-  $effect(() => {
-    const cb = on(
-      'stream_warm_ready',
-      (data: { info_hash: string; file_id?: number | null; debrid_provider_id: string }) => {
-        stream.markCached(data.info_hash, data.file_id ?? null, data.debrid_provider_id);
-      }
-    );
-    return () => off('stream_warm_ready', cb);
+    onMessage: showMessage,
+    want: async () => onWant(),
+    canWant: () => !isActivelyWanted(movie.want_status)
   });
 
   const runtime = $derived.by(() => {
@@ -154,10 +141,7 @@
 
   onMount(() => {
     loadDetails().then(() => preWarm());
-    return () => {
-      playback.teardownPreWarm();
-      stream.teardown();
-    };
+    return () => playback.teardownPreWarm();
   });
 
   // Re-load when movie changes (but not on initial mount — onMount handles that)
@@ -346,7 +330,7 @@
         positionSeconds={watchState?.position_seconds ?? null}
         totalSeconds={movie.runtime ? movie.runtime * 60 : null}
         watched={watchState?.watched ?? false}
-        loading={stream.resolving || stream.streamLoading}
+        loading={stream.busy}
         variant="panel"
         onPlay={stream.autoPlay}
         onPickStream={stream.openModal}
@@ -465,28 +449,7 @@
   />
 {/if}
 
-{#if stream.showStreamModal}
-  <StreamOptionsModal
-    options={stream.streamOptions}
-    loading={stream.streamLoading}
-    errors={stream.streamErrors}
-    onClose={stream.closeModal}
-    onPlay={stream.playOption}
-  />
-{/if}
-
-{#if stream.isCaching && !playback.isActive}
-  <StreamCachingOverlay
-    progress={stream.cachingProgress ?? 0}
-    error={stream.cachingError}
-    onCancel={stream.closeCachingOverlay}
-    onRetry={stream.retryCaching}
-    onPickStream={() => {
-      stream.closeCachingOverlay();
-      stream.openModal();
-    }}
-  />
-{/if}
+<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
 
 {#if playback.isActive}
   <VideoPlayer
@@ -501,18 +464,8 @@
     mediaId={movie.id}
     mediaInfo={{ title: movie.title, artworkUrl: movie.poster_url ?? undefined }}
     initialPosition={watchState?.watched ? undefined : (watchState?.position_seconds ?? undefined)}
-    pendingStatus={stream.pendingStatus ?? undefined}
-    pendingError={stream.cachingError ?? undefined}
-    onClose={() => {
-      stream.abort();
-      playback.close();
-    }}
-    onSwitchStream={stream.handleSwitchStream}
-    onPickStream={() => {
-      stream.closeCachingOverlay();
-      stream.openModal();
-    }}
-    onRetryStream={stream.retryCaching}
+    onClose={stream.cancel}
+    {...stream.playerProps}
   />
 {/if}
 

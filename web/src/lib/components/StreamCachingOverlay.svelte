@@ -1,42 +1,28 @@
 <script lang="ts">
   interface Props {
     progress: number;
-    error: string | null;
     onCancel: () => void;
-    onRetry: () => void;
     onPickStream?: () => void;
   }
 
-  let { progress, error, onCancel, onRetry, onPickStream }: Props = $props();
+  let { progress, onCancel, onPickStream }: Props = $props();
 
   let percent = $derived(Math.round(progress * 100));
 </script>
 
 <div class="overlay-backdrop">
   <div class="overlay-card">
-    {#if error}
-      <span class="material-icons-outlined status-icon error-icon">error_outline</span>
-      <div class="status-text">Stream failed</div>
-      <div class="error-message">{error}</div>
-      <div class="actions">
-        <button type="button" class="btn btn-secondary" onclick={onCancel}>Close</button>
-        <button type="button" class="btn btn-primary" onclick={onRetry}>Try another</button>
+    <span class="material-icons-outlined status-icon spin">sync</span>
+    <div class="status-text">Preparing stream...</div>
+    <div class="progress-container">
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: {percent}%"></div>
       </div>
-    {:else}
-      <span class="material-icons-outlined status-icon spin">sync</span>
-      <div class="status-text">Preparing stream...</div>
-      <div class="progress-container">
-        <div class="progress-bar">
-          <div class="progress-fill" style="width: {percent}%"></div>
-        </div>
-        <div class="progress-label">{percent}%</div>
-      </div>
-      <button type="button" class="btn btn-secondary" onclick={onCancel}>Cancel</button>
-      {#if onPickStream}
-        <button type="button" class="link-btn" onclick={onPickStream}
-          >Pick a different stream</button
-        >
-      {/if}
+      <div class="progress-label">{percent}%</div>
+    </div>
+    <button type="button" class="btn btn-secondary" onclick={onCancel}>Cancel</button>
+    {#if onPickStream}
+      <button type="button" class="link-btn" onclick={onPickStream}>Choose a release</button>
     {/if}
   </div>
 </div>
@@ -72,21 +58,10 @@
     color: var(--accent);
   }
 
-  .error-icon {
-    color: var(--destructive);
-  }
-
   .status-text {
     font-size: 16px;
     font-weight: 600;
     color: var(--ink);
-  }
-
-  .error-message {
-    font-size: 13px;
-    color: var(--muted);
-    text-align: center;
-    line-height: 1.4;
   }
 
   .progress-container {
@@ -119,12 +94,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 4px;
-  }
-
   .btn {
     padding: 8px 20px;
     border-radius: 8px;
@@ -146,15 +115,6 @@
   .btn-secondary:hover {
     border-color: var(--ink);
     color: var(--ink);
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: var(--accent-foreground, #fff);
-  }
-
-  .btn-primary:hover {
-    opacity: 0.9;
   }
 
   .link-btn {

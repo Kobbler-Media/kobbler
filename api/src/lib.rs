@@ -12,6 +12,7 @@ pub mod config;
 pub mod convert;
 pub mod corruption;
 pub mod db;
+pub mod debrid_outcomes;
 pub mod discover_art;
 pub mod ebook;
 pub mod enrichment_config;
@@ -1958,6 +1959,10 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/admin/stream/{id}/progress",
             post(debrid_stream_routes::stream_progress),
+        )
+        .route(
+            "/api/v1/admin/stream/{id}/outcome",
+            post(routes::admin::debrid_outcomes::stream_outcome),
         )
         .route(
             "/api/v1/admin/stream/{id}/ingest",

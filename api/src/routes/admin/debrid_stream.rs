@@ -29,11 +29,13 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::debrid_outcomes::{self, StreamRelease};
 use crate::jobs::JobContext;
 use crate::repositories::{
     movie_files, movie_watch_states, movies, tv_episode_files, tv_episodes, tv_seasons, tv_shows,
     tv_watch_states,
 };
+use crate::routes::admin::debrid_errors::StreamFailure;
 use crate::routes::admin::streaming::{AudioTrackResponse, SessionResponse};
 use crate::routes::helpers::build_kobload_client;
 use crate::routes::{AuthUser, PlaybackAuth};
@@ -126,7 +128,7 @@ pub async fn stream_search(
         Err(e) => return e.into_response(),
     };
 
-    let request = if let Some(movie_id) = body.movie_id {
+    let mut request = if let Some(movie_id) = body.movie_id {
         match build_movie_search_request(&state, movie_id).await {
             Ok(r) => r,
             Err(resp) => return resp,
@@ -193,6 +195,7 @@ pub async fn stream_search(
             quality_profile_id: None,
             limit: None,
             include_uncached: None,
+            prefer: None,
         }
     } else if let Some(raw) = body.raw {
         raw
@@ -204,85 +207,32 @@ pub async fn stream_search(
             .into_response();
     };
 
-    // Determine media_type + media_id for preferred stream lookup
-    let preferred = if let Some(movie_id) = body.movie_id {
-        find_preferred_stream(&state.pool, "movie", movie_id).await
-    } else if let Some(episode_id) = body.episode_id {
-        find_preferred_stream(&state.pool, "episode", episode_id).await
-    } else {
-        None
-    };
+    let preference = debrid_outcomes::search_preference(
+        &state.pool,
+        auth.user_id,
+        body.movie_id,
+        body.episode_id,
+    )
+    .await;
+    request.prefer = preference.prefer.or(request.prefer);
 
     match client.stream_search(&request).await {
         Ok(resp) => {
-            let mut value = serde_json::to_value(resp).unwrap_or_default();
-            if let Some((hash, file_id)) = preferred
-                && let Some(obj) = value.as_object_mut()
-            {
-                obj.insert("preferred_info_hash".to_string(), json!(hash));
-                if let Some(fid) = file_id {
-                    obj.insert("preferred_file_id".to_string(), json!(fid));
+            let replay = debrid_outcomes::playable_preference(preference.replay, &resp.options);
+            let mut value = json!(resp);
+            if let Some(replay) = replay {
+                value["preferred_info_hash"] = json!(replay.info_hash);
+                if let Some(fid) = replay.file_id {
+                    value["preferred_file_id"] = json!(fid);
                 }
             }
             Json(value).into_response()
         }
         Err(e) => {
             error!(error = %e, "stream search failed");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"error": format!("stream search failed: {e}")})),
-            )
-                .into_response()
+            StreamFailure::from_kobload(&e).response(StatusCode::BAD_GATEWAY, &e.to_string())
         }
     }
-}
-
-/// Find the preferred (last successfully used) stream for a media item.
-///
-/// Prioritizes streams with a local cache file, then falls back to the most
-/// recent session. Returns `(info_hash, file_id)`.
-pub async fn find_preferred_stream(
-    pool: &sqlx::PgPool,
-    media_type: &str,
-    media_id: Uuid,
-) -> Option<(String, Option<i32>)> {
-    #[derive(sqlx::FromRow)]
-    struct PrefRow {
-        info_hash: Option<String>,
-        file_id: Option<i32>,
-        cache_path: Option<String>,
-    }
-
-    let rows: Vec<PrefRow> = sqlx::query_as(
-        r#"SELECT info_hash, file_id, cache_path
-           FROM debrid_stream_sessions
-           WHERE media_type = $1 AND media_id = $2 AND info_hash IS NOT NULL
-           ORDER BY
-             CASE WHEN cache_path IS NOT NULL THEN 0 ELSE 1 END,
-             created_at DESC
-           LIMIT 5"#,
-    )
-    .bind(media_type)
-    .bind(media_id)
-    .fetch_all(pool)
-    .await
-    .ok()?;
-
-    for row in rows {
-        let hash = row.info_hash?;
-        // If it claims a local cache, verify the file still exists
-        if let Some(ref path) = row.cache_path {
-            if tokio::fs::metadata(path).await.is_ok() {
-                return Some((hash, row.file_id));
-            }
-            // Cache file gone — try next row
-            continue;
-        }
-        // No cache_path — use as fallback (most recent session)
-        return Some((hash, row.file_id));
-    }
-
-    None
 }
 
 /// Build the dedup key for a debrid session from (info_hash, file_id).
@@ -503,11 +453,8 @@ pub async fn stream_resolve(
         Ok(r) => r,
         Err(e) => {
             error!(error = %e, "stream resolve failed");
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"error": format!("stream resolve failed: {e}")})),
-            )
-                .into_response();
+            return StreamFailure::from_kobload(&e)
+                .response(StatusCode::BAD_GATEWAY, &e.to_string());
         }
     };
 
@@ -633,13 +580,23 @@ pub async fn stream_resolve(
             container = %container,
             "Rejected non-video file from debrid resolve"
         );
-        return (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({
-                "error": format!("Resolved file is not a video (.{container})")
-            })),
+        let failure = StreamFailure::NotVideo;
+        debrid_outcomes::report_failure(
+            &state,
+            &StreamRelease {
+                debrid_provider_id: Some(body.debrid_provider_id),
+                info_hash: body.info_hash.clone(),
+                file_id: body.file_id,
+                release_title: body.release_title.clone(),
+                filename: resolved.filename.clone(),
+            },
+            failure.code(),
         )
-            .into_response();
+        .await;
+        return failure.response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            &format!("Resolved file is not a video (.{container})"),
+        );
     }
 
     info!(session_id = %session_id, filename = %resolved.filename, "created debrid stream session");
@@ -815,6 +772,13 @@ pub async fn stream_resolve(
             }
         }
     }
+    let bg_release = StreamRelease {
+        debrid_provider_id: Some(body.debrid_provider_id),
+        info_hash: body.info_hash.clone(),
+        file_id: body.file_id,
+        release_title: body.release_title.clone(),
+        filename: resolved.filename.clone(),
+    };
     let capabilities = body.capabilities.unwrap_or_default();
     let bg_state = state.clone();
     let bg_stream_url = resolved.stream_url.clone();
@@ -932,12 +896,16 @@ pub async fn stream_resolve(
                 Ok(r) => r,
                 Err(e) => {
                     error!(session_id = %session_id, error = %e, "Background probe failed");
-                    if let Some(mut session) = bg_state.playback_sessions.get_mut(&session_id) {
-                        session.error = Some(crate::streaming::session::SessionError::new(
+                    fail_debrid_session(
+                        &bg_state,
+                        session_id,
+                        &bg_release,
+                        crate::streaming::session::SessionError::new(
                             "probe_failed",
                             format!("Probe failed: {e}"),
-                        ));
-                    }
+                        ),
+                    )
+                    .await;
                     return;
                 }
             };
@@ -1332,12 +1300,16 @@ pub async fn stream_resolve(
                     audio_mode = ?decision.audio_mode,
                     "All encoders failed"
                 );
-                if let Some(mut session) = bg_state.playback_sessions.get_mut(&session_id) {
-                    session.error = Some(crate::streaming::session::SessionError::new(
+                fail_debrid_session(
+                    &bg_state,
+                    session_id,
+                    &bg_release,
+                    crate::streaming::session::SessionError::new(
                         "no_fallback_encoder",
                         format!("All encoders failed ({reason})"),
-                    ));
-                }
+                    ),
+                )
+                .await;
                 return;
             }
         };
@@ -1352,6 +1324,19 @@ pub async fn stream_resolve(
     });
 
     response
+}
+
+async fn fail_debrid_session(
+    state: &AppState,
+    session_id: Uuid,
+    release: &StreamRelease,
+    error: crate::streaming::session::SessionError,
+) {
+    let code = error.code;
+    if let Some(mut session) = state.playback_sessions.get_mut(&session_id) {
+        session.error = Some(error);
+    }
+    debrid_outcomes::report_failure(state, release, code).await;
 }
 
 async fn kids_may_search(pool: &sqlx::PgPool, body: &StreamSearchBody) -> bool {
@@ -1504,7 +1489,7 @@ const URL_EXPIRY_BUFFER_SECS: i64 = 300;
 /// Sessions are addressed by an opaque id, so every read and write of one must
 /// still carry the owner predicate. `None` means admin — free to act on any
 /// session, matching the device-ownership rule elsewhere.
-fn session_owner(user_id: Uuid, role: &str) -> Option<Uuid> {
+pub(crate) fn session_owner(user_id: Uuid, role: &str) -> Option<Uuid> {
     (role != "admin").then_some(user_id)
 }
 
@@ -1520,7 +1505,7 @@ pub async fn stream_play(
 ) -> impl IntoResponse {
     let session = match sqlx::query!(
         r#"
-        SELECT id, info_hash, debrid_provider, filename, filesize,
+        SELECT id, info_hash, file_id, debrid_provider, filename, filesize, release_title,
                cache_path AS "cache_path?",
                debrid_url AS "debrid_url?",
                debrid_url_expires_at AS "debrid_url_expires_at?"
@@ -1585,6 +1570,7 @@ pub async fn stream_play(
         let rt_config = state.runtime_config.get().await;
         let debrid_url = session.debrid_url.clone();
         let info_hash = session.info_hash.clone();
+        let file_id = session.file_id;
         let debrid_provider = session.debrid_provider.clone();
         let bg_state = state.clone();
 
@@ -1594,6 +1580,7 @@ pub async fn stream_play(
                 &bg_state,
                 &debrid_url,
                 info_hash.as_deref(),
+                file_id,
                 &debrid_provider,
                 session_id,
             )
@@ -1755,19 +1742,18 @@ pub async fn stream_play(
             }
         };
 
-        let resolve_req = nats_jobs::StreamResolveRequest {
+        let resolve_req = session_resolve_request(
             debrid_provider_id,
-            info_hash: session.info_hash.clone(),
-            magnet_url: None,
-            nzb_url: None,
-            file_id: None,
-        };
+            session.info_hash.as_deref(),
+            session.file_id,
+        );
 
         let resolved = match client.stream_resolve(&resolve_req).await {
             Ok(r) => r,
             Err(e) => {
                 error!(error = %e, "failed to re-resolve stream URL");
-                return (StatusCode::BAD_GATEWAY, "failed to resolve stream URL").into_response();
+                return StreamFailure::from_kobload(&e)
+                    .response(StatusCode::BAD_GATEWAY, &e.to_string());
             }
         };
 
@@ -1818,8 +1804,17 @@ pub async fn stream_play(
     .execute(&state.pool)
     .await;
 
+    let release = StreamRelease {
+        debrid_provider_id: Uuid::parse_str(&session.debrid_provider).ok(),
+        info_hash: session.info_hash.clone(),
+        file_id: session.file_id,
+        release_title: session.release_title.clone(),
+        filename: session.filename.clone(),
+    };
     if !is_direct_play && needs_remux(&session.filename) {
-        return remux_proxy_stream(&stream_url).await;
+        let resp = remux_proxy_stream(&stream_url).await;
+        record_upstream_failure(&state, resp.status(), &release).await;
+        return resp;
     }
 
     let patch = match crate::http::builder()
@@ -1846,7 +1841,30 @@ pub async fn stream_play(
         Err(_) => None,
     };
 
-    proxy_stream(&stream_url, session.filesize, &headers, patch).await
+    let resp = proxy_stream(&stream_url, session.filesize, &headers, patch).await;
+    record_upstream_failure(&state, resp.status(), &release).await;
+    resp
+}
+
+/// The proxies answer 502 only when the debrid host refused or dropped the request.
+async fn record_upstream_failure(state: &AppState, status: StatusCode, release: &StreamRelease) {
+    if status == StatusCode::BAD_GATEWAY {
+        debrid_outcomes::report_failure(state, release, "upstream_failed").await;
+    }
+}
+
+fn session_resolve_request(
+    debrid_provider_id: Uuid,
+    info_hash: Option<&str>,
+    file_id: Option<i32>,
+) -> nats_jobs::StreamResolveRequest {
+    nats_jobs::StreamResolveRequest {
+        debrid_provider_id,
+        info_hash: info_hash.map(String::from),
+        magnet_url: None,
+        nzb_url: None,
+        file_id,
+    }
 }
 
 /// GET /api/v1/admin/stream/:id/status — SSE endpoint for processing progress
@@ -2062,6 +2080,10 @@ pub async fn stream_progress(
             return (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response();
         }
         Ok(_) => {}
+    }
+
+    if debrid_outcomes::progress_means_played(body.progress_seconds) {
+        debrid_outcomes::record_played(&state, session_id).await;
     }
 
     // Always save position to watch state (enables resume).
@@ -3154,10 +3176,11 @@ async fn build_movie_search_request(
         quality_profile_id: movie.quality_profile_id,
         limit: None,
         include_uncached: None,
+        prefer: None,
     })
 }
 
-async fn build_episode_search_request(
+pub(crate) async fn build_episode_search_request(
     state: &AppState,
     episode_id: Uuid,
 ) -> Result<nats_jobs::StreamSearchRequest, axum::response::Response> {
@@ -3300,6 +3323,7 @@ async fn build_episode_search_request(
         quality_profile_id: show.quality_profile_id,
         limit: None,
         include_uncached: None,
+        prefer: None,
     })
 }
 
@@ -3309,6 +3333,7 @@ async fn resolve_fresh_debrid_url(
     state: &AppState,
     cached_url: &Option<String>,
     info_hash: Option<&str>,
+    file_id: Option<i32>,
     debrid_provider: &str,
     session_id: Uuid,
 ) -> Option<String> {
@@ -3337,13 +3362,7 @@ async fn resolve_fresh_debrid_url(
         }
     };
 
-    let resolve_req = nats_jobs::StreamResolveRequest {
-        debrid_provider_id,
-        info_hash: info_hash.map(String::from),
-        magnet_url: None,
-        nzb_url: None,
-        file_id: None,
-    };
+    let resolve_req = session_resolve_request(debrid_provider_id, info_hash, file_id);
 
     match client.stream_resolve(&resolve_req).await {
         Ok(resolved) if resolved.stream_url.is_empty() => {

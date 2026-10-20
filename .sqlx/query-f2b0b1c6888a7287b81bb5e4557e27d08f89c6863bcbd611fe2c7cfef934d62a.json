@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE debrid_stream_sessions\n        SET played_at = NOW()\n        WHERE id = $1 AND played_at IS NULL\n        RETURNING user_id, media_type, media_id, info_hash, file_id, debrid_provider,\n                  release_title, filename\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "media_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "info_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "info_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "file_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "debrid_provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_provider"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "release_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "release_title"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "filename",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "filename"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "f2b0b1c6888a7287b81bb5e4557e27d08f89c6863bcbd611fe2c7cfef934d62a"
+}

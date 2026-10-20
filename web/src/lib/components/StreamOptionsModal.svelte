@@ -128,6 +128,11 @@
                     Instant
                   </span>
                 {/if}
+                {#if option.playback === 'worked'}
+                  <span class="badge badge-worked">Played before</span>
+                {:else if option.playback === 'failed'}
+                  <span class="badge badge-failed">Failed before</span>
+                {/if}
                 {#if resolution}
                   <span class="badge badge-quality">{resolution}</span>
                 {/if}
@@ -273,6 +278,16 @@
   .badge-instant {
     background: color-mix(in srgb, var(--primary) 15%, transparent);
     color: var(--primary);
+  }
+
+  .badge-worked {
+    background: color-mix(in srgb, var(--primary) 15%, transparent);
+    color: var(--primary);
+  }
+
+  .badge-failed {
+    background: color-mix(in srgb, var(--destructive) 15%, transparent);
+    color: var(--destructive);
   }
 
   .badge-quality {

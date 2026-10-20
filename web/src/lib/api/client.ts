@@ -116,11 +116,17 @@ function dedup<T>(key: string, fn: () => Promise<T>): Promise<T> {
 export class ApiError extends Error {
   constructor(
     public status: number,
-    message: string
+    message: string,
+    public reason?: string,
+    public detail?: string
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 type FetchOptions = Parameters<typeof fetch>[1];
@@ -141,11 +147,13 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
 
   if (!response.ok) {
     let message = `Request failed: ${response.status}`;
+    let reason: string | undefined;
+    let detail: string | undefined;
     try {
       const error = await response.json();
-      if (typeof error?.message === 'string' && error.message.trim()) {
-        message = error.message.trim();
-      }
+      message = optionalString(error?.message) ?? optionalString(error?.error) ?? message;
+      reason = optionalString(error?.reason);
+      detail = optionalString(error?.detail);
     } catch {
       try {
         const text = await response.text();
@@ -160,7 +168,7 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
         }
       }
     }
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, message, reason, detail);
   }
 
   // Handle empty responses (204 No Content, 201 Created with no body, etc.)
@@ -6486,6 +6494,8 @@ export interface StreamOption {
   source_type: 'torrent' | 'usenet';
   files: Array<{ id: number; path: string; size: number }>;
   publish_date?: string;
+  /** Outcome history for this release file; absent when it has none. */
+  playback?: 'worked' | 'failed';
 }
 
 export interface StreamSearchResponse {
@@ -6601,6 +6611,18 @@ export async function updateStreamProgress(
 
 export async function deleteStreamSession(sessionId: string): Promise<void> {
   return request(`/api/v1/admin/stream/${sessionId}`, { method: 'DELETE' });
+}
+
+export type StreamOutcome = { ok: true } | { ok: false; reason: string };
+
+export async function reportStreamOutcome(
+  sessionId: string,
+  outcome: StreamOutcome
+): Promise<void> {
+  return request(`/api/v1/admin/stream/${sessionId}/outcome`, {
+    method: 'POST',
+    body: JSON.stringify(outcome)
+  });
 }
 
 export async function pinStreamSession(sessionId: string): Promise<void> {

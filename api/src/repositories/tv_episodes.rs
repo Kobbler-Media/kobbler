@@ -974,6 +974,33 @@ fn extract_still_from_images(images: Option<serde_json::Value>) -> Option<String
     })
 }
 
+/// The episode after this one for streaming: unlike [`get_next_episode`] it needs no
+/// local file, only an air date that has passed (or none known). Specials are skipped.
+pub async fn next_streamable_episode<'e, E>(exec: E, episode_id: Uuid) -> Result<Option<Uuid>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let id = sqlx::query_scalar!(
+        r#"
+        SELECT e.id
+        FROM tv_episodes cur
+        JOIN tv_seasons cs ON cs.id = cur.season_id
+        JOIN tv_seasons s ON s.show_id = cs.show_id AND NOT s.is_special
+        JOIN tv_episodes e ON e.season_id = s.id
+        WHERE cur.id = $1
+          AND (s.season_sort_order, e.episode_sort_order)
+              > (cs.season_sort_order, cur.episode_sort_order)
+          AND (e.air_date IS NULL OR e.air_date <= CURRENT_DATE)
+        ORDER BY s.season_sort_order, e.episode_sort_order
+        LIMIT 1
+        "#,
+        episode_id,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(id)
+}
+
 /// Find the next available episode after the given one.
 /// An episode is available if it has a local file OR its air_date has passed.
 /// Checks the same season first, then the next season.

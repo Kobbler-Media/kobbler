@@ -689,6 +689,28 @@ impl KobloadClient {
         resp.json().await.map_err(KobloadError::Request)
     }
 
+    pub async fn stream_outcome(
+        &self,
+        report: &nats_jobs::StreamOutcomeReport,
+    ) -> Result<(), KobloadError> {
+        let url = format!("{}/api/v1/stream/outcome", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.api_key)
+            .json(report)
+            .send()
+            .await
+            .map_err(KobloadError::Request)?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(KobloadError::Status(status, body));
+        }
+        Ok(())
+    }
+
     /// Poll the status of an uncached torrent being downloaded on a debrid provider.
     pub async fn stream_resolve_status(
         &self,

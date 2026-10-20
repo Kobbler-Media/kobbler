@@ -2,7 +2,7 @@ pub mod admin;
 pub mod chat_webhook;
 pub mod events;
 pub mod health;
-mod helpers;
+pub(crate) mod helpers;
 pub mod ingest;
 pub mod jobs;
 pub mod jobs_concurrency;

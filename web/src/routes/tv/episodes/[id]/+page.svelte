@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { on, off } from '$lib/services/eventstream.svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import ContentPageView from '$lib/components/ContentPageView.svelte';
@@ -22,9 +21,8 @@
   import { showMessage } from '$lib/context/app.svelte';
   import { getStatsState } from '$lib/stores/stats.svelte';
   import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
-  import StreamOptionsModal from '$lib/components/StreamOptionsModal.svelte';
-  import StreamCachingOverlay from '$lib/components/StreamCachingOverlay.svelte';
+  import { useStreamPlayback, type StreamHandoff } from '$lib/composables/useStreamPlayback.svelte';
+  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
   import * as api from '$lib/api/client';
   import { formatCalendarDate, formatEpisodeSearchTitle } from '$lib/utils/format';
   import type {
@@ -36,8 +34,7 @@
     SeasonDetailResult,
     EpisodeDetailResult,
     SubtitleTrackInfo,
-    ExternalSubtitleInfo,
-    PlaybackSessionResponse
+    ExternalSubtitleInfo
   } from '$lib/types';
 
   let episode = $state<TvEpisode | null>(null);
@@ -65,7 +62,7 @@
 
   const episodeId = $derived($page.params.id);
   const statsState = getStatsState();
-  const pageState = $derived($page.state as { playbackSession?: PlaybackSessionResponse });
+  const pageState = $derived($page.state as { streamHandoff?: StreamHandoff });
 
   const playback = usePlayback({
     mediaType: 'episode',
@@ -83,20 +80,9 @@
     getResumePosition: () => watchState?.position_seconds ?? undefined,
     getEstimatedDuration: () => (episode?.runtime ? episode.runtime * 60 : undefined),
     playback,
-    onMessage: showMessage
-  });
-
-  // Debrid cache warming finishes after stream search has already returned, so
-  // fold its results into the option list: mark verified-cached and promote,
-  // otherwise auto-play keeps walking options warming has proven blocked.
-  $effect(() => {
-    const cb = on(
-      'stream_warm_ready',
-      (data: { info_hash: string; file_id?: number | null; debrid_provider_id: string }) => {
-        stream.markCached(data.info_hash, data.file_id ?? null, data.debrid_provider_id);
-      }
-    );
-    return () => off('stream_warm_ready', cb);
+    onMessage: showMessage,
+    want: async () => handleWant(),
+    canWant: () => !isActivelyWanted(episode?.want_status)
   });
 
   async function loadEpisode(id: string) {
@@ -340,8 +326,8 @@
   onMount(() => {
     if (episodeId) {
       loadEpisode(episodeId).then(() => {
-        if (pageState?.playbackSession) {
-          playback.playSession(pageState.playbackSession);
+        if (pageState?.streamHandoff) {
+          stream.adoptSession(pageState.streamHandoff);
         } else if (files.length > 0) {
           playback.preWarm(files[0].id, watchState?.position_seconds ?? undefined);
         } else {
@@ -349,10 +335,7 @@
         }
       });
     }
-    return () => {
-      playback.teardownPreWarm();
-      stream.teardown();
-    };
+    return () => playback.teardownPreWarm();
   });
 
   // Reload only when the *route param* changes. Comparing against `episode.id`
@@ -525,7 +508,7 @@
                 positionSeconds={watchState?.position_seconds ?? null}
                 totalSeconds={episode!.runtime ? episode!.runtime * 60 : null}
                 watched={watchState?.watched ?? false}
-                loading={stream.resolving || stream.streamLoading}
+                loading={stream.busy}
                 variant="hero"
                 onPlay={stream.autoPlay}
                 onPickStream={stream.openModal}
@@ -619,18 +602,8 @@
       artworkUrl: episode?.still_url ?? parentShow?.poster_url ?? undefined
     }}
     initialPosition={watchState?.position_seconds ?? undefined}
-    pendingStatus={stream.pendingStatus ?? undefined}
-    pendingError={stream.cachingError ?? undefined}
-    onClose={() => {
-      stream.abort();
-      playback.close();
-    }}
-    onSwitchStream={stream.handleSwitchStream}
-    onPickStream={() => {
-      stream.closeCachingOverlay();
-      stream.openModal();
-    }}
-    onRetryStream={stream.retryCaching}
+    onClose={stream.cancel}
+    {...stream.playerProps}
     onEpisodeChange={(id) => loadEpisode(id)}
   />
 {/if}
@@ -683,28 +656,7 @@
   />
 {/if}
 
-{#if stream.showStreamModal}
-  <StreamOptionsModal
-    options={stream.streamOptions}
-    loading={stream.streamLoading}
-    errors={stream.streamErrors}
-    onClose={stream.closeModal}
-    onPlay={stream.playOption}
-  />
-{/if}
-
-{#if stream.isCaching && !playback.isActive}
-  <StreamCachingOverlay
-    progress={stream.cachingProgress ?? 0}
-    error={stream.cachingError}
-    onCancel={stream.closeCachingOverlay}
-    onRetry={stream.retryCaching}
-    onPickStream={() => {
-      stream.closeCachingOverlay();
-      stream.openModal();
-    }}
-  />
-{/if}
+<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
 
 <style>
   .loading-state {

@@ -581,22 +581,18 @@ impl TestServer {
         self._storage_dir.path().to_string_lossy().to_string()
     }
 
-    /// Process all pending `kobload_ingest` jobs synchronously.
-    ///
-    /// The HTTP endpoint now returns 202 and enqueues jobs. Tests don't run a
-    /// NATS worker, so this helper manually executes the handler for each
-    /// pending job, then updates `job_status` accordingly.
-    pub async fn process_pending_ingest_jobs(&self) {
-        let handler = KobloadIngestHandler::new(self.app_state.clone());
-
+    /// Tests don't run a NATS worker, so this executes each pending job of the handler's
+    /// type in place and records the result in `job_status`.
+    pub async fn process_pending_jobs(&self, handler: &dyn JobHandler) {
         let rows: Vec<(uuid::Uuid, serde_json::Value)> = sqlx::query_as(
             "SELECT id, payload FROM job_status \
-             WHERE job_type = 'kobload_ingest' AND status = 'pending' \
+             WHERE job_type = $1 AND status = 'pending' \
              ORDER BY created_at",
         )
+        .bind(handler.job_type())
         .fetch_all(&self.pool)
         .await
-        .expect("query pending ingest jobs");
+        .expect("query pending jobs");
 
         for (job_id, payload) in rows {
             sqlx::query(
@@ -633,6 +629,11 @@ impl TestServer {
                 }
             }
         }
+    }
+
+    pub async fn process_pending_ingest_jobs(&self) {
+        self.process_pending_jobs(&KobloadIngestHandler::new(self.app_state.clone()))
+            .await;
     }
 }
 

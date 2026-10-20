@@ -1,4 +1,4 @@
-.PHONY: all quick web up deps deps-web deps-plugin fmt fmt-api fmt-web fmt-plugin lint lint-api lint-web lint-plugin check check-api check-web check-plugin sqlx-check sqlx-prepare sqlx-migrate build build-api build-web test test-api test-db-up test-db-down docker-push tools sweep
+.PHONY: all quick web up deps deps-web deps-plugin fmt fmt-api fmt-web fmt-plugin lint lint-api lint-web lint-plugin check check-api check-web check-plugin sqlx-check sqlx-prepare sqlx-migrate build build-api build-web test test-api test-web test-db-up test-db-down docker-push tools sweep
 
 # Prerequisites for a fresh clone:
 #   - Rust stable + `cargo install sqlx-cli` (for the sqlx-check / sqlx-prepare targets)
@@ -84,7 +84,10 @@ lint-plugin:
 
 check-plugin: lint-plugin
 
-test: test-api
+test: test-api test-web
+
+test-web:
+	npm --prefix web test
 
 test-db-up:
 	docker compose -f docker-compose.test.yml up -d --wait
