@@ -5,11 +5,11 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Redirect},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -228,6 +228,30 @@ async fn library_target(
     }
 }
 
+async fn apply_preference(
+    state: &AppState,
+    user_id: Uuid,
+    media_type: &str,
+    id: &str,
+    search_request: &mut nats_jobs::StreamSearchRequest,
+) {
+    let (movie_id, episode_id) = library_target(&state.pool, media_type, id).await;
+    search_request.prefer =
+        crate::debrid_outcomes::search_preference(&state.pool, user_id, movie_id, episode_id)
+            .await
+            .prefer;
+}
+
+/// Options that failed for this user before are listed but never fallen back to.
+fn fallback_ids<'a>(options: impl IntoIterator<Item = &'a StreamOption>) -> Vec<String> {
+    options
+        .into_iter()
+        .filter(|o| o.playback != Some(nats_jobs::StreamPlayback::Failed))
+        .take(5)
+        .map(|o| o.id.clone())
+        .collect()
+}
+
 async fn validate_stremio_key(pool: &crate::DbPool, api_key: &str) -> Option<Uuid> {
     sqlx::query_scalar!(
         r#"SELECT user_id FROM stremio_api_keys WHERE api_key = $1"#,
@@ -300,11 +324,7 @@ pub async fn stream(
     timings.build_search_ms = build_search_start.elapsed().as_millis() as u64;
 
     let preferred_lookup_start = std::time::Instant::now();
-    let (movie_id, episode_id) = library_target(&state.pool, &media_type, id).await;
-    search_request.prefer =
-        crate::debrid_outcomes::search_preference(&state.pool, user_id, movie_id, episode_id)
-            .await
-            .prefer;
+    apply_preference(&state, user_id, &media_type, id, &mut search_request).await;
     timings.preferred_lookup_ms = preferred_lookup_start.elapsed().as_millis() as u64;
 
     let runtime = state.runtime_config.get().await;
@@ -327,11 +347,6 @@ pub async fn stream(
 
     let assemble_start = std::time::Instant::now();
     let options = search_result.options;
-    let failed_ids: std::collections::HashSet<String> = options
-        .iter()
-        .filter(|o| o.playback == Some(nats_jobs::StreamPlayback::Failed))
-        .map(|o| o.id.clone())
-        .collect();
 
     let streams: Vec<StremioStream> = options
         .iter()
@@ -392,7 +407,13 @@ pub async fn stream(
             StremioStream {
                 name,
                 title,
-                url: format!("{}/stremio/{}/play/{}", base_url, api_key, opt.id),
+                // type/id let play() re-run the search for fallbacks when its
+                // in-memory chain is gone (API restart, cache TTL) but Stremio
+                // is still replaying a stream list it cached earlier.
+                url: format!(
+                    "{}/stremio/{}/play/{}?type={}&id={}",
+                    base_url, api_key, opt.id, media_type, id
+                ),
                 behavior_hints: StemioBehaviorHints {
                     binge_group: format!("kobbler-{}-{}", opt.debrid_provider, resolution),
                 },
@@ -401,21 +422,14 @@ pub async fn stream(
         .collect();
 
     // Pre-populate fallback chains so play() can retry on failure
-    let option_ids: Vec<String> = options.iter().map(|o| o.id.clone()).collect();
-    for (i, opt_id) in option_ids.iter().enumerate() {
-        let fallbacks: Vec<String> = option_ids[i + 1..]
-            .iter()
-            .filter(|id| !failed_ids.contains(*id))
-            .take(5)
-            .cloned()
-            .collect();
+    for (i, opt) in options.iter().enumerate() {
         state.stremio_play_cache.insert(
-            opt_id.clone(),
+            opt.id.clone(),
             CachedStremioRedirect {
                 session_id: Uuid::nil(),
                 redirect_url: String::new(),
                 last_accessed_at: std::time::Instant::now(),
-                fallback_option_ids: fallbacks,
+                fallback_option_ids: fallback_ids(&options[i + 1..]),
             },
         );
     }
@@ -526,6 +540,45 @@ async fn try_resolve_option(
     Some((sid, redirect_url))
 }
 
+/// Content the option was listed for, carried on the play URL.
+#[derive(Deserialize)]
+pub struct PlayQuery {
+    #[serde(rename = "type")]
+    media_type: Option<String>,
+    id: Option<String>,
+}
+
+/// Re-run the search stream() listed the option from, ranked the same way, and
+/// return the fallback chain stream() would have cached for `option_id`.
+async fn rebuild_fallbacks(
+    state: &AppState,
+    user_id: Uuid,
+    media_type: &str,
+    id: &str,
+    option_id: &str,
+) -> Vec<String> {
+    let search_request = match media_type {
+        "movie" => build_movie_search(id, state).await,
+        "series" => build_series_search(id, state).await,
+        _ => return vec![],
+    };
+    let Ok(mut search_request) = search_request else {
+        return vec![];
+    };
+    apply_preference(state, user_id, media_type, id, &mut search_request).await;
+    let runtime = state.runtime_config.get().await;
+    let Ok(client) = build_kobload_client(&runtime) else {
+        return vec![];
+    };
+    match client.stream_search(&search_request).await {
+        Ok(r) => fallback_ids(r.options.iter().filter(|o| o.id != option_id)),
+        Err(e) => {
+            warn!(error = %e, media_type, id, "stremio fallback search failed");
+            vec![]
+        }
+    }
+}
+
 /// GET /stremio/{api_key}/play/{option_id}
 ///
 /// Resolves the stream via our debrid proxy — Stremio gets a direct play URL
@@ -538,6 +591,7 @@ pub async fn play(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Path((api_key, option_id)): Path<(String, String)>,
+    Query(query): Query<PlayQuery>,
 ) -> impl IntoResponse {
     let user_id = match validate_stremio_key(&state.pool, &api_key).await {
         Some(id) => id,
@@ -575,11 +629,18 @@ pub async fn play(
     }
 
     // Primary failed — try fallback options
-    let fallbacks = state
+    let mut fallbacks = state
         .stremio_play_cache
         .get(&option_id)
         .map(|e| e.fallback_option_ids.clone())
         .unwrap_or_default();
+
+    if fallbacks.is_empty()
+        && let (Some(media_type), Some(id)) = (&query.media_type, &query.id)
+    {
+        fallbacks = rebuild_fallbacks(&state, user_id, media_type, id, &option_id).await;
+        info!(option_id = %option_id, count = fallbacks.len(), "stremio play: rebuilt fallbacks from a fresh search");
+    }
 
     for alt_id in &fallbacks {
         // Check if this fallback already has a cached session

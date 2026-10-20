@@ -904,3 +904,61 @@ async fn test_stream_play_reresolve_keeps_session_file_id() {
         }
     }
 }
+
+#[tokio::test]
+async fn test_stremio_play_rebuilds_fallbacks_after_restart() {
+    let (server, mock) = kobload_server().await;
+    let user = admin_id(&server).await;
+    insert_movie(&server, "tt9000021").await;
+    sqlx::query("INSERT INTO stremio_api_keys (user_id, api_key) VALUES ($1, 'rebuild-key')")
+        .bind(user)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+    mount_search(
+        &mock,
+        vec![
+            option("rebuildfirst", None, None),
+            option("rebuildfail", None, Some("failed")),
+            option("rebuildnext", None, None),
+        ],
+    )
+    .await;
+    Mock::given(method("POST"))
+        .and(path_regex("/api/v1/stream/resolve"))
+        .respond_with(
+            ResponseTemplate::new(500)
+                .set_body_string("Debrid error: Real-Debrid refused this release."),
+        )
+        .mount(&mock)
+        .await;
+
+    let resp = TestClient::new(&server.api_url)
+        .get("/stremio/rebuild-key/stream/movie/tt9000021.json")
+        .await;
+    resp.assert_ok();
+    let body: Value = resp.json();
+    let url = body["streams"][0]["url"].as_str().unwrap();
+    let play_path = &url[url.find("/stremio/").unwrap()..];
+
+    // Stremio replays the stream list it cached before the API restarted.
+    server.app_state.stremio_play_cache.clear();
+    TestClient::new(&server.api_url)
+        .get(play_path)
+        .await
+        .assert_status(StatusCode::SERVICE_UNAVAILABLE);
+
+    let tried: Vec<String> = requests_to(&mock, "/stream/resolve")
+        .await
+        .iter()
+        .map(|r| r["info_hash"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(tried, ["rebuildfirst", "rebuildnext"]);
+
+    let searches = requests_to(&mock, "/stream/search").await;
+    assert_eq!(searches.len(), 2);
+    assert_eq!(
+        searches[1], searches[0],
+        "the rebuilt chain must come from the same ranked search Stremio listed"
+    );
+}
