@@ -565,37 +565,92 @@ fn collapse_whitespace(s: &str) -> String {
 /// "Thailand Sprint Race" → "Thailand"
 /// "Grand Prix of Qatar" → "Qatar"
 /// "Thailand Grand Prix Moto3" → "Thailand" (strips class suffix first)
+/// Title sponsors TheSportsDB puts in front of WorldSBK round names
+/// ("Pirelli Spanish Round", "Prosecco DOC UK Round"). Longest first.
+const ROUND_SPONSORS: &[&str] = &[
+    "Prosecco DOC",
+    "Liqui Moly",
+    "Estrella Galicia",
+    "Pirelli",
+    "Motul",
+    "Acerbis",
+    "Tissot",
+    "Dunlop",
+];
+
 /// Normalize a location extracted from an event title.
 /// Strips leading articles and maps demonyms to country names.
+///
+/// WorldSBK titles are "{Sponsor} {Demonym} Round[ Superpole] - {Session}", so
+/// after the session is gone the sponsor, "Round", "Superpole" and the dash are
+/// left over. Kept, they made every SBK want look for a place no release is
+/// named after ("Pirelli Spanish Round" vs `WSBK.2026.Round12.Spain.Jerez`) and
+/// nothing was grabbed from round 5 on.
 fn normalize_location(location: &str) -> String {
     // Strip leading articles
-    let location = location
+    let mut location = location
         .strip_prefix("the ")
         .or_else(|| location.strip_prefix("The "))
         .unwrap_or(location)
         .trim();
 
-    // Map demonyms to country names (common in TheSportsDB event titles)
-    match location {
-        "Brazilian" => "Brazil".to_string(),
-        "Hungarian" => "Hungary".to_string(),
-        "British" => "Britain".to_string(),
-        "Spanish" => "Spain".to_string(),
-        "French" => "France".to_string(),
-        "Italian" => "Italy".to_string(),
-        "Dutch" => "Netherlands".to_string(),
-        "German" => "Germany".to_string(),
-        "Australian" => "Australia".to_string(),
-        "Austrian" => "Austria".to_string(),
-        "Japanese" => "Japan".to_string(),
-        "Chinese" => "China".to_string(),
-        "Indian" => "India".to_string(),
-        "Portuguese" => "Portugal".to_string(),
-        "Canadian" => "Canada".to_string(),
-        "Mexican" => "Mexico".to_string(),
-        "Belgian" => "Belgium".to_string(),
-        other => other.to_string(),
+    loop {
+        let before = location;
+        location = location.trim_end_matches(['-', ' ']);
+        for suffix in [" Superpole", " Round"] {
+            if let Some(stripped) = location.strip_suffix(suffix) {
+                location = stripped;
+            }
+        }
+        if location == before {
+            break;
+        }
     }
+    for sponsor in ROUND_SPONSORS {
+        if let Some(rest) = location.strip_prefix(sponsor)
+            && rest.starts_with(' ')
+        {
+            location = rest.trim();
+            break;
+        }
+    }
+
+    if let Some(country) = demonym_country(location) {
+        return country.to_string();
+    }
+    // An unlisted sponsor in front of a demonym ("Acme Spanish") still names
+    // the country.
+    if let Some((_, last)) = location.rsplit_once(' ')
+        && let Some(country) = demonym_country(last)
+    {
+        return country.to_string();
+    }
+    location.to_string()
+}
+
+/// Map demonyms to country names (common in TheSportsDB event titles).
+fn demonym_country(word: &str) -> Option<&'static str> {
+    let country = match word {
+        "Brazilian" => "Brazil",
+        "Hungarian" => "Hungary",
+        "British" => "Britain",
+        "Spanish" => "Spain",
+        "French" => "France",
+        "Italian" => "Italy",
+        "Dutch" => "Netherlands",
+        "German" => "Germany",
+        "Australian" => "Australia",
+        "Austrian" => "Austria",
+        "Japanese" => "Japan",
+        "Chinese" => "China",
+        "Indian" => "India",
+        "Portuguese" => "Portugal",
+        "Canadian" => "Canada",
+        "Mexican" => "Mexico",
+        "Belgian" => "Belgium",
+        _ => return None,
+    };
+    Some(country)
 }
 
 pub fn extract_location(event_name: Option<&str>) -> String {
@@ -736,7 +791,8 @@ pub fn extract_session_from_event(event_name: &str, location: &str) -> String {
     if let Some(rest) = cleaned.strip_prefix(location)
         && (rest.is_empty() || rest.starts_with(' '))
     {
-        let rest = rest.trim();
+        // "San Marino - Sprint Race": the location no longer carries the dash.
+        let rest = rest.trim().trim_start_matches('-').trim();
         if !rest.is_empty() {
             return normalize_session_name(rest);
         }
@@ -1122,6 +1178,23 @@ pub struct SportEventDetails {
     pub event_title: Option<String>,
 }
 
+/// The session to put in a want, which can be more specific than the one the
+/// episode identifier is built from.
+///
+/// WorldSBK's Superpole Race is titled "{Round} Superpole - Race", and the dash
+/// keeps it from reading as "Superpole Race": the session comes out as "Race".
+/// SBK has no other plain "Race", so the identifier (`evt-r12-race`) is still
+/// unique and stays as it is: changing it would fork every existing row. The
+/// want has to say "Superpole Race", though, or it never matches the
+/// `...Superpole.Race...` release.
+fn want_session(title: &str, session: String) -> String {
+    if session == "Race" && title.to_lowercase().contains("superpole") {
+        "Superpole Race".to_string()
+    } else {
+        session
+    }
+}
+
 /// Parse sport event details from episode title, identifier, and sort order.
 ///
 /// Supports both new format (evt-{id} identifier, raw TheSportsDB title)
@@ -1144,7 +1217,8 @@ pub fn parse_sport_event_details(
         if let Some(title_str) = title {
             let location = extract_location(Some(title_str));
             if location != "Unknown" {
-                let session = extract_session_from_event(title_str, &location);
+                let session =
+                    want_session(title_str, extract_session_from_event(title_str, &location));
                 return SportEventDetails {
                     round,
                     location: Some(location),
@@ -1431,6 +1505,115 @@ mod tests {
             extract_session_from_event("Pirelli Portuguese Round Free Practice 1 SBK", "Portugal"),
             "Free Practice 1"
         );
+    }
+
+    /// TheSportsDB's 2026 WorldSBK titles, from round 5 on with no country to
+    /// fall back to. The sponsor, "Round", "Superpole" and the dash all ended
+    /// up in the location, and every want from those rounds missed its release
+    /// (`WSBK.2026.Round12.Spain.Jerez.Race.One`).
+    #[test]
+    fn sbk_round_titles_give_the_place_releases_use() {
+        let cases = [
+            ("Pirelli Spanish Round - Race 1", "Spain"),
+            ("Pirelli Spanish Round Superpole - Race", "Spain"),
+            ("Pirelli Portuguese Round - Free Practice 1", "Portugal"),
+            ("Pirelli Portuguese Round Superpole", "Portugal"),
+            ("Pirelli Dutch Superpole - Race", "Netherlands"),
+            ("Motul Hungarian Round - Race 2", "Hungary"),
+            ("Czech Round - Race 1", "Czech"),
+            ("Aragon Round Superpole - Race", "Aragon"),
+            (
+                "Pirelli Emilia Romagna Round - Superpole - Race",
+                "Emilia Romagna",
+            ),
+            ("Prosecco DOC UK Round - Race 2", "UK"),
+            ("Acerbis French Round - Race 1", "France"),
+            ("Italian Round - Race 1", "Italy"),
+            ("Italian Superpole - Race", "Italy"),
+            ("Tissot Estoril Round - Race 2", "Estoril"),
+            ("Australian - Warm Up", "Australia"),
+            ("Australian Superpole", "Australia"),
+            // An unlisted sponsor still leaves the demonym to map.
+            ("Acme Spanish Round - Race 1", "Spain"),
+            // The pre-2026 form.
+            ("Pirelli Portuguese Round Superpole Race SBK", "Portugal"),
+        ];
+        for (title, want) in cases {
+            assert_eq!(extract_location(Some(title)), want, "location for {title}");
+        }
+    }
+
+    #[test]
+    fn sbk_wants_name_the_superpole_race() {
+        let race = |title: &str, ident: &str, ord: i32| {
+            let d = parse_sport_event_details(Some(title), ident, ord);
+            (d.location, d.session_type, d.round)
+        };
+        assert_eq!(
+            race(
+                "Pirelli Spanish Round Superpole - Race",
+                "evt-r12-race",
+                12002
+            ),
+            (
+                Some("Spain".into()),
+                Some("Superpole Race".into()),
+                Some(12)
+            )
+        );
+        assert_eq!(
+            race("Pirelli Spanish Round - Race 1", "evt-r12-race-1", 12000),
+            (Some("Spain".into()), Some("Race 1".into()), Some(12))
+        );
+        assert_eq!(
+            race(
+                "Pirelli Portuguese Round Superpole",
+                "evt-r2-superpole",
+                2004
+            ),
+            (Some("Portugal".into()), Some("Superpole".into()), Some(2))
+        );
+        // MotoGP has no Superpole; its races stay "Race".
+        assert_eq!(
+            race("Thailand Race", "evt-r1-race", 1003).1,
+            Some("Race".into())
+        );
+    }
+
+    /// Existing rows are keyed on these identifiers; the location cleanup must
+    /// not move any of them, or a season refresh inserts a second row per event.
+    #[test]
+    fn sbk_identifiers_are_unchanged_by_the_location_cleanup() {
+        let cases = [
+            ("Pirelli Spanish Round - Race 1", 12000, "evt-r12-race-1"),
+            ("Pirelli Spanish Round - Race 2", 12001, "evt-r12-race-2"),
+            (
+                "Pirelli Spanish Round Superpole - Race",
+                12002,
+                "evt-r12-race",
+            ),
+            (
+                "Pirelli Portuguese Round Superpole",
+                2004,
+                "evt-r2-superpole",
+            ),
+            (
+                "Pirelli Portuguese Round - Free Practice 1",
+                2000,
+                "evt-r2-free-practice-1",
+            ),
+            ("Australian Superpole - Race", 1007, "evt-r1-race"),
+            ("Australian - Warm Up", 1005, "evt-r1-warm-up"),
+            ("San Marino - Sprint Race", 14005, "evt-r14-sprint-race"),
+            ("Spain - Free Practice 1", 4000, "evt-r4-free-practice-1"),
+        ];
+        for (title, ord, want) in cases {
+            assert_eq!(
+                sport_episode_identifier(ord, Some(title), Some("123")),
+                want,
+                "identifier for {title}"
+            );
+        }
     }
 
     // =========================================================================
