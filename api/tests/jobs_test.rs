@@ -925,3 +925,52 @@ async fn test_job_display_null_without_entity() {
         "display should be null for jobs without entity context"
     );
 }
+
+async fn count_search_index_jobs(server: &TestServer, entity_type: &str, id: uuid::Uuid) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM job_status WHERE job_type = 'search_index' \
+         AND payload->>'entity_type' = $1 AND payload->>'entity_id' = $2",
+    )
+    .bind(entity_type)
+    .bind(id.to_string())
+    .fetch_one(&server.pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn test_search_index_enqueue_skips_while_pending() {
+    let server = TestServer::start_api_only().await;
+    let show_id = uuid::Uuid::new_v4();
+
+    // A burst of updates for one show leaves a single pending job.
+    for _ in 0..3 {
+        api::jobs::enqueue_tv_show_index(&server.pool, &server.nats_publisher, show_id).await;
+    }
+    assert_eq!(
+        count_search_index_jobs(&server, "tv_show", show_id).await,
+        1
+    );
+
+    // The children job is a different entity_type and is not swallowed by the show job.
+    api::jobs::enqueue_tv_show_children_index(&server.pool, &server.nats_publisher, show_id).await;
+    assert_eq!(
+        count_search_index_jobs(&server, "tv_show_children", show_id).await,
+        1
+    );
+
+    // Once the job is running it may have read stale rows, so a new update enqueues again.
+    sqlx::query(
+        "UPDATE job_status SET status = 'running' WHERE job_type = 'search_index' \
+         AND payload->>'entity_type' = 'tv_show' AND payload->>'entity_id' = $1",
+    )
+    .bind(show_id.to_string())
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    api::jobs::enqueue_tv_show_index(&server.pool, &server.nats_publisher, show_id).await;
+    assert_eq!(
+        count_search_index_jobs(&server, "tv_show", show_id).await,
+        2
+    );
+}

@@ -5,7 +5,9 @@ use api::search::{
     fetch_all_author_docs, fetch_all_book_docs, fetch_all_genre_docs, fetch_all_movie_docs,
     fetch_all_series_docs, fetch_all_tv_show_docs,
 };
-use api::search::{index_author, index_book, index_movie, index_series, index_tv_show};
+use api::search::{
+    index_author, index_book, index_movie, index_series, index_tv_show, index_tv_show_children,
+};
 use reqwest::StatusCode;
 use serde_json::Value;
 
@@ -733,4 +735,73 @@ async fn test_tv_show_document_includes_genres() {
         !doc.genres.is_empty(),
         "TV show should have genres populated from TEXT[] column"
     );
+}
+
+/// Insert a season with `episodes` episodes under a show.
+async fn insert_tv_season_with_episodes(
+    server: &TestServer,
+    show_id: uuid::Uuid,
+    season: i32,
+    episodes: i32,
+) {
+    let season_id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO tv_seasons (id, show_id, season_identifier, season_sort_order, is_monitored, is_special) \
+         VALUES ($1, $2, $3, $4, true, false)",
+    )
+    .bind(season_id)
+    .bind(show_id)
+    .bind(season.to_string())
+    .bind(season)
+    .execute(&server.pool)
+    .await
+    .expect("Failed to create season");
+
+    for ep in 1..=episodes {
+        sqlx::query(
+            "INSERT INTO tv_episodes (id, season_id, episode_identifier, episode_sort_order, title) \
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(season_id)
+        .bind(ep.to_string())
+        .bind(ep)
+        .bind(format!("Episode {ep}"))
+        .execute(&server.pool)
+        .await
+        .expect("Failed to create episode");
+    }
+}
+
+#[tokio::test]
+async fn test_index_tv_show_children_covers_only_that_show() {
+    let server = TestServer::start_api_only().await;
+
+    let show = create_test_tv_show(&server, "Children Batch Show").await;
+    insert_tv_season_with_episodes(&server, show, 1, 3).await;
+    insert_tv_season_with_episodes(&server, show, 2, 2).await;
+
+    // A second show's children must not be swept into the first show's batch.
+    let other = create_test_tv_show(&server, "Children Batch Other").await;
+    insert_tv_season_with_episodes(&server, other, 1, 4).await;
+
+    let counts = index_tv_show_children(server.search_backend(), &server.pool, show)
+        .await
+        .expect("index_tv_show_children SQL query failed");
+    assert_eq!(
+        counts,
+        (2, 5),
+        "expected 2 seasons and 5 episodes for the show"
+    );
+}
+
+#[tokio::test]
+async fn test_index_tv_show_children_unknown_show_is_empty() {
+    let server = TestServer::start_api_only().await;
+
+    let counts =
+        index_tv_show_children(server.search_backend(), &server.pool, uuid::Uuid::new_v4())
+            .await
+            .expect("index_tv_show_children should succeed for an unknown show");
+    assert_eq!(counts, (0, 0));
 }
