@@ -646,6 +646,21 @@ impl KobloadClient {
         &self,
         request: &nats_jobs::StreamSearchRequest,
     ) -> Result<nats_jobs::StreamSearchResponse, KobloadError> {
+        let value = self.stream_search_value(request).await?;
+        serde_json::from_value(value).map_err(|e| {
+            KobloadError::Status(
+                StatusCode::BAD_GATEWAY,
+                format!("undecodable search response: {e}"),
+            )
+        })
+    }
+
+    /// The search response as kobload sent it, for passing on to clients: option
+    /// fields kobbler has no type for yet still reach them.
+    pub async fn stream_search_value(
+        &self,
+        request: &nats_jobs::StreamSearchRequest,
+    ) -> Result<serde_json::Value, KobloadError> {
         let url = format!("{}/api/v1/stream/search", self.base_url);
         let resp = self
             .client

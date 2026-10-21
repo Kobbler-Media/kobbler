@@ -10,6 +10,7 @@
     variant: 'hero' | 'panel';
     onPlay: () => void;
     onPickStream?: () => void;
+    label?: string;
   }
 
   let {
@@ -20,7 +21,8 @@
     loading,
     variant,
     onPlay,
-    onPickStream
+    onPickStream,
+    label
   }: Props = $props();
 
   const canResume = $derived(positionSeconds != null && positionSeconds > 0 && !watched);
@@ -37,6 +39,7 @@
   });
 
   const buttonLabel = $derived.by(() => {
+    if (label) return label;
     if (mode === 'stream') return canResume ? 'Resume Stream' : 'Stream';
     return canResume ? 'Resume' : 'Play';
   });
@@ -59,8 +62,8 @@
         class="pick-btn"
         type="button"
         onclick={onPickStream}
-        title="Pick a specific stream"
-        aria-label="Pick a specific stream"
+        title="Choose a release"
+        aria-label="Choose a release"
       >
         <span class="material-icons-outlined">menu</span>
       </button>

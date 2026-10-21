@@ -240,6 +240,9 @@ async fn apply_preference(
         crate::debrid_outcomes::search_preference(&state.pool, user_id, movie_id, episode_id)
             .await
             .prefer;
+    search_request.audio_languages = crate::streaming::decision::search_audio_languages(
+        &state.runtime_config.get().await.preferred_audio_language,
+    );
 }
 
 /// Options that failed for this user before are listed but never fallen back to.
@@ -498,6 +501,7 @@ async fn try_resolve_option(
         estimated_duration: None,
         start_time: None,
         auto_create: None,
+        preferred_audio_language: None,
     };
 
     let resolve_resp =
@@ -686,7 +690,7 @@ pub async fn stream_file(
         role: "stremio".to_string(),
         is_kids: false,
     };
-    let resp = crate::routes::admin::debrid_stream::stream_play(
+    let resp = crate::routes::admin::debrid_play::stream_play(
         State(state),
         auth,
         axum::extract::Path(session_id),
@@ -762,6 +766,7 @@ async fn build_movie_search(
             limit: None,
             include_uncached: None,
             prefer: None,
+            audio_languages: Vec::new(),
         })
     } else {
         // Not in library — resolve IMDB ID to metadata via providers
@@ -868,6 +873,7 @@ async fn build_series_search(
             limit: None,
             include_uncached: None,
             prefer: None,
+            audio_languages: Vec::new(),
         })
     } else {
         // Not in library — resolve IMDB ID to metadata via providers
@@ -928,6 +934,7 @@ async fn resolve_imdb_movie(
             limit: None,
             include_uncached: None,
             prefer: None,
+            audio_languages: Vec::new(),
         });
     }
 
@@ -960,6 +967,7 @@ async fn resolve_imdb_movie(
             limit: None,
             include_uncached: None,
             prefer: None,
+            audio_languages: Vec::new(),
         });
     }
 
@@ -990,6 +998,7 @@ async fn resolve_imdb_movie(
         limit: None,
         include_uncached: None,
         prefer: None,
+        audio_languages: Vec::new(),
     })
 }
 
@@ -1063,6 +1072,7 @@ async fn resolve_imdb_tv_episode(
             limit: None,
             include_uncached: None,
             prefer: None,
+            audio_languages: Vec::new(),
         });
     }
 
@@ -1097,6 +1107,7 @@ async fn resolve_imdb_tv_episode(
             limit: None,
             include_uncached: None,
             prefer: None,
+            audio_languages: Vec::new(),
         });
     }
 
@@ -1130,6 +1141,7 @@ async fn resolve_imdb_tv_episode(
             limit: None,
             include_uncached: None,
             prefer: None,
+            audio_languages: Vec::new(),
         });
     }
 
@@ -1165,6 +1177,7 @@ async fn resolve_imdb_tv_episode(
         limit: None,
         include_uncached: None,
         prefer: None,
+        audio_languages: Vec::new(),
     })
 }
 

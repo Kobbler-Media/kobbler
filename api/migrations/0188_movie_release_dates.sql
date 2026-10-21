@@ -1,0 +1,1 @@
+ALTER TABLE movies ADD COLUMN release_dates JSONB NOT NULL DEFAULT '{}';

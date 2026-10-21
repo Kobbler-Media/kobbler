@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+use super::release_dates;
 use super::types::{
     CastMember, CrewMember, EpisodeCredits, EpisodeDetails, MediaImage, MovieResult,
     PersonCombinedCredits, PersonCreditCast, PersonCreditCrew, PersonProviderDetails,
@@ -789,6 +790,19 @@ impl VideoMetadataProvider for TmdbProvider {
                 })
         });
 
+        let release_dates_by_region =
+            release_dates::by_region(m.release_dates.iter().flat_map(|rd| &rd.results).flat_map(
+                |country| {
+                    country.release_dates.iter().filter_map(|d| {
+                        Some((
+                            country.iso_3166_1.as_str(),
+                            d.release_type?,
+                            d.release_date.as_deref()?,
+                        ))
+                    })
+                },
+            ));
+
         let cast = m
             .credits
             .as_ref()
@@ -923,6 +937,7 @@ impl VideoMetadataProvider for TmdbProvider {
             rating_count: m.vote_count,
             content_rating,
             release_date: m.release_date.clone(),
+            release_dates_by_region,
             cast,
             crew,
             images,
@@ -1565,6 +1580,9 @@ struct TmdbReleaseDateCountry {
 #[derive(Deserialize)]
 struct TmdbReleaseDateEntry {
     certification: Option<String>,
+    release_date: Option<String>,
+    #[serde(rename = "type")]
+    release_type: Option<u8>,
 }
 
 #[derive(Deserialize)]

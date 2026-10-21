@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE debrid_cache_files SET last_accessed_at = NOW()\n        WHERE file_path = (SELECT cache_path FROM debrid_stream_sessions WHERE id = $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de545a371d8ad97d02f23128ec6fbb6fef75caac370aa6ada1bcf7f6cffb3988"
+}

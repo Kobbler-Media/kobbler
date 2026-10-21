@@ -449,7 +449,7 @@
   />
 {/if}
 
-<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
+<StreamPlaybackOverlays {stream} />
 
 {#if playback.isActive}
   <VideoPlayer
@@ -462,7 +462,11 @@
         }
       : undefined}
     mediaId={movie.id}
-    mediaInfo={{ title: movie.title, artworkUrl: movie.poster_url ?? undefined }}
+    mediaInfo={{
+      title: movie.title,
+      artworkUrl: movie.poster_url ?? undefined,
+      backdropUrl: movie.backdrop_url ?? undefined
+    }}
     initialPosition={watchState?.watched ? undefined : (watchState?.position_seconds ?? undefined)}
     onClose={stream.cancel}
     {...stream.playerProps}

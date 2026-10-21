@@ -7,6 +7,8 @@
 //! The player starts immediately via debrid proxy, then progressively gains features
 //! (timeline thumbnails, skip-intro buttons, subtitles) as processing completes.
 
+use crate::repositories::debrid_cache_files::{self as cache_files, CacheRelease};
+use crate::streaming::download_meter::DownloadMeter;
 use nats_jobs::Publisher;
 use sqlx::PgPool;
 use std::path::{Path, PathBuf};
@@ -15,6 +17,8 @@ use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use uuid::Uuid;
+
+const LANDED_AFTER_IDLE: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// Configuration for the progressive download manager.
 #[derive(Debug, Clone)]
@@ -35,6 +39,16 @@ impl Default for ProgressiveDownloadConfig {
             max_cache_bytes: 100 * 1024 * 1024 * 1024, // 100 GB
         }
     }
+}
+
+/// One release's file, downloaded into the cache on behalf of a session.
+#[derive(Debug, Clone)]
+pub struct DownloadTarget {
+    pub session_id: Uuid,
+    pub url: String,
+    pub cache_path: PathBuf,
+    pub filesize: i64,
+    pub release: CacheRelease,
 }
 
 /// Manages progressive background downloads of debrid stream files.
@@ -66,18 +80,36 @@ impl ProgressiveDownloadManager {
     /// Updates the session's cache_path and progress in the DB.
     /// When complete, triggers the processing pipeline.
     ///
-    /// Returns `Err` if the file did not fully land on disk. Callers MUST NOT
-    /// mark a shared `DownloadProgress` complete unless this returned `Ok` —
-    /// doing so makes `HybridIo` trust a truncated cache file and every read
-    /// past the on-disk end becomes a hard EOF.
+    /// `meter` is marked complete only when the whole file landed: a complete
+    /// mark on a truncated file makes `HybridIo` trust it, and every read past the
+    /// on-disk end becomes a hard EOF.
     pub async fn start_download(
         self: Arc<Self>,
-        session_id: Uuid,
-        debrid_url: String,
-        cache_path: PathBuf,
-        filesize: i64,
+        target: DownloadTarget,
         cancel: CancellationToken,
+        meter: Arc<DownloadMeter>,
     ) -> Result<(), String> {
+        meter.started();
+        let outcome = self.download(target, &cancel, &meter).await;
+        if outcome.is_err() {
+            meter.finished(false);
+        }
+        outcome
+    }
+
+    async fn download(
+        &self,
+        target: DownloadTarget,
+        cancel: &CancellationToken,
+        meter: &DownloadMeter,
+    ) -> Result<(), String> {
+        let DownloadTarget {
+            session_id,
+            url: debrid_url,
+            cache_path,
+            filesize,
+            release,
+        } = target;
         if let Some(parent) = cache_path.parent()
             && let Err(e) = tokio::fs::create_dir_all(parent).await
         {
@@ -104,26 +136,12 @@ impl ProgressiveDownloadManager {
             return Err(format!("Failed to update cache path: {e}"));
         }
 
-        // Insert cache file tracking record
         let expires_at =
             time::OffsetDateTime::now_utc() + time::Duration::seconds(self.config.default_ttl_secs);
-        if let Err(e) = sqlx::query!(
-            r#"
-            INSERT INTO debrid_cache_files (session_id, file_path, file_size, expires_at)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (file_path) DO UPDATE SET
-                last_accessed_at = NOW(),
-                expires_at = $4
-            "#,
-            session_id,
-            cache_path_str,
-            filesize,
-            expires_at,
-        )
-        .execute(&self.pool)
-        .await
+        if let Err(e) =
+            cache_files::upsert(&self.pool, &release, &cache_path_str, filesize, expires_at).await
         {
-            warn!(session_id = %session_id, error = %e, "Failed to insert cache file record");
+            warn!(session_id = %session_id, error = %e, "Failed to record cache file");
         }
 
         // Start the download
@@ -135,11 +153,19 @@ impl ProgressiveDownloadManager {
         );
 
         match self
-            .download_file(&debrid_url, &cache_path, session_id, filesize, &cancel)
+            .download_file(
+                &debrid_url,
+                &cache_path,
+                session_id,
+                filesize,
+                cancel,
+                meter,
+            )
             .await
         {
             Ok(()) => {
                 info!(session_id = %session_id, "Progressive download complete");
+                meter.finished(true);
                 // Trigger processing pipeline
                 self.trigger_processing(session_id, &cache_path).await;
                 Ok(())
@@ -164,6 +190,7 @@ impl ProgressiveDownloadManager {
         session_id: Uuid,
         expected_size: i64,
         cancel: &CancellationToken,
+        meter: &DownloadMeter,
     ) -> Result<(), String> {
         use futures_util::StreamExt;
 
@@ -178,6 +205,7 @@ impl ProgressiveDownloadManager {
                 .await
                 .map(|m| m.len() as i64)
                 .unwrap_or(0);
+            meter.record(existing_size as u64);
             if expected_size > 0 && existing_size >= expected_size {
                 info!(
                     session_id = %session_id,
@@ -271,12 +299,34 @@ impl ProgressiveDownloadManager {
                     .await
                     .map_err(|e| format!("Failed to truncate file: {e}"))?;
                 downloaded = 0;
+                meter.record(0);
             }
 
             let mut stream = resp.bytes_stream();
             let mut stream_error = false;
 
-            while let Some(chunk) = stream.next().await {
+            loop {
+                // The latest write is only known to have landed once it is flushed; do
+                // that whenever the network pauses, so a reader waiting at the end of
+                // the file is not kept a chunk behind for the length of the pause.
+                let chunk = match tokio::time::timeout(LANDED_AFTER_IDLE, stream.next()).await {
+                    Ok(chunk) => chunk,
+                    Err(_) => {
+                        file.flush()
+                            .await
+                            .map_err(|e| format!("Flush error: {e}"))?;
+                        meter.record(downloaded as u64);
+                        // A stalled host must not keep a cancelled download holding the
+                        // file: whoever resumes it would append alongside.
+                        tokio::select! {
+                            chunk = stream.next() => chunk,
+                            _ = cancel.cancelled() => return Err("Cancelled".to_string()),
+                        }
+                    }
+                };
+                let Some(chunk) = chunk else {
+                    break;
+                };
                 if cancel.is_cancelled() {
                     // Keep partial file on disk for resume on next playback.
                     // Cache cleanup job handles expiration.
@@ -285,10 +335,15 @@ impl ProgressiveDownloadManager {
 
                 match chunk {
                     Ok(data) => {
+                        let durable = downloaded;
                         if let Err(e) = file.write_all(&data).await {
                             return Err(format!("Write error: {e}"));
                         }
                         downloaded += data.len() as i64;
+                        // tokio's File hands writes to a blocking thread and returns before
+                        // they land, but each write first waits out the one before it. So
+                        // once this one is accepted, everything before it is readable.
+                        meter.record(durable as u64);
                         // Reset resume counter on successful data
                         resume_attempts = 0;
                     }
@@ -320,6 +375,7 @@ impl ProgressiveDownloadManager {
 
                     let pool = self.pool.clone();
                     let sid = session_id;
+                    let path = dest.to_string_lossy().to_string();
                     tokio::spawn(async move {
                         let _ = sqlx::query!(
                             "UPDATE debrid_stream_sessions SET updated_at = NOW() WHERE id = $1",
@@ -327,13 +383,7 @@ impl ProgressiveDownloadManager {
                         )
                         .execute(&pool)
                         .await;
-                        // Keep cache file alive while downloading
-                        let _ = sqlx::query!(
-                            "UPDATE debrid_cache_files SET last_accessed_at = NOW() WHERE session_id = $1",
-                            sid,
-                        )
-                        .execute(&pool)
-                        .await;
+                        let _ = cache_files::touch(&pool, &path).await;
                     });
 
                     last_progress_update = tokio::time::Instant::now();
@@ -356,6 +406,7 @@ impl ProgressiveDownloadManager {
 
             // Flush what we have before resuming
             let _ = file.flush().await;
+            meter.record(downloaded as u64);
 
             let delay = std::time::Duration::from_secs(1 << resume_attempts.min(4));
             info!(
@@ -371,6 +422,7 @@ impl ProgressiveDownloadManager {
         file.flush()
             .await
             .map_err(|e| format!("Flush error: {e}"))?;
+        meter.record(downloaded as u64);
 
         info!(
             session_id = %session_id,

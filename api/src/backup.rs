@@ -217,8 +217,8 @@ pub const TABLES_IN_ORDER: &[&str] = &[
     "stremio_history_items",
     "stremio_history_imports",
     "debrid_stream_sessions",
-    // Depends on debrid_stream_sessions
     "debrid_cache_files",
+    "debrid_keeps",
     // Logs and caches (can be large, optional for restore)
     "client_playback_reports",
     "proxy_logs",

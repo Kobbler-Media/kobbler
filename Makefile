@@ -6,10 +6,10 @@
 #   - Docker + `docker compose` (test database)
 #   - Python 3 with `ruff` in a local .venv (the Calibre plugin lint) — `make deps-plugin`
 # `make deps` sets up everything this repo can set up for you.
-all: fmt lint check build test
+all: sweep fmt lint check build test
 
 # Quick build check - skips slow backend tests
-quick: fmt lint check build
+quick: sweep fmt lint check build
 
 # One-time setup for a fresh clone.
 deps: deps-web deps-plugin
@@ -100,6 +100,7 @@ test-api: test-db-up
 	DATABASE_URL_TEST=postgres://kobbler:kobbler@localhost:5433/kobbler_test \
 	NATS_URL_TEST=nats://localhost:4223 \
 	TEST_RUN_ID="$$RUN_ID" \
+	CARGO_INCREMENTAL=0 \
 	RUSTFLAGS="--cfg tokio_unstable" \
 	cargo test --manifest-path api/Cargo.toml -- --test-threads=4
 
@@ -122,9 +123,10 @@ docker-push:
 	@echo "Pruning old build artifacts..."
 	docker image prune -f --filter "dangling=true"
 
-# Optional disk hygiene; needs `cargo install cargo-sweep`. Not part of `make all`.
+# Skipped when cargo-sweep isn't installed so a fresh clone can still run `make`.
 sweep:
-	cargo sweep --maxsize 10GB .
+	@command -v cargo-sweep >/dev/null 2>&1 && cargo sweep --maxsize 10GB . || \
+		echo "sweep: cargo-sweep not installed, skipping (cargo install cargo-sweep)"
 
 tools:
 	docker build -f docker/tools.Dockerfile -t kobbler-tools:latest .

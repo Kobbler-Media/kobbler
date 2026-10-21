@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE debrid_keeps\n        SET state = $2, progress = $3, error = $4, updated_at = NOW()\n        WHERE session_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Float8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "510c19c7ee1c8c4e9bbdf5cd8f57066fc8f51b3c5c46f6426196e144bd7e9005"
+}

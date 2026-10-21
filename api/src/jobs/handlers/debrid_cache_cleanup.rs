@@ -3,10 +3,11 @@
 //! Runs on a schedule to:
 //! 1. Delete expired cache files (past TTL, not pinned)
 //! 2. Evict LRU files if total cache exceeds size limit
-//! 3. Update DB records for evicted files (set cache_path = NULL)
+//! 3. Forget evicted files on every session that pointed at them
 
 use crate::jobs::JobResult;
 use crate::jobs::worker::JobHandler;
+use crate::repositories::debrid_cache_files as cache_files;
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::PgPool;
@@ -32,7 +33,7 @@ impl DebridCacheCleanupHandler {
 /// `media_cache/` dir produced by `debrid_process`. Returns `true` iff the
 /// video file was removed (or was already absent); logs and continues past any
 /// sidecar or sibling-dir failures because those are best-effort cleanup.
-async fn remove_cache_entry(file_path: &str) -> bool {
+pub(crate) async fn remove_cache_entry(file_path: &str) -> bool {
     let path = std::path::Path::new(file_path);
     if path.exists()
         && let Err(e) = tokio::fs::remove_file(path).await
@@ -75,58 +76,22 @@ impl JobHandler for DebridCacheCleanupHandler {
         _payload: Value,
         cancel: CancellationToken,
     ) -> JobResult<Value> {
-        // Step 1: Delete expired, unpinned cache files
-        // Skip files accessed in the last hour — they may be actively streaming.
-        // The session heartbeat updates last_accessed_at every 30s.
-        let expired = sqlx::query!(
-            r#"
-            SELECT id, file_path, file_size
-            FROM debrid_cache_files
-            WHERE NOT pinned
-              AND expires_at < NOW()
-              AND last_accessed_at < NOW() - INTERVAL '1 hour'
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| crate::jobs::JobError::Retryable(e.to_string()))?;
+        let retryable = |e: crate::repositories::RepositoryError| {
+            crate::jobs::JobError::Retryable(e.to_string())
+        };
+        let expired = cache_files::expired(&self.pool).await.map_err(retryable)?;
 
         let mut cleaned_bytes: i64 = 0;
         let mut cleaned_count = 0;
-
         for file in &expired {
             if cancel.is_cancelled() {
                 break;
             }
-
-            // Delete the physical file + its sibling media_cache dir
-            if !remove_cache_entry(&file.file_path).await {
-                continue;
+            if self.evict(file).await {
+                cleaned_bytes += file.file_size;
+                cleaned_count += 1;
             }
-
-            // Null out the cache_path on the parent session
-            sqlx::query!(
-                r#"
-                UPDATE debrid_stream_sessions
-                SET cache_path = NULL, updated_at = NOW()
-                WHERE id = (SELECT session_id FROM debrid_cache_files WHERE id = $1)
-                "#,
-                file.id,
-            )
-            .execute(&self.pool)
-            .await
-            .ok();
-
-            // Delete the cache file record
-            sqlx::query!("DELETE FROM debrid_cache_files WHERE id = $1", file.id)
-                .execute(&self.pool)
-                .await
-                .ok();
-
-            cleaned_bytes += file.file_size;
-            cleaned_count += 1;
         }
-
         if cleaned_count > 0 {
             info!(
                 count = cleaned_count,
@@ -135,16 +100,10 @@ impl JobHandler for DebridCacheCleanupHandler {
             );
         }
 
-        // Step 2: Check total cache size and evict LRU if over limit
         let max_cache_bytes = self.runtime_config.get().await.debrid_cache_max_bytes;
-
-        let total_size: i64 = sqlx::query_scalar!(
-            r#"SELECT COALESCE(SUM(file_size)::bigint, 0) as "total!: i64" FROM debrid_cache_files WHERE NOT pinned"#,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| crate::jobs::JobError::Retryable(e.to_string()))?;
-
+        let total_size = cache_files::unpinned_bytes(&self.pool)
+            .await
+            .map_err(retryable)?;
         if total_size > max_cache_bytes {
             let excess = total_size - max_cache_bytes;
             info!(
@@ -153,60 +112,36 @@ impl JobHandler for DebridCacheCleanupHandler {
                 excess_mb = excess / (1024 * 1024),
                 "Cache over limit, evicting LRU files"
             );
-
-            // Fetch LRU files until we've freed enough space
-            let lru_files = sqlx::query!(
-                r#"
-                SELECT id, file_path, file_size
-                FROM debrid_cache_files
-                WHERE NOT pinned
-                  AND last_accessed_at < NOW() - INTERVAL '1 hour'
-                ORDER BY last_accessed_at ASC
-                "#,
-            )
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| crate::jobs::JobError::Retryable(e.to_string()))?;
-
+            let lru_files = cache_files::least_recently_used(&self.pool)
+                .await
+                .map_err(retryable)?;
             let mut freed: i64 = 0;
             for file in lru_files {
                 if cancel.is_cancelled() || freed >= excess {
                     break;
                 }
-
-                if !remove_cache_entry(&file.file_path).await {
-                    continue;
+                if self.evict(&file).await {
+                    freed += file.file_size;
                 }
-
-                sqlx::query!(
-                    r#"
-                    UPDATE debrid_stream_sessions
-                    SET cache_path = NULL, updated_at = NOW()
-                    WHERE id = (SELECT session_id FROM debrid_cache_files WHERE id = $1)
-                    "#,
-                    file.id,
-                )
-                .execute(&self.pool)
-                .await
-                .ok();
-
-                sqlx::query!("DELETE FROM debrid_cache_files WHERE id = $1", file.id)
-                    .execute(&self.pool)
-                    .await
-                    .ok();
-
-                freed += file.file_size;
             }
-
             info!(freed_mb = freed / (1024 * 1024), "LRU eviction complete");
         }
-
-        // Step 3: Clean up orphan files on disk that aren't tracked in DB
-        // (Skip for now — can be added later if needed)
 
         Ok(serde_json::json!({
             "expired_cleaned": cleaned_count,
             "expired_bytes": cleaned_bytes,
         }))
+    }
+}
+
+impl DebridCacheCleanupHandler {
+    async fn evict(&self, file: &cache_files::CachedFile) -> bool {
+        if !remove_cache_entry(&file.file_path).await {
+            return false;
+        }
+        if let Err(e) = cache_files::forget(&self.pool, &file.file_path).await {
+            warn!(path = %file.file_path, error = %e, "Failed to forget evicted cache file");
+        }
+        true
     }
 }

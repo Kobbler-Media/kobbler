@@ -19,9 +19,15 @@
     getEpisodeFiles,
     getSeason,
     getPlaybackHandoff,
+    getPlaybackSessionStatus,
     reportStreamOutcome
   } from '$lib/api/client';
-  import { resolveEpisodeStream } from '$lib/streaming/episodeStream';
+  import { superviseStart } from '$lib/streaming/startLiveness';
+  import { startingAudio } from '$lib/streaming/audioPreference';
+  import { useKeep } from '$lib/composables/useKeep.svelte';
+  import type { CachingState } from '$lib/streaming/cacheWait';
+  import StartShell from './StartShell.svelte';
+  import { createNextEpisodeWarmer } from '$lib/streaming/episodeStream';
   import type { StreamPlayerFailure } from '$lib/composables/useStreamPlayback.svelte';
   import {
     on as onLibraryEvent,
@@ -60,6 +66,7 @@
     subtitle?: string;
     seasonId?: string;
     artworkUrl?: string;
+    backdropUrl?: string;
   }
 
   interface Props {
@@ -72,7 +79,9 @@
     mediaId?: string;
     mediaInfo?: MediaInfo;
     initialPosition?: number;
+    resumePosition?: number;
     pendingStatus?: string;
+    pendingCaching?: CachingState | null;
     onClose: () => void;
     onSwitchStream?: () => void;
     onPickStream?: () => void;
@@ -109,7 +118,9 @@
     mediaId: initialMediaId,
     mediaInfo,
     initialPosition,
+    resumePosition,
     pendingStatus,
+    pendingCaching = null,
     onClose,
     onSwitchStream,
     onPickStream,
@@ -203,13 +214,24 @@
       if (initialCreationParams) {
         activeCreationParams = { ...initialCreationParams };
       }
+      // A discover stream mints its library entity on resolve, so the id only
+      // exists once the session does.
+      if (sr.media_id) activeMediaId = sr.media_id;
       duration = sr.duration_seconds;
+      activeAudioIndex = startingAudio(
+        sr.method,
+        sr.audio_tracks,
+        sr.preferred_audio_stream_index
+      ).active;
+      const resume = untrack(() => resumePosition);
+      if (resume !== undefined) pendingResume = sr.start_time ? 0 : resume > 5 ? resume : 0;
       // Defer player initialization to next tick so DOM is ready after {#if sessionReady}
       queueMicrotask(() => {
         if (videoEl && HlsClass) {
           videoEl.playbackRate = playbackSpeed;
           initPlayer();
           startHeartbeat();
+          watchDebridStart();
           resetHideTimer();
           if (sr.lufs != null && videoEl) {
             try {
@@ -235,12 +257,7 @@
               });
             }
           }
-          if (!isLive) {
-            positionSaveInterval = setInterval(() => {
-              savePosition();
-              checkAutoMarkWatched();
-            }, 30_000);
-          }
+          startPositionSaving();
         }
       });
     }
@@ -284,7 +301,11 @@
   let vttParsedCues: Array<{ start: number; end: number; text: string }> = [];
   let vttAppliedOffset: number | null = null;
   let error = $state<string | null>(null);
-  let streamStarted = false;
+  let streamStarted = $state(false);
+  let startProgress = $state<string | null>(null);
+  let startWatch: AbortController | null = null;
+  let startHeld = $state(false);
+  let reloadedStallSession: string | null = null;
   let loadingMessage = $state<string | null>(null);
   let loadingTimer: ReturnType<typeof setTimeout> | null = null;
   let showSubtitleSearch = $state(false);
@@ -326,6 +347,14 @@
   // ── Cast integration ───────────────────────────────────────
   const castState = getCastState();
   let castingMode = $state(false);
+  const startArt = $derived(activeMediaInfo?.backdropUrl ?? activeMediaInfo?.artworkUrl);
+  const showStartShell = $derived(
+    !streamStarted &&
+      !startHeld &&
+      !error &&
+      !castingMode &&
+      activeCreationParams.media_type !== 'live'
+  );
   let castPlaybackToken: string | null = null;
   let castUnsubscribe: (() => void) | null = null;
   /** Last known position from Cast receiver, used for resume on disconnect. */
@@ -526,10 +555,19 @@
   // Season episodes for episode list panel
   let seasonEpisodes = $state<TvEpisode[]>([]);
 
-  // Debrid binge prefetch state
-  let debridPrefetchedSession: PlaybackSessionResponse | null = null;
-  let debridPrefetchedEpisodeId: string | null = null;
-  let debridPrefetching = false;
+  const nextWarmer = createNextEpisodeWarmer();
+  const keep = useKeep({ onMessage: showMessage });
+
+  // Per title, not per session: a source switch must not forget a keep in progress.
+  let keepTitle: string | null = null;
+  $effect(() => {
+    const sessionId = session.session_id;
+    const titleId = activeMediaId ?? sessionId;
+    if (!isDebridSession || !sessionId || titleId === keepTitle) return;
+    keepTitle = titleId;
+    untrack(() => void keep.resume(sessionId));
+  });
+  const releaseNextWarm = () => nextWarmer.release(true);
 
   // Prevent overlapping server-side seeks — each one kills/restarts FFmpeg
   let serverSeeking = false;
@@ -553,11 +591,17 @@
 
   // Audio track state
   let activeAudioIndex = $state<number | null>(
-    untrack(() => {
-      const def = sessionResponse?.audio_tracks.find((a) => a.is_default);
-      return def?.stream_index ?? null;
-    })
+    untrack(() =>
+      sessionResponse
+        ? startingAudio(
+            sessionResponse.method,
+            sessionResponse.audio_tracks,
+            sessionResponse.preferred_audio_stream_index
+          ).active
+        : null
+    )
   );
+  let audioSwitchedSession: string | null = null;
 
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   const overlayId = `video-player-${uid()}`;
@@ -615,11 +659,20 @@
     stopHeartbeat();
     heartbeatInterval = setInterval(async () => {
       if (recovering) return;
-      const alive = await heartbeatSession(session.session_id);
-      if (!alive && !recovering) {
-        console.warn('[Player] Heartbeat: session lost, recovering...');
-        recoverSession();
+      const sessionId = session.session_id;
+      const alive = await heartbeatSession(sessionId);
+      if (alive || recovering) return;
+      if (isDebridSession) {
+        // A debrid session cannot be minted again from here; its way back is the
+        // release walk, and a heartbeat that merely failed to arrive is no news.
+        if ((await getPlaybackSessionStatus(sessionId)).kind === 'missing') {
+          stopHeartbeat();
+          failPlayback('The stream ended on the server', 'session_lost');
+        }
+        return;
       }
+      console.warn('[Player] Heartbeat: session lost, recovering...');
+      recoverSession();
     }, 120_000); // 2 minutes
   }
 
@@ -715,6 +768,16 @@
       lastError instanceof Error ? lastError.message : 'Stream failed — try a different source',
       'recovery_failed'
     );
+  }
+
+  function startPositionSaving() {
+    if (positionSaveInterval) clearInterval(positionSaveInterval);
+    positionSaveInterval = null;
+    if (isLive) return;
+    positionSaveInterval = setInterval(() => {
+      savePosition();
+      checkAutoMarkWatched();
+    }, 30_000);
   }
 
   async function savePosition() {
@@ -885,40 +948,12 @@
     }
   });
 
-  // Debrid binge prefetch: at 80% playback, pre-resolve the next episode's stream.
-  // Triggers when current session is debrid OR next episode has no local file.
   $effect(() => {
-    const currentIsDebrid = activeCreationParams.file_id.startsWith('debrid-');
-    const nextNeedsDebrid = nextEpisode && !nextEpisode.file_id;
-    if (
-      !isLive &&
-      (currentIsDebrid || nextNeedsDebrid) &&
-      nextEpisode &&
-      duration > 0 &&
-      displayTime / duration >= 0.8 &&
-      !debridPrefetching &&
-      !debridPrefetchedSession &&
-      debridPrefetchedEpisodeId !== nextEpisode.episode_id
-    ) {
-      debridPrefetching = true;
-      const episodeId = nextEpisode.episode_id;
-      prefetchDebridNextEpisode(episodeId);
-    }
+    if (isLive || duration <= 0) return;
+    const next = nextEpisode;
+    const fraction = displayTime / duration;
+    untrack(() => nextWarmer.consider(next, fraction));
   });
-
-  async function prefetchDebridNextEpisode(episodeId: string) {
-    try {
-      const resolved = await resolveEpisodeStream(episodeId);
-      if (resolved) {
-        debridPrefetchedSession = resolved;
-        debridPrefetchedEpisodeId = episodeId;
-      }
-    } catch {
-      // Prefetch is best-effort — don't show errors
-    } finally {
-      debridPrefetching = false;
-    }
-  }
 
   function handleSkipSegment() {
     if (!activeSkipSegment) return;
@@ -1024,9 +1059,6 @@
   }
 
   async function switchToEpisode(next: NextEpisodeInfo, resumeAt = 0) {
-    const currentIsDebrid = activeCreationParams.file_id.startsWith('debrid-');
-    // Use debrid path if current session is debrid OR next episode has no local file
-    const useDebrid = currentIsDebrid || !next.file_id;
     loading = true;
     error = null;
 
@@ -1037,31 +1069,11 @@
     try {
       await maybeDestroySession(session.session_id);
 
-      let newSession: PlaybackSessionResponse;
-      let newFileId: string;
-
-      if (useDebrid && debridPrefetchedSession && debridPrefetchedEpisodeId === next.episode_id) {
-        // Use prefetched debrid session for seamless transition
-        newSession = debridPrefetchedSession;
-        newFileId = `debrid-${newSession.session_id}`;
-        debridPrefetchedSession = null;
-        debridPrefetchedEpisodeId = null;
-      } else if (useDebrid) {
-        const resolved = await resolveEpisodeStream(next.episode_id);
-        if (!resolved) {
-          throw new Error('No ready stream for this episode — try again shortly');
-        }
-        newSession = resolved;
-        newFileId = `debrid-${newSession.session_id}`;
-      } else {
-        // Local file playback
-        newSession = await createPlaybackSession({
-          media_type: 'episode',
-          file_id: next.file_id!,
-          capabilities: activeCreationParams.capabilities
-        });
-        newFileId = next.file_id!;
+      const opened = await nextWarmer.open(next, activeCreationParams.capabilities);
+      if (!opened) {
+        throw new Error('No ready stream for this episode — try again shortly');
       }
+      const { session: newSession, fileId: newFileId } = opened;
 
       // Update mutable state to point at the new episode
       activeMediaId = next.episode_id;
@@ -1076,6 +1088,7 @@
 
       // Reset playback tracking
       streamStarted = false;
+      startHeld = false;
       userPaused = false;
       seekOffset = 0;
       currentTime = 0;
@@ -1089,20 +1102,18 @@
       activeSkipSegment = null;
       skipDismissed = false;
       activeSubtitleId = null;
-      debridPrefetchedSession = null;
-      debridPrefetchedEpisodeId = null;
-      debridPrefetching = false;
-      activeAudioIndex = newSession.audio_tracks.find((a) => a.is_default)?.stream_index ?? null;
+      activeAudioIndex = startingAudio(
+        newSession.method,
+        newSession.audio_tracks,
+        newSession.preferred_audio_stream_index
+      ).active;
 
       pendingResume = resumeAt > 5 ? resumeAt : 0;
 
       // Start playback (initPlayer applies volume normalization for new lufs)
       initPlayer();
       startHeartbeat();
-      positionSaveInterval = setInterval(() => {
-        savePosition();
-        checkAutoMarkWatched();
-      }, 30_000);
+      startPositionSaving();
 
       // Fetch next-next episode
       getNextEpisode(next.episode_id).then((info) => {
@@ -1636,6 +1647,20 @@
     applySubtitles();
   }
 
+  // True when it moved playback to the preferred track itself, which also
+  // settles the method the probe would otherwise refine.
+  function adoptStartingAudio(method: PlaybackMethod, preferred: number | undefined): boolean {
+    const { active, switchTo } = startingAudio(method, session.audio_tracks, preferred);
+    activeAudioIndex = active;
+    if (switchTo === null || !sessionReady || audioSwitchedSession === session.session_id) {
+      return false;
+    }
+    audioSwitchedSession = session.session_id;
+    pendingMethodRefinement = null;
+    void handleAudioTrackSelect(switchTo).then(watchDebridStart);
+    return true;
+  }
+
   async function handleAudioTrackSelect(streamIndex: number | null) {
     if (streamIndex === null || streamIndex === activeAudioIndex) return;
 
@@ -1833,9 +1858,55 @@
   }
 
   function handlePlaying() {
-    if (!isDebridSession || streamStarted || !session.session_id) return;
+    if (streamStarted) return;
     streamStarted = true;
-    reportStreamOutcome(session.session_id, { ok: true }).catch(() => {});
+    stopStartWatch();
+    if (isDebridSession && session.session_id) {
+      reportStreamOutcome(session.session_id, { ok: true }).catch(() => {});
+    }
+  }
+
+  function stopStartWatch() {
+    startWatch?.abort();
+    startWatch = null;
+    startProgress = null;
+  }
+
+  function watchDebridStart() {
+    stopStartWatch();
+    if (!isDebridSession || streamStarted || startHeld || !session.session_id) return;
+    const watch = new AbortController();
+    startWatch = watch;
+    const sessionId = session.session_id;
+    void superviseStart({
+      method: session.method,
+      signal: watch.signal,
+      getStatus: () => getPlaybackSessionStatus(sessionId),
+      onProgress: (line) => {
+        if (!watch.signal.aborted) startProgress = line;
+      }
+    }).then((outcome) => {
+      if (watch.signal.aborted || outcome.kind === 'aborted') return;
+      // Stalled while the server still had the file coming points at this
+      // player's connection, not the release: reopen the same session once.
+      if (
+        outcome.kind === 'stalled' &&
+        outcome.sourceHealthy &&
+        reloadedStallSession !== sessionId
+      ) {
+        reloadedStallSession = sessionId;
+        cleanup();
+        initPlayer();
+        startHeartbeat();
+        startPositionSaving();
+        watchDebridStart();
+        return;
+      }
+      failPlayback(
+        "That stream wouldn't start",
+        outcome.kind === 'stalled' ? 'start_stalled' : 'session_lost'
+      );
+    });
   }
 
   function failPlayback(message: string, reason: string) {
@@ -1845,7 +1916,15 @@
       const reported = streamStarted
         ? Promise.resolve()
         : reportStreamOutcome(sessionId, { ok: false, reason }).catch(() => {});
-      if (onStreamFailed?.({ sessionId, started: streamStarted, reason, reported })) {
+      if (
+        onStreamFailed?.({
+          sessionId,
+          started: streamStarted,
+          position: displayTime,
+          reason,
+          reported
+        })
+      ) {
         cleanup();
         return;
       }
@@ -1868,6 +1947,7 @@
     loading = true;
     playing = false;
     streamStarted = false;
+    startHeld = false;
     currentTime = 0;
     seekOffset = 0;
     recoveryTimestamps = [];
@@ -2179,9 +2259,20 @@
     if (userPaused) {
       pauseElement();
       playing = false;
+      holdStart();
       return;
     }
-    videoEl.play().catch((e) => console.warn('[Player] play() rejected:', e));
+    videoEl.play().catch((e) => {
+      console.warn('[Player] play() rejected:', e);
+      if (e instanceof DOMException && e.name === 'NotAllowedError') holdStart();
+    });
+  }
+
+  // Paused by the viewer or held for a gesture by the browser: not starting is
+  // the viewer's call now, so it must not be read as a stalled stream.
+  function holdStart() {
+    startHeld = true;
+    stopStartWatch();
   }
 
   function initPlayer() {
@@ -2453,6 +2544,7 @@
 
   function cleanup() {
     stopHeartbeat();
+    stopStartWatch();
     if (positionSaveInterval) clearInterval(positionSaveInterval);
     if (hideTimer) clearTimeout(hideTimer);
     if (loadingTimer) clearTimeout(loadingTimer);
@@ -2572,12 +2664,15 @@
             }
             if (data.audio_tracks) {
               session.audio_tracks = data.audio_tracks;
-              if (activeAudioIndex === null) {
-                const def = data.audio_tracks.find((a: { is_default?: boolean }) => a.is_default);
-                if (def?.stream_index != null) {
-                  activeAudioIndex = def.stream_index;
-                }
-              }
+            }
+            if (
+              data.audio_tracks &&
+              adoptStartingAudio(
+                data.method ?? session.method,
+                data.preferred_audio_stream_index ?? session.preferred_audio_stream_index
+              )
+            ) {
+              break;
             }
             // The initial session response carries an OPTIMISTIC method based
             // on the client's advertised container capabilities. The probe
@@ -2690,6 +2785,7 @@
       !sessionReady
     );
     registerOverlay(overlayId, handleClose);
+    window.addEventListener('beforeunload', releaseNextWarm);
     document.addEventListener('keydown', handleKeydown);
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     setupMediaSessionHandlers();
@@ -2732,6 +2828,7 @@
 
     initPlayer();
     startHeartbeat();
+    watchDebridStart();
     resetHideTimer();
 
     // Set up Web Audio for volume normalization
@@ -2761,17 +2858,14 @@
       }
     }
 
-    // Start periodic position saving (every 30 seconds) — skip for live
-    if (!isLive) {
-      positionSaveInterval = setInterval(() => {
-        savePosition();
-        checkAutoMarkWatched();
-      }, 30_000);
-    }
+    startPositionSaving();
   });
 
   onDestroy(() => {
     unmounted = true;
+    nextWarmer.release();
+    keep.dispose();
+    window.removeEventListener('beforeunload', releaseNextWarm);
     unregisterOverlay(overlayId);
     document.removeEventListener('keydown', handleKeydown);
     document.removeEventListener('fullscreenchange', handleFullscreenChange);
@@ -2829,25 +2923,25 @@
   tabindex="-1"
 >
   {#if !sessionReady}
-    <div class="loading-overlay pending-overlay">
-      <span class="material-icons-outlined spinner-icon">refresh</span>
-      {#if pendingStatus}
-        <span class="loading-text">{pendingStatus}</span>
-      {/if}
-      <div class="pending-actions">
-        <button class="pending-close-btn" type="button" onclick={onClose}>
-          <span class="material-icons-outlined">close</span>
-          Cancel
-        </button>
-        {#if onPickStream}
-          <button class="pending-close-btn" type="button" onclick={onPickStream}>
-            Choose a release
-          </button>
-        {/if}
-      </div>
-    </div>
+    <StartShell
+      title={activeMediaInfo?.title ?? ''}
+      subtitle={activeMediaInfo?.subtitle}
+      artUrl={startArt}
+      status={pendingStatus ?? 'Starting…'}
+      caching={pendingCaching}
+      onCancel={onClose}
+      onChooseRelease={onPickStream}
+    />
   {:else}
-    {#if loading}
+    {#if showStartShell}
+      <StartShell
+        title={activeMediaInfo?.title ?? ''}
+        subtitle={activeMediaInfo?.subtitle}
+        artUrl={startArt}
+        status={startProgress ?? 'Starting…'}
+        onCancel={handleClose}
+      />
+    {:else if loading}
       <div class="loading-overlay">
         <span class="material-icons-outlined spinner-icon">refresh</span>
         {#if loadingMessage}
@@ -3040,6 +3134,14 @@
       skipSegments={isLive ? [] : (session.skip_segments ?? [])}
       onEditSkipSegment={openSkipEditor}
       onSwitchStream={isDebridSession ? onSwitchStream : undefined}
+      keep={isDebridSession && session.session_id
+        ? {
+            label: keep.label,
+            busy: keep.busy,
+            saved: keep.saved,
+            onKeep: () => void keep.keep(session.session_id)
+          }
+        : undefined}
       {isTouchDevice}
       onInteraction={resetHideTimer}
     />
@@ -3157,44 +3259,6 @@
   .loading-text {
     color: rgba(255, 255, 255, 0.7);
     font-size: 13px;
-  }
-
-  .pending-overlay {
-    pointer-events: auto;
-    gap: 16px;
-  }
-
-  .pending-close-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 12px;
-    padding: 8px 20px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition:
-      background 0.15s,
-      color 0.15s;
-  }
-
-  .pending-close-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
-    color: #fff;
-  }
-
-  .pending-close-btn .material-icons-outlined {
-    font-size: 18px;
-  }
-
-  .pending-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 4px;
   }
 
   .error-overlay {

@@ -513,10 +513,14 @@ async fn build_session(
         thumbnail_dir: None,
         debrid_cache_key: None,
         audio_metas: vec![],
+        preferred_audio_index: None,
         force_video_transcode: false,
         corrupt_ranges: Vec::new(),
         overlay_spawned_starts: std::collections::HashSet::new(),
         highest_served_segment: None,
+        feed: None,
+        download: None,
+        cue_gate: None,
     };
 
     state.playback_sessions.insert(session_id, session);

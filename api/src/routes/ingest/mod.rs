@@ -1,6 +1,7 @@
 mod atomic;
 mod basic;
 mod kobload;
+pub mod placement;
 
 // Re-export handlers used in lib.rs
 pub use atomic::atomic_ingest;

@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT file_path, file_size\n        FROM debrid_cache_files\n        WHERE info_hash = $1\n          AND file_id IS NOT DISTINCT FROM $2\n          AND (debrid_provider_id IS NULL OR debrid_provider_id = $3)\n        ORDER BY last_accessed_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_cache_files",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "debrid_cache_files",
+            "name": "file_size"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "90f47ea20aedfd0c0f62617f2bc96c0b5e9f2eb416f43de904c04fe4370a0385"
+}

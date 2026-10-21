@@ -727,6 +727,7 @@ async fn main() {
         let debrid_locks = state.debrid_resolve_locks.clone();
         let reaper_pool = pool.clone();
         let reaper_nats = state.nats.publisher().clone();
+        let reaper_state = state.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
             let max_idle_vod = std::time::Duration::from_secs(14_400); // 4 hours for VOD
@@ -737,6 +738,8 @@ async fn main() {
 
                 // Clean up stale provider connection counters
                 api::iptv::provider_tracker::cleanup_stale();
+
+                api::routes::admin::stream_prewarm::sweep(&reaper_state).await;
 
                 // Stop downloads for idle debrid sessions (session stays alive for resume)
                 for entry in sessions.iter() {

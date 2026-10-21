@@ -31,6 +31,7 @@ use crate::jobs::handlers::{
     CrossFormatSyncHandler,
     DatabaseCleanupHandler,
     DebridCacheCleanupHandler,
+    DebridKeepHandler,
     DebridPrewarmHandler,
     DebridProcessHandler,
     DiscoverSyncHandler,
@@ -283,6 +284,9 @@ pub async fn start_nats_worker(
         app_state.clone(),
     )));
     worker.register_handler(HandlerAdapter::new(DebridPrewarmHandler::new(
+        app_state.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(DebridKeepHandler::new(
         app_state.clone(),
     )));
 

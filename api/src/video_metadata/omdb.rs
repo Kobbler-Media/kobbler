@@ -218,6 +218,7 @@ impl VideoMetadataProvider for OmdbProvider {
             rating_count,
             content_rating: resp.rated.filter(|r| r != "N/A"),
             release_date: resp.released.filter(|r| r != "N/A"),
+            release_dates_by_region: Default::default(),
             cast: Vec::new(),
             crew: Vec::new(),
             images: Vec::new(),

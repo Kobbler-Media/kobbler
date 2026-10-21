@@ -20,75 +20,7 @@ path = "src/bin/chatbot_e2e.rs"
 
 [[test]]
 name = "integration"
-path = "tests/main.rs"
-
-[[test]]
-name = "query_correctness_test"
-path = "tests/query_correctness_test.rs"
-
-[[test]]
-name = "resolve_media_test"
-path = "tests/resolve_media_test.rs"
-
-[[test]]
-name = "chatbot_loop_test"
-path = "tests/chatbot_loop_test.rs"
-
-[[test]]
-name = "chatbot_llm_e2e"
-path = "tests/chatbot_llm_e2e.rs"
-
-[[test]]
-name = "chat_relevance_test"
-path = "tests/chat_relevance_test.rs"
-
-[[test]]
-name = "chat_notification_prefs_test"
-path = "tests/chat_notification_prefs_test.rs"
-
-[[test]]
-name = "chat_watches_test"
-path = "tests/chat_watches_test.rs"
-
-[[test]]
-name = "provider_id_ambiguity_test"
-path = "tests/provider_id_ambiguity_test.rs"
-
-[[test]]
-name = "chatbot_act_test"
-path = "tests/chatbot_act_test.rs"
-
-[[test]]
-name = "chat_memory_test"
-path = "tests/chat_memory_test.rs"
-
-[[test]]
-name = "chat_recommend_test"
-path = "tests/chat_recommend_test.rs"
-
-[[test]]
-name = "chat_credits_test"
-path = "tests/chat_credits_test.rs"
-
-[[test]]
-name = "chatbot_iptv_test"
-path = "tests/chatbot_iptv_test.rs"
-
-[[test]]
-name = "chat_season_status_test"
-path = "tests/chat_season_status_test.rs"
-
-[[test]]
-name = "chat_turn_google_test"
-path = "tests/chat_turn_google_test.rs"
-
-[[test]]
-name = "event_subscriber_test"
-path = "tests/event_subscriber_test.rs"
-
-[[test]]
-name = "search_backend_test"
-path = "tests/search_backend_test.rs"
+path = "tests/integration/main.rs"
 
 [dependencies]
 axum = { version = "0.8.9", features = ["json", "ws", "multipart"] }

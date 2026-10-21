@@ -31,10 +31,12 @@ use crate::repositories::{
     subtitle_tracks, tv_episode_files, video_chapters,
 };
 use crate::routes::{AuthUser, PlaybackAuth};
+use crate::streaming::byte_range::{ByteRange, parse_byte_range};
 use crate::streaming::decision::{
     self, AAC_ENCODER, AudioTrackMeta, ClientCapabilities, FileMeta, PlaybackMethod,
     SubtitleTrackMeta, ViewerPrefs,
 };
+use crate::streaming::feed::FeedStatus;
 use crate::streaming::segment_cache::SegmentCache;
 use crate::streaming::session::{
     MediaType, PendingSegmentRequest, PlaybackSession, SessionError, SubtitleFile,
@@ -133,7 +135,7 @@ pub struct CreateSessionRequest {
     pub subtitles_enabled: Option<bool>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SessionResponse {
     pub session_id: String,
     pub method: PlaybackMethod,
@@ -171,6 +173,10 @@ pub struct SessionResponse {
     /// the correct track as the active selection without guessing from is_default.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_audio_index: Option<i32>,
+    /// Debrid sessions only: the audio track the language preference picks, which a
+    /// direct-play client should switch to when it is not the file's default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_audio_stream_index: Option<i32>,
     /// Subtitle stream index actually selected for playback (None when subtitles disabled).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_subtitle_index: Option<i32>,
@@ -184,7 +190,7 @@ pub struct SessionResponse {
     pub video_height: Option<u32>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ChapterResponse {
     pub index: i32,
     pub title: Option<String>,
@@ -192,7 +198,7 @@ pub struct ChapterResponse {
     pub end_seconds: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SkipSegmentResponse {
     pub segment_type: String,
     pub start_seconds: f64,
@@ -242,7 +248,7 @@ pub async fn load_skip_segments(
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SubtitleTrackResponse {
     pub track_id: String,
     pub stream_index: i32,
@@ -256,7 +262,7 @@ pub struct SubtitleTrackResponse {
     pub requires_transcode: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AudioTrackResponse {
     pub stream_index: i32,
     pub codec: String,
@@ -963,6 +969,7 @@ pub async fn create_session(
         media_type: None,
         file_id: Some(file_id.to_string()),
         selected_audio_index: preferred_audio,
+        preferred_audio_stream_index: None,
         selected_subtitle_index,
         video_width: if video_width > 0 {
             Some(video_width)
@@ -1038,10 +1045,14 @@ pub async fn create_session(
         thumbnail_dir: None,
         debrid_cache_key: None,
         audio_metas: audio_metas.clone(),
+        preferred_audio_index: None,
         force_video_transcode: false,
         corrupt_ranges,
         overlay_spawned_starts: std::collections::HashSet::new(),
         highest_served_segment: None,
+        feed: None,
+        download: None,
+        cue_gate: None,
     };
 
     state.playback_sessions.insert(session_id, session);
@@ -1096,29 +1107,34 @@ pub async fn destroy_session(
         Ok(id) => id,
         Err(_) => return StatusCode::BAD_REQUEST,
     };
-
-    if let Some((_, mut session)) = state.playback_sessions.remove(&session_id) {
-        // For IPTV live sessions: release provider connection and clean up pre-opened stream
-        if let Some(provider_id) = session.provider_id {
-            crate::iptv::provider_tracker::release(provider_id);
-            state.live_streams.remove(&session.file_id);
-            info!(session_id = %session_id, provider_id = %provider_id, "released IPTV provider connection");
-        }
-        // Cancel progressive download if this is a debrid session
-        if let Some(cancel) = &session.download_cancel {
-            cancel.cancel();
-        }
-        // Remove from debrid session dedup index
-        if let Some(ref key) = session.debrid_cache_key {
-            state.debrid_session_index.remove(key);
-        }
-        session.kill_all_transcodes().await;
-        enqueue_session_cleanup(&state, session.segment_dir()).await;
-        info!(session_id = %session_id, "Playback session destroyed");
+    if end_session(&state, session_id).await {
         StatusCode::NO_CONTENT
     } else {
         StatusCode::NOT_FOUND
     }
+}
+
+/// Tear down an in-memory playback session: its transcodes, its debrid download and
+/// its dedup entry. A fully downloaded cache file stays on disk for the cache layer.
+pub(crate) async fn end_session(state: &AppState, session_id: Uuid) -> bool {
+    let Some((_, mut session)) = state.playback_sessions.remove(&session_id) else {
+        return false;
+    };
+    if let Some(provider_id) = session.provider_id {
+        crate::iptv::provider_tracker::release(provider_id);
+        state.live_streams.remove(&session.file_id);
+        info!(session_id = %session_id, provider_id = %provider_id, "released IPTV provider connection");
+    }
+    if let Some(cancel) = &session.download_cancel {
+        cancel.cancel();
+    }
+    if let Some(ref key) = session.debrid_cache_key {
+        state.debrid_session_index.remove(key);
+    }
+    session.kill_all_transcodes().await;
+    enqueue_session_cleanup(state, session.segment_dir()).await;
+    info!(session_id = %session_id, "Playback session destroyed");
+    true
 }
 
 // =============================================================================
@@ -1312,6 +1328,12 @@ pub struct SessionStatusResponse {
     pub transcode_running: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub segments_ready: Option<u32>,
+    /// Debrid sessions only: the direct-play byte feed and the download behind it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feed: Option<FeedStatus>,
+    /// Debrid sessions only, once probed: see [`SessionResponse`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_audio_stream_index: Option<i32>,
 }
 
 /// Report whether this session can actually deliver bytes, in one cheap request.
@@ -1333,7 +1355,17 @@ pub async fn status(
         Err(_) => return (StatusCode::BAD_REQUEST, "bad session id").into_response(),
     };
 
-    let (method, is_live, session_error, probing, file_path, transcode_running, segments_ready) = {
+    let (
+        method,
+        is_live,
+        session_error,
+        probing,
+        file_path,
+        transcode_running,
+        segments_ready,
+        feed,
+        preferred_audio_stream_index,
+    ) = {
         let Some(mut session) = state.playback_sessions.get_mut(&session_id) else {
             return (StatusCode::NOT_FOUND, "session not found").into_response();
         };
@@ -1354,6 +1386,11 @@ pub async fn status(
             session.file_path.clone(),
             running,
             ready,
+            session
+                .feed
+                .as_ref()
+                .map(|f| f.status(session.download.as_deref())),
+            session.preferred_audio_index,
         )
     };
 
@@ -1378,6 +1415,8 @@ pub async fn status(
         source_readable: facts.source_readable,
         transcode_running,
         segments_ready,
+        feed,
+        preferred_audio_stream_index,
     })
     .into_response()
 }
@@ -1397,12 +1436,9 @@ pub async fn heartbeat(
         if session.download_cancel.is_some() {
             let pool = state.pool.clone();
             tokio::spawn(async move {
-                let _ = sqlx::query!(
-                    "UPDATE debrid_cache_files SET last_accessed_at = NOW() WHERE session_id = $1",
-                    session_id,
-                )
-                .execute(&pool)
-                .await;
+                let _ =
+                    crate::repositories::debrid_cache_files::touch_for_session(&pool, session_id)
+                        .await;
             });
         }
         StatusCode::OK
@@ -3105,9 +3141,13 @@ pub async fn switch_audio(
 
     let session_file_id = session.file_id;
 
-    // No-op if already on this track (and no subtitle change requested)
+    // A debrid direct-play client cannot pick a track from the raw file itself; asking for
+    // one, even the one the decision already names, means it wants a stream carrying it.
+    let debrid_direct_play =
+        session.download.is_some() && session.decision.method == PlaybackMethod::DirectPlay;
     if session.decision.audio_stream_index == audio_stream_index
         && req.burn_in_subtitle_index.is_none()
+        && !debrid_direct_play
     {
         let base_url = format!("/api/v1/admin/playback/sessions/{session_id}");
         let audio_responses = build_audio_responses(&session.audio_metas, audio_stream_index);
@@ -3140,6 +3180,7 @@ pub async fn switch_audio(
             media_type: None,
             file_id: Some(session_file_id.to_string()),
             selected_audio_index: Some(audio_stream_index),
+            preferred_audio_stream_index: None,
             selected_subtitle_index: None,
             video_width: if sw > 0 { Some(sw) } else { None },
             video_height: if sh > 0 { Some(sh) } else { None },
@@ -3308,6 +3349,7 @@ pub async fn switch_audio(
         media_type: None,
         file_id: Some(session_file_id.to_string()),
         selected_audio_index: Some(audio_stream_index),
+        preferred_audio_stream_index: None,
         selected_subtitle_index: switched_subtitle_index,
         video_width: if sw > 0 { Some(sw) } else { None },
         video_height: if sh > 0 { Some(sh) } else { None },
@@ -3865,7 +3907,7 @@ pub async fn direct_play(
     // Parse Range header
     if let Some(range_header) = headers.get(header::RANGE)
         && let Ok(range_str) = range_header.to_str()
-        && let Some(range) = parse_range(range_str, file_size)
+        && let Some(range) = parse_byte_range(range_str, file_size)
     {
         return serve_range(file, file_size, content_type, range, patch).await;
     }
@@ -3884,51 +3926,6 @@ pub async fn direct_play(
         .body(body)
         .unwrap()
         .into_response()
-}
-
-/// Parsed byte range.
-struct ByteRange {
-    start: u64,
-    end: u64,
-}
-
-/// Parse a Range header value like "bytes=0-1023" or "bytes=1024-".
-fn parse_range(header: &str, file_size: u64) -> Option<ByteRange> {
-    // No byte of an empty file is satisfiable, and every branch below indexes the
-    // last one.
-    if file_size == 0 {
-        return None;
-    }
-    let range = header.strip_prefix("bytes=")?;
-    let (start_str, end_str) = range.split_once('-')?;
-
-    if start_str.is_empty() {
-        // Suffix range: "bytes=-500" means last 500 bytes
-        let suffix: u64 = end_str.parse().ok()?;
-        if suffix == 0 {
-            return None; // bytes=-0 is semantically empty per RFC 7233
-        }
-        let start = file_size.saturating_sub(suffix);
-        Some(ByteRange {
-            start,
-            end: file_size - 1,
-        })
-    } else {
-        let start: u64 = start_str.parse().ok()?;
-        let end = if end_str.is_empty() {
-            file_size - 1
-        } else {
-            end_str.parse().ok()?
-        };
-        if start <= end && start < file_size {
-            Some(ByteRange {
-                start,
-                end: end.min(file_size - 1),
-            })
-        } else {
-            None
-        }
-    }
 }
 
 /// Serve a byte range from a file.
@@ -4411,6 +4408,12 @@ fn build_subtitle_metadata(
         .collect()
 }
 
+/// 410 rather than 404: a 404 here means "not generated yet", which a player keeps
+/// polling for. A session that no longer exists will never produce any.
+fn session_gone() -> Response<Body> {
+    (StatusCode::GONE, "Session not found").into_response()
+}
+
 /// Serve the WebVTT thumbnails file for a session.
 pub async fn serve_thumbnails_vtt(
     State(state): State<AppState>,
@@ -4418,7 +4421,7 @@ pub async fn serve_thumbnails_vtt(
 ) -> impl IntoResponse {
     let session = match state.playback_sessions.get(&session_id) {
         Some(s) => s,
-        None => return (StatusCode::NOT_FOUND, "Session not found").into_response(),
+        None => return session_gone(),
     };
     let thumb_dir = match session.thumbnail_dir {
         Some(ref dir) => dir.clone(),
@@ -4456,7 +4459,7 @@ pub async fn serve_thumbnail_sprite(
 
     let session = match state.playback_sessions.get(&session_id) {
         Some(s) => s,
-        None => return (StatusCode::NOT_FOUND, "Session not found").into_response(),
+        None => return session_gone(),
     };
     let thumb_dir = match session.thumbnail_dir {
         Some(ref dir) => dir.clone(),
@@ -4811,38 +4814,5 @@ mod tests {
         let json = r#"{"resume_time": 5.3}"#;
         let req: SwitchAudioRequest = serde_json::from_str(json).unwrap();
         assert!(req.audio_stream_index.is_none());
-    }
-}
-
-#[cfg(test)]
-mod range_parsing {
-    use super::parse_range;
-
-    /// A session whose file size is not known yet reports zero, and a client that
-    /// opens with a suffix range then drove `file_size - 1` straight through zero.
-    #[test]
-    fn a_zero_length_file_has_no_satisfiable_range() {
-        for header in ["bytes=0-", "bytes=-500", "bytes=0-99", "bytes=10-20"] {
-            assert!(
-                parse_range(header, 0).is_none(),
-                "{header} parsed against an empty file"
-            );
-        }
-    }
-
-    #[test]
-    fn ordinary_ranges_still_parse() {
-        let r = parse_range("bytes=0-99", 1000).unwrap();
-        assert_eq!((r.start, r.end), (0, 99));
-        let r = parse_range("bytes=500-", 1000).unwrap();
-        assert_eq!((r.start, r.end), (500, 999));
-        let r = parse_range("bytes=-100", 1000).unwrap();
-        assert_eq!((r.start, r.end), (900, 999));
-        // Past the end clamps rather than overruns.
-        let r = parse_range("bytes=900-99999", 1000).unwrap();
-        assert_eq!((r.start, r.end), (900, 999));
-        assert!(parse_range("bytes=1000-", 1000).is_none());
-        assert!(parse_range("bytes=-0", 1000).is_none());
-        assert!(parse_range("nonsense", 1000).is_none());
     }
 }

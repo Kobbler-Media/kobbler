@@ -65,8 +65,12 @@ committing the wreckage.
 
 ## Tests
 
-Backend tests live in `api/tests/` and run against a real Postgres, started for you by
-`make test-db-up`. Cover the happy path, the error path, and auth.
+Backend tests live in `api/tests/integration/` and run against a real Postgres, started for you
+by `make test-db-up`. Cover the happy path, the error path, and auth.
+
+They compile into one test binary. Add a module there and declare it in `main.rs`; a new top-level
+file under `api/tests/` would be its own binary linking the whole `api` crate again. Run one module
+with `cargo test --test integration <module>::`.
 
 **Bug fixes are test-first.** Write a test that reproduces the bug and watch it fail, then fix it,
 then watch it pass. Cover every entry point into the broken logic, not just the one in the report.

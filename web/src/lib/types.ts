@@ -1111,6 +1111,16 @@ export type VideoDetailCrewMember = {
   external_id: string | null;
 };
 
+export type ReleaseDates = {
+  region: string;
+  premiere: string | null;
+  theatrical_limited: string | null;
+  theatrical: string | null;
+  digital: string | null;
+  physical: string | null;
+  tv: string | null;
+};
+
 export type MovieDetailResult = {
   provider: string;
   provider_id: string;
@@ -1129,6 +1139,7 @@ export type MovieDetailResult = {
   rating_count: number | null;
   content_rating: string | null;
   release_date: string | null;
+  release_dates?: ReleaseDates | null;
   cast: VideoDetailCastMember[];
   crew: VideoDetailCrewMember[];
   images: VideoMediaImage[];
@@ -1282,6 +1293,8 @@ export type Movie = {
   created_at: string;
   updated_at: string;
   streamed_at: string | null;
+  release_date?: string | null;
+  release_dates?: ReleaseDates | null;
   // Detail fields (present in get_movie response)
   cast?: CastMember[];
   crew?: CrewMember[];
@@ -1882,6 +1895,7 @@ export type PlaybackSessionResponse = {
   start_time?: number;
   media_id?: string;
   media_type?: string;
+  preferred_audio_stream_index?: number;
 };
 
 export type VideoChapter = {

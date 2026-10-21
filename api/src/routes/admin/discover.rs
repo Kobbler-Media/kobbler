@@ -25,6 +25,8 @@ use crate::routes::AuthUser;
 use crate::routes::admin::dashboard::{RecentItem, WatchNextItem, fetch_home_sections};
 use crate::routes::admin::library_status::{LibraryStatus, batch_movie_status, batch_tv_status};
 use crate::stremio_library::home::{StremioContinueItem, continue_watching};
+use crate::video_metadata::MovieDetails;
+use crate::video_metadata::release_dates::{self, RegionalReleaseDates};
 
 /// Response for `GET /api/v1/admin/discover`.
 #[derive(Serialize)]
@@ -189,7 +191,10 @@ pub async fn get_discover_detail(
     }
 
     match media_type.as_str() {
-        "movie" | "tv" => get_video_detail(pool, &media_type, &provider, &provider_id).await,
+        "movie" | "tv" => {
+            let region = state.runtime_config.discover_region().await;
+            get_video_detail(pool, &media_type, &provider, &provider_id, &region).await
+        }
         _ => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": format!("Unknown media_type: {media_type}") })),
@@ -315,11 +320,29 @@ fn extract_tmdb_id(identifiers: &Value) -> Option<String> {
         .map(String::from)
 }
 
+#[derive(Serialize)]
+struct MovieDetailView {
+    #[serde(flatten)]
+    details: MovieDetails,
+    release_dates: Option<RegionalReleaseDates>,
+}
+
+impl MovieDetailView {
+    fn new(mut details: MovieDetails, region: &str) -> Self {
+        let by_region = std::mem::take(&mut details.release_dates_by_region);
+        Self {
+            release_dates: release_dates::select(&by_region, region),
+            details,
+        }
+    }
+}
+
 async fn get_video_detail(
     pool: &sqlx::PgPool,
     media_type: &str,
     provider: &str,
     provider_id: &str,
+    region: &str,
 ) -> axum::response::Response {
     let registry = crate::video_metadata::VideoProviderRegistry::new(pool.clone());
 
@@ -333,7 +356,7 @@ async fn get_video_detail(
                 Json(json!({
                     "media_type": "movie",
                     "provider": provider,
-                    "details": details,
+                    "details": MovieDetailView::new(details, region),
                     "library_id": status.map(|s| s.id),
                     "want_status": status.and_then(|s| s.want_status.clone()),
                     "is_in_library": status.and_then(|s| s.is_in_library),

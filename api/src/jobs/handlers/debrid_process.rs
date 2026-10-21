@@ -89,6 +89,24 @@ impl JobHandler for DebridProcessHandler {
             "Starting debrid stream processing"
         );
 
+        // The player can end the session before its download finishes; what is left
+        // to process then belongs to nobody.
+        let Some(session_row) = sqlx::query!(
+            r#"
+            SELECT media_type, media_id
+            FROM debrid_stream_sessions
+            WHERE id = $1
+            "#,
+            session_id,
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| JobError::ExecutionFailed(format!("session lookup: {e}")))?
+        else {
+            info!(session_id = %session_id, "Debrid session is gone; nothing to process");
+            return Ok(json!({ "session_id": session_id, "skipped": "session_gone" }));
+        };
+
         // Verify the file exists (and is not a directory)
         let is_file = {
             let fp = cache_path.clone();
@@ -168,20 +186,6 @@ impl JobHandler for DebridProcessHandler {
             persist_skip_segments(&self.pool, session_id, &chapter_segments_initial).await?;
         }
 
-        // Resolve the persistent episode_cache target from the session row.
-        // None for media types that don't get an episode_cache copy
-        // (audiobook etc.).
-        let session_row = sqlx::query!(
-            r#"
-            SELECT media_type, media_id
-            FROM debrid_stream_sessions
-            WHERE id = $1
-            "#,
-            session_id,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| JobError::ExecutionFailed(format!("session lookup: {e}")))?;
         let target = MediaKind::for_debrid(&session_row.media_type, session_row.media_id);
         let episode_cache_target_dir: Option<PathBuf> = target
             .as_ref()

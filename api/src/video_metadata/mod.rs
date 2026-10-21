@@ -1,6 +1,7 @@
 pub mod cinemeta;
 pub mod merge;
 mod omdb;
+pub mod release_dates;
 pub mod thesportsdb;
 pub mod tmdb;
 mod tvdb;

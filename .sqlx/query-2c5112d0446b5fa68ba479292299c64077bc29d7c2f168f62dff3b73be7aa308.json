@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(SUM(file_size)::bigint, 0) AS \"total!: i64\" FROM debrid_cache_files WHERE NOT pinned",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total!: i64",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2c5112d0446b5fa68ba479292299c64077bc29d7c2f168f62dff3b73be7aa308"
+}

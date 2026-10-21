@@ -105,6 +105,66 @@ impl ByteSource for HttpByteSource {
     }
 }
 
+/// The session's cache file where the download has reached, the debrid host beyond it.
+pub struct LocalFirstByteSource {
+    pub local: Option<FileByteSource>,
+    pub total: u64,
+    pub remote: Option<HttpByteSource>,
+}
+
+#[async_trait::async_trait]
+impl ByteSource for LocalFirstByteSource {
+    async fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+        let want = len.min(self.total.saturating_sub(offset) as usize);
+        if let Some(local) = &self.local
+            && let Ok(bytes) = local.read_at(offset, want).await
+            && bytes.len() == want
+        {
+            return Ok(bytes);
+        }
+        match &self.remote {
+            Some(remote) => remote.read_at(offset, len).await,
+            // A short read here is a download still in progress, not the end of the
+            // file; reporting it as one would cache "not worth patching" for good.
+            None => Err(std::io::Error::other("range not downloaded yet")),
+        }
+    }
+}
+
+/// Remembers the head read, which both locating the index and building its patch need.
+pub struct HeadMemo {
+    inner: Box<dyn ByteSource>,
+    head: OnceCell<Vec<u8>>,
+}
+
+impl HeadMemo {
+    pub fn new(inner: Box<dyn ByteSource>) -> Self {
+        Self {
+            inner,
+            head: OnceCell::new(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl ByteSource for HeadMemo {
+    async fn read_at(&self, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
+        if offset != 0 || len != HEAD_BYTES {
+            return self.inner.read_at(offset, len).await;
+        }
+        self.head
+            .get_or_try_init(|| self.inner.read_at(0, HEAD_BYTES))
+            .await
+            .cloned()
+    }
+}
+
+/// Where the Cues element starts, from the head of the file alone.
+pub async fn locate_cues(source: &dyn ByteSource) -> Option<u64> {
+    let head = source.read_at(0, HEAD_BYTES).await.ok()?;
+    read_layout(&head).map(|l| l.element_offset)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CueTrimPolicy {
     /// The server is handing out extracted subtitle files, so the client will not be
@@ -313,32 +373,6 @@ pub async fn patch_for_local_file(
             policy,
             &FileByteSource {
                 path: path.to_path_buf(),
-            },
-        )
-        .await
-}
-
-/// The trimmed index for a remote file, keyed on something stable across the
-/// short-lived signed URLs debrid providers hand out.
-pub async fn patch_for_remote(
-    cache: &CueTrimCache,
-    client: reqwest::Client,
-    url: &str,
-    identity: &str,
-    container_or_name: &str,
-    policy: &CueTrimPolicy,
-    enabled: bool,
-) -> Option<Arc<CuePatch>> {
-    if !enabled || !is_matroska(container_or_name) {
-        return None;
-    }
-    cache
-        .get(
-            &format!("remote:{identity}"),
-            policy,
-            &HttpByteSource {
-                client,
-                url: url.to_string(),
             },
         )
         .await

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_type, media_id FROM debrid_stream_sessions WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "media_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "media_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "ab00e6bc25f44ecc7591b8a78891996af4b89228b0d1afc5121028a84e7f8581"
+}

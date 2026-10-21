@@ -31,6 +31,7 @@ use crate::routes::library::helpers::{
 };
 use crate::routes::library::types::PaginatedResponse;
 use crate::routes::{AuthUser, PlaybackAuth};
+use crate::video_metadata::release_dates::{self, RegionalReleaseDates};
 
 // =============================================================================
 // Error Type
@@ -137,6 +138,7 @@ struct MovieDetailResponse {
     kids_allowed: bool,
     #[serde(with = "crate::serde_date::option_date")]
     release_date: Option<time::Date>,
+    release_dates: Option<RegionalReleaseDates>,
     is_released: Option<bool>,
     quality_profile_id: Option<Uuid>,
     preferred_languages: Option<Vec<String>>,
@@ -684,7 +686,8 @@ pub async fn get_movie(
         .filter(|d| !auth.is_kids || d.kids_allowed)
         .ok_or_else(|| AppError::NotFound("Movie not found".into()))?;
 
-    let mut response = movie_detail_response(detail);
+    let region = state.runtime_config.discover_region().await;
+    let mut response = movie_detail_response(detail, &region);
 
     if let Ok(Some(ws)) = movie_watch_states::get(&state.pool, id, auth.user_id).await {
         response.watched = Some(ws.watched);
@@ -761,6 +764,7 @@ pub async fn update_movie(
         rating_count: body.rating_count,
         content_rating: body.content_rating,
         release_date: body.release_date,
+        release_dates: None,
         is_released: body.is_released,
         quality_profile_id: body.quality_profile_id,
         alternate_titles: None,
@@ -1252,7 +1256,8 @@ pub async fn refresh_metadata(
         .map_err(|e| AppError::Internal(format!("Failed to get updated movie: {e}")))?
         .ok_or_else(|| AppError::Internal("Movie disappeared after update".into()))?;
 
-    Ok(Json(movie_detail_response(updated)))
+    let region = state.runtime_config.discover_region().await;
+    Ok(Json(movie_detail_response(updated, &region)))
 }
 
 // =============================================================================
@@ -1780,7 +1785,7 @@ pub async fn get_movie_tracks(
 // Helpers
 // =============================================================================
 
-fn movie_detail_response(detail: movies::MovieDetail) -> MovieDetailResponse {
+fn movie_detail_response(detail: movies::MovieDetail, region: &str) -> MovieDetailResponse {
     let base = "/api/v1/admin/movies/";
     let poster_url = endpoint_url(&detail.images, "poster", base, detail.id, "/poster");
     let backdrop_url = endpoint_url(&detail.images, "backdrop", base, detail.id, "/backdrop");
@@ -1805,6 +1810,7 @@ fn movie_detail_response(detail: movies::MovieDetail) -> MovieDetailResponse {
         kids_override: detail.kids_override,
         kids_allowed: detail.kids_allowed,
         release_date: detail.release_date,
+        release_dates: release_dates::select(&detail.release_dates, region),
         is_released: detail.is_released,
         quality_profile_id: detail.quality_profile_id,
         preferred_languages: detail.preferred_languages,

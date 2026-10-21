@@ -1,0 +1,149 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT id, debrid_provider_id, info_hash, file_id, debrid_provider, filename,\n                   filesize, release_title,\n                   cache_path AS \"cache_path?\",\n                   debrid_url AS \"debrid_url?\",\n                   debrid_url_expires_at AS \"debrid_url_expires_at?\"\n            FROM debrid_stream_sessions\n            WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "debrid_provider_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_provider_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "info_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "info_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "file_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "debrid_provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_provider"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "filename",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "filename"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "filesize",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "filesize"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "release_title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "release_title"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "cache_path?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "cache_path"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "debrid_url?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_url"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "debrid_url_expires_at?",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "debrid_url_expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "ba68b4a7e0a295ba4457dd58021963e5e329fe3997bfab06bd8f8897d76a882e"
+}

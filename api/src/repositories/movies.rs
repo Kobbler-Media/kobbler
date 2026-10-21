@@ -2,6 +2,7 @@
 
 use super::{PaginationDirection, Result, normalize_rating};
 use crate::images::ImageMap;
+use crate::video_metadata::release_dates::ReleaseDatesByRegion;
 use serde_json::Value;
 use sqlx::{Executor, PgPool, Postgres, Row};
 use time::OffsetDateTime;
@@ -52,6 +53,7 @@ pub struct MovieUpdate {
     pub rating_count: Option<i32>,
     pub content_rating: Option<String>,
     pub release_date: Option<time::Date>,
+    pub release_dates: Option<ReleaseDatesByRegion>,
     pub is_released: Option<bool>,
     pub alternate_titles: Option<Vec<String>>,
     pub quality_profile_id: Option<Option<Uuid>>,
@@ -101,6 +103,7 @@ pub struct MovieDetail {
     pub kids_override: Option<bool>,
     pub kids_allowed: bool,
     pub release_date: Option<time::Date>,
+    pub release_dates: ReleaseDatesByRegion,
     pub is_released: Option<bool>,
     pub quality_profile_id: Option<Uuid>,
     pub preferred_languages: Option<Vec<String>>,
@@ -277,7 +280,7 @@ pub async fn get_with_details(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<Mo
                description, tagline, images, identifiers,
                genres, rating, rating_count, content_rating,
                kids_override, kids_allowed(kids_override, content_rating) AS "kids_allowed!",
-               release_date, is_released, quality_profile_id, preferred_languages,
+               release_date, release_dates, is_released, quality_profile_id, preferred_languages,
                media_root_id,
                EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = movies.id) AS "is_in_library!",
                want_status, streamed_at, created_at, updated_at
@@ -316,6 +319,7 @@ pub async fn get_with_details(pool: &sqlx::PgPool, id: Uuid) -> Result<Option<Mo
         kids_override: r.kids_override,
         kids_allowed: r.kids_allowed,
         release_date: r.release_date,
+        release_dates: serde_json::from_value(r.release_dates).unwrap_or_default(),
         is_released: r.is_released,
         quality_profile_id: r.quality_profile_id,
         preferred_languages: r.preferred_languages,
@@ -477,6 +481,9 @@ where
     let pl_update = input.preferred_languages.flatten();
     let mr_update = input.media_root_id;
     let rating = input.rating.map(normalize_rating);
+    let release_dates = input
+        .release_dates
+        .map(|d| serde_json::to_value(d).unwrap_or_default());
 
     let result = sqlx::query!(
         r#"
@@ -501,6 +508,7 @@ where
             media_root_id = CASE WHEN $21 THEN $22 ELSE media_root_id END,
             alternate_titles = COALESCE($23, alternate_titles),
             streamed_at = COALESCE($24, streamed_at),
+            release_dates = COALESCE($25, release_dates),
             updated_at = NOW()
         WHERE id = $1
         "#,
@@ -528,6 +536,7 @@ where
         mr_update.flatten(),
         input.alternate_titles.as_deref(),
         input.streamed_at,
+        release_dates,
     )
     .execute(exec)
     .await?;

@@ -250,7 +250,7 @@ result.confidence = 0.8;
 
 ## Testing
 
-Add tests for your provider in `api/tests/metadata_test.rs`. Use the mock server pattern from existing tests to avoid hitting real APIs during tests.
+Add tests for your provider in `api/tests/integration/metadata_test.rs`. Use the mock server pattern from existing tests to avoid hitting real APIs during tests.
 
 ```rust
 #[tokio::test]

@@ -10,6 +10,8 @@ import type { PlaybackSessionResponse } from '$lib/types';
 // kobload prewarms the top 8 in rank order; past ~6 the next option is
 // rarely warm, so walking further only trades one cold wait for another.
 export const MAX_ATTEMPTS = 6;
+export const MAX_WALK_RESOLVES = 12;
+export const MAX_WALK_MS = 30_000;
 
 export interface StreamFailure {
   message: string;
@@ -18,31 +20,24 @@ export interface StreamFailure {
   release?: string;
 }
 
-interface CachingCandidate {
-  option: StreamOption;
-  response: StreamResolveCachingResponse;
-}
-
 export interface WalkState {
   tried: Set<string>;
   failures: StreamFailure[];
-  caching: CachingCandidate[];
-  budget: number;
+  attempts: number;
+  resolves: number;
 }
 
 export interface WalkDeps {
   resolve: (option: StreamOption) => Promise<StreamResolveResponse>;
-  waitForCache?: (
-    option: StreamOption,
-    response: StreamResolveCachingResponse
-  ) => Promise<PlaybackSessionResponse>;
   isAborted: () => boolean;
-  onAttempt?: (attempt: number, option: StreamOption) => void;
+  now?: () => number;
+  onAttemptFailed?: (failure: StreamFailure) => void;
 }
 
 export type WalkResult =
   | { kind: 'ready'; option: StreamOption; session: PlaybackSessionResponse }
-  | { kind: 'exhausted' }
+  | { kind: 'caching'; option: StreamOption; response: StreamResolveCachingResponse }
+  | { kind: 'exhausted'; stopped: boolean }
   | { kind: 'aborted' };
 
 export function optionKey(o: Pick<StreamOption, 'debrid_provider_id' | 'info_hash' | 'files'>) {
@@ -50,7 +45,12 @@ export function optionKey(o: Pick<StreamOption, 'debrid_provider_id' | 'info_has
 }
 
 export function newWalkState(tried: Iterable<string> = []): WalkState {
-  return { tried: new Set(tried), failures: [], caching: [], budget: MAX_ATTEMPTS };
+  return { tried: new Set(tried), failures: [], attempts: 0, resolves: 0 };
+}
+
+export function refillBudget(state: WalkState) {
+  state.attempts = 0;
+  state.resolves = 0;
 }
 
 export function rankOptions(result: StreamSearchResponse): StreamOption[] {
@@ -77,48 +77,82 @@ export function untriedOptions(options: StreamOption[], state: WalkState): Strea
   return options.filter((o) => !state.tried.has(optionKey(o)));
 }
 
-const ABORTED: WalkResult = { kind: 'aborted' };
+const isUncached = (o: StreamOption) => o.availability === 'uncached';
+
+// The server sinks failures already, but only the ones it saw before this
+// search; an uncached release goes last because resolving it starts a download.
+export function fallbackCandidates(options: StreamOption[], state: WalkState): StreamOption[] {
+  const rest = untriedOptions(options, state);
+  const held = rest.filter((o) => !isUncached(o));
+  return [
+    ...held.filter((o) => o.playback !== 'failed'),
+    ...held.filter((o) => o.playback === 'failed'),
+    ...rest.filter(isUncached)
+  ];
+}
+
+type Refusal = 'skip' | 'stop' | 'attempt';
+
+// An instant refusal costs the viewer nothing, so it is not charged to the
+// budget. A rate limit or a rejected key is the same answer for every option
+// left, and asking again only makes the limit last longer.
+function refusalOf(failure: StreamFailure): Refusal {
+  switch (failure.reason) {
+    case 'blocked':
+    case 'not_video':
+      return 'skip';
+    case 'rate_limited':
+    case 'auth_failed':
+      return 'stop';
+    default:
+      return 'attempt';
+  }
+}
+
+function walkHasBudget(state: WalkState): boolean {
+  return state.attempts < MAX_ATTEMPTS && state.resolves < MAX_WALK_RESOLVES;
+}
 
 export async function walkStreams(
   options: StreamOption[],
   state: WalkState,
   deps: WalkDeps
 ): Promise<WalkResult> {
-  for (;;) {
-    for (const option of untriedOptions(options, state)) {
-      if (state.budget <= 0) break;
-      state.tried.add(optionKey(option));
-      state.budget--;
-      deps.onAttempt?.(state.tried.size, option);
-      let response: StreamResolveResponse;
-      try {
-        response = await deps.resolve(option);
-      } catch (e) {
-        if (deps.isAborted()) return ABORTED;
-        state.failures.push(toFailure(e, option));
-        continue;
-      }
-      if (deps.isAborted()) return ABORTED;
-      if (isStreamCaching(response)) {
-        state.caching.push({ option, response });
-        continue;
-      }
-      return { kind: 'ready', option, session: response };
-    }
+  const now = deps.now ?? Date.now;
+  const started = now();
+  let caching: Extract<WalkResult, { kind: 'caching' }> | null = null;
+  let stopped = false;
 
-    const wait = deps.waitForCache;
-    const next = wait && state.caching.shift();
-    if (!wait || !next) return { kind: 'exhausted' };
+  for (const option of fallbackCandidates(options, state)) {
+    if (!walkHasBudget(state) || now() - started >= MAX_WALK_MS) break;
+    // Each resolve of an uncached release queues a download on the debrid service.
+    if (caching && isUncached(option)) continue;
+    state.tried.add(optionKey(option));
+    state.resolves++;
+    let response: StreamResolveResponse;
     try {
-      const session = await wait(next.option, next.response);
-      if (deps.isAborted()) return ABORTED;
-      return { kind: 'ready', option: next.option, session };
+      response = await deps.resolve(option);
     } catch (e) {
-      if (deps.isAborted()) return ABORTED;
-      state.failures.push(toFailure(e, next.option));
-      state.budget = MAX_ATTEMPTS;
+      if (deps.isAborted()) return { kind: 'aborted' };
+      const failure = toFailure(e, option);
+      state.failures.push(failure);
+      const refusal = refusalOf(failure);
+      if (refusal === 'stop') {
+        stopped = true;
+        break;
+      }
+      if (refusal === 'attempt') {
+        state.attempts++;
+        deps.onAttemptFailed?.(failure);
+      }
+      continue;
     }
+    if (deps.isAborted()) return { kind: 'aborted' };
+    if (!isStreamCaching(response)) return { kind: 'ready', option, session: response };
+    caching ??= { kind: 'caching', option, response };
   }
+
+  return caching ?? { kind: 'exhausted', stopped };
 }
 
 export async function resolveFirstReady(

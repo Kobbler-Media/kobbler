@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO debrid_cache_files\n            (file_path, file_size, expires_at, debrid_provider_id, info_hash, file_id, filename)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        ON CONFLICT (file_path) DO UPDATE SET\n            last_accessed_at = NOW(),\n            expires_at = GREATEST(debrid_cache_files.expires_at, EXCLUDED.expires_at),\n            file_size = EXCLUDED.file_size,\n            debrid_provider_id = COALESCE(EXCLUDED.debrid_provider_id, debrid_cache_files.debrid_provider_id),\n            info_hash = COALESCE(EXCLUDED.info_hash, debrid_cache_files.info_hash),\n            file_id = COALESCE(EXCLUDED.file_id, debrid_cache_files.file_id),\n            filename = EXCLUDED.filename\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Timestamptz",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4ad29a0a04fb9bb0ef43789b6dca8ab39f914844ab77460d1895b65b5bdf7440"
+}

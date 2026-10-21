@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE debrid_keeps SET job_id = $2, updated_at = NOW() WHERE session_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "501b66c07c843249e6595d24772ea190bf5f567a7f2dfcaa0e2a83b6ea9f6ea7"
+}

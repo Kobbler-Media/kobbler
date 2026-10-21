@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { TvEpisode } from '$lib/types';
   import { getWantStatusDisplay, isActivelyWanted } from '$lib/utils/want-status';
-  import { formatCalendarDate } from '$lib/utils/format';
+  import EpisodeSummary from './EpisodeSummary.svelte';
 
   interface Props {
     episode: TvEpisode;
@@ -17,6 +17,7 @@
     number?: string | number;
     title?: string;
     noun?: string;
+    showMedia?: boolean;
   }
 
   let {
@@ -32,7 +33,8 @@
     onToggleSelect,
     number,
     title,
-    noun = 'episode'
+    noun = 'episode',
+    showMedia = false
   }: Props = $props();
 
   // In selection mode the whole row is the checkbox target — navigating away
@@ -48,27 +50,18 @@
       : 'Missing'
   );
 
-  const formattedAirDate = $derived(formatCalendarDate(episode.air_date, 'short'));
-
-  const runtimeDisplay = $derived(episode.runtime ? `${episode.runtime}m` : null);
   const isWatched = $derived(episode.watched === true);
 </script>
 
 {#snippet summary()}
-  <div class="episode-number">
-    {number ?? episode.episode_identifier}
-  </div>
-  <div class="episode-info">
-    <span class="episode-title">{title ?? episode.title ?? 'TBA'}</span>
-    <div class="episode-meta">
-      {#if formattedAirDate}
-        <span>{formattedAirDate}</span>
-      {/if}
-      {#if runtimeDisplay}
-        <span>{runtimeDisplay}</span>
-      {/if}
-    </div>
-  </div>
+  <EpisodeSummary
+    number={number ?? episode.episode_identifier}
+    title={title ?? episode.title ?? 'TBA'}
+    airDate={episode.air_date}
+    runtime={episode.runtime}
+    stillUrl={showMedia ? episode.still_url : null}
+    synopsis={showMedia ? episode.description : null}
+  />
 {/snippet}
 
 <div
@@ -232,41 +225,8 @@
     transition: background 0.15s ease;
   }
 
-  .episode-link:hover .episode-title {
+  .episode-link:hover :global(.episode-title) {
     color: var(--accent);
-  }
-
-  .episode-number {
-    min-width: 32px;
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--muted);
-    text-align: center;
-    flex-shrink: 0;
-  }
-
-  .episode-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .episode-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ink);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .episode-meta {
-    display: flex;
-    gap: 8px;
-    font-size: 11px;
-    color: var(--muted);
   }
 
   .episode-status {
@@ -379,11 +339,6 @@
 
     .episode-link {
       gap: 8px;
-    }
-
-    .episode-number {
-      min-width: 24px;
-      font-size: 12px;
     }
 
     .episode-actions {

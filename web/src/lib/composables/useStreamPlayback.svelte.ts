@@ -1,19 +1,32 @@
-import type { StreamOption, StreamResolveParams } from '$lib/api/client';
-import { deleteStreamSession, streamResolve, streamSearch, isStreamCaching } from '$lib/api/client';
+import type {
+  StreamOption,
+  StreamPrewarmParams,
+  StreamResolveCachingResponse,
+  StreamResolveParams
+} from '$lib/api/client';
+import {
+  deleteStreamSession,
+  isStreamCaching,
+  reportStreamOutcome,
+  streamResolve,
+  streamSearch
+} from '$lib/api/client';
 import type { PlaybackSessionResponse } from '$lib/types';
 import { detectCapabilities } from '$lib/utils/media';
 import { on, off } from '$lib/services/eventstream.svelte';
 import {
-  MAX_ATTEMPTS,
   newWalkState,
   optionKey,
   rankOptions,
+  refillBudget,
   toFailure,
   untriedOptions,
   walkStreams
 } from '$lib/streaming/walk';
-import type { WalkState } from '$lib/streaming/walk';
+import type { WalkResult, WalkState } from '$lib/streaming/walk';
 import { waitForCache } from '$lib/streaming/cacheWait';
+import { createPrewarm } from '$lib/streaming/prewarm';
+import type { CachingState } from '$lib/streaming/cacheWait';
 import {
   PLAYER_FAILURE_REASON,
   explainFailure,
@@ -23,15 +36,10 @@ import {
 } from '$lib/streaming/failure';
 import type { usePlayback } from './usePlayback.svelte';
 
-export interface StreamHandoff {
-  session: PlaybackSessionResponse;
-  option: StreamOption;
-  tried: string[];
-}
-
 export interface StreamPlayerFailure {
   sessionId: string;
   started: boolean;
+  position: number;
   reason: string;
   reported: Promise<unknown>;
 }
@@ -51,10 +59,9 @@ export interface UseStreamPlaybackOpts {
   getSearchParams: () => Record<string, unknown>;
   getResumePosition: () => number | undefined;
   getEstimatedDuration: () => number | undefined;
-  playback?: ReturnType<typeof usePlayback>;
+  playback: Pick<ReturnType<typeof usePlayback>, 'openPending' | 'playSession' | 'close'>;
   onMessage: (msg: string) => void;
   getAutoCreate?: () => StreamResolveParams['auto_create'];
-  onResolved?: (handoff: StreamHandoff) => void;
   want?: () => Promise<void>;
   canWant?: () => boolean;
 }
@@ -65,22 +72,38 @@ interface Current {
   retried: boolean;
 }
 
+const FINDING_NOTE = 'Finding a stream…';
+const NEXT_STREAM_NOTE = "That stream wouldn't play — trying another…";
+const RECONNECT_NOTE = 'Lost the stream — reconnecting…';
+const SWITCHED_NOTE = 'Switched to another source';
+const QUIET = '';
+// Most reconnects land inside a second; announcing those turns a hiccup into an incident.
+const RECONNECT_NOTICE_DELAY_MS = 1_800;
+// Another release is another encode with its own keyframes and cuts, so it
+// picks up a little early rather than skip what the viewer had not seen.
+const SWITCH_REWIND_SEC = 5;
+
 export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
   let streamOptions = $state<StreamOption[]>([]);
   let streamErrors = $state<string[]>([]);
   let searched = $state(false);
   let streamLoading = $state(false);
   let resolving = $state(false);
-  let attempt = $state(0);
   let notice = $state<string | null>(null);
   let showStreamModal = $state(false);
-  let cachingProgress = $state<number | null>(null);
+  let caching = $state<CachingState | null>(null);
   let failure = $state<StreamFailurePanel | null>(null);
   let wanting = $state(false);
+  let resumeOverride = $state<number | undefined>(undefined);
+  let reconnecting = $state(false);
+  let reconnectNoted = $state(false);
 
   let run: WalkState | null = null;
   let current: Current | null = null;
   let controller = new AbortController();
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let switching = false;
+  const prewarm = createPrewarm();
 
   $effect(() => {
     const cb = on(
@@ -88,9 +111,13 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
       (data: { info_hash: string; file_id?: number | null; debrid_provider_id: string }) =>
         markCached(data.info_hash, data.file_id ?? null, data.debrid_provider_id)
     );
+    const unload = () => prewarm.release(true);
+    window.addEventListener('beforeunload', unload);
     return () => {
       off('stream_warm_ready', cb);
+      window.removeEventListener('beforeunload', unload);
       abort();
+      prewarm.release();
     };
   });
 
@@ -118,16 +145,29 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     }
   }
 
-  async function ensureSearched(): Promise<void> {
-    if (!searched) await search();
+  function startTime(): number | undefined {
+    const resumePos = resumeOverride ?? opts.getResumePosition();
+    return resumePos && resumePos > 5 ? resumePos : undefined;
+  }
+
+  function buildPrewarmParams(): StreamPrewarmParams {
+    const { season, episode } = opts.getSearchParams() as { season?: number; episode?: number };
+    const autoCreate = opts.getAutoCreate?.();
+    return {
+      media_type: opts.mediaType,
+      ...(autoCreate ? { auto_create: autoCreate } : { media_id: opts.getMediaId() }),
+      ...(season != null && episode != null ? { season, episode } : {}),
+      capabilities: detectCapabilities(),
+      start_time: startTime()
+    };
   }
 
   async function preWarmStream() {
+    prewarm.start(buildPrewarmParams());
     if (!searched && !streamLoading) await search();
   }
 
   function buildResolveParams(option: StreamOption): StreamResolveParams {
-    const resumePos = opts.getResumePosition();
     const params: StreamResolveParams = {
       debrid_provider_id: option.debrid_provider_id,
       info_hash: option.info_hash,
@@ -137,7 +177,7 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
       release_title: option.release_title,
       debrid_provider: option.debrid_provider,
       quality: option.quality,
-      start_time: resumePos && resumePos > 5 ? resumePos : undefined,
+      start_time: startTime(),
       capabilities: detectCapabilities(),
       estimated_duration: opts.getEstimatedDuration()
     };
@@ -150,70 +190,109 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     return params;
   }
 
+  const resolveOption = (option: StreamOption) => streamResolve(buildResolveParams(option));
+
   function beginAttempt(): AbortSignal {
     controller.abort();
     controller = new AbortController();
+    endReconnect();
     failure = null;
     showStreamModal = false;
-    opts.playback?.openPending();
+    opts.playback.openPending();
     return controller.signal;
   }
 
-  function walkDeps(signal: AbortSignal) {
-    return {
-      resolve: (option: StreamOption) => streamResolve(buildResolveParams(option)),
-      waitForCache: (option: StreamOption, response: Parameters<typeof waitForCache>[0]) =>
-        waitForCache(
-          response,
-          () => streamResolve(buildResolveParams(option)),
-          (p) => (cachingProgress = p),
-          signal
-        ).finally(() => (cachingProgress = null)),
-      isAborted: () => signal.aborted,
-      onAttempt: (n: number) => (attempt = n)
-    };
-  }
-
-  async function walk(signal: AbortSignal, options: StreamOption[]): Promise<boolean> {
-    if (!run) return false;
+  async function walk(signal: AbortSignal, options: StreamOption[]): Promise<WalkResult> {
+    run ??= newWalkState();
     resolving = true;
     try {
-      const result = await walkStreams(options, run, walkDeps(signal));
-      if (result.kind === 'aborted') return true;
-      if (result.kind === 'exhausted') return false;
-      deliver(result.option, result.session, false);
-      return true;
+      return await walkStreams(options, run, {
+        resolve: resolveOption,
+        isAborted: () => signal.aborted,
+        onAttemptFailed: () => (notice = NEXT_STREAM_NOTE)
+      });
     } finally {
       if (!signal.aborted) resolving = false;
     }
   }
 
+  async function waitCaching(
+    signal: AbortSignal,
+    option: StreamOption,
+    response: StreamResolveCachingResponse
+  ) {
+    notice = null;
+    try {
+      const session = await waitForCache(
+        response,
+        () => resolveOption(option),
+        (state) => (caching = state),
+        signal,
+        option.debrid_provider
+      );
+      if (!signal.aborted) deliver(option, session, false);
+    } catch (e) {
+      if (signal.aborted) return;
+      run?.failures.push(toFailure(e, option));
+      showExhausted(false);
+    } finally {
+      if (!signal.aborted) caching = null;
+    }
+  }
+
+  async function settle(signal: AbortSignal, result: WalkResult) {
+    if (result.kind === 'aborted') return;
+    if (result.kind === 'ready') return deliver(result.option, result.session, false);
+    if (result.kind === 'caching') return waitCaching(signal, result.option, result.response);
+    if (switching) return showStopped(undefined);
+    showExhausted(result.stopped);
+  }
+
   async function continueWalk(signal: AbortSignal) {
-    await ensureSearched();
+    if (!searched) await search();
     if (signal.aborted) return;
     if (streamOptions.length === 0) return showNoStreams();
-    if (!(await walk(signal, streamOptions))) showExhausted();
+    await settle(signal, await walk(signal, streamOptions));
   }
 
   function deliver(option: StreamOption, session: PlaybackSessionResponse, retried: boolean) {
     notice = null;
+    endReconnect();
     current = { option, sessionId: session.session_id, retried };
-    if (opts.onResolved) {
-      opts.onResolved({ session, option: $state.snapshot(option), tried: [...(run?.tried ?? [])] });
-    } else {
-      opts.playback?.playSession(session);
-    }
+    opts.playback.playSession(session);
+    if (switching) opts.onMessage(SWITCHED_NOTE);
+    switching = false;
+  }
+
+  function startReconnect(noted: boolean) {
+    reconnecting = true;
+    reconnectNoted = noted;
+    if (noted) return;
+    reconnectTimer = setTimeout(() => (reconnectNoted = true), RECONNECT_NOTICE_DELAY_MS);
+  }
+
+  function endReconnect() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    reconnecting = false;
+    reconnectNoted = false;
   }
 
   function wantable() {
     return !!opts.want && (opts.canWant?.() ?? true);
   }
 
+  function canTryAnother() {
+    return run ? untriedOptions(streamOptions, run).length > 0 : false;
+  }
+
   function showPanel(panel: Omit<StreamFailurePanel, 'canWant' | 'canChoose'>) {
     resolving = false;
     notice = null;
+    endReconnect();
+    switching = false;
     current = null;
-    opts.playback?.close();
+    opts.playback.close();
     failure = { ...panel, canChoose: streamOptions.length > 0, canWant: wantable() };
   }
 
@@ -226,12 +305,15 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     });
   }
 
-  function showExhausted() {
+  function showExhausted(stopped: boolean) {
+    const failures = run?.failures ?? [];
+    // A rate limit or rejected key ended the walk, whatever else came before it.
+    const cause = stopped ? failures.slice(-1) : failures;
     showPanel({
       title: "Couldn't play this",
-      summary: summarizeFailures(run?.failures ?? [], run?.tried.size ?? 0),
-      details: failureDetails(run?.failures ?? []),
-      canTryAnother: run ? untriedOptions(streamOptions, run).length > 0 : false
+      summary: summarizeFailures(cause, run?.tried.size ?? 0),
+      details: failureDetails(failures),
+      canTryAnother: !stopped && canTryAnother()
     });
   }
 
@@ -242,52 +324,69 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
       title: 'Playback stopped',
       summary: `The stream stopped and couldn't be restarted.${last ? ` ${explainFailure(last)}` : ''}`,
       details: [...failureDetails(failures), ...(reason ? [`Player: ${reason}`] : [])],
-      canTryAnother: run ? untriedOptions(streamOptions, run).length > 0 : false
+      canTryAnother: canTryAnother()
     });
+  }
+
+  async function claimPrewarm(signal: AbortSignal) {
+    resolving = true;
+    try {
+      return await prewarm.claim(buildPrewarmParams());
+    } finally {
+      if (!signal.aborted) resolving = false;
+    }
   }
 
   async function autoPlay() {
     const signal = beginAttempt();
+    resumeOverride = undefined;
     run = newWalkState();
-    attempt = 0;
-    await continueWalk(signal);
+    const claimed = await claimPrewarm(signal);
+    if (signal.aborted) return;
+    if (!claimed) return continueWalk(signal);
+    run.tried.add(optionKey(claimed.option));
+    deliver(claimed.option, claimed.session, false);
   }
 
   async function playOption(option: StreamOption) {
     const signal = beginAttempt();
+    resumeOverride = undefined;
+    prewarm.release();
     const key = optionKey(option);
     run = newWalkState([...(run?.tried ?? [])].filter((k) => k !== key));
-    if (await walk(signal, [option])) return;
-    if (!signal.aborted) await continueWalk(signal);
+    const result = await walk(signal, [option]);
+    if (result.kind === 'exhausted' && !result.stopped && !signal.aborted) {
+      return continueWalk(signal);
+    }
+    await settle(signal, result);
   }
 
   async function tryAnother() {
     const signal = beginAttempt();
     run ??= newWalkState();
-    run.budget = MAX_ATTEMPTS;
+    refillBudget(run);
     await continueWalk(signal);
-  }
-
-  function adoptSession(handoff: StreamHandoff) {
-    run = newWalkState(handoff.tried);
-    current = { option: handoff.option, sessionId: handoff.session.session_id, retried: false };
-    opts.playback?.playSession(handoff.session);
   }
 
   async function retryRunning(signal: AbortSignal, option: StreamOption) {
     resolving = true;
     try {
-      const response = await streamResolve(buildResolveParams(option));
+      const response = await resolveOption(option);
       if (signal.aborted) return;
-      if (isStreamCaching(response)) return showStopped(undefined);
-      deliver(option, response, true);
+      if (!isStreamCaching(response)) return deliver(option, response, true);
     } catch (e) {
       if (signal.aborted) return;
       run?.failures.push(toFailure(e, option));
-      showStopped(undefined);
     } finally {
       if (!signal.aborted) resolving = false;
     }
+    await switchSource(signal);
+  }
+
+  function switchSource(signal: AbortSignal) {
+    switching = true;
+    resumeOverride = Math.max(0, (resumeOverride ?? 0) - SWITCH_REWIND_SEC);
+    return continueWalk(signal);
   }
 
   function handlePlayerFailure(f: StreamPlayerFailure): boolean {
@@ -295,26 +394,36 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     const { option, retried } = current;
     run ??= newWalkState([optionKey(option)]);
     current = null;
+    const noted = reconnectNoted;
+    // A release that played and then dropped is more likely an expired link
+    // than a bad file, so only a second loss is held against it.
+    const reported =
+      f.started && retried
+        ? f.reported.then(() =>
+            reportStreamOutcome(f.sessionId, { ok: false, reason: f.reason }).catch(() => {})
+          )
+        : f.reported;
     // The outcome is keyed by session, so it has to land before the session is gone.
-    f.reported.finally(() => deleteStreamSession(f.sessionId).catch(() => {}));
-    if (!f.started) {
+    reported.finally(() => deleteStreamSession(f.sessionId).catch(() => {}));
+    if (!f.started || retried) {
       run.failures.push({
         message: "The player couldn't play that stream.",
         reason: PLAYER_FAILURE_REASON,
         detail: f.reason,
         release: option.release_title
       });
+      run.attempts++;
     }
-    if (retried) {
-      showStopped(f.reason);
-      return true;
-    }
+    if (f.started) resumeOverride = f.position;
     const signal = beginAttempt();
-    if (f.started) {
-      notice = 'Playback stopped — reconnecting…';
+    if (retried) {
+      startReconnect(noted);
+      void switchSource(signal);
+    } else if (f.started) {
+      startReconnect(false);
       void retryRunning(signal, option);
     } else {
-      notice = "That stream wouldn't play — trying another…";
+      notice = NEXT_STREAM_NOTE;
       void continueWalk(signal);
     }
     return true;
@@ -353,12 +462,11 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
 
   function cancel() {
     abort();
-    opts.playback?.close();
+    opts.playback.close();
   }
 
   function pickFromPlayer() {
-    abort();
-    opts.playback?.close();
+    cancel();
     openModal();
   }
 
@@ -366,27 +474,30 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     controller.abort();
     resolving = false;
     notice = null;
-    cachingProgress = null;
+    caching = null;
     current = null;
+    switching = false;
+    resumeOverride = undefined;
+    endReconnect();
   }
 
   function reset() {
     abort();
+    prewarm.release();
     run = null;
     searched = false;
     streamOptions = [];
     streamErrors = [];
     streamLoading = false;
-    attempt = 0;
     showStreamModal = false;
     failure = null;
   }
 
   function pendingStatus(): string | undefined {
-    if (streamLoading) return 'Searching for streams…';
-    if (cachingProgress !== null) return `Caching stream… ${Math.round(cachingProgress * 100)}%`;
+    if (caching) return undefined;
+    if (reconnecting) return reconnectNoted ? RECONNECT_NOTE : QUIET;
     if (notice) return notice;
-    if (resolving) return attempt > 1 ? `Trying stream ${attempt}…` : 'Finding a stream…';
+    if (streamLoading || resolving) return FINDING_NOTE;
     return undefined;
   }
 
@@ -401,13 +512,13 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
       return streamLoading;
     },
     get busy() {
-      return streamLoading || resolving || cachingProgress !== null;
+      return streamLoading || resolving || caching !== null;
     },
     get showStreamModal() {
       return showStreamModal;
     },
-    get cachingProgress() {
-      return cachingProgress;
+    get caching() {
+      return caching;
     },
     get failure() {
       return failure;
@@ -415,9 +526,14 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     get wanting() {
       return wanting;
     },
+    get searched() {
+      return searched;
+    },
     get playerProps() {
       return {
         pendingStatus: pendingStatus(),
+        resumePosition: resumeOverride,
+        pendingCaching: caching,
         onSwitchStream: pickFromPlayer,
         onPickStream: pickFromPlayer,
         onStreamFailed: handlePlayerFailure
@@ -430,7 +546,6 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     chooseRelease,
     want,
     dismissFailure,
-    adoptSession,
     handlePlayerFailure,
     openModal,
     closeModal,

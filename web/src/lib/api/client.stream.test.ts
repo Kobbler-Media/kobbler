@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, reportStreamOutcome, streamResolve } from './client';
+import { ApiError, getPlaybackSessionStatus, reportStreamOutcome, streamResolve } from './client';
 
 function stubFetch(status: number, body: unknown) {
   const fetch = vi.fn(
@@ -45,4 +45,31 @@ describe('reportStreamOutcome', () => {
       );
     }
   );
+});
+
+describe('getPlaybackSessionStatus', () => {
+  it('returns the status with its feed', async () => {
+    const body = {
+      session_id: 's',
+      state: 'ready',
+      method: 'direct_play',
+      is_live: false,
+      feed: { requests_open: 1, bytes_served: 10, idle_ms: 830, source: 'proxy' }
+    };
+    stubFetch(200, body);
+    expect(await getPlaybackSessionStatus('s')).toEqual({ kind: 'status', status: body });
+  });
+
+  it.each([404, 410])('reads %i as a session that is gone', async (status) => {
+    stubFetch(status, { error: 'gone' });
+    expect(await getPlaybackSessionStatus('s')).toEqual({ kind: 'missing' });
+  });
+
+  it('reads a request that never got an answer as no news', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(new TypeError('offline')))
+    );
+    expect(await getPlaybackSessionStatus('s')).toEqual({ kind: 'unknown' });
+  });
 });

@@ -521,6 +521,16 @@ pub fn find_preferred_audio(tracks: &[AudioTrackMeta], preferred_language: &str)
         .map(|t| t.stream_index)
 }
 
+/// The audio languages a stream search should favour, in the form kobload takes them:
+/// lowercase English names or ISO 639 codes, most preferred first.
+pub fn search_audio_languages(preferred: &str) -> Vec<String> {
+    preferred
+        .split(',')
+        .map(|l| l.trim().to_lowercase())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
 /// Find the first subtitle track matching a preferred language.
 /// Returns the stream index if found.
 pub fn find_preferred_subtitle(

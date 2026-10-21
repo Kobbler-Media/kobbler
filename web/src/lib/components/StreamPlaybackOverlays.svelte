@@ -1,15 +1,13 @@
 <script lang="ts">
   import type { StreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
   import StreamOptionsModal from './StreamOptionsModal.svelte';
-  import StreamCachingOverlay from './StreamCachingOverlay.svelte';
   import StreamFailurePanel from './StreamFailurePanel.svelte';
 
   interface Props {
     stream: StreamPlayback;
-    playerActive?: boolean;
   }
 
-  let { stream, playerActive = false }: Props = $props();
+  let { stream }: Props = $props();
 </script>
 
 {#if stream.showStreamModal}
@@ -19,17 +17,6 @@
     errors={stream.streamErrors}
     onClose={stream.closeModal}
     onPlay={stream.playOption}
-  />
-{/if}
-
-{#if stream.cachingProgress !== null && !playerActive}
-  <StreamCachingOverlay
-    progress={stream.cachingProgress}
-    onCancel={stream.cancel}
-    onPickStream={() => {
-      stream.cancel();
-      stream.openModal();
-    }}
   />
 {/if}
 

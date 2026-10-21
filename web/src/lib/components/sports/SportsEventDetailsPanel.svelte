@@ -339,7 +339,7 @@
   />
 {/if}
 
-<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
+<StreamPlaybackOverlays {stream} />
 
 <style>
   .event-detail {

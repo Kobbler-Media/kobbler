@@ -11,7 +11,7 @@
 //!
 //! * `api/src/bin/chatbot_e2e.rs` — shipped in the api image, so a deployed
 //!   box can be asked: `docker exec kobbler-api-1 /app/chatbot_e2e`;
-//! * `api/tests/chatbot_llm_e2e.rs` — build-box `cargo test`, skipped unless
+//! * `api/tests/integration/chatbot_llm_e2e.rs` — build-box `cargo test`, skipped unless
 //!   `CHATBOT_E2E=1` so `make` and CI never hit a live model.
 
 use crate::chatbot::llm::{self, ChatMessage, Completion, LlmConfig};

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE debrid_cache_files SET pinned = $2\n        WHERE file_path = (SELECT cache_path FROM debrid_stream_sessions WHERE id = $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "67a632735aaf6488571bee40d75132b4d1d1588cf8890fed9c276f01d3dc0726"
+}

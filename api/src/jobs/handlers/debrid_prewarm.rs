@@ -9,11 +9,11 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::debrid_outcomes::{self, PREWARM_JOB};
+use crate::debrid_outcomes::PREWARM_JOB;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::repositories::tv_episodes;
-use crate::routes::admin::debrid_stream::build_episode_search_request;
+use crate::routes::admin::stream_search_request::{self, SearchTarget};
 use crate::routes::helpers::build_kobload_client;
 
 #[derive(Deserialize)]
@@ -57,13 +57,15 @@ impl JobHandler for DebridPrewarmHandler {
             return Ok(json!({ "skipped": "no next episode" }));
         };
 
-        let mut request = build_episode_search_request(&self.state, episode_id)
-            .await
-            .map_err(|_| JobError::ExecutionFailed(format!("episode {episode_id} not found")))?;
-        request.prefer =
-            debrid_outcomes::search_preference(pool, payload.user_id, None, Some(episode_id))
-                .await
-                .prefer;
+        let request = stream_search_request::prepare(
+            &self.state,
+            payload.user_id,
+            &SearchTarget::Episode(episode_id),
+            None,
+        )
+        .await
+        .map_err(|_| JobError::ExecutionFailed(format!("episode {episode_id} not found")))?
+        .request;
 
         let runtime = self.state.runtime_config.get().await;
         let client =

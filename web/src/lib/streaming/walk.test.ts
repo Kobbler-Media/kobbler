@@ -1,16 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '$lib/api/client';
 import type {
+  StreamAvailability,
   StreamOption,
   StreamResolveCachingResponse,
   StreamResolveResponse,
   StreamSearchResponse
 } from '$lib/api/client';
 import type { PlaybackSessionResponse } from '$lib/types';
-import { MAX_ATTEMPTS, newWalkState, optionKey, rankOptions, walkStreams } from './walk';
+import {
+  MAX_ATTEMPTS,
+  MAX_WALK_RESOLVES,
+  fallbackCandidates,
+  newWalkState,
+  optionKey,
+  rankOptions,
+  walkStreams
+} from './walk';
 import type { WalkDeps } from './walk';
 
-function option(hash: string, fileId = 1, provider = 'rd'): StreamOption {
+function option(
+  hash: string,
+  extra: Partial<StreamOption> & { fileId?: number; provider?: string } = {}
+): StreamOption {
+  const { fileId = 1, provider = 'rd', ...rest } = extra;
   return {
     id: `${provider}-${hash}-${fileId}`,
     release_title: `Release ${hash}`,
@@ -24,9 +37,12 @@ function option(hash: string, fileId = 1, provider = 'rd'): StreamOption {
     debrid_provider_id: provider,
     cached: false,
     source_type: 'torrent',
-    files: [{ id: fileId, path: 'a.mkv', size: 1 }]
+    files: [{ id: fileId, path: 'a.mkv', size: 1 }],
+    ...rest
   };
 }
+
+const avail = (hash: string, availability: StreamAvailability) => option(hash, { availability });
 
 function session(id: string): PlaybackSessionResponse {
   return {
@@ -46,46 +62,44 @@ function caching(hash: string): StreamResolveCachingResponse {
 
 type Behaviour = 'ready' | 'caching' | ApiError | Error;
 
-function harness(
-  behaviour: Record<string, Behaviour>,
-  cacheResult: Record<string, Behaviour> = {}
-) {
+const refusal = (reason: string) =>
+  new ApiError(502, `refused: ${reason}`, reason, `raw ${reason}`);
+const blocked = () => refusal('blocked');
+
+function harness(behaviour: Record<string, Behaviour>, msPerResolve = 0) {
   const resolved: string[] = [];
-  const waited: string[] = [];
+  let clock = 0;
   let aborted = false;
+  let attemptFailures = 0;
   const deps: WalkDeps = {
     resolve: async (o): Promise<StreamResolveResponse> => {
       const hash = o.info_hash!;
       resolved.push(hash);
+      clock += msPerResolve;
       const b = behaviour[hash] ?? 'ready';
       if (b === 'ready') return session(`s-${hash}`);
       if (b === 'caching') return caching(hash);
       throw b;
     },
-    waitForCache: async (o) => {
-      const hash = o.info_hash!;
-      waited.push(hash);
-      const b = cacheResult[hash] ?? 'ready';
-      if (b === 'ready') return session(`c-${hash}`);
-      throw b;
-    },
-    isAborted: () => aborted
+    isAborted: () => aborted,
+    now: () => clock,
+    onAttemptFailed: () => attemptFailures++
   };
   return {
     deps,
     resolved,
-    waited,
+    attemptFailures: () => attemptFailures,
     abort: () => {
       aborted = true;
     }
   };
 }
 
-const blocked = () =>
-  new ApiError(502, 'The debrid provider refused this release.', 'blocked', 'infringing file');
+const letters = (s: string) => s.split('');
+const hashesOf = (opts: StreamOption[]) => opts.map((o) => o.info_hash);
 
 describe('rankOptions', () => {
-  const opts = [option('a'), option('b'), option('c', 1), option('c', 2)];
+  const opts = [option('a'), option('b'), option('c', { fileId: 1 }), option('c', { fileId: 2 })];
   const response = (extra: Partial<StreamSearchResponse>): StreamSearchResponse => ({
     options: opts,
     errors: [],
@@ -113,6 +127,24 @@ describe('rankOptions', () => {
   });
 });
 
+describe('fallbackCandidates', () => {
+  it('keeps server order but sinks failed releases, then uncached ones last', () => {
+    const opts = [
+      avail('u', 'uncached'),
+      option('f', { playback: 'failed' }),
+      avail('a', 'ready'),
+      avail('b', 'unknown')
+    ];
+    expect(hashesOf(fallbackCandidates(opts, newWalkState()))).toEqual(['a', 'b', 'f', 'u']);
+  });
+
+  it('leaves out what this run already tried', () => {
+    const opts = [option('a'), option('b')];
+    const state = newWalkState([optionKey(opts[0])]);
+    expect(hashesOf(fallbackCandidates(opts, state))).toEqual(['b']);
+  });
+});
+
 describe('walkStreams', () => {
   it('plays the first option that resolves, trying strictly in order', async () => {
     const h = harness({ a: blocked(), b: 'ready', c: 'ready' });
@@ -121,61 +153,85 @@ describe('walkStreams', () => {
     expect(result).toMatchObject({ kind: 'ready', session: { session_id: 's-b' } });
     expect(h.resolved).toEqual(['a', 'b']);
     expect(state.failures).toEqual([
-      expect.objectContaining({
-        reason: 'blocked',
-        detail: 'infringing file',
-        release: 'Release a'
-      })
+      expect.objectContaining({ reason: 'blocked', detail: 'raw blocked', release: 'Release a' })
     ]);
   });
 
-  it('skips caching options and plays a later ready one without waiting', async () => {
+  it.each(['blocked', 'not_video'])(
+    'does not charge %s refusals to the attempt budget',
+    async (reason) => {
+      const opts = letters('abcdefghij').map((x) => option(x));
+      const behaviour = Object.fromEntries(
+        opts.slice(0, 9).map((o) => [o.info_hash!, refusal(reason)])
+      );
+      const h = harness(behaviour);
+      const result = await walkStreams(opts, newWalkState(), h.deps);
+      expect(result).toMatchObject({ kind: 'ready', session: { session_id: 's-j' } });
+      expect(h.attemptFailures()).toBe(0);
+    }
+  );
+
+  it(`caps one walk at ${MAX_WALK_RESOLVES} resolves, refusals included`, async () => {
+    const opts = letters('abcdefghijklmnop').map((x) => option(x));
+    const h = harness(Object.fromEntries(opts.map((o) => [o.info_hash!, blocked()])));
+    const result = await walkStreams(opts, newWalkState(), h.deps);
+    expect(result).toEqual({ kind: 'exhausted', stopped: false });
+    expect(h.resolved).toHaveLength(MAX_WALK_RESOLVES);
+  });
+
+  it(`stops after ${MAX_ATTEMPTS} real failed attempts`, async () => {
+    const opts = letters('abcdefghij').map((x) => option(x));
+    const h = harness(Object.fromEntries(opts.map((o) => [o.info_hash!, refusal('timeout')])));
+    const state = newWalkState();
+    const result = await walkStreams(opts, state, h.deps);
+    expect(result.kind).toBe('exhausted');
+    expect(h.resolved).toEqual(letters('abcdef'));
+    expect(h.attemptFailures()).toBe(MAX_ATTEMPTS);
+  });
+
+  it.each(['rate_limited', 'auth_failed'])('stops the whole walk on %s', async (reason) => {
+    const h = harness({ a: refusal(reason), b: 'ready' });
+    const result = await walkStreams([option('a'), option('b')], newWalkState(), h.deps);
+    expect(result).toEqual({ kind: 'exhausted', stopped: true });
+    expect(h.resolved).toEqual(['a']);
+  });
+
+  it('gives up once a walk has run for 30 seconds', async () => {
+    const opts = letters('abcdef').map((x) => option(x));
+    const h = harness(
+      Object.fromEntries(opts.map((o) => [o.info_hash!, refusal('unavailable')])),
+      10_000
+    );
+    await walkStreams(opts, newWalkState(), h.deps);
+    expect(h.resolved).toEqual(['a', 'b', 'c']);
+  });
+
+  it('passes over a caching option and plays a later ready one', async () => {
     const h = harness({ a: 'caching', b: 'ready' });
     const result = await walkStreams([option('a'), option('b')], newWalkState(), h.deps);
     expect(result).toMatchObject({ kind: 'ready', session: { session_id: 's-b' } });
-    expect(h.waited).toEqual([]);
   });
 
-  it(`stops after ${MAX_ATTEMPTS} attempts`, async () => {
-    const options = 'abcdefghij'.split('').map((x) => option(x));
-    const h = harness(Object.fromEntries(options.map((o) => [o.info_hash!, blocked()])));
-    const state = newWalkState();
-    const result = await walkStreams(options, state, h.deps);
-    expect(result.kind).toBe('exhausted');
-    expect(h.resolved).toEqual('abcdef'.split(''));
-    expect(state.tried.size).toBe(MAX_ATTEMPTS);
-  });
-
-  it('waits on the best-ranked caching option when nothing is ready', async () => {
+  it('answers with the best caching option only when nothing was ready', async () => {
     const h = harness({ a: blocked(), b: 'caching', c: 'caching' });
     const result = await walkStreams(
       [option('a'), option('b'), option('c')],
       newWalkState(),
       h.deps
     );
-    expect(result).toMatchObject({ kind: 'ready', session: { session_id: 'c-b' } });
-    expect(h.waited).toEqual(['b']);
+    expect(result).toMatchObject({ kind: 'caching', option: { info_hash: 'b' } });
+    expect(h.resolved).toEqual(['a', 'b', 'c']);
   });
 
-  it('continues with the remaining options when the caching wait fails', async () => {
-    const options = 'abcdefgh'.split('').map((x) => option(x));
-    const h = harness(
-      { a: 'caching', b: blocked(), c: blocked(), d: blocked(), e: blocked(), f: blocked() },
-      { a: new Error('Download failed') }
+  it('resolves no further uncached options once one is caching', async () => {
+    const h = harness({ a: blocked(), u1: 'caching', u2: 'caching' });
+    const result = await walkStreams(
+      [avail('u1', 'uncached'), avail('u2', 'uncached'), avail('a', 'unknown')],
+      newWalkState(),
+      h.deps
     );
-    const state = newWalkState();
-    const result = await walkStreams(options, state, h.deps);
-    expect(result).toMatchObject({ kind: 'ready', session: { session_id: 's-g' } });
-    expect(h.waited).toEqual(['a']);
-    expect(h.resolved).toEqual('abcdefg'.split(''));
-    expect(state.failures.map((f) => f.message)).toContain('Download failed');
-  });
-
-  it('falls through to the next caching option after a failed wait', async () => {
-    const h = harness({ a: 'caching', b: 'caching' }, { a: new Error('nope') });
-    const result = await walkStreams([option('a'), option('b')], newWalkState(), h.deps);
-    expect(result).toMatchObject({ kind: 'ready', session: { session_id: 'c-b' } });
-    expect(h.waited).toEqual(['a', 'b']);
+    expect(result).toMatchObject({ kind: 'caching', option: { info_hash: 'u1' } });
+    expect(h.resolved).toEqual(['a', 'u1']);
   });
 
   it('never retries an option already tried in the same run', async () => {
@@ -187,53 +243,19 @@ describe('walkStreams', () => {
   });
 
   it('treats sibling files of one pack and the same hash on another provider as distinct', () => {
-    const keys = new Set([option('a', 1), option('a', 2), option('a', 1, 'ad')].map(optionKey));
+    const keys = new Set(
+      [option('a'), option('a', { fileId: 2 }), option('a', { provider: 'ad' })].map(optionKey)
+    );
     expect(keys.size).toBe(3);
   });
 
-  it('continues a run with untried options after a later failure', async () => {
-    const h = harness({ a: 'ready', b: 'ready' });
+  it('shares the budget across walks of one run', async () => {
+    const opts = letters('abcdefgh').map((x) => option(x));
+    const h = harness(Object.fromEntries(opts.map((o) => [o.info_hash!, refusal('timeout')])));
     const state = newWalkState();
-    const options = [option('a'), option('b')];
-    expect(await walkStreams(options, state, h.deps)).toMatchObject({ kind: 'ready' });
-    expect(await walkStreams(options, state, h.deps)).toMatchObject({
-      kind: 'ready',
-      session: { session_id: 's-b' }
-    });
-    expect(await walkStreams(options, state, h.deps)).toEqual({ kind: 'exhausted' });
-  });
-
-  it('waits on a caching option skipped by an earlier walk of the run', async () => {
-    const h = harness({ a: 'caching', b: 'ready' });
-    const state = newWalkState();
-    const options = [option('a'), option('b')];
-    expect(await walkStreams(options, state, h.deps)).toMatchObject({
-      session: { session_id: 's-b' }
-    });
-    expect(await walkStreams(options, state, h.deps)).toMatchObject({
-      session: { session_id: 'c-a' }
-    });
-  });
-
-  it('shares the attempt budget across walks until it is refilled', async () => {
-    const options = 'abcdefgh'.split('').map((x) => option(x));
-    const h = harness(Object.fromEntries(options.map((o) => [o.info_hash!, blocked()])));
-    const state = newWalkState();
-    await walkStreams(options.slice(0, 4), state, h.deps);
-    await walkStreams(options, state, h.deps);
-    expect(h.resolved).toEqual('abcdef'.split(''));
-    state.budget = MAX_ATTEMPTS;
-    await walkStreams(options, state, h.deps);
-    expect(h.resolved).toEqual('abcdefgh'.split(''));
-  });
-
-  it('ends without waiting when the caller cannot wait on caching options', async () => {
-    const h = harness({ a: 'caching', b: blocked() });
-    delete h.deps.waitForCache;
-    const state = newWalkState();
-    const result = await walkStreams([option('a'), option('b')], state, h.deps);
-    expect(result).toEqual({ kind: 'exhausted' });
-    expect(state.failures).toEqual([expect.objectContaining({ reason: 'blocked' })]);
+    await walkStreams(opts.slice(0, 4), state, h.deps);
+    await walkStreams(opts, state, h.deps);
+    expect(h.resolved).toEqual(letters('abcdef'));
   });
 
   it('stops quietly when aborted mid-walk', async () => {

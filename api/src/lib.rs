@@ -163,6 +163,8 @@ pub struct AppState {
     pub debrid_session_index: Arc<dashmap::DashMap<String, uuid::Uuid>>,
     /// Per-key locks for serializing debrid session creation.
     pub debrid_resolve_locks: Arc<dashmap::DashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    /// Instant Stream: debrid sessions warmed ahead of a Play press, until claimed.
+    pub stream_prewarms: Arc<routes::admin::stream_prewarm::PrewarmStore>,
     /// Set to true after the first media_root_scan completes a full scan.
     /// Backfill handlers skip their work until this is set, preventing them
     /// from queuing jobs for files that haven't been checked for deletion yet.
@@ -1949,8 +1951,28 @@ pub fn create_router(state: AppState) -> Router {
             get(debrid_stream_routes::stream_resolve_status),
         )
         .route(
+            "/api/v1/admin/stream/prewarm",
+            post(routes::admin::stream_prewarm::prewarm),
+        )
+        .route(
+            "/api/v1/admin/stream/prewarm/{id}",
+            delete(routes::admin::stream_prewarm::release),
+        )
+        .route(
+            "/api/v1/admin/stream/prewarm/{id}/claim",
+            post(routes::admin::stream_prewarm::claim),
+        )
+        .route(
+            "/api/v1/admin/stream/prewarm/{id}/touch",
+            post(routes::admin::stream_prewarm::touch),
+        )
+        .route(
+            "/api/v1/admin/stream/{id}/keep",
+            post(routes::admin::stream_keep::keep).get(routes::admin::stream_keep::keep_status),
+        )
+        .route(
             "/api/v1/admin/stream/{id}/play",
-            get(debrid_stream_routes::stream_play),
+            get(routes::admin::debrid_play::stream_play),
         )
         .route(
             "/api/v1/admin/stream/{id}/status",
@@ -1963,10 +1985,6 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/admin/stream/{id}/outcome",
             post(routes::admin::debrid_outcomes::stream_outcome),
-        )
-        .route(
-            "/api/v1/admin/stream/{id}/ingest",
-            post(debrid_stream_routes::stream_ingest),
         )
         .route(
             "/api/v1/admin/stream/{id}",
@@ -2427,6 +2445,7 @@ pub fn create_app_state(
         stremio_resolve_locks: Arc::new(dashmap::DashMap::new()),
         debrid_session_index: Arc::new(dashmap::DashMap::new()),
         debrid_resolve_locks: Arc::new(dashmap::DashMap::new()),
+        stream_prewarms: Arc::default(),
         initial_scan_complete: Arc::new(AtomicBool::new(false)),
         media_root_io_gate,
         nas_health: nas_health_monitor,

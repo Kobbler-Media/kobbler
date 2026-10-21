@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT file_path, file_size\n        FROM debrid_cache_files\n        WHERE NOT pinned\n          AND last_accessed_at < NOW() - INTERVAL '1 hour'\n        ORDER BY last_accessed_at ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_cache_files",
+            "name": "file_path"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "file_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "debrid_cache_files",
+            "name": "file_size"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "2338c302ae86b6b70c3a4771f49b899ce694ea0a220a64f07ad2d51a5479075a"
+}

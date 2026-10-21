@@ -222,6 +222,8 @@ pub async fn enrich_movie(
         rating_count: details.rating_count,
         content_rating: details.content_rating,
         release_date,
+        release_dates: (!details.release_dates_by_region.is_empty())
+            .then_some(details.release_dates_by_region),
         alternate_titles,
         ..Default::default()
     };

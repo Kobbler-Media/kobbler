@@ -51,7 +51,7 @@ New pages need: `Sidebar.svelte`, `MobileMenu.svelte`, `search_index.rs` → `ge
 
 ## Patterns
 
-- Tests in `api/tests/`. Happy path + error + auth.
+- Tests in `api/tests/integration/`, one test binary: add a module and its `mod` line in `main.rs`, never a new top-level `api/tests/*.rs`. Filter with `cargo test --test integration <module>::`. Happy path + error + auth.
 - Bug fixes are test-first: a failing test that reproduces the bug, then the fix.
 - INSERT/UPDATE/DELETE via `api/src/repositories/`.
 - Jobs via `api/src/jobs/handlers/`, not `tokio::spawn`. Use `enqueue_with_context()` for UI visibility.

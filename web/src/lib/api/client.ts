@@ -4377,6 +4377,42 @@ export async function heartbeatSession(sessionId: string): Promise<boolean> {
   }
 }
 
+export interface SessionFeed {
+  requests_open: number;
+  bytes_served: number;
+  idle_ms?: number;
+  source?: 'local' | 'proxy';
+  downloaded_bytes?: number;
+  total_bytes?: number;
+  download_bps?: number;
+}
+
+export interface PlaybackSessionStatus {
+  session_id: string;
+  state: 'ready' | 'preparing' | 'failed';
+  method: string;
+  is_live: boolean;
+  error?: string;
+  message?: string;
+  feed?: SessionFeed;
+  preferred_audio_stream_index?: number;
+}
+
+export type SessionStatusResult =
+  { kind: 'status'; status: PlaybackSessionStatus } | { kind: 'missing' } | { kind: 'unknown' };
+
+export async function getPlaybackSessionStatus(sessionId: string): Promise<SessionStatusResult> {
+  try {
+    const status = await request<PlaybackSessionStatus>(
+      `/api/v1/admin/playback/sessions/${sessionId}/status`
+    );
+    return { kind: 'status', status };
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 404 || e.status === 410)) return { kind: 'missing' };
+    return { kind: 'unknown' };
+  }
+}
+
 export async function seekPlayback(
   sessionId: string,
   timeSeconds: number
@@ -6496,7 +6532,11 @@ export interface StreamOption {
   publish_date?: string;
   /** Outcome history for this release file; absent when it has none. */
   playback?: 'worked' | 'failed';
+  availability?: StreamAvailability;
+  audio_languages?: string[];
 }
+
+export type StreamAvailability = 'ready' | 'likely' | 'unknown' | 'uncached';
 
 export interface StreamSearchResponse {
   options: StreamOption[];
@@ -6625,12 +6665,57 @@ export async function reportStreamOutcome(
   });
 }
 
-export async function pinStreamSession(sessionId: string): Promise<void> {
-  return request(`/api/v1/admin/stream/${sessionId}/pin`, { method: 'POST' });
+export type KeepState = 'queued' | 'downloading' | 'importing' | 'done' | 'failed';
+
+export interface KeepStatus {
+  state: KeepState;
+  progress?: number;
+  error?: string;
 }
 
-export async function unpinStreamSession(sessionId: string): Promise<void> {
-  return request(`/api/v1/admin/stream/${sessionId}/pin`, { method: 'DELETE' });
+export async function keepStream(sessionId: string): Promise<{ job_id: string; state: KeepState }> {
+  return request(`/api/v1/admin/stream/${sessionId}/keep`, { method: 'POST' });
+}
+
+export async function getKeepStatus(sessionId: string): Promise<KeepStatus> {
+  return request(`/api/v1/admin/stream/${sessionId}/keep`);
+}
+
+export interface StreamPrewarmParams {
+  media_type: string;
+  media_id?: string;
+  auto_create?: StreamResolveParams['auto_create'];
+  season?: number;
+  episode?: number;
+  capabilities?: ClientCapabilities;
+  start_time?: number;
+}
+
+export interface StreamPrewarmResponse {
+  state: 'warming' | 'ready';
+  prewarm_id: string;
+  option?: StreamOption;
+}
+
+export async function streamPrewarm(
+  params: StreamPrewarmParams
+): Promise<StreamPrewarmResponse | undefined> {
+  return request('/api/v1/admin/stream/prewarm', {
+    method: 'POST',
+    body: JSON.stringify(params)
+  });
+}
+
+export async function claimStreamPrewarm(prewarmId: string): Promise<StreamResolveResponse> {
+  return request(`/api/v1/admin/stream/prewarm/${prewarmId}/claim`, { method: 'POST' });
+}
+
+export async function touchStreamPrewarm(prewarmId: string): Promise<void> {
+  return request(`/api/v1/admin/stream/prewarm/${prewarmId}/touch`, { method: 'POST' });
+}
+
+export async function releaseStreamPrewarm(prewarmId: string, keepalive = false): Promise<void> {
+  return request(`/api/v1/admin/stream/prewarm/${prewarmId}`, { method: 'DELETE', keepalive });
 }
 
 export interface RecentStreamSession {

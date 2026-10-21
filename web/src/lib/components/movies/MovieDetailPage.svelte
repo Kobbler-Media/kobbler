@@ -21,11 +21,11 @@
   } from '$lib/api/client';
   import { getStatsState } from '$lib/stores/stats.svelte';
   import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback, type StreamHandoff } from '$lib/composables/useStreamPlayback.svelte';
+  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
   import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
   import { showMessage } from '$lib/context/app.svelte';
   import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import PersonCard from '$lib/components/shared/PersonCard.svelte';
+  import CastSection from '$lib/components/shared/CastSection.svelte';
   import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
   import FilesList from '$lib/components/shared/FilesList.svelte';
   import GenreChips from '$lib/components/GenreChips.svelte';
@@ -35,6 +35,9 @@
   import SubtitlesList from '$lib/components/shared/SubtitlesList.svelte';
   import SubtitleSearchModal from '$lib/components/shared/SubtitleSearchModal.svelte';
   import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
+  import ReleaseAvailability from '$lib/components/shared/ReleaseAvailability.svelte';
+  import { libraryStatus, streamingAvailability } from '$lib/utils/releaseAvailability';
+  import { useTitleKeep } from '$lib/composables/useKeep.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
   import HeroActions from '../shared/HeroActions.svelte';
   import MetaLine from '../shared/MetaLine.svelte';
@@ -56,7 +59,6 @@
     onMoveFile?: (fileId: string) => void;
     onReanalyze?: (force?: boolean) => void;
     onWatchlistToggle?: (inWatchlist: boolean) => void;
-    initialStream?: StreamHandoff;
   }
 
   let {
@@ -73,8 +75,7 @@
     onGenreClick,
     onMoveFile,
     onReanalyze,
-    onWatchlistToggle,
-    initialStream
+    onWatchlistToggle
   }: Props = $props();
 
   const auth = getAuthState();
@@ -111,6 +112,8 @@
     canWant: () => !isActivelyWanted(movie.want_status)
   });
 
+  const titleKeep = useTitleKeep(showMessage);
+
   const runtime = $derived.by(() => {
     if (!movie.runtime) return null;
     const hours = Math.floor(movie.runtime / 60);
@@ -141,6 +144,7 @@
       const [f, ws] = await Promise.all([getMovieFiles(movie.id), getMovieWatchState(movie.id)]);
       files = f;
       watchState = ws;
+      if (f.length === 0) void titleKeep.refresh(movie.id);
     } catch (e) {
       console.error('Failed to load movie details:', e);
     } finally {
@@ -164,13 +168,12 @@
 
   onMount(() => {
     loadDetails().then(() => {
-      if (initialStream) {
-        stream.adoptSession(initialStream);
-      } else {
-        preWarm();
-      }
+      preWarm();
     });
-    return () => playback.teardownPreWarm();
+    return () => {
+      playback.teardownPreWarm();
+      titleKeep.dispose();
+    };
   });
 
   let prevMovieId: string | undefined;
@@ -184,6 +187,12 @@
     }
     prevMovieId = id;
   });
+
+  function closePlayer() {
+    const streamed = playback.playingFileId?.startsWith('debrid-');
+    stream.cancel();
+    if (streamed) void titleKeep.refresh(movie.id);
+  }
 
   async function handleRatingChange(rating: number | null) {
     try {
@@ -359,6 +368,7 @@
             pinned: true,
             onSelect: () => onWatchlistToggle(!movie.in_watchlist)
           },
+          files.length === 0 && titleKeep.action,
           isActivelyWanted(movie.want_status)
             ? { label: 'Remove from Wanted', icon: 'close', onSelect: onUnwant }
             : !movie.is_in_library && {
@@ -433,38 +443,32 @@
 
   <div class="full-page-main-grid page-container">
     <div class="details-column">
-      <!-- Cast -->
-      {#if movie.cast && movie.cast.length > 0}
-        <div class="section card-section">
-          <div class="label">Cast</div>
-          <div class="cast-grid">
-            {#each movie.cast.slice(0, 12) as member (member.id)}
-              {#if onCastClick}
-                <button
-                  type="button"
-                  class="cast-btn"
-                  onclick={() => onCastClick?.(member.person_id, member.person_name)}
-                >
-                  <PersonCard
-                    name={member.person_name}
-                    role={member.character_name}
-                    imageUrl={member.person_image_url}
-                  />
-                </button>
-              {:else}
-                <PersonCard
-                  name={member.person_name}
-                  role={member.character_name}
-                  imageUrl={member.person_image_url}
-                />
-              {/if}
-            {/each}
-          </div>
-        </div>
-      {/if}
+      <CastSection
+        members={(movie.cast ?? []).map((m) => ({
+          key: m.id,
+          name: m.person_name,
+          role: m.character_name,
+          imageUrl: m.person_image_url,
+          onSelect: onCastClick ? () => onCastClick(m.person_id, m.person_name) : undefined
+        }))}
+      />
     </div>
 
     <div class="actions-column side-first">
+      {#if files.length === 0 && !movie.is_in_library}
+        <ReleaseAvailability
+          releaseDate={movie.release_date ?? null}
+          releaseDates={movie.release_dates ?? null}
+          year={movie.year}
+          streaming={streamingAvailability(
+            !!stats.kobload_configured,
+            stream.streamLoading,
+            stream.searched ? stream.streamOptions : null
+          )}
+          library={libraryStatus(movie.want_status, movie.is_in_library)}
+        />
+      {/if}
+
       <!-- Files -->
       {#if files.length > 0}
         <div class="section card-section">
@@ -511,9 +515,13 @@
         }
       : undefined}
     mediaId={movie.id}
-    mediaInfo={{ title: movie.title, artworkUrl: movie.poster_url ?? undefined }}
+    mediaInfo={{
+      title: movie.title,
+      artworkUrl: movie.poster_url ?? undefined,
+      backdropUrl: movie.backdrop_url ?? undefined
+    }}
     initialPosition={watchState?.watched ? undefined : (watchState?.position_seconds ?? undefined)}
-    onClose={stream.cancel}
+    onClose={closePlayer}
     {...stream.playerProps}
   />
 {/if}
@@ -551,7 +559,7 @@
   />
 {/if}
 
-<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
+<StreamPlaybackOverlays {stream} />
 
 <style>
   .card-section {
@@ -585,29 +593,6 @@
     text-transform: uppercase;
     letter-spacing: 0.1em;
     margin-bottom: 12px;
-  }
-
-  .cast-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 12px;
-  }
-
-  .cast-btn {
-    display: block;
-    width: 100%;
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    text-align: left;
-    border-radius: 12px;
-    transition: all 0.2s;
-  }
-
-  .cast-btn:hover {
-    background: var(--bg-2);
-    transform: translateY(-2px);
   }
 
   @media (max-width: 768px) {

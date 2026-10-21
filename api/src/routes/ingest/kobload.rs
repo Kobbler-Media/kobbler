@@ -1,3 +1,4 @@
+use super::placement;
 use crate::AppState;
 use crate::events::LibraryEvent;
 use crate::file_link_mode::FileLinkMode;
@@ -296,7 +297,7 @@ impl ResolvedMeta<'_> {
 
 /// Check if a media root's path is accessible. If not, sets scan error with
 /// backoff and returns a 503 response with the media_root_id for deferral.
-async fn check_ingest_media_root(
+pub(super) async fn check_ingest_media_root(
     state: &AppState,
     root: &media_roots::EnabledMediaRoot,
 ) -> Option<axum::response::Response> {
@@ -630,7 +631,7 @@ async fn non_clobbering_path(path: PathBuf, mode: FileLinkMode) -> PathBuf {
     path
 }
 
-fn sanitize_filename(value: &str) -> String {
+pub(super) fn sanitize_filename(value: &str) -> String {
     let cleaned = value
         .replace(['/', '\\'], "-")
         .split('\0')
@@ -1955,93 +1956,20 @@ async fn ingest_movie(
         return (StatusCode::BAD_REQUEST, "no video files in download").into_response();
     }
 
-    // Build target directory: use media root if the movie has one, else default path
     let title = resolved.title().unwrap_or("Unknown Movie");
-    let year = resolved.year();
-
-    // Check if movie belongs to a media root, fall back to default for type
-    let movie_row = movies::get(&state.pool, movie_id).await.ok().flatten();
-    let entity_root_id = movie_row.as_ref().and_then(|m| m.media_root_id);
-    let media_root = if let Some(root_id) = entity_root_id {
-        media_roots::get_enabled_by_id(&state.pool, root_id)
-            .await
-            .ok()
-            .flatten()
-    } else {
-        let default = media_roots::get_default_for_type(&state.pool, "movie")
-            .await
-            .ok()
-            .flatten();
-        // Set media_root_id on the movie if resolved from default
-        if let Some(ref root) = default {
-            let _ = movies::update(
-                &state.pool,
-                movie_id,
-                movies::MovieUpdate {
-                    media_root_id: Some(Some(root.id)),
-                    ..Default::default()
-                },
-            )
-            .await;
-        }
-        default
-    };
-
-    // Check media root availability before any filesystem operations
-    if let Some(ref root) = media_root
-        && let Some(resp) = check_ingest_media_root(state, root).await
+    let placement = match placement::movie(
+        state,
+        runtime,
+        movie_id,
+        title,
+        resolved.year().map(|y| y as i32),
+    )
+    .await
     {
-        return resp;
-    }
-
-    let (target_dir, video_file_stem) = if let Some(ref root) = media_root {
-        let template = root
-            .naming_template
-            .as_deref()
-            .unwrap_or_else(|| media_root_naming::default_movie_template());
-        let ctx = NamingContext {
-            title: Some(title.to_string()),
-            year: year.map(|y| y as u32),
-            ext: Some("mkv".to_string()), // placeholder, actual ext applied per-file
-            ..Default::default()
-        };
-        let fresh = media_root_naming::compute_target_path(&root.path, template, &ctx);
-        // Prefer existing directory to avoid duplicates when DB title differs from on-disk name
-        let full_path = if let Some(existing) = media_root_naming::find_existing_file_for_entity(
-            &state.pool,
-            root.id,
-            "movie",
-            movie_id,
-        )
-        .await
-            && let Some(existing_dir) =
-                media_root_naming::extract_dir_from_existing(&root.path, &existing, 1)
-        {
-            media_root_naming::reuse_existing_dir(&root.path, &existing_dir, &fresh, 1)
-        } else {
-            fresh
-        };
-        let dir = full_path.parent().unwrap_or(&full_path).to_path_buf();
-        let stem = full_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(String::from);
-        (dir, stem)
-    } else {
-        let video_root = runtime
-            .video_storage_root
-            .clone()
-            .unwrap_or_else(|| format!("{}/video", state.config.storage_root));
-        let dir_name = if let Some(y) = year {
-            format!("{} ({})", sanitize_filename(title), y)
-        } else {
-            sanitize_filename(title)
-        };
-        (
-            PathBuf::from(&video_root).join("movies").join(&dir_name),
-            None,
-        )
+        Ok(p) => p,
+        Err(resp) => return resp,
     };
+    let target_dir = placement.dir.clone();
 
     // Get Kobload base URL and API key
     let kobload_base_url = match runtime.kobload_base_url.clone() {
@@ -2090,12 +2018,7 @@ async fn ingest_movie(
             )
         };
 
-        // Compute final path from naming template (or fallback to sanitized original)
-        let file_path = if let Some(ref stem) = video_file_stem {
-            target_dir.join(format!("{}.{}", stem, file.extension.to_lowercase()))
-        } else {
-            target_dir.join(sanitize_filename(file.filename()))
-        };
+        let file_path = placement.file_path(&file.extension, file.filename());
         let file_path = non_clobbering_path(file_path, link_mode).await;
         // Download to hidden temp file to prevent scanner from picking it up mid-transfer
         let temp_path = target_dir.join(format!(
@@ -2299,28 +2222,6 @@ async fn ingest_movie(
             persist_tracks_for_movie_file(&state.pool, movie_file_id, fm).await;
         }
 
-        // Always enqueue media_probe. Even when kobload supplied metadata we still
-        // need this to chain media_extract + media_analyze + skip_detect — those
-        // hops only fire from media_probe.
-        {
-            let probe_display =
-                crate::jobs::fetch_job_display(&state.pool, "movie_file", movie_file_id).await;
-            let probe_context = crate::jobs::JobContext::for_entity(
-                "movie_file",
-                movie_file_id,
-                "Probing media file".to_string(),
-            )
-            .with_display_opt(probe_display);
-            let _ = crate::jobs::enqueue(
-                &state.pool,
-                state.nats.publisher(),
-                "media_probe",
-                serde_json::json!({"file_id": movie_file_id, "media_type": "movie"}),
-                probe_context,
-            )
-            .await;
-        }
-
         // Create external_subtitles records for subtitle files linked to this video file
         if !subtitle_paths.is_empty() {
             for sub_path in &subtitle_paths {
@@ -2328,28 +2229,15 @@ async fn ingest_movie(
             }
         }
 
-        // Register in media_root_files so the file appears as 'added' immediately
-        if let Some(ref root) = media_root {
-            let fname = file_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            let fsize = fs::metadata(&file_path).await.ok().map(|m| m.len() as i64);
-            if let Err(e) = media_root_files::upsert_added(
-                &state.pool,
-                root.id,
-                &file_path.to_string_lossy(),
-                &fname,
-                fsize,
-                "movie",
-                movie_id,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "Failed to register movie file in media_root_files");
-            }
-        }
+        placement::announce_file(
+            state,
+            &placement,
+            &file_path,
+            placement::FileKind::Movie,
+            movie_file_id,
+            movie_id,
+        )
+        .await;
 
         ingested_count += 1;
     }
@@ -2387,15 +2275,10 @@ async fn ingest_movie(
             }
         }
 
-        let _ = movies::clear_rejected_releases(&state.pool, movie_id).await;
-
-        // Move the movie to a terminal want_status, mirroring the TV paths. Without
-        // it an imported movie sits on 'searching' forever — satisfaction encoded
-        // only by the derived is_in_library flag. That is the same asymmetry that
-        // let already-imported TV seasons look outstanding to want/reconcile
-        // predicates; nothing acts on a stale movie 'searching' today, but leaving
-        // it is a trap for the next thing that does.
-        let _ = movies::set_want_status(&state.pool, movie_id, "imported").await;
+        // A terminal want_status, mirroring the TV paths: without it an imported movie
+        // sits on 'searching' forever, satisfaction encoded only by the derived
+        // is_in_library flag.
+        placement::complete_movie(state, movie_id).await;
 
         // Update attempt status to completed
         let _ = wanted_attempts::update_status(&state.pool, &download_id, "completed", None).await;
@@ -2408,24 +2291,6 @@ async fn ingest_movie(
             &movie_id.to_string(),
             movie_id,
             replaces_a_file,
-        )
-        .await;
-
-        // Record activity
-        crate::routes::library::helpers::record_activity_for_entity(
-            &state.pool,
-            "imported",
-            movie_id,
-            crate::routes::library::helpers::requester_of(&state.pool, movie_id).await,
-        )
-        .await;
-
-        // Write sidecar and image files next to the media file
-        crate::sidecar::write_back::write_movie_sidecars(&state.pool, movie_id).await;
-        crate::sidecar::write_back::write_movie_images(
-            &state.pool,
-            &state.config.storage_root,
-            movie_id,
         )
         .await;
     }
@@ -2540,49 +2405,6 @@ async fn ingest_tv_episode(
         }
     };
 
-    // Get show details for directory naming and media root lookup
-    let show_row = if let Some(sid) = show_id {
-        tv_shows::get(&state.pool, sid).await.ok().flatten()
-    } else {
-        None
-    };
-    let show_title = show_row
-        .as_ref()
-        .map(|s| s.title.clone())
-        .or_else(|| resolved.show_title().map(String::from))
-        .unwrap_or_else(|| "Unknown Show".to_string());
-    let show_year = show_row.as_ref().and_then(|s| s.year).map(|y| y as u32);
-
-    let season_identifier = if let Some(sid) = season_id {
-        tv_seasons::get(&state.pool, sid)
-            .await
-            .ok()
-            .flatten()
-            .map(|s| s.season_identifier)
-    } else {
-        None
-    }
-    .unwrap_or_else(|| "1".to_string());
-
-    // Fetch episode metadata for naming template
-    let episode_row = tv_episodes::get(&state.pool, episode_id)
-        .await
-        .ok()
-        .flatten();
-    let episode_num: u32 = episode_row
-        .as_ref()
-        .map(|e| e.episode_sort_order as u32)
-        .unwrap_or(1);
-    let episode_title = episode_row.as_ref().and_then(|e| e.title.clone());
-    let is_sport = show_row
-        .as_ref()
-        .is_some_and(|s| s.content_category == "sport");
-    let round = if is_sport {
-        Some(episode_num / 1000)
-    } else {
-        None
-    };
-
     // Collect old files for deferred cleanup after successful download
     let available_files = tv_episode_files::list_by_episode(&state.pool, episode_id)
         .await
@@ -2629,95 +2451,19 @@ async fn ingest_tv_episode(
         return (StatusCode::BAD_REQUEST, "no video files in download").into_response();
     }
 
-    // Build target directory: use media root if show has one, fall back to default for type
-    let entity_root_id = show_row.as_ref().and_then(|s| s.media_root_id);
-    let media_root = if let Some(root_id) = entity_root_id {
-        media_roots::get_enabled_by_id(&state.pool, root_id)
-            .await
-            .ok()
-            .flatten()
-    } else {
-        let default = media_roots::get_default_for_type(&state.pool, "tv")
-            .await
-            .ok()
-            .flatten();
-        // Set media_root_id on the show if resolved from default
-        if let Some(ref root) = default
-            && let Some(sid) = show_id
-        {
-            let _ = tv_shows::update(
-                &state.pool,
-                sid,
-                tv_shows::TvShowUpdate {
-                    media_root_id: Some(Some(root.id)),
-                    ..Default::default()
-                },
-            )
-            .await;
-        }
-        default
+    let naming = placement::EpisodeNaming::load(
+        state,
+        episode_id,
+        show_id,
+        season_id,
+        resolved.show_title(),
+    )
+    .await;
+    let placement = match placement::episode(state, runtime, &naming).await {
+        Ok(p) => p,
+        Err(resp) => return resp,
     };
-
-    // Check media root availability before any filesystem operations
-    if let Some(ref root) = media_root
-        && let Some(resp) = check_ingest_media_root(state, root).await
-    {
-        return resp;
-    }
-
-    let season_num: u32 = season_identifier.parse().unwrap_or(1);
-    let (target_dir, video_file_stem) = if let Some(ref root) = media_root {
-        let template =
-            root.naming_template
-                .as_deref()
-                .unwrap_or_else(|| match root.media_type.as_str() {
-                    "sport" => media_root_naming::default_sport_template(),
-                    _ => media_root_naming::default_tv_template(),
-                });
-        let ctx = NamingContext {
-            show_title: Some(show_title.clone()),
-            year: show_year,
-            season: Some(season_num),
-            episode: Some(episode_num),
-            episode_title: episode_title.clone(),
-            round,
-            ext: Some("mkv".to_string()), // placeholder, actual ext applied per-file
-            ..Default::default()
-        };
-        let fresh = media_root_naming::compute_target_path(&root.path, template, &ctx);
-        // Prefer existing show directory to avoid duplicates when DB title differs from on-disk name
-        let full_path = if let Some(sid) = show_id
-            && let Some(existing) = media_root_naming::find_existing_file_for_entity(
-                &state.pool,
-                root.id,
-                "tv_show",
-                sid,
-            )
-            .await
-            && let Some(existing_dir) =
-                media_root_naming::extract_dir_from_existing(&root.path, &existing, 1)
-        {
-            media_root_naming::reuse_existing_dir(&root.path, &existing_dir, &fresh, 1)
-        } else {
-            fresh
-        };
-        let dir = full_path.parent().unwrap_or(&full_path).to_path_buf();
-        let stem = full_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(String::from);
-        (dir, stem)
-    } else {
-        let video_root = runtime
-            .video_storage_root
-            .clone()
-            .unwrap_or_else(|| format!("{}/video", state.config.storage_root));
-        let dir = PathBuf::from(&video_root)
-            .join("tv")
-            .join(sanitize_filename(&show_title))
-            .join(format!("Season {}", season_identifier));
-        (dir, None)
-    };
+    let target_dir = placement.dir.clone();
 
     // Get Kobload base URL and API key
     let kobload_base_url = match runtime.kobload_base_url.clone() {
@@ -2766,12 +2512,7 @@ async fn ingest_tv_episode(
             )
         };
 
-        // Compute final path from naming template (or fallback to sanitized original)
-        let file_path = if let Some(ref stem) = video_file_stem {
-            target_dir.join(format!("{}.{}", stem, file.extension.to_lowercase()))
-        } else {
-            target_dir.join(sanitize_filename(file.filename()))
-        };
+        let file_path = placement.file_path(&file.extension, file.filename());
         let file_path = non_clobbering_path(file_path, link_mode).await;
         // Download to hidden temp file to prevent scanner from picking it up mid-transfer
         let temp_path = target_dir.join(format!(
@@ -2977,28 +2718,6 @@ async fn ingest_tv_episode(
             persist_tracks_for_episode_file(&state.pool, ep_file_id, fm).await;
         }
 
-        // Always enqueue media_probe. Even when kobload supplied metadata we still
-        // need this to chain media_extract + media_analyze + skip_detect — those
-        // hops only fire from media_probe.
-        {
-            let probe_display =
-                crate::jobs::fetch_job_display(&state.pool, "tv_episode_file", ep_file_id).await;
-            let probe_context = crate::jobs::JobContext::for_entity(
-                "tv_episode_file",
-                ep_file_id,
-                "Probing media file".to_string(),
-            )
-            .with_display_opt(probe_display);
-            let _ = crate::jobs::enqueue(
-                &state.pool,
-                state.nats.publisher(),
-                "media_probe",
-                serde_json::json!({"file_id": ep_file_id, "media_type": "episode"}),
-                probe_context,
-            )
-            .await;
-        }
-
         // Create external_subtitles records for subtitle files
         if !subtitle_paths.is_empty() {
             for sub_path in &subtitle_paths {
@@ -3006,28 +2725,15 @@ async fn ingest_tv_episode(
             }
         }
 
-        // Register in media_root_files so the file appears as 'added' immediately
-        if let Some(ref root) = media_root {
-            let fname = file_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            let fsize = fs::metadata(&file_path).await.ok().map(|m| m.len() as i64);
-            if let Err(e) = media_root_files::upsert_added(
-                &state.pool,
-                root.id,
-                &file_path.to_string_lossy(),
-                &fname,
-                fsize,
-                "tv_episode",
-                episode_id,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "Failed to register TV episode file in media_root_files");
-            }
-        }
+        placement::announce_file(
+            state,
+            &placement,
+            &file_path,
+            placement::FileKind::Episode,
+            ep_file_id,
+            episode_id,
+        )
+        .await;
 
         ingested_count += 1;
     }
@@ -3065,14 +2771,9 @@ async fn ingest_tv_episode(
             }
         }
 
-        // Mark episode as in library
-        let _ = tv_episodes::clear_rejected_releases(&state.pool, episode_id).await;
-
-        // Move the episode to a terminal want_status. Satisfaction was previously encoded
-        // only by the derived is_in_library flag, leaving want_status stuck at 'searching'
-        // — which let the stale-watch reconciler re-want an already-imported event. kobload
-        // still drives quality upgrades independently via its own pattern/upgrade window.
-        let _ = tv_episodes::set_want_status(&state.pool, episode_id, "imported").await;
+        // A terminal want_status: left on 'searching', the stale-watch reconciler re-wanted
+        // already-imported events. kobload still drives quality upgrades on its own.
+        placement::complete_episode(state, episode_id, show_id).await;
 
         // Update attempt status to completed
         let _ = wanted_attempts::update_status(&state.pool, &download_id, "completed", None).await;
@@ -3087,26 +2788,6 @@ async fn ingest_tv_episode(
             replaces_a_file,
         )
         .await;
-
-        // Record activity
-        crate::routes::library::helpers::record_activity_for_entity(
-            &state.pool,
-            "imported",
-            episode_id,
-            crate::routes::library::helpers::requester_of(&state.pool, episode_id).await,
-        )
-        .await;
-
-        // Write sidecar and image files
-        crate::sidecar::write_back::write_episode_sidecar(&state.pool, episode_id).await;
-        if let Some(sid) = show_id {
-            crate::sidecar::write_back::write_tvshow_images(
-                &state.pool,
-                &state.config.storage_root,
-                sid,
-            )
-            .await;
-        }
     }
 
     if ingested_count == 0 {

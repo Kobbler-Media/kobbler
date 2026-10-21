@@ -586,6 +586,10 @@ impl RuntimeConfigManager {
         self.inner.read().await.clone()
     }
 
+    pub async fn discover_region(&self) -> String {
+        self.inner.read().await.discover_region.clone()
+    }
+
     /// Try to get current config snapshot without blocking.
     /// Returns None if the lock is currently held by a writer.
     pub fn try_get(&self) -> Option<RuntimeConfig> {

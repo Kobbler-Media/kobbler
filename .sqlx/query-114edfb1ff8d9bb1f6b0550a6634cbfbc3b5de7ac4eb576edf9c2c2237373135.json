@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM debrid_cache_files WHERE file_path = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "114edfb1ff8d9bb1f6b0550a6634cbfbc3b5de7ac4eb576edf9c2c2237373135"
+}

@@ -17,6 +17,7 @@
     type ThumbnailEntry
   } from '$lib/utils/vttThumbnails';
   import { SEGMENT_COLORS, isVisibleSkipSegment, segmentTitle } from './segments';
+  import { pollThumbnailsVtt } from '$lib/utils/vttPoll';
 
   interface Props {
     playing: boolean;
@@ -58,6 +59,7 @@
     onEditSkipSegment?: (seg: SkipSegment) => void;
     isLive?: boolean;
     onSwitchStream?: () => void;
+    keep?: { label: string; busy: boolean; saved: boolean; onKeep: () => void };
     isTouchDevice?: boolean;
     onInteraction?: () => void;
   }
@@ -102,6 +104,7 @@
     skipSegments,
     onEditSkipSegment,
     onSwitchStream,
+    keep,
     isTouchDevice = false,
     onInteraction
   }: Props = $props();
@@ -118,64 +121,13 @@
 
   let thumbnailEntries = $state<ThumbnailEntry[]>([]);
 
-  // Debrid analyze writes thumbnails.vtt incrementally — sprite_001 lands
-  // before the full decode finishes, and the VTT is rewritten atomically
-  // after every chunk. Poll on a slow cadence so the seek-bar picks up
-  // newly-emitted sprites mid-decode without a hard refresh, then stop
-  // once the file stops growing (analyze done) so we don't burn requests
-  // forever. 15s is a compromise: short enough to feel live, long enough
-  // that a 2hr movie's ~110 sprite emits cost ≤ 8 polls / minute.
-  const VTT_POLL_MS = 15_000;
-  // Stop after 2 consecutive identical fetches — the VTT has settled.
-  const VTT_STABLE_TICKS = 2;
-
   $effect(() => {
     const url = thumbnailsVttUrl;
     if (!url) {
       thumbnailEntries = [];
       return;
     }
-
-    let cancelled = false;
-    let lastVtt = '';
-    let stableTicks = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const r = await fetch(url);
-        if (r.ok) {
-          const vtt = await r.text();
-          if (vtt !== lastVtt) {
-            thumbnailEntries = parseVttThumbnails(vtt, url);
-            lastVtt = vtt;
-            stableTicks = 0;
-          } else {
-            stableTicks += 1;
-          }
-          if (stableTicks >= VTT_STABLE_TICKS) {
-            return;
-          }
-        }
-        // Non-OK or stale — keep polling; the VTT may not exist yet on
-        // first connect, or analyze may still be running.
-      } catch {
-        // Transient network error — continue polling.
-      }
-      if (!cancelled) {
-        timer = setTimeout(poll, VTT_POLL_MS);
-      }
-    };
-
-    void poll();
-
-    return () => {
-      cancelled = true;
-      if (timer !== null) {
-        clearTimeout(timer);
-      }
-    };
+    return pollThumbnailsVtt(url, (vtt) => (thumbnailEntries = parseVttThumbnails(vtt, url)));
   });
 
   let seekHover = $state(false);
@@ -471,6 +423,24 @@
             title="Switch stream"
           >
             <span class="material-icons-outlined">swap_horiz</span>
+          </button>
+        {/if}
+
+        {#if keep}
+          <button
+            class="ctrl-btn keep-btn"
+            type="button"
+            onclick={keep.onKeep}
+            disabled={keep.busy || keep.saved}
+            aria-label={keep.label}
+            title={keep.label}
+          >
+            <span class="material-icons-outlined"
+              >{keep.saved ? 'library_add_check' : 'library_add'}</span
+            >
+            {#if keep.busy || keep.saved}
+              <span class="keep-status" aria-live="polite">{keep.label}</span>
+            {/if}
           </button>
         {/if}
 
@@ -998,6 +968,23 @@
     font-size: 14px;
     font-weight: 600;
     min-width: 40px;
+  }
+
+  .keep-btn {
+    width: auto;
+    min-width: 40px;
+    padding: 0 8px;
+    border-radius: 20px;
+    gap: 6px;
+  }
+
+  .keep-btn:disabled {
+    cursor: default;
+  }
+
+  .keep-status {
+    font-size: 12px;
+    white-space: nowrap;
   }
 
   .speed-menu {

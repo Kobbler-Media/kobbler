@@ -19,6 +19,8 @@
   import EntityHero from '../shared/EntityHero.svelte';
   import HeroActions from '../shared/HeroActions.svelte';
   import MetaLine from '../shared/MetaLine.svelte';
+  import DetailSection from '../shared/DetailSection.svelte';
+  import CastSection from '../shared/CastSection.svelte';
   import KidsAccess from '../shared/KidsAccess.svelte';
   import { getAuthState } from '$lib/stores/auth.svelte';
   import { formatShowStatus, formatDuration } from '$lib/utils/format';
@@ -27,6 +29,8 @@
   import { usePlayback } from '$lib/composables/usePlayback.svelte';
   import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
   import { showMessage } from '$lib/context/app.svelte';
+  import { getStatsState } from '$lib/stores/stats.svelte';
+  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
 
   interface Props {
     show: TvShow;
@@ -143,12 +147,23 @@
     (show.seasons ?? []).some((s) => s.episodes.some((e) => e.is_in_library))
   );
 
+  const statsState = getStatsState();
+  let streamEpisodeId = $state<string | null>(null);
+  const streamTargetId = $derived(streamEpisodeId ?? targetEpisode?.episodeId ?? '');
+
   const stream = useStreamPlayback({
     mediaType: 'episode',
-    getMediaId: () => targetEpisode?.episodeId ?? '',
-    getSearchParams: () => ({ episode_id: targetEpisode?.episodeId ?? '' }),
-    getResumePosition: () => undefined,
-    getEstimatedDuration: () => undefined,
+    getMediaId: () => streamTargetId,
+    getSearchParams: () => ({ episode_id: streamTargetId }),
+    getResumePosition: () =>
+      playingEpisodeWatchState?.watched
+        ? undefined
+        : (playingEpisodeWatchState?.position_seconds ?? undefined),
+    getEstimatedDuration: () => {
+      const runtime = findEpisode(streamTargetId)?.episode.runtime;
+      return runtime ? runtime * 60 : undefined;
+    },
+    playback,
     onMessage: showMessage
   });
 
@@ -167,12 +182,20 @@
         getEpisodeFiles(episodeId),
         getEpisodeWatchState(episodeId)
       ]);
-      if (files.length === 0) {
-        showMessage('No files available for this episode');
-        return;
-      }
       playingEpisodeId = episodeId;
       playingEpisodeWatchState = watchState;
+      if (files.length === 0) {
+        if (!statsState.stats.kobload_configured) {
+          showMessage('No files available for this episode');
+          return;
+        }
+        if (streamTargetId !== episodeId) {
+          stream.reset();
+          streamEpisodeId = episodeId;
+        }
+        await stream.autoPlay();
+        return;
+      }
       // Don't resume if the episode is already watched (position is near the end)
       const resumePos = watchState?.watched
         ? undefined
@@ -198,6 +221,10 @@
         return;
       }
       if (hasLibraryFiles) return;
+      if (streamEpisodeId !== null && streamEpisodeId !== target.episodeId) {
+        stream.reset();
+        streamEpisodeId = null;
+      }
       stream.preWarmStream();
     } catch {
       // Pre-warm is best-effort
@@ -470,10 +497,8 @@
 
   <div class="full-page-main-grid page-container">
     <div class="details-column">
-      <!-- Seasons -->
-      <div class="section card-section">
-        <div class="section-head">
-          <div class="label">Seasons</div>
+      <DetailSection label="Seasons">
+        {#snippet headActions()}
           {#if onReload && allEpisodes.length > 0}
             <BulkSelectToggle
               active={bulk.active}
@@ -481,7 +506,7 @@
               onToggle={() => bulk.toggleMode()}
             />
           {/if}
-        </div>
+        {/snippet}
         {#if sortedSeasons.length === 0}
           <p class="muted">No seasons available.</p>
         {:else}
@@ -527,7 +552,7 @@
             {/each}
           </div>
         {/if}
-      </div>
+      </DetailSection>
 
       <!-- Genres -->
       {#if show.genres?.length > 0}
@@ -549,53 +574,16 @@
     </div>
 
     <div class="actions-column">
-      <!-- Cast -->
-      {#if show.cast && show.cast.length > 0}
-        <div class="section card-section">
-          <div class="label">Cast</div>
-          <div class="cast-grid">
-            {#each show.cast.slice(0, 15) as member (member.id)}
-              <div class="cast-item">
-                {#if onCastClick}
-                  <button
-                    type="button"
-                    class="cast-btn"
-                    onclick={() => onCastClick?.(member.person_id, member.person_name)}
-                  >
-                    <div class="cast-mini-card">
-                      {#if member.person_image_url}
-                        <img class="cast-photo" src={member.person_image_url} alt="" />
-                      {:else}
-                        <div class="cast-photo placeholder">
-                          <span class="material-icons-outlined">person</span>
-                        </div>
-                      {/if}
-                      <div class="cast-info">
-                        <span class="cast-name">{member.person_name}</span>
-                        <span class="cast-character">{member.character_name}</span>
-                      </div>
-                    </div>
-                  </button>
-                {:else}
-                  <div class="cast-mini-card">
-                    {#if member.person_image_url}
-                      <img class="cast-photo" src={member.person_image_url} alt="" />
-                    {:else}
-                      <div class="cast-photo placeholder">
-                        <span class="material-icons-outlined">person</span>
-                      </div>
-                    {/if}
-                    <div class="cast-info">
-                      <span class="cast-name">{member.person_name}</span>
-                      <span class="cast-character">{member.character_name}</span>
-                    </div>
-                  </div>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        </div>
-      {/if}
+      <CastSection
+        limit={15}
+        members={(show.cast ?? []).map((m) => ({
+          key: m.id,
+          name: m.person_name,
+          role: m.character_name,
+          imageUrl: m.person_image_url,
+          onSelect: onCastClick ? () => onCastClick(m.person_id, m.person_name) : undefined
+        }))}
+      />
     </div>
   </div>
 </ContentPageView>
@@ -614,44 +602,46 @@
 
 {#if playback.isActive}
   <VideoPlayer
-    sessionResponse={playback.session!}
-    creationParams={{
-      media_type: 'episode',
-      file_id: playback.playingFileId!,
-      capabilities: playback.capabilities!
-    }}
-    mediaId={playingEpisodeId!}
+    sessionResponse={playback.session}
+    creationParams={playback.session
+      ? {
+          media_type: 'episode',
+          file_id: playback.playingFileId!,
+          capabilities: playback.capabilities!
+        }
+      : undefined}
+    mediaId={playingEpisodeId ?? undefined}
     mediaInfo={{
       title: show.title,
       subtitle: (() => {
-        const found = findEpisode(playingEpisodeId!);
+        const found = playingEpisodeId ? findEpisode(playingEpisodeId) : null;
         if (!found) return undefined;
         const { season, episode } = found;
         const prefix = `S${String(season.season_sort_order).padStart(2, '0')}E${episode.episode_sort_order}`;
         return episode.title ? `${prefix} \u00b7 ${episode.title}` : prefix;
       })(),
-      seasonId: findEpisode(playingEpisodeId!)?.season.id,
-      artworkUrl: findEpisode(playingEpisodeId!)?.episode.still_url ?? show.poster_url ?? undefined
+      seasonId: playingEpisodeId ? findEpisode(playingEpisodeId)?.season.id : undefined,
+      artworkUrl: show.poster_url ?? undefined,
+      backdropUrl:
+        (playingEpisodeId ? findEpisode(playingEpisodeId)?.episode.still_url : null) ??
+        show.backdrop_url ??
+        undefined
     }}
     initialPosition={playingEpisodeWatchState?.watched
       ? undefined
       : (playingEpisodeWatchState?.position_seconds ?? undefined)}
     onClose={() => {
-      playback.close();
+      stream.cancel();
       playingEpisodeId = null;
       playingEpisodeWatchState = null;
     }}
+    {...stream.playerProps}
   />
 {/if}
 
-<style>
-  .card-section {
-    background: var(--card);
-    border: 1px solid var(--ring);
-    border-radius: 16px;
-    padding: 24px;
-  }
+<StreamPlaybackOverlays {stream} />
 
+<style>
   .compact-section {
     padding: 8px 0;
   }
@@ -757,91 +747,5 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-  }
-
-  .cast-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 8px;
-  }
-
-  .cast-btn {
-    display: block;
-    width: 100%;
-    padding: 0;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    text-align: left;
-    border-radius: 12px;
-    transition: all 0.2s;
-  }
-
-  .cast-btn:hover {
-    background: var(--bg-2);
-  }
-
-  .cast-mini-card {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px;
-  }
-
-  .cast-photo {
-    flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1px solid var(--ring);
-  }
-
-  .cast-photo.placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg-2);
-    color: var(--muted);
-  }
-
-  .cast-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-
-  .cast-name {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--ink);
-  }
-
-  .cast-character {
-    font-size: 11px;
-    color: var(--muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Phone widths: trim the section padding so season rows keep to one line. */
-  @media (max-width: 600px) {
-    .card-section {
-      padding: 16px 10px;
-    }
-  }
-
-  .section-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-
-  .section-head .label {
-    margin-bottom: 0;
   }
 </style>

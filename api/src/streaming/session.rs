@@ -3,13 +3,17 @@
 //! Manages in-memory playback sessions, each wrapping an optional FFmpeg
 //! transcode process and tracking client activity for cleanup.
 
+use crate::ffmpeg::cue_gate::CueGate;
 use crate::ffmpeg::detect::HwAccel;
 use crate::ffmpeg::transcode::TranscodeProcess;
 use crate::streaming::decision::{AudioTrackMeta, PlaybackDecision};
+use crate::streaming::download_meter::DownloadMeter;
+use crate::streaming::feed::StreamFeed;
 use crate::streaming::segment_cache::SegmentCache;
 use crate::streaming::variant::QualityVariant;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -116,6 +120,9 @@ pub struct PlaybackSession {
     /// Audio track metadata from probe/DB — stored so the decision engine can be
     /// re-run when switching audio tracks without re-probing the file.
     pub audio_metas: Vec<AudioTrackMeta>,
+    /// Debrid sessions only: the audio track the viewer's language preference picks, once
+    /// the probe has listed the tracks. `None` when no track matches.
+    pub preferred_audio_index: Option<i32>,
     /// Force the video stream to transcode even if the decision engine chose
     /// `VideoMode::Copy`. Set by the Tier-3 decode-error endpoint when the
     /// player reports a `MEDIA_ERR_DECODE` from corrupt source bitstream so
@@ -137,6 +144,12 @@ pub struct PlaybackSession {
     /// playhead signal — `playback_start_segment` only updates on seek and
     /// would never advance during continuous playback.
     pub highest_served_segment: Option<u32>,
+    /// Debrid sessions only: the player's byte feed, reported in the session status.
+    pub feed: Option<Arc<StreamFeed>>,
+    /// Debrid sessions only: the progressive download into the cache file.
+    pub download: Option<Arc<DownloadMeter>>,
+    /// Debrid sessions only: the cue trim decision every response must agree on.
+    pub cue_gate: Option<Arc<CueGate>>,
 }
 
 /// An extracted/prepared subtitle file for a session.
@@ -193,10 +206,14 @@ impl PlaybackSession {
             thumbnail_dir: None,
             debrid_cache_key: None,
             audio_metas: vec![],
+            preferred_audio_index: None,
             force_video_transcode: false,
             corrupt_ranges: Vec::new(),
             overlay_spawned_starts: std::collections::HashSet::new(),
             highest_served_segment: None,
+            feed: None,
+            download: None,
+            cue_gate: None,
         }
     }
 

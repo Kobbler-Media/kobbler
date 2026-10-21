@@ -4,6 +4,12 @@ import type { PlaybackSessionResponse } from '$lib/types';
 import { CACHE_FAILURE_REASON } from './failure';
 
 const POLL_MS = 3000;
+export const CACHING_QUEUED_AFTER_MS = 20_000;
+
+export interface CachingState {
+  progress: number;
+  note: string;
+}
 
 export class StreamAbortedError extends Error {
   constructor() {
@@ -12,12 +18,25 @@ export class StreamAbortedError extends Error {
   }
 }
 
+export function cachingNote(progress: number, elapsedMs: number, provider?: string): string {
+  const who = provider?.trim() || 'your debrid service';
+  if (progress > 0) return `Downloading on ${who}`;
+  if (elapsedMs >= CACHING_QUEUED_AFTER_MS) {
+    return `Queued on ${who} — it hasn't started downloading yet`;
+  }
+  return `Asking ${who} to fetch it…`;
+}
+
 export function waitForCache(
   caching: StreamResolveCachingResponse,
   resolveReady: () => Promise<StreamResolveResponse>,
-  onProgress: (progress: number) => void,
-  signal: AbortSignal
+  onProgress: (state: CachingState) => void,
+  signal: AbortSignal,
+  provider?: string
 ): Promise<PlaybackSessionResponse> {
+  const started = Date.now();
+  const report = (progress: number) =>
+    onProgress({ progress, note: cachingNote(progress, Date.now() - started, provider) });
   return new Promise((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onAbort = () => {
@@ -41,19 +60,19 @@ export function waitForCache(
           );
         }
         if (status.status === 'ready') {
-          onProgress(1);
+          report(1);
           const session = await resolveReady();
           if (signal.aborted) return;
           if (!isStreamCaching(session)) return settle(() => resolve(session));
         } else {
-          onProgress(status.progress ?? 0);
+          report(status.progress ?? 0);
         }
         timer = setTimeout(tick, POLL_MS);
       } catch (e) {
         if (!signal.aborted) settle(() => reject(e));
       }
     };
-    onProgress(0);
+    report(0);
     timer = setTimeout(tick, POLL_MS);
   });
 }

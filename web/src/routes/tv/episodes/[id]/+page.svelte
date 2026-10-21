@@ -21,8 +21,9 @@
   import { showMessage } from '$lib/context/app.svelte';
   import { getStatsState } from '$lib/stores/stats.svelte';
   import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback, type StreamHandoff } from '$lib/composables/useStreamPlayback.svelte';
+  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
   import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
+  import { useTitleKeep } from '$lib/composables/useKeep.svelte';
   import * as api from '$lib/api/client';
   import { formatCalendarDate, formatEpisodeSearchTitle } from '$lib/utils/format';
   import type {
@@ -62,7 +63,6 @@
 
   const episodeId = $derived($page.params.id);
   const statsState = getStatsState();
-  const pageState = $derived($page.state as { streamHandoff?: StreamHandoff });
 
   const playback = usePlayback({
     mediaType: 'episode',
@@ -85,6 +85,14 @@
     canWant: () => !isActivelyWanted(episode?.want_status)
   });
 
+  const titleKeep = useTitleKeep(showMessage);
+
+  function closePlayer() {
+    const streamed = playback.playingFileId?.startsWith('debrid-');
+    stream.cancel();
+    if (streamed && episode) void titleKeep.refresh(episode.id);
+  }
+
   async function loadEpisode(id: string) {
     loading = true;
     try {
@@ -96,6 +104,7 @@
       episode = ep;
       files = f;
       watchState = ws;
+      if (f.length === 0) void titleKeep.refresh(id);
       loadTracks(id);
       if (ep.season_id && parentSeason?.id !== ep.season_id) {
         try {
@@ -326,16 +335,17 @@
   onMount(() => {
     if (episodeId) {
       loadEpisode(episodeId).then(() => {
-        if (pageState?.streamHandoff) {
-          stream.adoptSession(pageState.streamHandoff);
-        } else if (files.length > 0) {
+        if (files.length > 0) {
           playback.preWarm(files[0].id, watchState?.position_seconds ?? undefined);
         } else {
           stream.preWarmStream();
         }
       });
     }
-    return () => playback.teardownPreWarm();
+    return () => {
+      playback.teardownPreWarm();
+      titleKeep.dispose();
+    };
   });
 
   // Reload only when the *route param* changes. Comparing against `episode.id`
@@ -483,6 +493,7 @@
                   tone: 'primary',
                   onSelect: handleWant
                 },
+            files.length === 0 && titleKeep.action,
             files.length === 0 &&
               statsState.stats.kobload_configured && {
                 label: 'Search Releases',
@@ -599,10 +610,11 @@
       title: parentShow?.title ?? '',
       subtitle: `S${parentSeason?.season_sort_order ?? '?'}E${episode?.episode_sort_order ?? '?'}${episode?.title ? ` \u00b7 ${episode.title}` : ''}`,
       seasonId: episode?.season_id,
-      artworkUrl: episode?.still_url ?? parentShow?.poster_url ?? undefined
+      artworkUrl: episode?.still_url ?? parentShow?.poster_url ?? undefined,
+      backdropUrl: episode?.still_url ?? parentShow?.backdrop_url ?? undefined
     }}
     initialPosition={watchState?.position_seconds ?? undefined}
-    onClose={stream.cancel}
+    onClose={closePlayer}
     {...stream.playerProps}
     onEpisodeChange={(id) => loadEpisode(id)}
   />
@@ -656,7 +668,7 @@
   />
 {/if}
 
-<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
+<StreamPlaybackOverlays {stream} />
 
 <style>
   .loading-state {

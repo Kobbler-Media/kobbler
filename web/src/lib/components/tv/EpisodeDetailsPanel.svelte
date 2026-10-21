@@ -331,7 +331,7 @@
   {/if}
 </div>
 
-<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
+<StreamPlaybackOverlays {stream} />
 
 {#if playback.isActive}
   <VideoPlayer

@@ -252,6 +252,8 @@ pub struct MovieDetails {
     pub rating_count: Option<i32>,
     pub content_rating: Option<String>,
     pub release_date: Option<String>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub release_dates_by_region: super::release_dates::ReleaseDatesByRegion,
     pub cast: Vec<CastMember>,
     pub crew: Vec<CrewMember>,
     pub images: Vec<MediaImage>,

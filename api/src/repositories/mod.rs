@@ -33,6 +33,8 @@ pub mod chat_watches;
 pub mod client_playback_reports;
 pub mod cross_format_sync;
 pub mod dashboard;
+pub mod debrid_cache_files;
+pub mod debrid_keeps;
 pub mod debrid_stream_sessions;
 pub mod deferred_ingests;
 pub mod device_sync_state;

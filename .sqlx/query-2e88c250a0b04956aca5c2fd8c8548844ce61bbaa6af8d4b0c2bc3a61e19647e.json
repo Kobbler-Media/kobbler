@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE debrid_stream_sessions SET cache_path = $2, updated_at = NOW() WHERE cache_path = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2e88c250a0b04956aca5c2fd8c8548844ce61bbaa6af8d4b0c2bc3a61e19647e"
+}

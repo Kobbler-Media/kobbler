@@ -20,7 +20,7 @@
     replaceFile
   } from '$lib/api/client';
   import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback, type StreamHandoff } from '$lib/composables/useStreamPlayback.svelte';
+  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
   import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
   import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
   import HeroActions from '$lib/components/shared/HeroActions.svelte';
@@ -51,7 +51,6 @@
 
   const stats = getStatsState();
   const eventId = $derived($page.params.id);
-  const pageState = $derived($page.state as { streamHandoff?: StreamHandoff });
 
   const playback = usePlayback({
     mediaType: 'episode',
@@ -294,9 +293,7 @@
   onMount(() => {
     if (eventId) {
       loadEvent(eventId).then(() => {
-        if (pageState?.streamHandoff) {
-          stream.adoptSession(pageState.streamHandoff);
-        } else if (files.length > 0) {
+        if (files.length > 0) {
           playback.preWarm(files[0].id, watchState?.position_seconds ?? undefined);
         } else {
           stream.preWarmStream();
@@ -550,7 +547,7 @@
   />
 {/if}
 
-<StreamPlaybackOverlays {stream} playerActive={playback.isActive} />
+<StreamPlaybackOverlays {stream} />
 
 {#if showReleaseSearch && event}
   <ReleaseSearchModal

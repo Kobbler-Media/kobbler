@@ -3,6 +3,7 @@
   import { hasOutstandingWants } from '$lib/utils/want-status';
   import TvEpisodeRow from './TvEpisodeRow.svelte';
   import SeasonActions from '../shared/SeasonActions.svelte';
+  import SeasonAccordionShell from './SeasonAccordionShell.svelte';
 
   interface Props {
     season: TvSeason;
@@ -70,20 +71,8 @@
   );
 </script>
 
-<div class="season-accordion" class:expanded>
-  <!-- Use div instead of button to allow nested want-season button -->
-  <div
-    class="season-header"
-    role="button"
-    tabindex="0"
-    onclick={onToggle}
-    onkeydown={(e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        onToggle();
-      }
-    }}
-  >
+<SeasonAccordionShell label={seasonLabel} href="/tv/seasons/{season.id}" {expanded} {onToggle}>
+  {#snippet leading()}
     {#if selectionMode && onToggleSelectSeason}
       <span class="season-select">
         <input
@@ -96,29 +85,17 @@
         />
       </span>
     {/if}
-    <span class="expand-icon material-icons-outlined" style="font-size: 18px;">
-      {expanded ? 'expand_more' : 'chevron_right'}
-    </span>
-    <div class="season-info">
-      <a
-        class="season-title"
-        href="/tv/seasons/{season.id}"
-        onclick={(e: MouseEvent) => e.stopPropagation()}
-      >
-        {seasonLabel}
-      </a>
-      <div class="season-meta">
-        <span class="episode-count">
-          {inLibraryCount} / {totalCount} episodes
-        </span>
-        {#if watchedCount > 0}
-          <span class="watched-badge">{watchedCount} watched</span>
-        {/if}
-        {#if autoWantBadge}
-          <span class="auto-want-badge">{autoWantBadge}</span>
-        {/if}
-      </div>
-    </div>
+  {/snippet}
+  {#snippet meta()}
+    <span class="episode-count">{inLibraryCount} / {totalCount} episodes</span>
+    {#if watchedCount > 0}
+      <span class="watched-badge">{watchedCount} watched</span>
+    {/if}
+    {#if autoWantBadge}
+      <span class="auto-want-badge">{autoWantBadge}</span>
+    {/if}
+  {/snippet}
+  {#snippet actions()}
     {#if !selectionMode}
       <SeasonActions
         noun="episode"
@@ -131,47 +108,31 @@
         onUnwantAll={onUnwantSeason}
       />
     {/if}
-  </div>
-
-  {#if expanded}
-    <div class="season-episodes">
-      {#if episodes.length === 0}
-        <div class="empty-episodes">No episodes loaded</div>
-      {:else}
-        {#each episodes as episode (episode.id)}
-          <TvEpisodeRow
-            {episode}
-            href="/tv/episodes/{episode.id}"
-            onWant={() => onWantEpisode(episode.id)}
-            onUnwant={() => onUnwantEpisode(episode.id)}
-            onWatchToggle={() => onWatchToggle(episode.id)}
-            onSearchReleases={onSearchReleases ? () => onSearchReleases(episode.id) : undefined}
-            onPlay={onPlayEpisode ? () => onPlayEpisode(episode.id) : undefined}
-            {selectionMode}
-            selected={isSelected?.(episode.id) ?? false}
-            onToggleSelect={onToggleSelect
-              ? (shiftKey: boolean) => onToggleSelect(episode.id, episodes, shiftKey)
-              : undefined}
-          />
-        {/each}
-      {/if}
-    </div>
+  {/snippet}
+  {#if episodes.length === 0}
+    <div class="empty-episodes">No episodes loaded</div>
+  {:else}
+    {#each episodes as episode (episode.id)}
+      <TvEpisodeRow
+        {episode}
+        href="/tv/episodes/{episode.id}"
+        showMedia
+        onWant={() => onWantEpisode(episode.id)}
+        onUnwant={() => onUnwantEpisode(episode.id)}
+        onWatchToggle={() => onWatchToggle(episode.id)}
+        onSearchReleases={onSearchReleases ? () => onSearchReleases(episode.id) : undefined}
+        onPlay={onPlayEpisode ? () => onPlayEpisode(episode.id) : undefined}
+        {selectionMode}
+        selected={isSelected?.(episode.id) ?? false}
+        onToggleSelect={onToggleSelect
+          ? (shiftKey: boolean) => onToggleSelect(episode.id, episodes, shiftKey)
+          : undefined}
+      />
+    {/each}
   {/if}
-</div>
+</SeasonAccordionShell>
 
 <style>
-  .season-accordion {
-    container-type: inline-size;
-    border: 1px solid var(--ring);
-    border-radius: 12px;
-    overflow: hidden;
-    background: var(--card);
-  }
-
-  .season-accordion.expanded {
-    border-color: var(--accent-dim);
-  }
-
   .season-select {
     display: flex;
     align-items: center;
@@ -186,64 +147,8 @@
     cursor: pointer;
   }
 
-  .season-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 14px 16px;
-    border: none;
-    background: transparent;
-    color: var(--ink);
-    cursor: pointer;
-    font: inherit;
-    text-align: left;
-    transition: background 0.15s ease;
-  }
-
-  .season-header:hover {
-    background: var(--bg-2);
-  }
-
-  .expand-icon {
-    color: var(--muted);
-    flex-shrink: 0;
-    transition: transform 0.2s ease;
-  }
-
-  .season-info {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-  }
-
-  .season-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-
-  .season-title {
-    white-space: nowrap;
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--ink);
-    text-decoration: none;
-    transition: color 0.15s ease;
-  }
-
-  .season-title:hover {
-    color: var(--accent);
-  }
-
   .episode-count {
     white-space: nowrap;
-    font-size: 12px;
-    color: var(--muted);
   }
 
   .watched-badge {
@@ -264,29 +169,10 @@
     white-space: nowrap;
   }
 
-  .season-episodes {
-    border-top: 1px solid var(--ring);
-  }
-
   .empty-episodes {
     padding: 20px;
     text-align: center;
     color: var(--muted);
     font-size: 13px;
-  }
-
-  @media (max-width: 768px) {
-    .season-header {
-      padding: 12px 10px;
-    }
-  }
-
-  /* The seasons card sits in a narrow grid column at laptop widths, not just on phones. */
-  @container (max-width: 560px) {
-    .season-info {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 2px;
-    }
   }
 </style>

@@ -15,7 +15,6 @@
   import { getJobsState } from '$lib/stores/jobs.svelte';
   import { watchStateVersion } from '$lib/stores/watchState.svelte';
   import type { Movie, MovieSearchResult, TvSearchResult } from '$lib/types';
-  import type { StreamHandoff } from '$lib/composables/useStreamPlayback.svelte';
 
   let movie = $state<Movie | null>(null);
   let loading = $state(true);
@@ -45,7 +44,7 @@
   };
 
   const movieId = $derived($page.params.id);
-  const pageState = $derived($page.state as { editing?: boolean; streamHandoff?: StreamHandoff });
+  const pageState = $derived($page.state as { editing?: boolean });
   const jobsState = getJobsState();
   const syncing = $derived(
     jobsState.jobs.some(
@@ -367,7 +366,6 @@
   <MovieDetailPage
     {movie}
     {syncing}
-    initialStream={pageState?.streamHandoff}
     onWant={handleWant}
     onUnwant={handleUnwant}
     onWatchlistToggle={handleWatchlistToggle}

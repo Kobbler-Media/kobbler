@@ -118,15 +118,15 @@
                 {#if sourceLabel}
                   <span class="badge badge-source">{sourceLabel}</span>
                 {/if}
-                <!-- Only claim "Instant" when the backend actually verified it.
-                     Availability is three-valued (verified cached / unknown /
-                     known-uncached); showing "Uncached" for merely-unverified
-                     options told users the opposite of the truth. -->
-                {#if option.cached}
+                <!-- Only claim either end when the backend actually knows it:
+                     "likely" and "unknown" stay unlabelled rather than guessed. -->
+                {#if option.cached || option.availability === 'ready'}
                   <span class="badge badge-instant">
                     <span class="material-icons-outlined badge-icon">bolt</span>
                     Instant
                   </span>
+                {:else if option.availability === 'uncached'}
+                  <span class="badge badge-uncached">Needs download</span>
                 {/if}
                 {#if option.playback === 'worked'}
                   <span class="badge badge-worked">Played before</span>
@@ -283,6 +283,11 @@
   .badge-worked {
     background: color-mix(in srgb, var(--primary) 15%, transparent);
     color: var(--primary);
+  }
+
+  .badge-uncached {
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+    color: var(--muted);
   }
 
   .badge-failed {
