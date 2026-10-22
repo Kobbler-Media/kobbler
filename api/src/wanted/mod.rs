@@ -5,6 +5,7 @@
 //! - Receiving callbacks from Kobload when watches match
 
 pub mod acquisition;
+pub mod alternate_titles;
 pub mod watch_sync;
 
 pub use acquisition::*;

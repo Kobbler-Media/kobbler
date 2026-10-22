@@ -742,16 +742,39 @@ impl VideoProviderRegistry {
         tmdb.find_by_external_id(imdb_id, "imdb_id").await
     }
 
-    /// Fetch alternate titles for a movie from TMDB.
     pub async fn get_movie_alternate_titles(
         &self,
         tmdb_id: &str,
         primary_title: &str,
     ) -> Result<Vec<String>, VideoProviderError> {
-        let stored = self.get_provider_config("tmdb").await?;
-        let tmdb = tmdb::TmdbProvider::new(self.http_client.clone(), &stored.config);
-        tmdb.get_movie_alternate_titles(tmdb_id, primary_title)
+        self.cached_tmdb_alternate_titles("movie", tmdb_id, primary_title)
             .await
+    }
+
+    async fn cached_tmdb_alternate_titles(
+        &self,
+        kind: &str,
+        tmdb_id: &str,
+        primary_title: &str,
+    ) -> Result<Vec<String>, VideoProviderError> {
+        let cache_key = format!("{kind}_alternate_titles:{tmdb_id}");
+        if let Ok(Some(cached)) = self.cache_get(tmdb::INFO.id, &cache_key).await
+            && let Ok(titles) = serde_json::from_value::<Vec<String>>(cached)
+        {
+            return Ok(titles);
+        }
+        let stored = self.get_provider_config(tmdb::INFO.id).await?;
+        let tmdb = tmdb::TmdbProvider::new(self.http_client.clone(), &stored.config);
+        let titles = if kind == "tv" {
+            tmdb.get_tv_alternate_titles(tmdb_id, primary_title).await?
+        } else {
+            tmdb.get_movie_alternate_titles(tmdb_id, primary_title)
+                .await?
+        };
+        if let Ok(json) = serde_json::to_value(&titles) {
+            let _ = self.cache_set(tmdb::INFO.id, &cache_key, &json).await;
+        }
+        Ok(titles)
     }
 
     pub async fn get_league_alternate_names(
@@ -800,9 +823,8 @@ impl VideoProviderRegistry {
         tmdb_id: &str,
         primary_title: &str,
     ) -> Result<Vec<String>, VideoProviderError> {
-        let stored = self.get_provider_config("tmdb").await?;
-        let tmdb = tmdb::TmdbProvider::new(self.http_client.clone(), &stored.config);
-        tmdb.get_tv_alternate_titles(tmdb_id, primary_title).await
+        self.cached_tmdb_alternate_titles("tv", tmdb_id, primary_title)
+            .await
     }
 
     /// Fetch an image from a specific provider.

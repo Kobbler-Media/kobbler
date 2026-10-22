@@ -64,15 +64,19 @@ pub async fn prepare(
             tmdb_id,
             season,
             episode,
-        } => discover_request(
-            media_type,
-            title.clone(),
-            *year,
-            imdb_id.clone(),
-            tmdb_id.clone(),
-            *season,
-            *episode,
-        )?,
+        } => {
+            discover_request(
+                state,
+                media_type,
+                title.clone(),
+                *year,
+                imdb_id.clone(),
+                tmdb_id.clone(),
+                *season,
+                *episode,
+            )
+            .await?
+        }
     };
     let (movie_id, episode_id) = target.library_ids();
     let preference =
@@ -95,7 +99,8 @@ pub async fn audio_languages(state: &AppState, audio_language: Option<&str>) -> 
 /// TV requires an explicit season+episode: show-level searches can never return a
 /// specific playable file, so they are rejected rather than downgraded to a movie search.
 #[allow(clippy::too_many_arguments)]
-fn discover_request(
+async fn discover_request(
+    state: &AppState,
     media_type: &str,
     title: String,
     year: Option<i32>,
@@ -104,6 +109,14 @@ fn discover_request(
     season: Option<u32>,
     episode: Option<u32>,
 ) -> Result<nats_jobs::StreamSearchRequest, axum::response::Response> {
+    let registry = VideoProviderRegistry::new(state.pool.clone());
+    let known = match tmdb_id.as_deref() {
+        Some(id) if media_type == "tv" => registry.get_tv_alternate_titles(id, &title).await,
+        Some(id) => registry.get_movie_alternate_titles(id, &title).await,
+        None => Ok(Vec::new()),
+    }
+    .unwrap_or_default();
+    let alternate_titles = crate::wanted::alternate_titles::alternate_titles(&title, &known);
     let media_want = if media_type == "tv" {
         let (Some(season), Some(episode)) = (season, episode) else {
             return Err((
@@ -125,7 +138,7 @@ fn discover_request(
                 tvdb_id: None,
                 imdb_id,
             }),
-            alternate_titles: None,
+            alternate_titles,
             episode_title: None,
             quality_profile_id: None,
             quality_overrides: None,
@@ -136,7 +149,7 @@ fn discover_request(
             year: year.map(|y| y as u32),
             release_date: None,
             identifiers: Some(nats_jobs::MovieIdentifiers { tmdb_id, imdb_id }),
-            alternate_titles: None,
+            alternate_titles,
             quality_profile_id: None,
             quality_overrides: None,
             in_library: None,
@@ -192,11 +205,14 @@ async fn movie_request(
     };
 
     let media_want = nats_jobs::MediaWant::Movie {
-        title: movie.title,
+        title: movie.title.clone(),
         year: movie.year.map(|y| y as u32),
         release_date: movie.release_date.map(|d| d.to_string()),
         identifiers: Some(identifiers),
-        alternate_titles: movie.alternate_titles,
+        alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+            &movie.title,
+            movie.alternate_titles.iter().flatten(),
+        ),
         quality_profile_id: movie.quality_profile_id,
         quality_overrides: movie.preferred_languages.as_ref().map(|langs| {
             nats_jobs::QualityOverrides {
@@ -318,13 +334,16 @@ async fn episode_request(
         };
 
         nats_jobs::MediaWant::TvEpisode {
-            show_name: show.title,
+            show_name: show.title.clone(),
             season: season.season_identifier,
             episode: episode.episode_identifier,
             year: show.year.map(|y| y as u32),
             air_date: episode.air_date.map(|d| d.to_string()),
             identifiers: Some(identifiers),
-            alternate_titles: show.alternate_titles,
+            alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+                &show.title,
+                show.alternate_titles.iter().flatten(),
+            ),
             episode_title: episode.title,
             quality_profile_id: show.quality_profile_id,
             quality_overrides: show.preferred_languages.as_ref().map(|langs| {

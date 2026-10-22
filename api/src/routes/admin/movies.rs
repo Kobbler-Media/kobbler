@@ -1923,7 +1923,10 @@ pub async fn search_movie_releases(
         year: movie.year.map(|y| y as u32),
         release_date: movie.release_date.map(|d| d.to_string()),
         identifiers: Some(identifiers),
-        alternate_titles: None,
+        alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+            &movie.title,
+            movie.alternate_titles.iter().flatten(),
+        ),
         quality_profile_id: movie.quality_profile_id,
         quality_overrides: movie.preferred_languages.as_ref().map(|langs| {
             nats_jobs::QualityOverrides {

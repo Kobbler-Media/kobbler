@@ -747,11 +747,14 @@ async fn build_movie_search(
                 });
 
         let media_want = nats_jobs::MediaWant::Movie {
-            title: movie.title,
+            title: movie.title.clone(),
             year: movie.year.map(|y| y as u32),
             release_date: None,
             identifiers: Some(identifiers),
-            alternate_titles: Some(movie.alternate_titles),
+            alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+                &movie.title,
+                &movie.alternate_titles,
+            ),
             quality_profile_id: movie.quality_profile_id,
             quality_overrides,
             in_library: None,
@@ -853,13 +856,16 @@ async fn build_series_search(
                 });
 
         let media_want = nats_jobs::MediaWant::TvEpisode {
-            show_name: s.title,
+            show_name: s.title.clone(),
             season: season_identifier,
             episode: episode_identifier,
             year: s.year.map(|y| y as u32),
             air_date: ep.as_ref().and_then(|e| e.air_date.map(|d| d.to_string())),
             identifiers: Some(identifiers),
-            alternate_titles: Some(s.alternate_titles),
+            alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+                &s.title,
+                &s.alternate_titles,
+            ),
             episode_title: ep.as_ref().and_then(|e| e.title.clone()),
             quality_profile_id: s.quality_profile_id,
             quality_overrides,
@@ -904,6 +910,8 @@ async fn resolve_imdb_movie(
             .get_movie_alternate_titles(tmdb_id, &details.title)
             .await
             .unwrap_or_default();
+        let alternate_titles =
+            crate::wanted::alternate_titles::alternate_titles(&details.title, &alternate_titles);
 
         let identifiers = nats_jobs::MovieIdentifiers {
             tmdb_id: Some(tmdb_id.clone()),
@@ -915,11 +923,7 @@ async fn resolve_imdb_movie(
             year: details.year.map(|y| y as u32),
             release_date: details.release_date,
             identifiers: Some(identifiers),
-            alternate_titles: if alternate_titles.is_empty() {
-                None
-            } else {
-                Some(alternate_titles)
-            },
+            alternate_titles,
             quality_profile_id: None,
             quality_overrides: None,
             in_library: None,
@@ -948,11 +952,14 @@ async fn resolve_imdb_movie(
         };
 
         let media_want = nats_jobs::MediaWant::Movie {
+            alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+                &result.title,
+                Vec::<String>::new(),
+            ),
             title: result.title,
             year: result.year,
             release_date: None,
             identifiers: Some(identifiers),
-            alternate_titles: None,
             quality_profile_id: None,
             quality_overrides: None,
             in_library: None,
@@ -1025,6 +1032,8 @@ async fn resolve_imdb_tv_episode(
             .get_tv_alternate_titles(tmdb_id, &show.title)
             .await
             .unwrap_or_default();
+        let alternate_titles =
+            crate::wanted::alternate_titles::alternate_titles(&show.title, &alternate_titles);
 
         // Try to get episode details for air date and title
         let (episode_title, air_date) =
@@ -1054,11 +1063,7 @@ async fn resolve_imdb_tv_episode(
             year: show.year.map(|y| y as u32),
             air_date,
             identifiers: Some(identifiers),
-            alternate_titles: if alternate_titles.is_empty() {
-                None
-            } else {
-                Some(alternate_titles)
-            },
+            alternate_titles,
             episode_title,
             quality_profile_id: None,
             quality_overrides: None,
@@ -1087,13 +1092,16 @@ async fn resolve_imdb_tv_episode(
         };
 
         let media_want = nats_jobs::MediaWant::TvEpisode {
+            alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+                &result.title,
+                Vec::<String>::new(),
+            ),
             show_name: result.title,
             season: season_str,
             episode: episode_str,
             year: result.year,
             air_date: None,
             identifiers: Some(identifiers),
-            alternate_titles: None,
             episode_title: None,
             quality_profile_id: None,
             quality_overrides: None,
@@ -1121,13 +1129,16 @@ async fn resolve_imdb_tv_episode(
         };
 
         let media_want = nats_jobs::MediaWant::TvEpisode {
+            alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+                &result.title,
+                Vec::<String>::new(),
+            ),
             show_name: result.title,
             season: season_str,
             episode: episode_str,
             year: result.year,
             air_date: None,
             identifiers: Some(identifiers),
-            alternate_titles: None,
             episode_title: None,
             quality_profile_id: None,
             quality_overrides: None,

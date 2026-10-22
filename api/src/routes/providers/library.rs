@@ -392,7 +392,10 @@ async fn build_media_want(
         pack_preference: "auto".to_string(),
         last_air_date,
         identifiers: Some(identifiers),
-        alternate_titles: show.alternate_titles.clone().filter(|v| !v.is_empty()),
+        alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+            &show.title,
+            show.alternate_titles.iter().flatten(),
+        ),
         quality_profile_id: show.quality_profile_id,
         quality_overrides: show.preferred_languages.as_ref().map(|langs| {
             nats_jobs::QualityOverrides {

@@ -3638,7 +3638,10 @@ pub async fn search_episode_releases(
             year: show.year.map(|y| y as u32),
             air_date: episode.air_date.map(|d| d.to_string()),
             identifiers: Some(identifiers),
-            alternate_titles: None,
+            alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+                &show.title,
+                show.alternate_titles.iter().flatten(),
+            ),
             episode_title: episode.title.clone(),
             quality_profile_id: show.quality_profile_id,
             quality_overrides: show.preferred_languages.as_ref().map(|langs| {

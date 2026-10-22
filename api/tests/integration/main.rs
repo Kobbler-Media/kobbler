@@ -138,6 +138,7 @@ mod stream_keep_test;
 mod stream_prewarm_test;
 mod stremio_continue_test;
 mod stremio_history_test;
+mod title_alternates_test;
 mod trakt_test;
 mod tv_bulk_episodes_test;
 mod tv_bulk_watch_test;

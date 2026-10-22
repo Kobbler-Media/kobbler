@@ -168,7 +168,10 @@ impl JobHandler for MovieWantHandler {
             year: movie_data.year.map(|y| y as u32),
             release_date: movie_data.release_date.map(|d| d.to_string()),
             identifiers: Some(identifiers),
-            alternate_titles: movie_data.alternate_titles.filter(|v| !v.is_empty()),
+            alternate_titles: crate::wanted::alternate_titles::alternate_titles(
+                &movie_data.title,
+                movie_data.alternate_titles.iter().flatten(),
+            ),
             quality_profile_id: movie_data.quality_profile_id,
             quality_overrides: movie_data.preferred_languages.as_ref().map(|langs| {
                 nats_jobs::QualityOverrides {
