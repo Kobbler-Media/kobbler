@@ -129,6 +129,7 @@ mod sidecar_pipeline_test;
 mod skip_detect_gate_test;
 mod skip_detect_test;
 mod smoke_test;
+mod source_failures_test;
 mod sport_continue_test;
 mod sport_event_dedupe_test;
 mod sport_want_aliases_test;

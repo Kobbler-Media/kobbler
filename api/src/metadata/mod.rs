@@ -488,36 +488,38 @@ impl ProviderRegistry {
         hardcover_id: &str,
         fetch: bool,
     ) -> Option<hardcover::BookTitles> {
-        use crate::repositories::metadata_cache as cache_repo;
         let key = format!("book_titles:{hardcover_id}");
-        if let Ok(Some(cached)) = cache_repo::get(&self.pool, hardcover::INFO.id, &key).await
-            && let Ok(titles) = serde_json::from_value(cached)
-        {
-            return Some(titles);
-        }
         if !fetch {
-            return None;
+            return crate::source_cache::read::<Option<hardcover::BookTitles>>(
+                &self.pool,
+                hardcover::INFO.id,
+                &key,
+            )
+            .await
+            .flatten();
         }
         let stored = self
             .get_enabled_providers()
             .await
             .into_iter()
             .find(|p| p.provider_type == hardcover::INFO.id)?;
-        self.cooldown.wait_if_needed(hardcover::INFO.id).await;
         let provider =
             hardcover::HardcoverProvider::from_config(self.http_client.clone(), &stored.config);
-        let titles = match provider.book_titles(hardcover_id).await {
-            Ok(titles) => titles?,
-            Err(e) => {
-                tracing::debug!(hardcover_id, error = %e, "Hardcover book titles unavailable");
-                return None;
-            }
-        };
-        if let Ok(json) = serde_json::to_value(&titles) {
-            let expires = time::OffsetDateTime::now_utc() + time::Duration::days(7);
-            let _ = cache_repo::set(&self.pool, hardcover::INFO.id, &key, &json, expires).await;
+        if !provider.has_api_key() {
+            return None;
         }
-        Some(titles)
+        crate::source_cache::lookup(
+            &self.pool,
+            hardcover::INFO.id,
+            &key,
+            time::Duration::days(7),
+            || async {
+                self.cooldown.wait_if_needed(hardcover::INFO.id).await;
+                provider.book_titles(hardcover_id).await
+            },
+        )
+        .await
+        .flatten()
     }
 
     /// Get list of enabled providers from database

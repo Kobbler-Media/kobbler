@@ -35,7 +35,7 @@ fn session(number: u32, id: &str, title: &str, date: &str, place: Value) -> Valu
     })
 }
 
-async fn cache(pool: &sqlx::PgPool, provider: &str, key: &str, value: Value) {
+pub(crate) async fn cache(pool: &sqlx::PgPool, provider: &str, key: &str, value: Value) {
     let expires = time::OffsetDateTime::now_utc() + time::Duration::days(1);
     api::repositories::metadata_cache::set(pool, provider, key, &value, expires)
         .await
@@ -230,7 +230,7 @@ async fn release_searches_send_the_rounds_aliases() {
 
 /// A league with one season and the given events, each `(id, title, date,
 /// sport source)`. Returns (show, season, episode ids).
-async fn league(
+pub(crate) async fn league(
     pool: &sqlx::PgPool,
     title: &str,
     events: &[(&str, &str, &str, Value)],
@@ -308,7 +308,12 @@ async fn league(
     (show, season, episodes)
 }
 
-async fn run_sports_want(server: &TestServer, show: Uuid, season: Uuid, episodes: &[Uuid]) -> u64 {
+pub(crate) async fn run_sports_want(
+    server: &TestServer,
+    show: Uuid,
+    season: Uuid,
+    episodes: &[Uuid],
+) -> u64 {
     let handler = SportsWantHandler::new(
         server.pool.clone(),
         server.runtime_config.clone(),

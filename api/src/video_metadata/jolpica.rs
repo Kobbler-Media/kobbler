@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::VideoProviderError;
 
-const BASE_URL: &str = "https://api.jolpi.ca/ergast/f1";
+pub const BASE_URL: &str = "https://api.jolpi.ca/ergast/f1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct F1Race {
@@ -79,11 +79,19 @@ fn parse_races(body: &str) -> Result<Vec<F1Race>, VideoProviderError> {
 
 pub async fn fetch_races(
     client: &reqwest::Client,
+    base_url: &str,
     year: u32,
 ) -> Result<Vec<F1Race>, VideoProviderError> {
-    let url = format!("{BASE_URL}/{year}/races/?limit=100");
-    let resp = client.get(&url).send().await?;
+    let url = format!("{base_url}/{year}/races/?limit=100");
+    let resp = client
+        .get(&url)
+        .timeout(crate::source_cache::LOOKUP_TIMEOUT)
+        .send()
+        .await?;
     let status = resp.status();
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(Vec::new());
+    }
     if !status.is_success() {
         return Err(VideoProviderError::Other(format!(
             "Jolpica returned HTTP {status} for {url}"

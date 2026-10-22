@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::VideoProviderError;
 
-const BASE_URL: &str = "https://api.motogp.pulselive.com/motogp/v1/results";
+pub const BASE_URL: &str = "https://api.motogp.pulselive.com/motogp/v1/results";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MotoGpEvent {
@@ -53,7 +53,11 @@ async fn get<T: serde::de::DeserializeOwned>(
     client: &reqwest::Client,
     url: &str,
 ) -> Result<T, VideoProviderError> {
-    let resp = client.get(url).send().await?;
+    let resp = client
+        .get(url)
+        .timeout(crate::source_cache::LOOKUP_TIMEOUT)
+        .send()
+        .await?;
     let status = resp.status();
     if !status.is_success() {
         return Err(VideoProviderError::Other(format!(
@@ -63,18 +67,19 @@ async fn get<T: serde::de::DeserializeOwned>(
     resp.json().await.map_err(VideoProviderError::from)
 }
 
+/// A season pulselive does not list has no events, which is an answer.
 pub async fn fetch_events(
     client: &reqwest::Client,
+    base_url: &str,
     year: u32,
 ) -> Result<Vec<MotoGpEvent>, VideoProviderError> {
-    let seasons: Vec<Season> = get(client, &format!("{BASE_URL}/seasons")).await?;
-    let season = seasons
-        .into_iter()
-        .find(|s| s.year == year)
-        .ok_or(VideoProviderError::NotFound)?;
+    let seasons: Vec<Season> = get(client, &format!("{base_url}/seasons")).await?;
+    let Some(season) = seasons.into_iter().find(|s| s.year == year) else {
+        return Ok(Vec::new());
+    };
     get(
         client,
-        &format!("{BASE_URL}/events?seasonUuid={}", season.id),
+        &format!("{base_url}/events?seasonUuid={}", season.id),
     )
     .await
 }

@@ -53,6 +53,7 @@ pub mod serde_patch;
 pub mod serde_pg;
 pub mod sidecar;
 pub mod skip_detect;
+pub mod source_cache;
 pub mod sport_want;
 pub mod sse_client;
 pub mod streaming;

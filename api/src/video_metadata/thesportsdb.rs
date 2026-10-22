@@ -669,32 +669,76 @@ fn parse_league_alternate_names(body: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The names release groups also file a league under ("WSBK", "World
-/// Superbike"). A TheSportsDB id is resolved to Sportarr's id first.
-pub async fn fetch_league_alternate_names(
+async fn sportarr_get(
     client: &reqwest::Client,
-    league_id: &str,
-) -> Result<Vec<String>, VideoProviderError> {
-    let provider = TheSportsDbProvider {
-        client: client.clone(),
-    };
-    let short_id = if league_id.starts_with("lg-") {
-        league_id.to_string()
-    } else {
-        provider.get_league(league_id).await?.id_league
-    };
-    let url = format!(
-        "{SPORTARR_PUBLIC_URL}/leagues/{}",
-        urlencoding::encode(&short_id)
-    );
-    let resp = client.get(&url).send().await?;
+    url: &str,
+) -> Result<Option<String>, VideoProviderError> {
+    let resp = client
+        .get(url)
+        .timeout(crate::source_cache::LOOKUP_TIMEOUT)
+        .send()
+        .await?;
     let status = resp.status();
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
     if !status.is_success() {
         return Err(VideoProviderError::Other(format!(
             "Sportarr returned HTTP {status} for {url}"
         )));
     }
-    Ok(parse_league_alternate_names(&resp.text().await?))
+    Ok(Some(resp.text().await?))
+}
+
+fn parse_league_short_id(body: &str) -> Option<String> {
+    let resp: SportarrResponse<SportarrLookupData> = serde_json::from_str(body).ok()?;
+    resp.data?.lookup.into_iter().next().map(|l| l.id_league)
+}
+
+/// The names release groups also file a league under ("WSBK", "World
+/// Superbike"). A TheSportsDB id is resolved to Sportarr's id first; a league
+/// Sportarr does not know has none.
+pub async fn fetch_league_alternate_names(
+    client: &reqwest::Client,
+    urls: &SportarrUrls,
+    league_id: &str,
+) -> Result<Vec<String>, VideoProviderError> {
+    let short_id = if league_id.starts_with("lg-") {
+        league_id.to_string()
+    } else {
+        let url = format!(
+            "{}/lookup/league/{}",
+            urls.v2,
+            urlencoding::encode(league_id)
+        );
+        match sportarr_get(client, &url)
+            .await?
+            .as_deref()
+            .and_then(parse_league_short_id)
+        {
+            Some(id) => id,
+            None => return Ok(Vec::new()),
+        }
+    };
+    let url = format!("{}/leagues/{}", urls.public, urlencoding::encode(&short_id));
+    Ok(sportarr_get(client, &url)
+        .await?
+        .map(|body| parse_league_alternate_names(&body))
+        .unwrap_or_default())
+}
+
+pub struct SportarrUrls {
+    pub v2: String,
+    pub public: String,
+}
+
+impl Default for SportarrUrls {
+    fn default() -> Self {
+        Self {
+            v2: SPORTARR_BASE_URL.to_string(),
+            public: SPORTARR_PUBLIC_URL.to_string(),
+        }
+    }
 }
 
 fn parse_team(body: &str) -> Option<nats_jobs::SportTeam> {
@@ -732,23 +776,18 @@ fn parse_team(body: &str) -> Option<nats_jobs::SportTeam> {
     })
 }
 
-/// A team's short name and nicknames ("ARS", "Gunners") from Sportarr.
+/// A team's short name and nicknames ("ARS", "Gunners") from Sportarr. A
+/// team Sportarr does not know is `None`, which is an answer.
 pub async fn fetch_team(
     client: &reqwest::Client,
+    urls: &SportarrUrls,
     team_id: &str,
 ) -> Result<Option<nats_jobs::SportTeam>, VideoProviderError> {
-    let url = format!(
-        "{SPORTARR_BASE_URL}/lookup/team/{}",
-        urlencoding::encode(team_id)
-    );
-    let resp = client.get(&url).send().await?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(VideoProviderError::Other(format!(
-            "Sportarr returned HTTP {status} for {url}"
-        )));
-    }
-    Ok(parse_team(&resp.text().await?))
+    let url = format!("{}/lookup/team/{}", urls.v2, urlencoding::encode(team_id));
+    Ok(sportarr_get(client, &url)
+        .await?
+        .as_deref()
+        .and_then(parse_team))
 }
 
 /// Trim and collapse runs of whitespace to single spaces.

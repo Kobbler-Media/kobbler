@@ -759,106 +759,100 @@ impl VideoProviderRegistry {
         tmdb_id: &str,
         primary_title: &str,
     ) -> Result<Vec<String>, VideoProviderError> {
-        let cache_key = format!("{kind}_alternate_titles:{tmdb_id}");
-        if let Ok(Some(cached)) = self.cache_get(tmdb::INFO.id, &cache_key).await
-            && let Ok(titles) = serde_json::from_value::<Vec<String>>(cached)
-        {
-            return Ok(titles);
-        }
         let stored = self.get_provider_config(tmdb::INFO.id).await?;
         let tmdb = tmdb::TmdbProvider::new(self.http_client.clone(), &stored.config);
-        let titles = if kind == "tv" {
-            tmdb.get_tv_alternate_titles(tmdb_id, primary_title).await?
-        } else {
-            tmdb.get_movie_alternate_titles(tmdb_id, primary_title)
-                .await?
-        };
-        if let Ok(json) = serde_json::to_value(&titles) {
-            let _ = self.cache_set(tmdb::INFO.id, &cache_key, &json).await;
-        }
-        Ok(titles)
+        crate::source_cache::lookup(
+            &self.pool,
+            tmdb::INFO.id,
+            &format!("{kind}_alternate_titles:{tmdb_id}"),
+            CACHE_TTL_STABLE,
+            || async {
+                if kind == "tv" {
+                    tmdb.get_tv_alternate_titles(tmdb_id, primary_title).await
+                } else {
+                    tmdb.get_movie_alternate_titles(tmdb_id, primary_title)
+                        .await
+                }
+            },
+        )
+        .await
+        .ok_or_else(|| VideoProviderError::Other("TMDB alternative titles unavailable".into()))
     }
 
-    pub async fn get_league_alternate_names(
-        &self,
-        league_id: &str,
-    ) -> Result<Vec<String>, VideoProviderError> {
-        let cache_key = format!("league_alternate_names:{league_id}");
-        if let Ok(Some(cached)) = self.cache_get(thesportsdb::INFO.id, &cache_key).await
-            && let Ok(names) = serde_json::from_value::<Vec<String>>(cached)
-        {
-            return Ok(names);
-        }
-        let names = thesportsdb::fetch_league_alternate_names(&self.http_client, league_id).await?;
-        if let Ok(json) = serde_json::to_value(&names) {
-            let _ = self
-                .cache_set(thesportsdb::INFO.id, &cache_key, &json)
-                .await;
-        }
-        Ok(names)
+    /// A sport source's base URL: the TheSportsDB provider's config can point
+    /// one elsewhere (`pulselive_url`, `jolpica_url`, `sportarr_url`,
+    /// `sportarr_public_url`).
+    async fn sport_source_url(&self, key: &str, default: &str) -> String {
+        self.get_provider_config(thesportsdb::INFO.id)
+            .await
+            .ok()
+            .and_then(|p| p.config.get(key)?.as_str().map(String::from))
+            .filter(|url| !url.is_empty())
+            .unwrap_or_else(|| default.to_string())
     }
 
-    pub async fn get_sport_team(
-        &self,
-        team_id: &str,
-    ) -> Result<Option<nats_jobs::SportTeam>, VideoProviderError> {
-        let cache_key = format!("team:{team_id}");
-        if let Ok(Some(cached)) = self.cache_get(thesportsdb::INFO.id, &cache_key).await
-            && let Ok(team) = serde_json::from_value::<nats_jobs::SportTeam>(cached)
-        {
-            return Ok(Some(team));
+    async fn sportarr_urls(&self) -> thesportsdb::SportarrUrls {
+        let defaults = thesportsdb::SportarrUrls::default();
+        thesportsdb::SportarrUrls {
+            v2: self.sport_source_url("sportarr_url", &defaults.v2).await,
+            public: self
+                .sport_source_url("sportarr_public_url", &defaults.public)
+                .await,
         }
-        let team = thesportsdb::fetch_team(&self.http_client, team_id).await?;
-        if let Some(team) = &team
-            && let Ok(json) = serde_json::to_value(team)
-        {
-            let _ = self
-                .cache_set(thesportsdb::INFO.id, &cache_key, &json)
-                .await;
-        }
-        Ok(team)
     }
 
-    pub async fn get_f1_races(
-        &self,
-        year: u32,
-    ) -> Result<Vec<jolpica::F1Race>, VideoProviderError> {
-        let cache_key = format!("f1_races:{year}");
-        if let Ok(Some(cached)) = self.cache_get(JOLPICA, &cache_key).await
-            && let Ok(races) = serde_json::from_value::<Vec<jolpica::F1Race>>(cached)
-        {
-            return Ok(races);
-        }
-        let races = jolpica::fetch_races(&self.http_client, year).await?;
-        if !races.is_empty()
-            && let Ok(json) = serde_json::to_value(&races)
-        {
-            let _ = self
-                .cache_set_for(JOLPICA, &cache_key, &json, CACHE_TTL_ACTIVE)
-                .await;
-        }
-        Ok(races)
+    /// `None` when Sportarr is failing or failed within the hour.
+    pub async fn get_league_alternate_names(&self, league_id: &str) -> Option<Vec<String>> {
+        let urls = self.sportarr_urls().await;
+        crate::source_cache::lookup(
+            &self.pool,
+            thesportsdb::INFO.id,
+            &format!("league_alternate_names:{league_id}"),
+            CACHE_TTL_STABLE,
+            || thesportsdb::fetch_league_alternate_names(&self.http_client, &urls, league_id),
+        )
+        .await
     }
 
-    pub async fn get_motogp_events(
-        &self,
-        year: u32,
-    ) -> Result<Vec<pulselive::MotoGpEvent>, VideoProviderError> {
-        let cache_key = format!("motogp_events:{year}");
-        if let Ok(Some(cached)) = self.cache_get(PULSELIVE, &cache_key).await
-            && let Ok(events) = serde_json::from_value::<Vec<pulselive::MotoGpEvent>>(cached)
-        {
-            return Ok(events);
-        }
-        let events = pulselive::fetch_events(&self.http_client, year).await?;
-        if !events.is_empty()
-            && let Ok(json) = serde_json::to_value(&events)
-        {
-            let _ = self
-                .cache_set_for(PULSELIVE, &cache_key, &json, CACHE_TTL_ACTIVE)
-                .await;
-        }
-        Ok(events)
+    /// The outer `None` is Sportarr failing; the inner one is no such team.
+    pub async fn get_sport_team(&self, team_id: &str) -> Option<Option<nats_jobs::SportTeam>> {
+        let urls = self.sportarr_urls().await;
+        crate::source_cache::lookup(
+            &self.pool,
+            thesportsdb::INFO.id,
+            &format!("team:{team_id}"),
+            CACHE_TTL_STABLE,
+            || thesportsdb::fetch_team(&self.http_client, &urls, team_id),
+        )
+        .await
+    }
+
+    pub async fn get_f1_races(&self, year: u32) -> Option<Vec<jolpica::F1Race>> {
+        let base = self
+            .sport_source_url("jolpica_url", jolpica::BASE_URL)
+            .await;
+        crate::source_cache::lookup(
+            &self.pool,
+            JOLPICA,
+            &format!("f1_races:{year}"),
+            CACHE_TTL_ACTIVE,
+            || jolpica::fetch_races(&self.http_client, &base, year),
+        )
+        .await
+    }
+
+    pub async fn get_motogp_events(&self, year: u32) -> Option<Vec<pulselive::MotoGpEvent>> {
+        let base = self
+            .sport_source_url("pulselive_url", pulselive::BASE_URL)
+            .await;
+        crate::source_cache::lookup(
+            &self.pool,
+            PULSELIVE,
+            &format!("motogp_events:{year}"),
+            CACHE_TTL_ACTIVE,
+            || pulselive::fetch_events(&self.http_client, &base, year),
+        )
+        .await
     }
 
     /// Fetch alternate titles for a TV show from TMDB.

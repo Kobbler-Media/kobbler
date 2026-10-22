@@ -446,10 +446,15 @@ impl TmdbProvider {
     ) -> Result<Vec<String>, VideoProviderError> {
         let key = self.require_key()?;
         let url = format!("{}/movie/{}/alternative_titles", self.base_url, tmdb_id);
-        let resp: TmdbMovieAlternativeTitles = self
+        let resp = self
             .get(&url, key)
+            .timeout(crate::source_cache::LOOKUP_TIMEOUT)
             .send()
-            .await?
+            .await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        let resp: TmdbMovieAlternativeTitles = resp
             .error_for_status()
             .map_err(VideoProviderError::Http)?
             .json()
@@ -466,10 +471,15 @@ impl TmdbProvider {
     ) -> Result<Vec<String>, VideoProviderError> {
         let key = self.require_key()?;
         let url = format!("{}/tv/{}/alternative_titles", self.base_url, tmdb_id);
-        let resp: TmdbTvAlternativeTitles = self
+        let resp = self
             .get(&url, key)
+            .timeout(crate::source_cache::LOOKUP_TIMEOUT)
             .send()
-            .await?
+            .await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        let resp: TmdbTvAlternativeTitles = resp
             .error_for_status()
             .map_err(VideoProviderError::Http)?
             .json()

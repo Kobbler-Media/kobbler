@@ -86,9 +86,8 @@ impl SportEnricher for Sportarr {
         let Some(league_id) = event.league_id else {
             return Ok(());
         };
-        let names = registry.get_league_alternate_names(league_id).await;
-        if let Ok(names) = &names {
-            into.league_aliases.extend(names.iter().cloned());
+        if let Some(names) = registry.get_league_alternate_names(league_id).await {
+            into.league_aliases.extend(names);
         }
         if let Some(season) = event.season {
             let details = registry
@@ -98,10 +97,7 @@ impl SportEnricher for Sportarr {
         }
         for (name, id) in std::mem::take(&mut into.team_refs) {
             let looked_up = match id {
-                Some(id) => registry.get_sport_team(&id).await.unwrap_or_else(|e| {
-                    tracing::debug!(team_id = %id, error = %e, "Sportarr team lookup unavailable");
-                    None
-                }),
+                Some(id) => registry.get_sport_team(&id).await.flatten(),
                 None => None,
             };
             into.teams.push(looked_up.unwrap_or(SportTeam {
@@ -110,7 +106,7 @@ impl SportEnricher for Sportarr {
                 aliases: Vec::new(),
             }));
         }
-        names.map(drop)
+        Ok(())
     }
 }
 
@@ -212,7 +208,7 @@ impl SportEnricher for Pulselive {
         let (Some(season), Some(date)) = (event.season, event.air_date) else {
             return Ok(());
         };
-        let events = registry.get_motogp_events(season).await?;
+        let events = registry.get_motogp_events(season).await.unwrap_or_default();
         if let Some(found) = pulselive::event_on(&events, date) {
             gather_from_motogp(found, into);
         }
@@ -269,7 +265,7 @@ impl SportEnricher for Jolpica {
         let (Some(season), Some(date)) = (event.season, event.air_date) else {
             return Ok(());
         };
-        let races = registry.get_f1_races(season).await?;
+        let races = registry.get_f1_races(season).await.unwrap_or_default();
         if let Some(race) = jolpica::race_on(&races, date) {
             gather_from_f1(race, event.session, into);
         }

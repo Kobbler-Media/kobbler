@@ -197,6 +197,10 @@ impl HardcoverProvider {
 }
 
 impl HardcoverProvider {
+    pub fn has_api_key(&self) -> bool {
+        self.api_key.as_deref().is_some_and(|k| !k.is_empty())
+    }
+
     /// Require a non-empty API key, returning an error if not configured.
     fn require_api_key(&self) -> Result<&str, ProviderError> {
         match &self.api_key {
@@ -1295,16 +1299,17 @@ fn parse_book_titles(body: serde_json::Value) -> Option<BookTitles> {
 }
 
 impl HardcoverProvider {
+    /// `Ok(None)` when Hardcover has no such book, which is an answer.
     pub async fn book_titles(&self, book_id: &str) -> Result<Option<BookTitles>, ProviderError> {
         let api_key = self.require_api_key()?;
-        let id: i64 = book_id
-            .trim()
-            .parse()
-            .map_err(|_| ProviderError::Other(format!("Hardcover id {book_id} is not a number")))?;
+        let Ok(id) = book_id.trim().parse::<i64>() else {
+            return Ok(None);
+        };
         let response = self
             .client
             .post(format!("{}/v1/graphql", self.base_url))
             .header("Authorization", format!("Bearer {api_key}"))
+            .timeout(crate::source_cache::LOOKUP_TIMEOUT)
             .json(&serde_json::json!({ "query": BOOK_TITLES_QUERY, "variables": { "id": id } }))
             .send()
             .await?;
@@ -1314,7 +1319,13 @@ impl HardcoverProvider {
                 "Hardcover book titles",
             ));
         }
-        Ok(parse_book_titles(response.json().await?))
+        let body: serde_json::Value = response.json().await?;
+        if let Some(errors) = body.get("errors") {
+            return Err(ProviderError::Other(format!(
+                "Hardcover book titles query failed: {errors}"
+            )));
+        }
+        Ok(parse_book_titles(body))
     }
 }
 
