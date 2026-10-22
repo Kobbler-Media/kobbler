@@ -1,6 +1,8 @@
 use async_trait::async_trait;
+use nats_jobs::SportTeam;
 
 use super::aliases::{Gathered, tidy};
+use crate::video_metadata::jolpica::{self, F1Race};
 use crate::video_metadata::pulselive::{self, MotoGpEvent};
 use crate::video_metadata::thesportsdb;
 use crate::video_metadata::types::{EpisodeDetails, SeasonDetails};
@@ -14,6 +16,7 @@ pub struct EventRef<'a> {
     pub provider_event_id: Option<&'a str>,
     pub sort_order: i32,
     pub title: Option<&'a str>,
+    pub session: Option<&'a str>,
 }
 
 /// One source of what an event is known as. Sportarr covers every league;
@@ -31,7 +34,7 @@ pub trait SportEnricher: Sync {
     ) -> Result<(), VideoProviderError>;
 }
 
-pub const ENRICHERS: &[&dyn SportEnricher] = &[&Sportarr, &Pulselive];
+pub const ENRICHERS: &[&dyn SportEnricher] = &[&Sportarr, &Pulselive, &Jolpica];
 
 const MOTOGP_CLASSES: &[&str] = &["MotoGP", "Moto2", "Moto3"];
 
@@ -93,6 +96,20 @@ impl SportEnricher for Sportarr {
                 .await?;
             gather_from_season(&details, event, into);
         }
+        for (name, id) in std::mem::take(&mut into.team_refs) {
+            let looked_up = match id {
+                Some(id) => registry.get_sport_team(&id).await.unwrap_or_else(|e| {
+                    tracing::debug!(team_id = %id, error = %e, "Sportarr team lookup unavailable");
+                    None
+                }),
+                None => None,
+            };
+            into.teams.push(looked_up.unwrap_or(SportTeam {
+                name,
+                short: None,
+                aliases: Vec::new(),
+            }));
+        }
         names.map(drop)
     }
 }
@@ -153,6 +170,15 @@ pub fn gather_from_season(season: &SeasonDetails, event: &EventRef<'_>, into: &m
         into.event_aliases
             .extend(sport.alternate_name.iter().chain(&sport.filename).cloned());
         into.ids.thesportsdb_id = sport.thesportsdb_id.clone();
+        into.status = sport.status.clone();
+        for (name, id) in [
+            (&sport.home_team, &sport.home_team_id),
+            (&sport.away_team, &sport.away_team_id),
+        ] {
+            if let Some(name) = name {
+                into.team_refs.push((name.clone(), id.clone()));
+            }
+        }
     }
     if let Some(id) = found.provider_id.as_deref() {
         if id.starts_with("ev-") {
@@ -213,6 +239,55 @@ pub fn gather_from_motogp(event: &MotoGpEvent, into: &mut Gathered) {
     into.ids.official_id = Some(event.id.clone());
 }
 
+/// Events Sportarr reports as postponed or cancelled ("Match Postponed",
+/// "cancelled") are not wanted: nothing will be released for them on that date.
+pub fn called_off(status: Option<&str>) -> bool {
+    status.is_some_and(|s| {
+        let s = s.to_lowercase();
+        s.contains("postpon") || s.contains("cancel")
+    })
+}
+
+pub struct Jolpica;
+
+#[async_trait]
+impl SportEnricher for Jolpica {
+    fn name(&self) -> &'static str {
+        "jolpica"
+    }
+
+    fn covers(&self, event: &EventRef<'_>) -> bool {
+        event.class == Some("F1") && event.season.is_some() && event.air_date.is_some()
+    }
+
+    async fn gather(
+        &self,
+        registry: &VideoProviderRegistry,
+        event: &EventRef<'_>,
+        into: &mut Gathered,
+    ) -> Result<(), VideoProviderError> {
+        let (Some(season), Some(date)) = (event.season, event.air_date) else {
+            return Ok(());
+        };
+        let races = registry.get_f1_races(season).await?;
+        if let Some(race) = jolpica::race_on(&races, date) {
+            gather_from_f1(race, event.session, into);
+        }
+        Ok(())
+    }
+}
+
+pub fn gather_from_f1(race: &F1Race, session: Option<&str>, into: &mut Gathered) {
+    into.venues.push(race.circuit.name.clone());
+    into.cities
+        .extend(race.circuit.location.locality.iter().cloned());
+    into.country_from(race.circuit.location.country.as_deref());
+    into.event_aliases.push(race.race_name.clone());
+    if into.session_start.is_none() {
+        into.session_start = session.and_then(|s| race.session_start(s));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,11 +318,44 @@ mod tests {
             provider_event_id: None,
             sort_order: 3000,
             title: None,
+            session: None,
         };
         assert!(Pulselive.covers(&event(Some("MotoGP"))));
         assert!(Pulselive.covers(&event(Some("Moto3"))));
         assert!(!Pulselive.covers(&event(Some("SBK"))));
         assert!(!Pulselive.covers(&event(None)));
         assert!(Sportarr.covers(&event(Some("SBK"))));
+    }
+
+    #[test]
+    fn postponed_and_cancelled_events_are_called_off() {
+        for (status, off) in [
+            (Some("postponed"), true),
+            (Some("Match Postponed"), true),
+            (Some("cancelled"), true),
+            (Some("Canceled"), true),
+            (Some("scheduled"), false),
+            (Some("completed"), false),
+            (None, false),
+        ] {
+            assert_eq!(called_off(status), off, "{status:?}");
+        }
+    }
+
+    #[test]
+    fn jolpica_covers_only_formula_one() {
+        let event = |class| EventRef {
+            league_id: None,
+            class,
+            season: Some(2026),
+            air_date: time::Date::from_calendar_date(2026, time::Month::May, 2).ok(),
+            provider_event_id: None,
+            sort_order: 4000,
+            title: None,
+            session: Some("Qualifying"),
+        };
+        assert!(Jolpica.covers(&event(Some("F1"))));
+        assert!(!Jolpica.covers(&event(Some("F2"))));
+        assert!(!Jolpica.covers(&event(Some("MotoGP"))));
     }
 }

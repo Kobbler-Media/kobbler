@@ -1,4 +1,4 @@
-use nats_jobs::{SportEventMeta, SportIdentifiers};
+use nats_jobs::{SportEventMeta, SportIdentifiers, SportTeam};
 
 use super::gazetteer::{self, fold};
 
@@ -41,6 +41,10 @@ pub struct Gathered {
     pub league_aliases: Vec<String>,
     pub session_start: Option<String>,
     pub ids: SportIdentifiers,
+    pub status: Option<String>,
+    /// Each team by name, with Sportarr's id when the schedule gave one.
+    pub team_refs: Vec<(String, Option<String>)>,
+    pub teams: Vec<SportTeam>,
 }
 
 impl Gathered {
@@ -228,7 +232,7 @@ pub fn finish(
         location_aliases: location_aliases.into_option(),
         event_aliases: event_aliases.into_option(),
         league_aliases: league_aliases.into_option(),
-        teams: None,
+        teams: (!gathered.teams.is_empty()).then_some(gathered.teams),
         session_start: gathered.session_start,
         class: class.map(String::from),
         identifiers: has_ids.then_some(ids),

@@ -1944,7 +1944,8 @@ pub async fn search_event_releases(
             library_video_height: None,
         },
     )
-    .await;
+    .await
+    .want;
 
     // Free text overrides the structured terms, but must not drop the media
     // type with them: Kobload derives its category filter from one or the

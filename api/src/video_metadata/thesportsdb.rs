@@ -149,6 +149,16 @@ struct ApiEvent {
     str_event_alternate: Option<String>,
     #[serde(rename = "tsdbId", default)]
     tsdb_id: Option<String>,
+    #[serde(rename = "strStatus", default)]
+    str_status: Option<String>,
+    #[serde(rename = "strHomeTeam", default)]
+    str_home_team: Option<String>,
+    #[serde(rename = "idHomeTeam", default)]
+    id_home_team: Option<String>,
+    #[serde(rename = "strAwayTeam", default)]
+    str_away_team: Option<String>,
+    #[serde(rename = "idAwayTeam", default)]
+    id_away_team: Option<String>,
 }
 
 // ============================================================================
@@ -615,6 +625,11 @@ fn episodes_from_events(events: &[ApiEvent]) -> Vec<EpisodeDetails> {
                     alternate_name: non_empty(&event.str_event_alternate),
                     filename: non_empty(&event.str_filename),
                     thesportsdb_id: non_empty(&event.tsdb_id),
+                    status: non_empty(&event.str_status),
+                    home_team: non_empty(&event.str_home_team),
+                    home_team_id: non_empty(&event.id_home_team),
+                    away_team: non_empty(&event.str_away_team),
+                    away_team_id: non_empty(&event.id_away_team),
                 }),
             }
         })
@@ -680,6 +695,60 @@ pub async fn fetch_league_alternate_names(
         )));
     }
     Ok(parse_league_alternate_names(&resp.text().await?))
+}
+
+fn parse_team(body: &str) -> Option<nats_jobs::SportTeam> {
+    #[derive(Deserialize)]
+    struct Team {
+        #[serde(rename = "strTeam")]
+        name: Option<String>,
+        #[serde(rename = "strTeamShort", default)]
+        short: Option<String>,
+        #[serde(rename = "strAlternate", default)]
+        alternate: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct Lookup {
+        #[serde(default)]
+        data: Vec<Team>,
+    }
+    let team = serde_json::from_str::<Lookup>(body)
+        .ok()?
+        .data
+        .into_iter()
+        .next()?;
+    let name = non_empty(&team.name)?;
+    Some(nats_jobs::SportTeam {
+        short: non_empty(&team.short),
+        aliases: team
+            .alternate
+            .iter()
+            .flat_map(|a| a.split(','))
+            .map(str::trim)
+            .filter(|a| !a.is_empty() && !a.eq_ignore_ascii_case(&name))
+            .map(String::from)
+            .collect(),
+        name,
+    })
+}
+
+/// A team's short name and nicknames ("ARS", "Gunners") from Sportarr.
+pub async fn fetch_team(
+    client: &reqwest::Client,
+    team_id: &str,
+) -> Result<Option<nats_jobs::SportTeam>, VideoProviderError> {
+    let url = format!(
+        "{SPORTARR_BASE_URL}/lookup/team/{}",
+        urlencoding::encode(team_id)
+    );
+    let resp = client.get(&url).send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(VideoProviderError::Other(format!(
+            "Sportarr returned HTTP {status} for {url}"
+        )));
+    }
+    Ok(parse_team(&resp.text().await?))
 }
 
 /// Trim and collapse runs of whitespace to single spaces.
@@ -1777,6 +1846,11 @@ mod tests {
             str_filename: None,
             str_event_alternate: None,
             tsdb_id: None,
+            str_status: None,
+            str_home_team: None,
+            id_home_team: None,
+            str_away_team: None,
+            id_away_team: None,
         }
     }
 
@@ -1982,6 +2056,7 @@ mod tests {
                 alternate_name: None,
                 filename: Some("MotoGP 2026-03-27 USA Free Practice 1".into()),
                 thesportsdb_id: Some("2568439".into()),
+                ..Default::default()
             })
         );
 
@@ -2018,5 +2093,36 @@ mod tests {
         );
         assert!(parse_league_alternate_names(r#"{"alternateNames":[]}"#).is_empty());
         assert!(parse_league_alternate_names(r#"{"detail":"nope"}"#).is_empty());
+    }
+
+    #[test]
+    fn sportarr_rows_carry_status_and_teams() {
+        let body = r#"{"data":{"schedule":[{"idEvent":"ev-a","strEvent":"Arsenal vs Coventry City",
+            "dateEvent":"2026-08-22","strStatus":"postponed","strHomeTeam":"Arsenal",
+            "idHomeTeam":"tm-000006","strAwayTeam":"Coventry City","idAwayTeam":"tm-000032"}]}}"#;
+        let resp: SportarrResponse<SportarrScheduleData> = serde_json::from_str(body).unwrap();
+        let episodes = episodes_from_events(&resp.data.unwrap().schedule);
+        let sport = episodes[0].sport.as_ref().unwrap();
+        assert_eq!(sport.status.as_deref(), Some("postponed"));
+        assert_eq!(sport.home_team.as_deref(), Some("Arsenal"));
+        assert_eq!(sport.home_team_id.as_deref(), Some("tm-000006"));
+        assert_eq!(sport.away_team.as_deref(), Some("Coventry City"));
+        assert_eq!(sport.away_team_id.as_deref(), Some("tm-000032"));
+    }
+
+    #[test]
+    fn sportarr_team_lookup_gives_short_name_and_nicknames() {
+        let body = r#"{"data":[{"idTeam":"tm-000006","strTeam":"Arsenal","strTeamShort":"ARS",
+            "strAlternate":"Gunners, The Arsenal,Arsenal"}]}"#;
+        let team = parse_team(body).unwrap();
+        assert_eq!(team.name, "Arsenal");
+        assert_eq!(team.short.as_deref(), Some("ARS"));
+        assert_eq!(team.aliases, vec!["Gunners", "The Arsenal"]);
+        let bare = parse_team(
+            r#"{"data":[{"strTeam":"Fulham","strTeamShort":null,"strAlternate":null}]}"#,
+        )
+        .unwrap();
+        assert_eq!((bare.short, bare.aliases.len()), (None, 0));
+        assert!(parse_team(r#"{"data":[]}"#).is_none());
     }
 }

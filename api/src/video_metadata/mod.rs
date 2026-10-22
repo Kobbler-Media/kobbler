@@ -1,4 +1,5 @@
 pub mod cinemeta;
+pub mod jolpica;
 pub mod merge;
 mod omdb;
 pub mod pulselive;
@@ -24,6 +25,7 @@ pub use types::{
 // ============================================================================
 
 pub const PULSELIVE: &str = "pulselive";
+pub const JOLPICA: &str = "jolpica";
 
 /// Most metadata is effectively immutable — an ended show's back catalogue does
 /// not change — so it caches for a week.
@@ -794,6 +796,48 @@ impl VideoProviderRegistry {
                 .await;
         }
         Ok(names)
+    }
+
+    pub async fn get_sport_team(
+        &self,
+        team_id: &str,
+    ) -> Result<Option<nats_jobs::SportTeam>, VideoProviderError> {
+        let cache_key = format!("team:{team_id}");
+        if let Ok(Some(cached)) = self.cache_get(thesportsdb::INFO.id, &cache_key).await
+            && let Ok(team) = serde_json::from_value::<nats_jobs::SportTeam>(cached)
+        {
+            return Ok(Some(team));
+        }
+        let team = thesportsdb::fetch_team(&self.http_client, team_id).await?;
+        if let Some(team) = &team
+            && let Ok(json) = serde_json::to_value(team)
+        {
+            let _ = self
+                .cache_set(thesportsdb::INFO.id, &cache_key, &json)
+                .await;
+        }
+        Ok(team)
+    }
+
+    pub async fn get_f1_races(
+        &self,
+        year: u32,
+    ) -> Result<Vec<jolpica::F1Race>, VideoProviderError> {
+        let cache_key = format!("f1_races:{year}");
+        if let Ok(Some(cached)) = self.cache_get(JOLPICA, &cache_key).await
+            && let Ok(races) = serde_json::from_value::<Vec<jolpica::F1Race>>(cached)
+        {
+            return Ok(races);
+        }
+        let races = jolpica::fetch_races(&self.http_client, year).await?;
+        if !races.is_empty()
+            && let Ok(json) = serde_json::to_value(&races)
+        {
+            let _ = self
+                .cache_set_for(JOLPICA, &cache_key, &json, CACHE_TTL_ACTIVE)
+                .await;
+        }
+        Ok(races)
     }
 
     pub async fn get_motogp_events(

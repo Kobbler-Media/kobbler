@@ -3612,6 +3612,7 @@ pub async fn search_episode_releases(
             },
         )
         .await
+        .want
     } else {
         let identifiers = nats_jobs::TvIdentifiers {
             tmdb_id: show

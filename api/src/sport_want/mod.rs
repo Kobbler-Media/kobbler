@@ -27,10 +27,12 @@ pub struct EventWant<'a> {
     pub library_video_height: Option<i32>,
 }
 
-pub async fn event_want(
-    registry: &VideoProviderRegistry,
-    want: EventWant<'_>,
-) -> nats_jobs::MediaWant {
+pub struct SportWant {
+    pub want: nats_jobs::MediaWant,
+    pub called_off: bool,
+}
+
+pub async fn event_want(registry: &VideoProviderRegistry, want: EventWant<'_>) -> SportWant {
     let EventWant {
         show,
         season,
@@ -53,6 +55,7 @@ pub async fn event_want(
             .and_then(|v| v.as_str()),
         sort_order: episode.episode_sort_order,
         title: episode.title.as_deref(),
+        session: details.session_type.as_deref(),
     };
 
     let mut gathered = Gathered::default();
@@ -74,10 +77,11 @@ pub async fn event_want(
         }
     }
     gathered.country_from(details.location.as_deref());
+    let called_off = enrich::called_off(gathered.status.as_deref());
 
     let meta = aliases::finish(gathered, details.location.as_deref(), &league_name, class);
 
-    nats_jobs::MediaWant::SportEvent {
+    let want = nats_jobs::MediaWant::SportEvent {
         league_name,
         season: season.season_identifier.clone(),
         round: details.round,
@@ -95,7 +99,8 @@ pub async fn event_want(
         in_library,
         library_video_height,
         meta: Box::new(meta),
-    }
+    };
+    SportWant { want, called_off }
 }
 
 #[cfg(test)]
@@ -202,6 +207,7 @@ mod tests {
             provider_event_id: Some("ev-361462"),
             sort_order: 3005,
             title: Some("USA - Race"),
+            session: Some("Race"),
         };
 
         let mut gathered = Gathered::default();
@@ -287,6 +293,7 @@ mod tests {
             provider_event_id: Some("ev-2"),
             sort_order: 12002,
             title: Some("Pirelli Spanish Round Superpole - Race"),
+            session: Some("Superpole Race"),
         };
         let mut gathered = Gathered::default();
         gather_from_season(&schedule, &event, &mut gathered);
@@ -334,6 +341,7 @@ mod tests {
             provider_event_id: Some("123"),
             sort_order: 12004,
             title: Some("Pirelli Spanish Round - Race 2"),
+            session: Some("Race 2"),
         };
         let mut gathered = Gathered::default();
         gather_from_season(&schedule, &event, &mut gathered);

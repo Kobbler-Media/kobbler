@@ -345,6 +345,16 @@ pub struct SportEventSource {
     pub filename: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thesportsdb_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home_team: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home_team_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub away_team: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub away_team_id: Option<String>,
 }
 
 /// Full season details from a provider.

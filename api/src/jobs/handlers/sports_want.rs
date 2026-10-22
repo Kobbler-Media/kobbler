@@ -157,6 +157,7 @@ impl JobHandler for SportsWantHandler {
         }
 
         let mut failed_episode_ids = Vec::new();
+        let mut called_off_ids = Vec::new();
 
         for episode in &episodes_to_want {
             nats_jobs::check_cancelled(&cancel)?;
@@ -174,7 +175,7 @@ impl JobHandler for SportsWantHandler {
                 (Some(false), None)
             };
 
-            let media_want = event_want(
+            let sport_want = event_want(
                 &registry,
                 EventWant {
                     show: &show,
@@ -185,6 +186,12 @@ impl JobHandler for SportsWantHandler {
                 },
             )
             .await;
+            if sport_want.called_off {
+                info!(episode_id = %episode.id, "Event postponed or cancelled, not wanting it");
+                called_off_ids.push(episode.id);
+                continue;
+            }
+            let media_want = sport_want.want;
 
             // Read rejected releases for this episode
             let rejected = tv_episodes::get_rejected_releases(&self.pool, episode.id)
@@ -271,7 +278,7 @@ impl JobHandler for SportsWantHandler {
         }
 
         // If ALL enqueues failed, return retryable error so NATS retries the whole job
-        if affected_episode_ids.is_empty() && !episodes_to_want.is_empty() {
+        if affected_episode_ids.is_empty() && !failed_episode_ids.is_empty() {
             return Err(JobError::retryable(format!(
                 "All {} enqueue attempts failed",
                 episodes_to_want.len(),
@@ -326,6 +333,7 @@ impl JobHandler for SportsWantHandler {
             season_id = %payload.season_id,
             events_enqueued = affected_episode_ids.len(),
             events_failed = failed_episode_ids.len(),
+            events_called_off = called_off_ids.len(),
             "Sports want request(s) enqueued to Kobload"
         );
 
@@ -335,6 +343,7 @@ impl JobHandler for SportsWantHandler {
             "status": "enqueued",
             "events_enqueued": affected_episode_ids.len(),
             "events_failed": failed_episode_ids.len(),
+            "events_called_off": called_off_ids,
         }))
     }
 }

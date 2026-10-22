@@ -314,6 +314,7 @@ async fn episode_request(
             },
         )
         .await
+        .want
     } else {
         let identifiers = nats_jobs::TvIdentifiers {
             tmdb_id: show

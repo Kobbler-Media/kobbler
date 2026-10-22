@@ -227,3 +227,226 @@ async fn release_searches_send_the_rounds_aliases() {
         assert_carries_the_jerez_round(&route, &body["media_want"]);
     }
 }
+
+/// A league with one season and the given events, each `(id, title, date,
+/// sport source)`. Returns (show, season, episode ids).
+async fn league(
+    pool: &sqlx::PgPool,
+    title: &str,
+    events: &[(&str, &str, &str, Value)],
+) -> (Uuid, Uuid, Vec<Uuid>) {
+    let league = format!("lg-{}", Uuid::now_v7());
+    let show = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO tv_shows (id, title, content_category, identifiers) VALUES ($1, $2, 'sport', $3)",
+    )
+    .bind(show)
+    .bind(title)
+    .bind(json!({ "thesportsdb": league }))
+    .execute(pool)
+    .await
+    .unwrap();
+    let season = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO tv_seasons (id, show_id, season_identifier, season_sort_order, is_monitored, is_special)
+         VALUES ($1, $2, '2026', 2026, true, false)",
+    )
+    .bind(season)
+    .bind(show)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let mut episodes = Vec::new();
+    let mut rows = Vec::new();
+    for (n, (id, event_title, date, sport)) in events.iter().enumerate() {
+        let episode = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO tv_episodes (id, season_id, episode_identifier, episode_sort_order, title, air_date, identifiers)
+             VALUES ($1, $2, $3, $4, $5, $6::DATE, $7)",
+        )
+        .bind(episode)
+        .bind(season)
+        .bind(format!("evt-{id}"))
+        .bind(1000 + n as i32)
+        .bind(event_title)
+        .bind(date)
+        .bind(json!({ "thesportsdb_id": id }))
+        .execute(pool)
+        .await
+        .unwrap();
+        episodes.push(episode);
+        rows.push(json!({
+            "episode_number": 1000 + n,
+            "title": event_title,
+            "air_date": date,
+            "runtime": null,
+            "still_url": null,
+            "description": null,
+            "provider_id": id,
+            "sport": sport,
+        }));
+    }
+    cache(
+        pool,
+        "thesportsdb",
+        &format!("video_season:thesportsdb:{league}:s2026"),
+        json!({
+            "provider": "thesportsdb", "show_id": league, "season_number": 2026,
+            "title": "2026", "air_date": null, "description": null, "poster_url": null,
+            "episodes": rows,
+        }),
+    )
+    .await;
+    cache(
+        pool,
+        "thesportsdb",
+        &format!("league_alternate_names:{league}"),
+        json!([]),
+    )
+    .await;
+    (show, season, episodes)
+}
+
+async fn run_sports_want(server: &TestServer, show: Uuid, season: Uuid, episodes: &[Uuid]) -> u64 {
+    let handler = SportsWantHandler::new(
+        server.pool.clone(),
+        server.runtime_config.clone(),
+        server.nats_publisher.clone(),
+        server.library_events.clone(),
+    );
+    let tip = stream_tip(server).await;
+    handler
+        .execute(
+            Uuid::now_v7(),
+            json!({ "show_id": show, "season_id": season, "episode_ids": episodes }),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    tip
+}
+
+#[tokio::test]
+async fn sports_want_skips_called_off_events_and_names_the_teams() {
+    let server = TestServer::start_api_only().await;
+    configure_kobload(&server).await;
+    let team = |home: &str, home_id: &str, away: &str, away_id: &str, status: &str| {
+        json!({
+            "status": status,
+            "home_team": home, "home_team_id": home_id,
+            "away_team": away, "away_team_id": away_id,
+        })
+    };
+    let (show, season, episodes) = league(
+        &server.pool,
+        "English Premier League",
+        &[
+            (
+                "ev-a",
+                "Arsenal vs Coventry City",
+                "2026-08-22",
+                team(
+                    "Arsenal",
+                    "tm-000006",
+                    "Coventry City",
+                    "tm-000032",
+                    "scheduled",
+                ),
+            ),
+            (
+                "ev-b",
+                "Chelsea vs Fulham",
+                "2026-08-23",
+                team("Chelsea", "tm-1", "Fulham", "tm-2", "postponed"),
+            ),
+            (
+                "ev-c",
+                "Leeds United vs Everton",
+                "2026-08-24",
+                team("Leeds United", "tm-3", "Everton", "tm-4", "Match Cancelled"),
+            ),
+        ],
+    )
+    .await;
+    cache(
+        &server.pool,
+        "thesportsdb",
+        "team:tm-000006",
+        json!({ "name": "Arsenal", "short": "ARS", "aliases": ["Gunners"] }),
+    )
+    .await;
+    cache(
+        &server.pool,
+        "thesportsdb",
+        "team:tm-000032",
+        json!({ "name": "Coventry City", "short": "COV" }),
+    )
+    .await;
+
+    let tip = run_sports_want(&server, show, season, &episodes).await;
+
+    for called_off in &episodes[1..] {
+        assert!(
+            want_requests_since(&server, tip, &called_off.to_string())
+                .await
+                .is_empty(),
+            "a called-off event was wanted"
+        );
+    }
+    let sent = want_requests_since(&server, tip, &episodes[0].to_string()).await;
+    let want = &sent.last().expect("the scheduled match was not wanted")["media_want"];
+    assert_eq!(
+        want["teams"],
+        json!([
+            { "name": "Arsenal", "short": "ARS", "aliases": ["Gunners"] },
+            { "name": "Coventry City", "short": "COV" },
+        ]),
+        "{want}"
+    );
+}
+
+#[tokio::test]
+async fn f1_race_carries_jolpica_circuit_and_session_start() {
+    let server = TestServer::start_api_only().await;
+    configure_kobload(&server).await;
+    let (show, season, episodes) = league(
+        &server.pool,
+        "Formula 1",
+        &[(
+            "ev-m",
+            "Miami Grand Prix Qualifying",
+            "2026-05-02",
+            json!({}),
+        )],
+    )
+    .await;
+    cache(
+        &server.pool,
+        "jolpica",
+        "f1_races:2026",
+        json!([{
+            "season": "2026", "round": "4", "raceName": "Miami Grand Prix",
+            "Circuit": { "circuitId": "miami", "circuitName": "Miami International Autodrome",
+                         "Location": { "locality": "Miami", "country": "USA" } },
+            "date": "2026-05-03", "time": "20:00:00Z",
+            "FirstPractice": { "date": "2026-05-01", "time": "16:00:00Z" },
+            "Qualifying": { "date": "2026-05-02", "time": "20:00:00Z" },
+            "Sprint": { "date": "2026-05-02", "time": "16:00:00Z" },
+        }]),
+    )
+    .await;
+
+    let tip = run_sports_want(&server, show, season, &episodes).await;
+    let sent = want_requests_since(&server, tip, &episodes[0].to_string()).await;
+    let want = &sent.last().expect("the qualifying was not wanted")["media_want"];
+    assert_eq!(want["class"], "F1", "{want}");
+    assert_eq!(want["venue"], "Miami International Autodrome", "{want}");
+    assert_eq!(want["city"], "Miami", "{want}");
+    assert_eq!(want["country_iso"], "US", "{want}");
+    assert_eq!(want["session_start"], "2026-05-02T20:00:00Z", "{want}");
+    assert!(
+        names(want, "event_aliases").contains(&"Miami Grand Prix".to_string()),
+        "{want}"
+    );
+}
