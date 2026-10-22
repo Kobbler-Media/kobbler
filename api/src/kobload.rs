@@ -277,67 +277,6 @@ impl KobloadClient {
         Ok(())
     }
 
-    /// Update a watch pattern by source_system and source_id
-    pub async fn update_watch_pattern(
-        &self,
-        source_system: &str,
-        source_id: &str,
-        item: &nats_jobs::WatchSyncItem,
-    ) -> Result<(), KobloadError> {
-        let url = format!(
-            "{}/api/v1/watch/{}/{}",
-            self.base_url,
-            urlencoding::encode(source_system),
-            urlencoding::encode(source_id)
-        );
-
-        let resp = self
-            .client
-            .put(&url)
-            .bearer_auth(&self.api_key)
-            .json(item)
-            .send()
-            .await
-            .map_err(KobloadError::Request)?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(KobloadError::Status(status, body));
-        }
-
-        Ok(())
-    }
-
-    /// Delete a watch pattern by source_system and source_id
-    pub async fn delete_watch_pattern(
-        &self,
-        source_system: &str,
-        source_id: &str,
-    ) -> Result<(), KobloadError> {
-        let url = format!(
-            "{}/api/v1/watch/{}/{}",
-            self.base_url,
-            urlencoding::encode(source_system),
-            urlencoding::encode(source_id)
-        );
-        let resp = self
-            .client
-            .delete(&url)
-            .bearer_auth(&self.api_key)
-            .send()
-            .await
-            .map_err(KobloadError::Request)?;
-
-        if !resp.status().is_success() && resp.status() != StatusCode::NOT_FOUND {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(KobloadError::Status(status, body));
-        }
-
-        Ok(())
-    }
-
     /// Create a "want" request - combines watch pattern creation with immediate search.
     ///
     /// This creates a watch pattern for ongoing monitoring AND does an immediate search.

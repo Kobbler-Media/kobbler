@@ -7,8 +7,7 @@
 use crate::AppState;
 use crate::kobload::{KobloadClient, WatchSyncItem, WatchSyncRequest};
 use crate::repositories::books;
-use crate::runtime_config::RuntimeConfig;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use uuid::Uuid;
 
 /// Source system identifier for Kobbler watch patterns in Kobload
@@ -247,129 +246,6 @@ pub async fn sync_wanted_to_kobload(state: &AppState) -> Result<(i32, i32, i32),
         Err(e) => {
             error!(error = ?e, "Failed to sync watch patterns to Kobload");
             Err(format!("Kobload sync failed: {}", e))
-        }
-    }
-}
-
-/// Fetch a single wanted book by ID
-pub async fn fetch_wanted_item(
-    pool: &sqlx::PgPool,
-    book_id: Uuid,
-) -> Result<Option<WantedItemForSync>, sqlx::Error> {
-    let row = books::get_wanted_for_sync(pool, book_id)
-        .await
-        .map_err(|e| match e {
-            crate::repositories::RepositoryError::Database(e) => e,
-            crate::repositories::RepositoryError::Validation(msg) => sqlx::Error::Protocol(msg),
-        })?;
-
-    Ok(row.map(|row| WantedItemForSync {
-        id: row.id,
-        title: row.title,
-        author: row.author,
-        series: row.series_name,
-        series_index: row.series_index,
-        isbn10: row
-            .identifiers
-            .get("isbn10")
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        isbn13: row
-            .identifiers
-            .get("isbn13")
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        hardcover_id: row
-            .identifiers
-            .get("hardcover")
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        goodreads_id: row
-            .identifiers
-            .get("goodreads")
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        openlibrary_id: row
-            .identifiers
-            .get("openlibrary")
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        want_status: row.want_status,
-        want_format: row.want_format,
-        narrator: row.narrator,
-        pubdate: row.pubdate,
-    }))
-}
-
-/// Update a single watch pattern in Kobload for a wanted book
-pub async fn update_watch_pattern_for_wanted(
-    state: &AppState,
-    book_id: Uuid,
-) -> Result<(), String> {
-    let runtime = state.runtime_config.get().await;
-
-    // Check if Kobload is configured
-    let (base_url, api_key) = match (&runtime.kobload_base_url, &runtime.kobload_api_key) {
-        (Some(url), Some(key)) if !url.is_empty() && !key.is_empty() => (url.clone(), key.clone()),
-        _ => {
-            return Ok(());
-        }
-    };
-
-    // Get callback URL from config
-    // Get callback URL from config - use ingest URL directly so files are processed
-    let callback_url = match &runtime.kobload_ingest_url {
-        Some(url) if !url.trim().is_empty() => url.clone(),
-        _ => {
-            return Err("Kobload ingest URL not configured".to_string());
-        }
-    };
-
-    // Fetch the wanted book
-    let item = fetch_wanted_item(&state.pool, book_id)
-        .await
-        .map_err(|e| format!("Failed to fetch wanted book: {}", e))?
-        .ok_or_else(|| "Wanted book not found".to_string())?;
-
-    // Convert to sync item(s) — may be multiple for "both" format
-    let min_score = runtime.wanted_min_score.unwrap_or(0.65);
-
-    let sync_items = wanted_to_sync_items(&item, &callback_url, min_score);
-
-    // Update the pattern(s)
-    let client = KobloadClient::new(base_url, api_key);
-    for sync_item in &sync_items {
-        client
-            .update_watch_pattern(SOURCE_SYSTEM, &sync_item.source_id, sync_item)
-            .await
-            .map_err(|e| format!("Failed to update watch pattern: {}", e))?;
-    }
-
-    Ok(())
-}
-
-/// Delete a single watch pattern from Kobload
-pub async fn delete_watch_pattern(runtime: &RuntimeConfig, book_id: Uuid) -> Result<(), String> {
-    let (base_url, api_key) = match (&runtime.kobload_base_url, &runtime.kobload_api_key) {
-        (Some(url), Some(key)) if !url.is_empty() && !key.is_empty() => (url.clone(), key.clone()),
-        _ => {
-            return Ok(()); // Silently skip if Kobload not configured
-        }
-    };
-
-    let client = KobloadClient::new(base_url, api_key);
-
-    match client
-        .delete_watch_pattern(SOURCE_SYSTEM, &book_id.to_string())
-        .await
-    {
-        Ok(()) => {
-            info!(book_id = %book_id, "Deleted watch pattern from Kobload");
-            Ok(())
-        }
-        Err(e) => {
-            warn!(book_id = %book_id, error = ?e, "Failed to delete watch pattern (may not exist)");
-            Ok(()) // Don't fail - pattern might not exist
         }
     }
 }
