@@ -234,7 +234,7 @@ Jobs are published to `jobs.{service}.{job_type}`:
 | `jobs.kobbler.metadata_write` | Kobbler | Write metadata to book files |
 | `jobs.kobbler.metadata_extraction` | Kobbler | Extract metadata from files |
 | `jobs.kobbler.sync_provider` | Kobbler | Sync reading state to providers |
-| `jobs.kobload.watch_pattern_upsert` | Kobload | Create/update watch pattern |
+| `jobs.kobload.want_request` | Kobload | Create/update a want's watch pattern and search for it |
 | `jobs.kobload.watch_pattern_delete` | Kobload | Delete watch pattern |
 
 ### Event Subjects
