@@ -12,14 +12,11 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::events::LibraryEvent;
-use crate::kobload::WantRequest;
 use crate::repositories::{
     PaginationDirection, audiobook_files, authors, book_files, book_ingest_source, books,
     entitlements, genres, ingest_queue, media_root_files, reading_states, series, shelf_items,
 };
 use crate::routes::AuthUser;
-use crate::routes::helpers::build_kobload_client;
-use crate::wanted::watch_sync::SOURCE_SYSTEM;
 
 use super::helpers::{
     Cursor, NameCursor, book_cover_url, decode_cursor, decode_name_cursor, encode_cursor,
@@ -982,18 +979,7 @@ pub async fn delete_book(
         want_status.as_deref(),
         Some("wanted" | "searching" | "downloading" | "watching")
     ) {
-        let delete = nats_jobs::WatchPatternDelete {
-            source_system: "kobbler".to_string(),
-            source_id: book_id.to_string(),
-        };
-        if let Ok(payload) = serde_json::to_value(&delete) {
-            let _ = state
-                .nats
-                .publisher()
-                .enqueue_job("kobload", "watch_pattern_delete", payload)
-                .await;
-            tracing::info!(book_id = %book_id, "Watch pattern delete queued on book delete");
-        }
+        crate::wanted::book_source::delete_book_patterns(state.nats.publisher(), book_id).await;
     }
 
     // Start a transaction to delete all related data
@@ -1724,145 +1710,17 @@ pub async fn create_book(
         }
     }
 
-    // If this is a wanted book, call Kobload to search+watch for it
-    if payload.want {
-        let runtime = state.runtime_config.get().await;
-
-        // Only proceed if Kobload is configured
-        if let Ok(kobload_client) = build_kobload_client(&runtime) {
-            let min_score = runtime.wanted_min_score.unwrap_or(0.65);
-
-            // Use ingest URL directly so downloaded files are processed
-            let callback_url = runtime.kobload_ingest_url.clone().unwrap_or_default();
-
-            if callback_url.is_empty() {
-                tracing::warn!(
-                    book_id = %book_id,
-                    "Cannot search Kobload for wanted book: ingest URL not configured"
-                );
-            }
-
-            if !callback_url.is_empty() {
-                // Get author name for pattern generation
-                let author_name = if let Some(ref authors) = payload.authors {
-                    authors.first().map(|a| a.name.clone())
-                } else {
-                    None
-                };
-
-                // Get series info
-                let series_name = payload.series_name.clone();
-                let series_index = payload.series_index;
-
-                // Extract ISBNs from identifiers
-                let isbn10 = payload
-                    .identifiers
-                    .as_ref()
-                    .and_then(|ids| ids.get("isbn10"))
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let isbn13 = payload
-                    .identifiers
-                    .as_ref()
-                    .and_then(|ids| ids.get("isbn13"))
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-
-                let hardcover_id = payload
-                    .identifiers
-                    .as_ref()
-                    .and_then(|ids| ids.get("hardcover"))
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                let alternate_titles = crate::wanted::book_titles::book_alternate_titles(
-                    &crate::metadata::ProviderRegistry::new(state.pool.clone()),
-                    &crate::wanted::book_titles::BookRef {
-                        title,
-                        series: series_name.as_deref(),
-                        position: series_index,
-                        hardcover_id: hardcover_id.as_deref(),
-                    },
-                    crate::wanted::book_titles::Lookup::Fetch,
-                )
-                .await;
-                let identifiers = nats_jobs::BookIdentifiers {
-                    isbn10,
-                    isbn13,
-                    hardcover_id,
-                    goodreads_id: None,
-                    openlibrary_id: None,
-                };
-
-                let media_want = nats_jobs::MediaWant::Book {
-                    title: title.to_string(),
-                    author: author_name.clone(),
-                    isbn: identifiers.isbn13.clone().or(identifiers.isbn10.clone()),
-                    format_preferences: crate::routes::ingest::EBOOK_EXTENSIONS
-                        .iter()
-                        .map(|s| (*s).to_string())
-                        .collect(),
-                    identifiers: Some(identifiers),
-                    series: series_name.clone(),
-                    series_position: series_index.map(|idx| idx.to_string()),
-                    release_date: None,
-                    alternate_titles,
-                };
-
-                let metadata = serde_json::json!({
-                    "book_id": book_id,
-                    "title": title,
-                    "author": author_name,
-                    "series": series_name,
-                    "series_index": series_index,
-                });
-
-                let want_request = WantRequest {
-                    source_system: SOURCE_SYSTEM.to_string(),
-                    source_id: book_id.to_string(),
-                    callback_url: callback_url.clone(),
-                    auth_token: None,
-                    query: None,
-                    patterns: Vec::new(),
-                    media_want: Some(media_want),
-                    match_targets: Vec::new(),
-                    match_mode: "fuzzy".to_string(),
-                    min_score,
-                    early_exit_score: 0.95,
-                    media_type: None,
-                    auto_download: true,
-                    limit: 50,
-                    upgrade_allowed: Some(false),
-                    manual: false,
-                    metadata: Some(metadata),
-                    excluded_releases: None,
-                    search_not_before: None,
-                };
-
-                // Call Kobload want API (don't fail the whole request if this fails)
-                match kobload_client.want_content(&want_request).await {
-                    Ok(response) => {
-                        tracing::info!(
-                            book_id = %book_id,
-                            watch_pattern_id = %response.watch_pattern_id,
-                            status = ?response.status,
-                            download_id = ?response.download_id,
-                            results_found = response.results_found,
-                            best_score = response.best_score,
-                            "Kobload want request completed"
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e,
-                            book_id = %book_id,
-                            "Failed to create Kobload want request (book was still created)"
-                        );
-                    }
-                }
-            }
-        } else {
-            tracing::info!(book_id = %book_id, "Skipping Kobload want request: Kobload not configured");
-        }
+    if payload.want
+        && let Err(e) = crate::jobs::enqueue(
+            &state.pool,
+            state.nats.publisher(),
+            "book_want",
+            serde_json::json!({ "book_id": book_id }),
+            nats_jobs::JobContext::for_entity("book", book_id, format!("Searching for: {title}")),
+        )
+        .await
+    {
+        tracing::warn!(book_id = %book_id, error = %e, "Failed to enqueue book_want job");
     }
 
     // Record event

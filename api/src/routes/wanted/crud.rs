@@ -184,27 +184,16 @@ pub async fn create_wanted(
         let _ = authors::link_book(&state.pool, id, aid).await;
     }
 
-    // Publish NATS event to notify Kobload of new watch pattern
-    let pattern_payload = build_watch_pattern_payload(
-        id,
-        &payload.title,
-        payload.author.as_deref(),
-        payload.series.as_deref(),
-        payload.series_index,
-        identifiers.get("isbn10").and_then(|v| v.as_str()),
-        identifiers.get("isbn13").and_then(|v| v.as_str()),
-        identifiers.get("hardcover").and_then(|v| v.as_str()),
-        &want_format,
-        &state,
+    if let Err(e) = crate::jobs::enqueue(
+        &state.pool,
+        state.nats.publisher(),
+        "book_want",
+        serde_json::json!({ "book_id": id }),
+        nats_jobs::JobContext::for_entity("book", id, format!("Searching for: {}", payload.title)),
     )
-    .await;
-
-    if let Some(pattern_payload) = pattern_payload {
-        let _ = state
-            .nats
-            .publisher()
-            .enqueue_job("kobload", "watch_pattern_upsert", pattern_payload)
-            .await;
+    .await
+    {
+        tracing::warn!(book_id = %id, error = %e, "Failed to enqueue book_want job");
     }
 
     Json(serde_json::json!({ "id": id })).into_response()
@@ -295,16 +284,7 @@ pub async fn delete_wanted(
             let _ = state
                 .library_events
                 .send(LibraryEvent::library_updated(Some(id)));
-            // Notify Kobload to remove watch pattern
-            let _ = state
-                .nats
-                .publisher()
-                .enqueue_job(
-                    "kobload",
-                    "watch_pattern_delete",
-                    serde_json::json!({ "external_id": id.to_string() }),
-                )
-                .await;
+            crate::wanted::book_source::delete_book_patterns(state.nats.publisher(), id).await;
             StatusCode::NO_CONTENT.into_response()
         }
         Ok(false) => (
@@ -317,103 +297,4 @@ pub async fn delete_wanted(
             (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response()
         }
     }
-}
-
-// =============================================================================
-// Watch Pattern Payload Helper
-// =============================================================================
-
-#[allow(clippy::too_many_arguments)]
-async fn build_watch_pattern_payload(
-    book_id: Uuid,
-    title: &str,
-    author: Option<&str>,
-    series: Option<&str>,
-    series_index: Option<f64>,
-    isbn10: Option<&str>,
-    isbn13: Option<&str>,
-    hardcover_id: Option<&str>,
-    want_format: &str,
-    state: &AppState,
-) -> Option<serde_json::Value> {
-    let runtime = state.runtime_config.get().await;
-
-    // Use ingest URL directly so downloaded files are processed
-    let callback_url = runtime.kobload_ingest_url.clone();
-
-    let callback_url = callback_url?;
-
-    let min_score = runtime.wanted_min_score.unwrap_or(0.65);
-    let identifiers = nats_jobs::BookIdentifiers {
-        isbn10: isbn10.map(String::from),
-        isbn13: isbn13.map(String::from),
-        hardcover_id: hardcover_id.map(String::from),
-        goodreads_id: None,
-        openlibrary_id: None,
-    };
-    let alternate_titles = crate::wanted::book_titles::book_alternate_titles(
-        &crate::metadata::ProviderRegistry::new(state.pool.clone()),
-        &crate::wanted::book_titles::BookRef {
-            title,
-            series,
-            position: series_index,
-            hardcover_id,
-        },
-        crate::wanted::book_titles::Lookup::Fetch,
-    )
-    .await;
-    let media_want = match want_format {
-        "audiobook" => nats_jobs::MediaWant::Audiobook {
-            title: title.to_string(),
-            author: author.map(String::from),
-            narrator: None,
-            isbn: identifiers.isbn13.clone().or(identifiers.isbn10.clone()),
-            format_preferences: vec!["m4b".to_string(), "flac".to_string(), "mp3".to_string()],
-            identifiers: Some(identifiers),
-            series: series.map(String::from),
-            series_position: series_index.map(|idx| idx.to_string()),
-            release_date: None,
-            alternate_titles: alternate_titles.clone(),
-        },
-        _ => nats_jobs::MediaWant::Book {
-            title: title.to_string(),
-            author: author.map(String::from),
-            isbn: identifiers.isbn13.clone().or(identifiers.isbn10.clone()),
-            format_preferences: crate::routes::ingest::EBOOK_EXTENSIONS
-                .iter()
-                .map(|s| (*s).to_string())
-                .collect(),
-            identifiers: Some(identifiers),
-            series: series.map(String::from),
-            series_position: series_index.map(|idx| idx.to_string()),
-            release_date: None,
-            alternate_titles: alternate_titles.clone(),
-        },
-    };
-
-    let metadata = serde_json::json!({
-        "book_id": book_id,
-        "title": title,
-        "author": author,
-        "series": series,
-        "series_index": series_index,
-        "want_format": want_format,
-    });
-
-    // Build proper WatchPatternUpsert payload
-    let upsert = nats_jobs::WatchPatternUpsert {
-        source_system: "kobbler".to_string(),
-        source_id: book_id.to_string(),
-        callback_url,
-        patterns: Vec::new(),
-        media_want: Some(media_want),
-        match_targets: Vec::new(),
-        match_mode: "fuzzy".to_string(),
-        min_score: Some(min_score),
-        auto_download: true,
-        metadata: Some(metadata),
-        enabled: true,
-    };
-
-    serde_json::to_value(&upsert).ok()
 }

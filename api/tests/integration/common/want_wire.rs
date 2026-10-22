@@ -64,6 +64,18 @@ pub async fn kobload_jobs_since(
     job_type: &str,
     source_id: &str,
 ) -> Vec<Value> {
+    kobload_jobs_of_type_since(server, after_seq, job_type)
+        .await
+        .into_iter()
+        .filter(|payload| payload["source_id"] == json!(source_id))
+        .collect()
+}
+
+pub async fn kobload_jobs_of_type_since(
+    server: &TestServer,
+    after_seq: u64,
+    job_type: &str,
+) -> Vec<Value> {
     let subject = format!("jobs.kobload.{job_type}");
     let mut stream = jobs_stream(server).await;
     let tip = stream
@@ -86,9 +98,7 @@ pub async fn kobload_jobs_since(
         let Ok(job) = serde_json::from_slice::<Value>(&raw.payload) else {
             continue;
         };
-        if job["payload"]["source_id"] == json!(source_id) {
-            out.push(job["payload"].clone());
-        }
+        out.push(job["payload"].clone());
     }
     out
 }

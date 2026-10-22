@@ -17,7 +17,7 @@ use uuid::Uuid;
 use crate::events::LibraryEvent;
 use crate::kobload::{ConfirmWantStatus, KobloadClient};
 use crate::runtime_config::RuntimeConfigManager;
-use crate::wanted::watch_sync::SOURCE_SYSTEM;
+use crate::wanted::SOURCE_SYSTEM;
 
 /// Try to build a `KobloadClient` from the current runtime config.
 /// Returns `None` if Kobload is not configured (base URL or API key missing).
@@ -188,20 +188,31 @@ async fn on_entity_acquired_inner(
 
 /// Perform post-acquisition cleanup for a book that just entered the library.
 ///
-/// Safe to call for books that were never wanted — Kobload ignores confirm requests
-/// for nonexistent watch patterns.
+/// A book in the library is no longer wanted in any format, so every key it
+/// could be wanted under is confirmed. Safe to call for books that were never
+/// wanted — Kobload ignores confirm requests for nonexistent watch patterns.
 pub async fn on_book_acquired(
     runtime_config: &RuntimeConfigManager,
     library_events: &broadcast::Sender<LibraryEvent>,
     book_id: Uuid,
 ) {
-    let _ = on_entity_acquired(
-        runtime_config,
-        library_events,
-        SOURCE_SYSTEM,
-        &book_id.to_string(),
-        book_id,
-        false,
-    )
-    .await;
+    let config = runtime_config.get().await;
+    if let Some(client) = try_build_kobload_client(&config) {
+        for source_id in super::book_source::all_source_ids(book_id) {
+            if let Err(e) = confirm_want_with_retry(&client, SOURCE_SYSTEM, &source_id).await {
+                warn!(
+                    source_id,
+                    error = %e,
+                    "Failed to confirm want to Kobload after retries \
+                     (orphan cleanup on Kobload side will handle this)"
+                );
+            }
+        }
+    }
+    let _ = library_events.send(LibraryEvent::WantedStatusUpdated {
+        wanted_id: book_id,
+        status: "acquired".to_string(),
+        announce: true,
+        upgraded: false,
+    });
 }

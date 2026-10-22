@@ -1,13 +1,14 @@
 //! Wanted item handling - books/items users want to acquire
 //!
 //! This module handles:
-//! - Syncing wanted items to Kobload watch patterns
+//! - Keying and describing wanted books for Kobload
 //! - Receiving callbacks from Kobload when watches match
 
 pub mod acquisition;
 pub mod alternate_titles;
+pub mod book_source;
 pub mod book_titles;
-pub mod watch_sync;
 
 pub use acquisition::*;
-pub use watch_sync::*;
+
+pub const SOURCE_SYSTEM: &str = "kobbler";

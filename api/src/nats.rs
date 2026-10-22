@@ -22,6 +22,7 @@ use crate::jobs::handlers::{
     AuthorEnrichHandler,
     AuthorSyncCheckHandler,
     BookEnrichHandler,
+    BookWantCheckHandler,
     BookWantHandler,
     ChapterDetectHandler,
     ChapterRedetectHandler,
@@ -409,6 +410,11 @@ pub async fn start_nats_worker(
     )));
     worker.register_handler(HandlerAdapter::new(MovieWantCheckHandler::new(
         pool.clone(),
+        nats_publisher.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(BookWantCheckHandler::new(
+        pool.clone(),
+        runtime_config.clone(),
         nats_publisher.clone(),
     )));
     worker.register_handler(HandlerAdapter::new(DiscoverSyncHandler::new(
@@ -1064,6 +1070,14 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
         std::time::Duration::from_secs(24 * 3600), // daily
     ));
 
+    // Book want check - re-sends wanted books so their Kobload patterns stay current
+    scheduler.register(ScheduledJob::new(
+        "book-want-check",
+        "kobbler",
+        "book_want_check",
+        std::time::Duration::from_secs(24 * 3600), // daily
+    ));
+
     // Discover sync - fetches trending/popular content from TMDB and Hardcover
     scheduler.register(
         ScheduledJob::new(
@@ -1487,16 +1501,7 @@ async fn handle_watch_matched(
         "Processing watch matched event"
     );
 
-    // source_id from kobbler's watch patterns is usually the entity UUID, but for
-    // books with want_format="both" it carries a ":ebook"/":audiobook" suffix (see
-    // wanted::watch_sync::wanted_to_sync_items). Strip the suffix before parsing.
-    let bare_source_id = event
-        .source_id
-        .rsplit_once(':')
-        .map(|(id, _)| id)
-        .unwrap_or(event.source_id.as_str());
-
-    let parsed_id: Option<uuid::Uuid> = uuid::Uuid::parse_str(bare_source_id).ok();
+    let parsed_id = crate::wanted::book_source::entity_id(&event.source_id);
 
     // Only the book path currently produces wanted_attempt rows via watch match.
     // Movie/tv_episode/tv_season watch matches get their attempt rows from the
@@ -1710,17 +1715,9 @@ async fn handle_want_response(
         "Processing want response event"
     );
 
-    // Parse source_id as UUID
-    let source_uuid: uuid::Uuid = match uuid::Uuid::parse_str(source_id) {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::warn!(
-                source_id = %source_id,
-                error = %e,
-                "Invalid UUID in want response source_id"
-            );
-            return Ok(());
-        }
+    let Some(source_uuid) = crate::wanted::book_source::entity_id(source_id) else {
+        tracing::warn!(source_id = %source_id, "Invalid UUID in want response source_id");
+        return Ok(());
     };
 
     // Determine source_type from metadata (echoed from WantRequest)
@@ -2406,16 +2403,12 @@ async fn handle_watch_pattern_deleted(
         "Processing watch pattern deleted event"
     );
 
-    let source_uuid: uuid::Uuid = match uuid::Uuid::parse_str(&event.source_id) {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::warn!(
-                source_id = %event.source_id,
-                error = %e,
-                "Invalid UUID in watch pattern deleted source_id"
-            );
-            return Ok(());
-        }
+    let Some(source_uuid) = crate::wanted::book_source::entity_id(&event.source_id) else {
+        tracing::warn!(
+            source_id = %event.source_id,
+            "Invalid UUID in watch pattern deleted source_id"
+        );
+        return Ok(());
     };
 
     let source_type = event
@@ -2462,6 +2455,19 @@ async fn handle_watch_pattern_deleted(
         }
         _ => {
             // Default: treat as book
+            if let Ok(Some(book)) = books_repo::get_wanted_metadata(pool, source_uuid).await
+                && !crate::wanted::book_source::is_current_source(
+                    source_uuid,
+                    &book.want_format,
+                    &event.source_id,
+                )
+            {
+                info!(
+                    source_id = %event.source_id,
+                    "Deleted pattern was under a key the book no longer uses; keeping it wanted"
+                );
+                return Ok(());
+            }
             if let Err(e) = books_repo::set_want_status(pool, source_uuid, "none").await {
                 tracing::warn!(book_id = %source_uuid, error = %e, "Failed to reset book want_status");
             }

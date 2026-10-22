@@ -203,80 +203,6 @@ impl KobloadClient {
         Ok(())
     }
 
-    /// Sync watch patterns to Kobload
-    pub async fn sync_watch_patterns(
-        &self,
-        request: &nats_jobs::WatchSyncRequest,
-    ) -> Result<nats_jobs::WatchSyncResponse, KobloadError> {
-        let url = format!("{}/api/v1/watch/sync", self.base_url);
-        let resp = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.api_key)
-            .json(request)
-            .send()
-            .await
-            .map_err(KobloadError::Request)?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(KobloadError::Status(status, body));
-        }
-
-        resp.json().await.map_err(KobloadError::Request)
-    }
-
-    /// Create a single watch pattern
-    pub async fn create_watch_pattern(
-        &self,
-        source_system: &str,
-        item: &nats_jobs::WatchSyncItem,
-    ) -> Result<(), KobloadError> {
-        let url = format!("{}/api/v1/watch", self.base_url);
-        let mut payload = serde_json::json!({
-            "source_system": source_system,
-            "source_id": item.source_id,
-            "callback_url": item.callback_url,
-            "patterns": item.patterns,
-            "match_mode": item.match_mode,
-            "min_score": item.min_score,
-            "auto_download": item.auto_download,
-            "metadata": item.metadata,
-            "enabled": item.enabled,
-            "upgrade_allowed": item.upgrade_allowed,
-        });
-
-        // Include match_targets if present
-        if !item.match_targets.is_empty() {
-            payload["match_targets"] =
-                serde_json::to_value(&item.match_targets).unwrap_or_default();
-        }
-        if let Some(ref mw) = item.media_want {
-            payload["media_want"] = serde_json::to_value(mw).unwrap_or_default();
-        }
-        if let Some(ref snb) = item.search_not_before {
-            payload["search_not_before"] = serde_json::json!(snb);
-        }
-
-        let resp = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.api_key)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(KobloadError::Request)?;
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(KobloadError::Status(status, body));
-        }
-
-        Ok(())
-    }
-
     /// Create a "want" request - combines watch pattern creation with immediate search.
     ///
     /// This creates a watch pattern for ongoing monitoring AND does an immediate search.
@@ -802,5 +728,5 @@ pub struct StreamResolveStatusResponse {
 // Re-export nats_jobs types used by callers
 pub use nats_jobs::{
     CreateDownloadRequest, CreateDownloadResponse, MatchTarget, ProcessedReleaseDto, WantRequest,
-    WantResponse, WantStatus, WatchSyncItem, WatchSyncRequest, WatchSyncResponse,
+    WantResponse, WantStatus,
 };

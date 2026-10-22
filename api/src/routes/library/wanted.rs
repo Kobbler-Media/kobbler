@@ -97,24 +97,6 @@ async fn enqueue_book_want_job(
     Ok(())
 }
 
-/// Tell Kobload to stop watching for a book. Wanting a book creates a watch
-/// pattern, so anything that takes the want back has to tear it down or Kobload
-/// keeps hunting for a book nobody is waiting for any more.
-async fn delete_watch_pattern(state: &AppState, book_id: Uuid) {
-    let delete = nats_jobs::WatchPatternDelete {
-        source_system: "kobbler".to_string(),
-        source_id: book_id.to_string(),
-    };
-    if let Ok(payload) = serde_json::to_value(&delete) {
-        let _ = state
-            .nats
-            .publisher()
-            .enqueue_job("kobload", "watch_pattern_delete", payload)
-            .await;
-        tracing::info!(book_id = %book_id, "Watch pattern delete queued");
-    }
-}
-
 /// POST /api/v1/library/authors/{author_id}/want-pending
 /// Mark all pending books for an author as wanted
 pub async fn want_all_pending_for_author(
@@ -196,7 +178,8 @@ pub async fn unwant_all_for_author(
                 let _ = state
                     .library_events
                     .send(LibraryEvent::library_updated(Some(*book_id)));
-                delete_watch_pattern(&state, *book_id).await;
+                crate::wanted::book_source::delete_book_patterns(state.nats.publisher(), *book_id)
+                    .await;
             }
 
             tracing::info!(author_id = %author_id, unwanted_count, "Bulk unwanted books for author");
@@ -224,7 +207,8 @@ pub async fn unwant_all_for_series(
                 let _ = state
                     .library_events
                     .send(LibraryEvent::library_updated(Some(*book_id)));
-                delete_watch_pattern(&state, *book_id).await;
+                crate::wanted::book_source::delete_book_patterns(state.nats.publisher(), *book_id)
+                    .await;
             }
 
             tracing::info!(series_id = %series_id, unwanted_count, "Bulk unwanted books for series");
@@ -249,7 +233,7 @@ pub async fn skip_book(
             let _ = state
                 .library_events
                 .send(LibraryEvent::library_updated(Some(book_id)));
-            delete_watch_pattern(&state, book_id).await;
+            crate::wanted::book_source::delete_book_patterns(state.nats.publisher(), book_id).await;
             StatusCode::NO_CONTENT.into_response()
         }
         Ok(false) => (

@@ -9,7 +9,7 @@ use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::repositories::books;
 use crate::runtime_config::RuntimeConfigManager;
-use crate::wanted::watch_sync::SOURCE_SYSTEM;
+use crate::wanted::SOURCE_SYSTEM;
 use async_trait::async_trait;
 use nats_jobs::Publisher;
 use serde::{Deserialize, Serialize};
@@ -149,50 +149,56 @@ impl JobHandler for BookWantHandler {
 
         // Determine which media wants to send based on want_format
         let isbn = identifiers.isbn13.clone().or(identifiers.isbn10.clone());
-        let mut media_wants: Vec<nats_jobs::MediaWant> = Vec::new();
-
-        if book_data.want_format == "ebook" || book_data.want_format == "both" {
-            media_wants.push(nats_jobs::MediaWant::Book {
-                title: book_data.title.clone(),
-                author: book_data.author.clone(),
-                isbn: isbn.clone(),
-                format_preferences: crate::routes::ingest::EBOOK_EXTENSIONS
-                    .iter()
-                    .map(|s| (*s).to_string())
-                    .collect(),
-                identifiers: Some(identifiers.clone()),
-                series: book_data.series_name.clone(),
-                series_position: book_data.series_index.map(|idx| idx.to_string()),
-                release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
-                alternate_titles: alternate_titles.clone(),
-            });
-        }
-
-        if book_data.want_format == "audiobook" || book_data.want_format == "both" {
-            media_wants.push(nats_jobs::MediaWant::Audiobook {
-                title: book_data.title.clone(),
-                author: book_data.author.clone(),
-                narrator: book_data.narrator.clone(),
-                isbn: isbn.clone(),
-                format_preferences: crate::routes::ingest::AUDIOBOOK_EXTENSIONS
-                    .iter()
-                    .map(|s| (*s).to_string())
-                    .collect(),
-                identifiers: Some(identifiers.clone()),
-                series: book_data.series_name.clone(),
-                series_position: book_data.series_index.map(|idx| idx.to_string()),
-                release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
-                alternate_titles: alternate_titles.clone(),
-            });
+        let sources = match book_data.want_format.as_str() {
+            "ebook" | "audiobook" | "both" => {
+                crate::wanted::book_source::want_sources(payload.book_id, &book_data.want_format)
+            }
+            _ => Vec::new(),
+        };
+        let mut media_wants: Vec<(String, nats_jobs::MediaWant)> = Vec::new();
+        for (format, source_id) in sources {
+            let media_want = if format == "audiobook" {
+                nats_jobs::MediaWant::Audiobook {
+                    title: book_data.title.clone(),
+                    author: book_data.author.clone(),
+                    narrator: book_data.narrator.clone(),
+                    isbn: isbn.clone(),
+                    format_preferences: crate::routes::ingest::AUDIOBOOK_EXTENSIONS
+                        .iter()
+                        .map(|s| (*s).to_string())
+                        .collect(),
+                    identifiers: Some(identifiers.clone()),
+                    series: book_data.series_name.clone(),
+                    series_position: book_data.series_index.map(|idx| idx.to_string()),
+                    release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
+                    alternate_titles: alternate_titles.clone(),
+                }
+            } else {
+                nats_jobs::MediaWant::Book {
+                    title: book_data.title.clone(),
+                    author: book_data.author.clone(),
+                    isbn: isbn.clone(),
+                    format_preferences: crate::routes::ingest::EBOOK_EXTENSIONS
+                        .iter()
+                        .map(|s| (*s).to_string())
+                        .collect(),
+                    identifiers: Some(identifiers.clone()),
+                    series: book_data.series_name.clone(),
+                    series_position: book_data.series_index.map(|idx| idx.to_string()),
+                    release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
+                    alternate_titles: alternate_titles.clone(),
+                }
+            };
+            media_wants.push((source_id, media_want));
         }
 
         // Enqueue a want_request for each media want
         let mut enqueued = 0;
-        for media_want in &media_wants {
+        for (source_id, media_want) in &media_wants {
             nats_jobs::check_cancelled(&cancel)?;
             let want_request = nats_jobs::WantRequest {
                 source_system: SOURCE_SYSTEM.to_string(),
-                source_id: payload.book_id.to_string(),
+                source_id: source_id.clone(),
                 callback_url: callback_url.clone(),
                 auth_token: None,
                 query: None,

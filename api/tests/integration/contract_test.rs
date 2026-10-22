@@ -82,17 +82,6 @@ fn kobbler_serializes_want_request() {
     assert_eq!(deserialized.source_system, "kobbler");
 }
 
-/// Kobbler serializes WatchPatternUpsert correctly for Kobload.
-#[test]
-fn kobbler_serializes_watch_pattern_upsert() {
-    let fixture = test_fixtures::sample_watch_pattern_upsert();
-    let json = serde_json::to_value(&fixture).unwrap();
-
-    let deserialized: nats_jobs::WatchPatternUpsert = serde_json::from_value(json).unwrap();
-    assert_eq!(deserialized.source_system, "kobbler");
-    assert!(deserialized.media_want.is_some());
-}
-
 /// Kobbler serializes SearchRequest correctly for Kobload.
 #[test]
 fn kobbler_serializes_search_request() {

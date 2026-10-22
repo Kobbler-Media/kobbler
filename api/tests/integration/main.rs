@@ -19,6 +19,7 @@ mod book_alternates_test;
 mod book_dedup_test;
 mod book_moves_test;
 mod book_series_test;
+mod book_want_check_test;
 mod book_want_job_test;
 mod calendar_test;
 mod cast_crew_test;
