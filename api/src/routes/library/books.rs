@@ -1768,10 +1768,27 @@ pub async fn create_book(
                     .and_then(|v| v.as_str())
                     .map(String::from);
 
+                let hardcover_id = payload
+                    .identifiers
+                    .as_ref()
+                    .and_then(|ids| ids.get("hardcover"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let alternate_titles = crate::wanted::book_titles::book_alternate_titles(
+                    &crate::metadata::ProviderRegistry::new(state.pool.clone()),
+                    &crate::wanted::book_titles::BookRef {
+                        title,
+                        series: series_name.as_deref(),
+                        position: series_index,
+                        hardcover_id: hardcover_id.as_deref(),
+                    },
+                    crate::wanted::book_titles::Lookup::Fetch,
+                )
+                .await;
                 let identifiers = nats_jobs::BookIdentifiers {
                     isbn10,
                     isbn13,
-                    hardcover_id: None,
+                    hardcover_id,
                     goodreads_id: None,
                     openlibrary_id: None,
                 };
@@ -1788,7 +1805,7 @@ pub async fn create_book(
                     series: series_name.clone(),
                     series_position: series_index.map(|idx| idx.to_string()),
                     release_date: None,
-                    alternate_titles: None,
+                    alternate_titles,
                 };
 
                 let metadata = serde_json::json!({

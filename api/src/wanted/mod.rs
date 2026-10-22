@@ -6,6 +6,7 @@
 
 pub mod acquisition;
 pub mod alternate_titles;
+pub mod book_titles;
 pub mod watch_sync;
 
 pub use acquisition::*;

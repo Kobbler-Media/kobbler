@@ -193,6 +193,7 @@ pub async fn create_wanted(
         payload.series_index,
         identifiers.get("isbn10").and_then(|v| v.as_str()),
         identifiers.get("isbn13").and_then(|v| v.as_str()),
+        identifiers.get("hardcover").and_then(|v| v.as_str()),
         &want_format,
         &state,
     )
@@ -331,6 +332,7 @@ async fn build_watch_pattern_payload(
     series_index: Option<f64>,
     isbn10: Option<&str>,
     isbn13: Option<&str>,
+    hardcover_id: Option<&str>,
     want_format: &str,
     state: &AppState,
 ) -> Option<serde_json::Value> {
@@ -345,10 +347,21 @@ async fn build_watch_pattern_payload(
     let identifiers = nats_jobs::BookIdentifiers {
         isbn10: isbn10.map(String::from),
         isbn13: isbn13.map(String::from),
-        hardcover_id: None,
+        hardcover_id: hardcover_id.map(String::from),
         goodreads_id: None,
         openlibrary_id: None,
     };
+    let alternate_titles = crate::wanted::book_titles::book_alternate_titles(
+        &crate::metadata::ProviderRegistry::new(state.pool.clone()),
+        &crate::wanted::book_titles::BookRef {
+            title,
+            series,
+            position: series_index,
+            hardcover_id,
+        },
+        crate::wanted::book_titles::Lookup::Fetch,
+    )
+    .await;
     let media_want = match want_format {
         "audiobook" => nats_jobs::MediaWant::Audiobook {
             title: title.to_string(),
@@ -360,7 +373,7 @@ async fn build_watch_pattern_payload(
             series: series.map(String::from),
             series_position: series_index.map(|idx| idx.to_string()),
             release_date: None,
-            alternate_titles: None,
+            alternate_titles: alternate_titles.clone(),
         },
         _ => nats_jobs::MediaWant::Book {
             title: title.to_string(),
@@ -374,7 +387,7 @@ async fn build_watch_pattern_payload(
             series: series.map(String::from),
             series_position: series_index.map(|idx| idx.to_string()),
             release_date: None,
-            alternate_titles: None,
+            alternate_titles: alternate_titles.clone(),
         },
     };
 

@@ -15,6 +15,7 @@ mod author_sync_test;
 mod auto_completion_test;
 mod backfill_failure_test;
 mod backup_test;
+mod book_alternates_test;
 mod book_dedup_test;
 mod book_moves_test;
 mod book_series_test;

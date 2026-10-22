@@ -55,6 +55,16 @@ pub async fn want_requests_since(
     after_seq: u64,
     source_id: &str,
 ) -> Vec<Value> {
+    kobload_jobs_since(server, after_seq, "want_request", source_id).await
+}
+
+pub async fn kobload_jobs_since(
+    server: &TestServer,
+    after_seq: u64,
+    job_type: &str,
+    source_id: &str,
+) -> Vec<Value> {
+    let subject = format!("jobs.kobload.{job_type}");
     let mut stream = jobs_stream(server).await;
     let tip = stream
         .info()
@@ -70,7 +80,7 @@ pub async fn want_requests_since(
         let Ok(raw) = stream.get_raw_message(seq).await else {
             continue;
         };
-        if raw.subject.as_str() != "jobs.kobload.want_request" {
+        if raw.subject.as_str() != subject {
             continue;
         }
         let Ok(job) = serde_json::from_slice::<Value>(&raw.payload) else {

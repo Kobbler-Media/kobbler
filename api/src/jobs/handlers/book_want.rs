@@ -135,6 +135,18 @@ impl JobHandler for BookWantHandler {
             .unwrap_or(json!([]));
         let excluded_releases = build_excluded_releases(&rejected);
 
+        let alternate_titles = crate::wanted::book_titles::book_alternate_titles(
+            &crate::metadata::ProviderRegistry::new(self.pool.clone()),
+            &crate::wanted::book_titles::BookRef {
+                title: &book_data.title,
+                series: book_data.series_name.as_deref(),
+                position: book_data.series_index,
+                hardcover_id: identifiers.hardcover_id.as_deref(),
+            },
+            crate::wanted::book_titles::Lookup::Fetch,
+        )
+        .await;
+
         // Determine which media wants to send based on want_format
         let isbn = identifiers.isbn13.clone().or(identifiers.isbn10.clone());
         let mut media_wants: Vec<nats_jobs::MediaWant> = Vec::new();
@@ -152,7 +164,7 @@ impl JobHandler for BookWantHandler {
                 series: book_data.series_name.clone(),
                 series_position: book_data.series_index.map(|idx| idx.to_string()),
                 release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
-                alternate_titles: None,
+                alternate_titles: alternate_titles.clone(),
             });
         }
 
@@ -170,7 +182,7 @@ impl JobHandler for BookWantHandler {
                 series: book_data.series_name.clone(),
                 series_position: book_data.series_index.map(|idx| idx.to_string()),
                 release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
-                alternate_titles: None,
+                alternate_titles: alternate_titles.clone(),
             });
         }
 

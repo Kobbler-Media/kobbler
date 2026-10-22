@@ -8,10 +8,26 @@ fn without_article(title: &str) -> Option<&str> {
     (!rest.is_empty()).then_some(rest)
 }
 
+/// Whether a title missing its "The" also gets one. Films and shows are
+/// released both ways; books are not released with one they never had.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Article {
+    DropOrAdd,
+    DropOnly,
+}
+
 /// Release groups drop the article freely ("Office.S01E01").
 pub fn alternate_titles<S: AsRef<str>>(
     primary: &str,
     known: impl IntoIterator<Item = S>,
+) -> Option<Vec<String>> {
+    titles_besides(primary, known, Article::DropOrAdd)
+}
+
+pub fn titles_besides<S: AsRef<str>>(
+    primary: &str,
+    known: impl IntoIterator<Item = S>,
+    article: Article,
 ) -> Option<Vec<String>> {
     let mut seen: HashSet<String> = HashSet::from([primary.trim().to_lowercase()]);
     let mut out = Vec::new();
@@ -30,7 +46,9 @@ pub fn alternate_titles<S: AsRef<str>>(
     let primary = primary.trim();
     match without_article(primary) {
         Some(bare) => push(bare.to_string()),
-        None if !primary.is_empty() => push(format!("The {primary}")),
+        None if !primary.is_empty() && article == Article::DropOrAdd => {
+            push(format!("The {primary}"))
+        }
         None => {}
     }
     for title in &known {

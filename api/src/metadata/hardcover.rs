@@ -57,6 +57,16 @@ pub static INFO: ProviderInfo = ProviderInfo {
 // ============================================================================
 
 /// Factory for creating Hardcover provider instances
+const DEFAULT_BASE_URL: &str = "https://api.hardcover.app";
+
+fn config_base_url(config: &serde_json::Value) -> Option<String> {
+    config
+        .get("base_url")
+        .and_then(|v| v.as_str())
+        .filter(|v| !v.is_empty())
+        .map(String::from)
+}
+
 pub struct HardcoverFactory {
     base_url_override: Option<String>,
 }
@@ -80,7 +90,8 @@ impl ProviderFactory for HardcoverFactory {
         let base_url = self
             .base_url_override
             .clone()
-            .unwrap_or_else(|| "https://api.hardcover.app".to_string());
+            .or_else(|| config_base_url(config))
+            .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
 
         let api_key = config
             .get("api_key")
@@ -179,7 +190,7 @@ impl HardcoverProvider {
             .map(String::from);
         Self {
             client,
-            base_url: "https://api.hardcover.app".to_string(),
+            base_url: config_base_url(config).unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
             api_key,
         }
     }
@@ -1052,6 +1063,16 @@ query AsinLookup($isbn: String!) {
 }
 "#;
 
+const BOOK_TITLES_QUERY: &str = r#"
+query BookTitles($id: Int!) {
+  books_by_pk(id: $id) {
+    title
+    subtitle
+    editions(limit: 100) { title subtitle }
+  }
+}
+"#;
+
 /// GraphQL query using Hardcover's dedicated search endpoint.
 /// The search query returns results as JSON in the `results` field.
 /// We cannot use `books(where: {_ilike: ...})` as Hardcover blocks _ilike operations.
@@ -1243,6 +1264,60 @@ struct PopularBooksData {
     books: Vec<EditionBook>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BookTitles {
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: Option<String>,
+    #[serde(default)]
+    pub editions: Vec<EditionTitle>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EditionTitle {
+    pub title: String,
+    #[serde(default)]
+    pub subtitle: Option<String>,
+}
+
+fn parse_book_titles(body: serde_json::Value) -> Option<BookTitles> {
+    let book = body.get("data")?.get("books_by_pk")?;
+    let mut titles: BookTitles = serde_json::from_value(book.clone()).ok()?;
+    let mut seen = std::collections::HashSet::new();
+    titles.editions.retain(|e| {
+        !e.title.trim().is_empty()
+            && seen.insert((
+                e.title.to_lowercase(),
+                e.subtitle.as_ref().map(|s| s.to_lowercase()),
+            ))
+    });
+    Some(titles)
+}
+
+impl HardcoverProvider {
+    pub async fn book_titles(&self, book_id: &str) -> Result<Option<BookTitles>, ProviderError> {
+        let api_key = self.require_api_key()?;
+        let id: i64 = book_id
+            .trim()
+            .parse()
+            .map_err(|_| ProviderError::Other(format!("Hardcover id {book_id} is not a number")))?;
+        let response = self
+            .client
+            .post(format!("{}/v1/graphql", self.base_url))
+            .header("Authorization", format!("Bearer {api_key}"))
+            .json(&serde_json::json!({ "query": BOOK_TITLES_QUERY, "variables": { "id": id } }))
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(ProviderError::from_http_status(
+                response.status(),
+                "Hardcover book titles",
+            ));
+        }
+        Ok(parse_book_titles(response.json().await?))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1420,5 +1495,33 @@ mod tests {
 
         let results = provider.parse_editions_response(response);
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn book_titles_parse_with_editions_deduplicated() {
+        let body = serde_json::json!({ "data": { "books_by_pk": {
+            "title": "Babel",
+            "subtitle": "An Arcane History",
+            "editions": [
+                { "title": "Babel", "subtitle": null },
+                { "title": "babel", "subtitle": null },
+                { "title": "Babel, or the Necessity of Violence", "subtitle": null },
+                { "title": " ", "subtitle": null },
+            ],
+        }}});
+        let titles = parse_book_titles(body).unwrap();
+        assert_eq!(titles.subtitle.as_deref(), Some("An Arcane History"));
+        assert_eq!(
+            titles
+                .editions
+                .iter()
+                .map(|e| e.title.as_str())
+                .collect::<Vec<_>>(),
+            ["Babel", "Babel, or the Necessity of Violence"]
+        );
+        assert!(
+            parse_book_titles(serde_json::json!({ "data": { "books_by_pk": null } })).is_none()
+        );
+        assert!(parse_book_titles(serde_json::json!({ "errors": [] })).is_none());
     }
 }

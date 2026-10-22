@@ -66,6 +66,20 @@ pub async fn search_releases(
         openlibrary_id: None,
     };
     let isbn = isbn13.clone().or(isbn10.clone());
+    let alternate_titles = crate::wanted::book_titles::book_alternate_titles(
+        &crate::metadata::ProviderRegistry::new(state.pool.clone()),
+        &crate::wanted::book_titles::BookRef {
+            title: &title,
+            series: metadata.series_name.as_deref(),
+            position: metadata.series_index,
+            hardcover_id: metadata
+                .identifiers
+                .get("hardcover")
+                .and_then(|v| v.as_str()),
+        },
+        crate::wanted::book_titles::Lookup::Fetch,
+    )
+    .await;
     let media_want = if metadata.want_format == "audiobook" {
         nats_jobs::MediaWant::Audiobook {
             title: title.clone(),
@@ -80,7 +94,7 @@ pub async fn search_releases(
             series: metadata.series_name,
             series_position: metadata.series_index.map(|idx| idx.to_string()),
             release_date: metadata.pubdate.map(|dt| dt.date().to_string()),
-            alternate_titles: None,
+            alternate_titles: alternate_titles.clone(),
         }
     } else {
         nats_jobs::MediaWant::Book {
@@ -95,7 +109,7 @@ pub async fn search_releases(
             series: metadata.series_name,
             series_position: metadata.series_index.map(|idx| idx.to_string()),
             release_date: metadata.pubdate.map(|dt| dt.date().to_string()),
-            alternate_titles: None,
+            alternate_titles: alternate_titles.clone(),
         }
     };
 
