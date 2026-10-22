@@ -1381,12 +1381,18 @@ pub struct SportEventDetails {
 /// The bracketed form ("Motul French Round  (Superpole)") yields no session
 /// the identifier recognises, so those rows keep the provider-id form and only
 /// the want learns which race it is.
+///
+/// F1 numbers its practice without "Free" ("Australian Grand Prix - Practice
+/// 1"). Those rows keep the provider-id form too, and the want says "Free
+/// Practice 1", as releases and the motorcycle series do.
 fn want_session(title: &str, session: String) -> String {
     let title = title.to_lowercase();
     if (session == "Race" && title.contains("superpole")) || title.contains("(superpole)") {
-        "Superpole Race".to_string()
-    } else {
-        session
+        return "Superpole Race".to_string();
+    }
+    match session.strip_prefix("Practice ") {
+        Some(n @ ("1" | "2" | "3" | "4")) => format!("Free Practice {n}"),
+        _ => session,
     }
 }
 
@@ -1407,6 +1413,18 @@ pub fn parse_sport_event_details(
         } else {
             None
         };
+
+        if let Some((grand_prix, session)) = title.and_then(|t| t.split_once(" Grand Prix - ")) {
+            return SportEventDetails {
+                round,
+                location: Some(normalize_location(grand_prix.trim())),
+                session_type: Some(want_session(
+                    title.unwrap_or_default(),
+                    normalize_session_name(session.trim()),
+                )),
+                event_title,
+            };
+        }
 
         // Try to extract location and session from motorsport event names
         if let Some(title_str) = title {
@@ -2028,6 +2046,77 @@ mod tests {
         ];
         for (title, want) in cases {
             assert_eq!(extract_location(Some(title)), want, "location for {title}");
+        }
+    }
+
+    /// TheSportsDB's F1 titles as Sportarr serves them for 2026: the Grand
+    /// Prix, a dash, then the session, with practice numbered but not "Free".
+    #[test]
+    fn f1_wants_name_the_place_and_session() {
+        let cases = [
+            (
+                "Australian Grand Prix - Practice 1",
+                1000,
+                "Australia",
+                "Free Practice 1",
+            ),
+            (
+                "Australian Grand Prix - Practice 3",
+                1002,
+                "Australia",
+                "Free Practice 3",
+            ),
+            (
+                "Australian Grand Prix - Qualifying",
+                1003,
+                "Australia",
+                "Qualifying",
+            ),
+            ("Australian Grand Prix - Race", 1004, "Australia", "Race"),
+            (
+                "Miami Grand Prix - Sprint Qualifying",
+                4001,
+                "Miami",
+                "Sprint Qualifying",
+            ),
+            ("Miami Grand Prix - Sprint", 4002, "Miami", "Sprint"),
+            (
+                "Barcelona-Catalunya Grand Prix - Practice 2",
+                7001,
+                "Barcelona-Catalunya",
+                "Free Practice 2",
+            ),
+            ("British Grand Prix - Race", 9004, "Britain", "Race"),
+        ];
+        for (title, ord, location, session) in cases {
+            let d = parse_sport_event_details(Some(title), "evt-123", ord);
+            assert_eq!(
+                (d.location.as_deref(), d.session_type.as_deref()),
+                (Some(location), Some(session)),
+                "{title}"
+            );
+        }
+    }
+
+    /// F1 rows are already stored under these identifiers; reading the
+    /// titles better must not move them onto other keys.
+    #[test]
+    fn f1_identifiers_are_unchanged() {
+        for (title, ord, identifier) in [
+            ("Australian Grand Prix - Practice 1", 1000, "evt-123"),
+            (
+                "Australian Grand Prix - Qualifying",
+                1003,
+                "evt-r1-qualifying",
+            ),
+            ("Australian Grand Prix - Race", 1004, "evt-r1-race"),
+            ("Miami Grand Prix - Sprint", 4002, "evt-r4-sprint"),
+        ] {
+            assert_eq!(
+                sport_episode_identifier(ord, Some(title), Some("123")),
+                identifier,
+                "{title}"
+            );
         }
     }
 
