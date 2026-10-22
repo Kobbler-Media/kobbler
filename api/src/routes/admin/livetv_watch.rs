@@ -6,7 +6,7 @@
 
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -24,7 +24,9 @@ use crate::repositories::{
 };
 use crate::routes::AuthUser;
 
-use super::livetv::{AppError, channel_response, guide_entry_response, now_next_map};
+use super::livetv::{
+    AppError, StackedQuery, channel_response, guide_entry_response, now_next_map, stacks_for,
+};
 
 // =============================================================================
 // POST /watch-events
@@ -131,9 +133,12 @@ pub struct OnNowGroup {
 pub async fn on_now(
     State(state): State<AppState>,
     user: AuthUser,
+    Query(q): Query<StackedQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let now = OffsetDateTime::now_utc();
-    let channels = livetv_channels::list_for_guide(&state.pool, None, true).await?;
+    let stacks = stacks_for(&state, q.stacked).await?;
+    let mut channels = livetv_channels::list_for_guide(&state.pool, None, true).await?;
+    channels.retain(|c| !stacks.is_hidden(c.id));
     if channels.is_empty() {
         return Ok(Json(json!({
             "generated_at": now.format(&time::format_description::well_known::Rfc3339).unwrap_or_default(),
@@ -207,7 +212,8 @@ pub async fn on_now(
                 entry: &livetv_guide::GuideRow,
                 reason: String,
                 confidence: Option<f64>| OnNowItem {
-        channel: serde_json::to_value(channel_response(channel, 0)).unwrap_or(json!({})),
+        channel: serde_json::to_value(channel_response(channel, 0).stacked(&stacks))
+            .unwrap_or(json!({})),
         guide: serde_json::to_value(guide_entry_response(entry, now, 0, None)).unwrap_or(json!({})),
         minutes_left: Some((entry.end_time - now).whole_minutes().max(0)),
         reason,

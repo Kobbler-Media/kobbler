@@ -13,11 +13,11 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use time::OffsetDateTime;
-use time::format_description::well_known::Rfc3339;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use uuid::Uuid;
+
+const TRAKT_SOURCE: &str = "trakt";
 
 /// Payload for trakt_import_history jobs.
 #[derive(Debug, Deserialize, Serialize)]
@@ -34,11 +34,12 @@ fn default_media_type() -> String {
 
 pub struct TraktImportHistoryHandler {
     pool: PgPool,
+    registry: VideoSyncProviderRegistry,
 }
 
 impl TraktImportHistoryHandler {
-    pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+    pub fn new(pool: PgPool, registry: VideoSyncProviderRegistry) -> Self {
+        Self { pool, registry }
     }
 }
 
@@ -94,7 +95,7 @@ impl JobHandler for TraktImportHistoryHandler {
             return Ok(json!({ "status": "skipped", "reason": "provider_disabled" }));
         }
 
-        let registry = VideoSyncProviderRegistry::new();
+        let registry = &self.registry;
         let trakt: Box<dyn VideoSyncProvider> = registry
             .create_provider("trakt", &provider_row.config)
             .ok_or_else(|| {
@@ -119,7 +120,7 @@ impl JobHandler for TraktImportHistoryHandler {
                 Ok(items) => items,
                 Err(VideoSyncError::TokenExpired) => {
                     let (new_provider, new_config) =
-                        refresh_and_recreate(&self.pool, user_id, &current_config, &registry)
+                        refresh_and_recreate(&self.pool, user_id, &current_config, registry)
                             .await?;
                     current_provider = new_provider;
                     current_config = new_config;
@@ -142,17 +143,17 @@ impl JobHandler for TraktImportHistoryHandler {
                     let watched_at = item
                         .watched_at
                         .as_deref()
-                        .and_then(|s| OffsetDateTime::parse(s, &Rfc3339).ok());
+                        .and_then(crate::video_sync_providers::trakt::parse_watched_at);
 
-                    let input = movie_watch_states::WatchStateInput {
-                        movie_id: movie.id,
+                    if let Err(e) = movie_watch_states::upsert_imported(
+                        &self.pool,
+                        movie.id,
                         user_id,
-                        watched: true,
                         watched_at,
-                        position_seconds: None,
-                        rating: None,
-                    };
-                    if let Err(e) = movie_watch_states::upsert(&self.pool, input).await {
+                        TRAKT_SOURCE,
+                    )
+                    .await
+                    {
                         warn!(error = %e, movie_id = %movie.id, "Failed to upsert movie watch state");
                         movie_errors += 1;
                     } else {
@@ -174,7 +175,7 @@ impl JobHandler for TraktImportHistoryHandler {
                 Ok(items) => items,
                 Err(VideoSyncError::TokenExpired) => {
                     let (new_provider, new_config) =
-                        refresh_and_recreate(&self.pool, user_id, &current_config, &registry)
+                        refresh_and_recreate(&self.pool, user_id, &current_config, registry)
                             .await?;
                     current_provider = new_provider;
                     let _ = new_config; // not needed further
@@ -203,17 +204,17 @@ impl JobHandler for TraktImportHistoryHandler {
                     let watched_at = item
                         .watched_at
                         .as_deref()
-                        .and_then(|s| OffsetDateTime::parse(s, &Rfc3339).ok());
+                        .and_then(crate::video_sync_providers::trakt::parse_watched_at);
 
-                    let input = tv_watch_states::TvWatchStateInput {
-                        episode_id: episode.id,
+                    if let Err(e) = tv_watch_states::upsert_imported(
+                        &self.pool,
+                        episode.id,
                         user_id,
-                        watched: true,
                         watched_at,
-                        position_seconds: None,
-                        rating: None,
-                    };
-                    if let Err(e) = tv_watch_states::upsert(&self.pool, input).await {
+                        TRAKT_SOURCE,
+                    )
+                    .await
+                    {
                         warn!(error = %e, episode_id = %episode.id, "Failed to upsert episode watch state");
                         episode_errors += 1;
                     } else {

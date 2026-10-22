@@ -625,3 +625,27 @@ struct TraktTokenResponse {
     access_token: String,
     refresh_token: String,
 }
+
+/// Trakt documents ISO 8601 UTC with milliseconds, but older history and some
+/// endpoints drop the zone or the `T`; a zoneless time is UTC.
+pub fn parse_watched_at(raw: &str) -> Option<time::OffsetDateTime> {
+    use time::format_description::well_known::{Iso8601, Rfc3339};
+    use time::macros::format_description;
+    let raw = raw.trim();
+    if let Ok(t) = time::OffsetDateTime::parse(raw, &Rfc3339) {
+        return Some(t);
+    }
+    if let Ok(t) = time::OffsetDateTime::parse(raw, &Iso8601::DEFAULT) {
+        return Some(t);
+    }
+    let naive = raw.replacen(' ', "T", 1);
+    let naive = naive.trim_end_matches('Z');
+    time::PrimitiveDateTime::parse(
+        naive,
+        format_description!(
+            "[year]-[month]-[day]T[hour]:[minute]:[second][optional [.[subsecond]]]"
+        ),
+    )
+    .ok()
+    .map(|t| t.assume_utc())
+}

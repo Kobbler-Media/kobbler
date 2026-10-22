@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM for_you_dismissals WHERE user_id = $1 AND media_type = $2 AND tmdb_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fe9f87c7c3eb34fdfcd2761f3bd695e48f89a2ea173082a282d572178522c916"
+}

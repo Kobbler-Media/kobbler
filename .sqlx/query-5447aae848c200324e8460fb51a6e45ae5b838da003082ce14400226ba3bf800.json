@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, watched_at, updated_at,\n                                     source)\n        SELECT gen_random_uuid(), te.id, $2, TRUE, $6, $6, 'stremio'\n        FROM tv_episodes te\n        JOIN tv_seasons ts ON ts.id = te.season_id AND NOT ts.is_special\n        WHERE ts.show_id = $1\n          AND ((ts.season_sort_order, te.episode_sort_order) < ($3, $4)\n               OR ($5 AND ts.season_sort_order = $3 AND te.episode_sort_order = $4))\n        ON CONFLICT (episode_id, user_id) DO UPDATE SET\n            watched = TRUE,\n            watched_at = COALESCE(tv_watch_states.watched_at, EXCLUDED.watched_at),\n            updated_at = NOW()\n        WHERE NOT tv_watch_states.watched\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Int4",
+        "Bool",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5447aae848c200324e8460fb51a6e45ae5b838da003082ce14400226ba3bf800"
+}

@@ -136,6 +136,9 @@ where
 ///   - Debrid-only episodes (`want_status = 'none'`) appear 24h after their
 ///     stored DATE to absorb release/indexing lag. We don't have per-show
 ///     `airs_time` metadata yet, so the fuzz is a flat 1 day.
+///
+/// A sport league is followed live, so `sport_next` replaces `up_next` for it: the
+/// newest available event, and only while every watched event is older.
 pub async fn watch_next_episodes<'e, E>(
     exec: E,
     user_id: Uuid,
@@ -178,6 +181,53 @@ where
               AND ws.watched = FALSE
             ORDER BY ts.show_id, ws.updated_at DESC
         ),
+        sport_events AS (
+            SELECT
+                ts.show_id,
+                te.id AS episode_id,
+                ts.season_sort_order,
+                ts.season_identifier,
+                te.episode_identifier,
+                te.title AS episode_title,
+                ROW_NUMBER() OVER (
+                    PARTITION BY ts.show_id
+                    ORDER BY te.air_date ASC NULLS FIRST, te.air_time ASC NULLS FIRST,
+                             ts.season_sort_order, te.episode_sort_order
+                ) AS recency,
+                (
+                    EXISTS (
+                        SELECT 1 FROM tv_episode_file_episodes efe
+                        JOIN tv_episode_files ef ON ef.id = efe.episode_file_id
+                        WHERE efe.episode_id = te.id
+                    )
+                    OR (te.want_status = 'none'
+                        AND te.air_date IS NOT NULL
+                        AND (te.air_date::timestamp + INTERVAL '1 day') <= NOW())
+                ) AS available,
+                EXISTS (
+                    SELECT 1 FROM tv_watch_states ws
+                    WHERE ws.episode_id = te.id AND ws.user_id = $1 AND ws.watched = TRUE
+                ) AS watched
+            FROM tv_shows sh
+            JOIN tv_seasons ts ON ts.show_id = sh.id AND NOT ts.is_special
+            JOIN tv_episodes te ON te.season_id = ts.id
+            WHERE sh.content_category = 'sport'
+              AND sh.id IN (SELECT show_id FROM last_watched)
+        ),
+        sport_next AS (
+            SELECT DISTINCT ON (se.show_id)
+                se.show_id, se.episode_id, se.season_sort_order, se.season_identifier,
+                se.episode_identifier, se.episode_title
+            FROM sport_events se
+            WHERE se.available
+              AND NOT se.watched
+              AND NOT EXISTS (SELECT 1 FROM in_progress ip WHERE ip.show_id = se.show_id)
+              AND se.recency > (
+                  SELECT MAX(w.recency) FROM sport_events w
+                  WHERE w.show_id = se.show_id AND w.watched
+              )
+            ORDER BY se.show_id, se.recency DESC
+        ),
         up_next AS (
             SELECT DISTINCT ON (lw.show_id)
                 lw.show_id,
@@ -190,6 +240,10 @@ where
             JOIN tv_seasons ts ON ts.show_id = lw.show_id AND NOT ts.is_special
             JOIN tv_episodes te ON te.season_id = ts.id
             WHERE NOT EXISTS (SELECT 1 FROM in_progress ip WHERE ip.show_id = lw.show_id)
+              AND NOT EXISTS (
+                  SELECT 1 FROM tv_shows sh
+                  WHERE sh.id = lw.show_id AND sh.content_category = 'sport'
+              )
               AND (ts.season_sort_order, te.episode_sort_order) >
                   (lw.last_season_sort, lw.last_episode_sort)
               AND (
@@ -216,6 +270,10 @@ where
             SELECT show_id, episode_id, season_sort_order, season_identifier,
                    episode_identifier, episode_title, NULL::int4
             FROM up_next
+            UNION ALL
+            SELECT show_id, episode_id, season_sort_order, season_identifier,
+                   episode_identifier, episode_title, NULL::int4
+            FROM sport_next
         ),
         show_activity AS (
             SELECT ts.show_id, MAX(COALESCE(ws.watched_at, ws.updated_at)) AS last_activity
@@ -252,6 +310,10 @@ where
         WHERE ($2 = FALSE OR kids_allowed(tshow.kids_override, tshow.content_rating))
           AND (
             sa.last_activity >= NOW() - INTERVAL '14 days'
+            OR (tshow.content_category = 'sport' AND EXISTS (
+                SELECT 1 FROM tv_episodes te5
+                WHERE te5.id = c.episode_id AND te5.air_date >= CURRENT_DATE - 14
+            ))
             OR EXISTS (
                 SELECT 1 FROM last_watched lw
                 WHERE lw.show_id = c.show_id
@@ -454,7 +516,8 @@ where
 }
 
 /// Watchlisted shows the user has not started, resolved to the episode they
-/// would start on: the first non-special episode with no watched state.
+/// would start on: the first non-special episode with no watched state, or for a sport
+/// league its newest available event.
 ///
 /// Shows with any watch history are excluded — `dashboard::watch_next_episodes`
 /// already covers those through its `last_watched` branch, and surfacing both
@@ -486,7 +549,19 @@ where
         JOIN tv_episodes te ON te.season_id = ts.id
         WHERE w.user_id = $1
           AND w.media_type = 'show'
-          AND tshow.content_category IN ('tv', 'sport')
+          AND (
+              tshow.content_category = 'tv'
+              OR (tshow.content_category = 'sport' AND (
+                  EXISTS (
+                      SELECT 1 FROM tv_episode_file_episodes efe
+                      JOIN tv_episode_files ef ON ef.id = efe.episode_file_id
+                      WHERE efe.episode_id = te.id
+                  )
+                  OR (te.want_status = 'none'
+                      AND te.air_date IS NOT NULL
+                      AND (te.air_date::timestamp + INTERVAL '1 day') <= NOW())
+              ))
+          )
           AND ($2 = FALSE OR kids_allowed(tshow.kids_override, tshow.content_rating))
           AND NOT EXISTS (
               SELECT 1
@@ -495,7 +570,12 @@ where
               JOIN tv_seasons ts2 ON ts2.id = te2.season_id
               WHERE ws.user_id = $1 AND ts2.show_id = tshow.id
           )
-        ORDER BY w.media_id, ts.season_sort_order, te.episode_sort_order
+        ORDER BY w.media_id,
+                 (CASE WHEN tshow.content_category = 'sport' THEN te.air_date END) DESC NULLS LAST,
+                 (CASE WHEN tshow.content_category = 'sport' THEN te.air_time END) DESC NULLS LAST,
+                 (CASE WHEN tshow.content_category = 'sport' THEN ts.season_sort_order END) DESC,
+                 (CASE WHEN tshow.content_category = 'sport' THEN te.episode_sort_order END) DESC,
+                 ts.season_sort_order, te.episode_sort_order
         "#,
         user_id,
         kids_only,

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO watch_history_exclusions (user_id, media_type, tmdb_id)\n            SELECT $1, k.media_type, k.tmdb_id\n            FROM UNNEST($2::text[], $3::text[]) AS k(media_type, tmdb_id)\n            ON CONFLICT DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a085f0f0ad13fd0173eb7a17755d8967faf6444646e6c2d4a58c5c07e641e42a"
+}

@@ -9,9 +9,16 @@
     subtitle?: string | null;
     progressPercent?: number | null;
     season?: number | null;
+    ondismiss?: () => void;
   }
 
-  let { item, subtitle = null, progressPercent = null, season = null }: Props = $props();
+  let { item, subtitle = null, progressPercent = null, season = null, ondismiss }: Props = $props();
+
+  function dismiss(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    ondismiss?.();
+  }
 
   const libraryHref = $derived(discoverLibraryRoute(item.media_type, item.library_id));
   const href = $derived(
@@ -69,6 +76,21 @@
   onclick={handleClick}
 >
   {#snippet posterOverlay()}
+    {#if ondismiss}
+      <button
+        class="dismiss chip-pos-left"
+        type="button"
+        title="Not interested"
+        aria-label="Not interested"
+        onclick={dismiss}
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+          <path
+            d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+          ></path>
+        </svg>
+      </button>
+    {/if}
     {#if item.is_in_library}
       <span class="chip-pos">
         <span class="status-chip status-library">
@@ -117,6 +139,32 @@
 
   .status-library {
     background: rgba(34, 197, 94, 0.85);
+  }
+
+  .dismiss {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  :global(.poster:hover) .dismiss,
+  .dismiss:focus-visible {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    .dismiss {
+      opacity: 1;
+    }
   }
 
   .status-wanted {

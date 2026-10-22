@@ -1,6 +1,7 @@
 //! Live TV playback. A tuner is a LAN device connected to an antenna, so this
 //! path deliberately has none of `iptv/live_session.rs`'s insurance against a
-//! slow remote server: no probe, no health scoring, no failover candidate.
+//! slow remote server: no probe and no health scoring. The one failover is to the
+//! other services of the same channel's stack, for a mux the antenna cannot lock.
 
 use anyhow::{Result, anyhow};
 use bytes::Bytes;
@@ -24,8 +25,10 @@ use crate::streaming::decision::{
     self, AudioTrackMeta, ClientCapabilities, FileMeta, PlaybackMethod, ViewerPrefs,
 };
 
+use super::stacking::StackCache;
 use super::trickplay;
 use super::tuner_lease::{HolderKind, LeaseError, LeaseRequest, LeaseToken, TunerLeases};
+use super::tuner_source::{self, FIRST_BYTE_DEADLINE, SourceCandidate, TuneHealth};
 
 /// One GOP. The tuner's GOP is ~0.96 s, so this is the smallest segment that
 /// never straddles two keyframes — the whole point of Decision 12.
@@ -37,6 +40,9 @@ const RECONNECT_DELAYS_MS: [u64; 5] = [250, 500, 1000, 2000, 4000];
 /// ~10 MB of 8 KB chunks. A direct client that falls this far behind is resynced
 /// to the live edge rather than allowed to stall the tune.
 const BYTES_FANOUT_CAPACITY: usize = 1024;
+/// Both players heartbeat every 15 s while a session is open, paused or not.
+const SESSION_IDLE: Duration = Duration::from_secs(300);
+const EMPTY_TUNE_GRACE: time::Duration = time::Duration::seconds(30);
 
 pub type ByteStream = Pin<Box<dyn Stream<Item = reqwest::Result<Bytes>> + Send>>;
 
@@ -56,6 +62,7 @@ impl Mode {
 }
 
 pub struct LiveTune {
+    pub id: Uuid,
     pub key: String,
     pub channel_id: Uuid,
     pub tuner_id: Uuid,
@@ -70,6 +77,7 @@ pub struct LiveTune {
     /// every DirectPlay client, so a direct viewer costs no extra tuner and the
     /// buffer exists from the moment we tune whichever way the client plays it.
     pub bytes: tokio::sync::broadcast::Sender<Bytes>,
+    pub health: Arc<TuneHealth>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,12 +91,17 @@ pub struct SessionState {
     pub series_id: Option<String>,
     pub episode_key: Option<String>,
     pub source: String,
+    pub last_seen: std::time::Instant,
+    /// Why the tune behind this session died. The session outlives it so the viewer
+    /// can be told, until they tune again or it is reaped.
+    pub failure: Option<String>,
 }
 
 pub struct LivetvState {
     pub leases: Arc<TunerLeases>,
     pub tunes: DashMap<String, LiveTune>,
     pub sessions: DashMap<String, SessionState>,
+    pub stacks: StackCache,
 }
 
 impl LivetvState {
@@ -97,6 +110,7 @@ impl LivetvState {
             leases,
             tunes: DashMap::new(),
             sessions: DashMap::new(),
+            stacks: StackCache::default(),
         })
     }
 }
@@ -182,6 +196,67 @@ pub fn tuner_stream_url(base_url: &str, lcn: i32) -> String {
     )
 }
 
+fn candidate(row: &livetv_channels::ChannelRow, base_url: &str, lcn: i32) -> SourceCandidate {
+    SourceCandidate {
+        channel_id: row.id,
+        name: super::classify::display_name(
+            row.display_name.as_deref(),
+            row.scan_name.as_deref(),
+            row.callsign.as_deref(),
+        ),
+        url: tuner_stream_url(base_url, lcn),
+        frequency: row.frequency,
+    }
+}
+
+/// The channel itself, then the rest of its stack best first — those on another mux
+/// ahead of those sharing its mux, which fail together when the mux has no signal. Only
+/// members on the same device: the lease is per device, so a member on another one
+/// would tune a tuner nobody holds.
+pub async fn source_candidates(
+    state: &crate::AppState,
+    channel: &livetv_channels::ChannelRow,
+    tuner: &livetv_tuners::TunerRow,
+) -> Vec<SourceCandidate> {
+    let Some(lcn) = channel.lcn else {
+        return Vec::new();
+    };
+    let mut out = vec![candidate(channel, &tuner.base_url, lcn)];
+    let fallbacks = match state.livetv.stacks.get(&state.pool).await {
+        Ok(stacks) => stacks.fallbacks(channel.id),
+        Err(e) => {
+            warn!(error = %e, "live TV stacks unavailable, tuning without fallbacks");
+            return out;
+        }
+    };
+    if fallbacks.is_empty() {
+        return out;
+    }
+    let rows =
+        match livetv_channels::list_for_guide(&state.pool, Some(fallbacks.clone()), true).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                warn!(error = %e, "loading live TV stack members failed");
+                return out;
+            }
+        };
+    let mut same_mux = Vec::new();
+    for id in fallbacks {
+        if let Some(row) = rows.iter().find(|r| r.id == id && r.tuner_id == tuner.id)
+            && let Some(lcn) = row.lcn
+        {
+            let c = candidate(row, &tuner.base_url, lcn);
+            if row.frequency == channel.frequency {
+                same_mux.push(c);
+            } else {
+                out.push(c);
+            }
+        }
+    }
+    out.extend(same_mux);
+    out
+}
+
 /// Cap the ladder rather than running open-ended CRF: measured 720p50 bwdif
 /// output at crf 23 was ~6 Mbit/s, four times the storage the buffer budget
 /// assumed.
@@ -229,6 +304,8 @@ pub enum SessionError {
     Exhausted(String),
     #[error("session not found")]
     SessionNotFound,
+    #[error("{0}")]
+    TuneFailed(String),
     #[error(transparent)]
     Repository(#[from] crate::repositories::RepositoryError),
     #[error(transparent)]
@@ -365,7 +442,9 @@ async fn tune(
     let tuner = livetv_tuners::get_by_id(&state.pool, channel.tuner_id)
         .await?
         .ok_or(SessionError::TunerNotFound)?;
-    let lcn = channel.lcn.ok_or(SessionError::NotTunable)?;
+    if channel.lcn.is_none() {
+        return Err(SessionError::NotTunable);
+    }
 
     let facts = stream_facts(&channel);
     let mode = decide_mode(&facts, capabilities);
@@ -376,6 +455,15 @@ async fn tune(
     let runtime = state.runtime_config.get().await;
     let root = buffer_root(&state.config, &runtime);
 
+    let stale = state
+        .livetv
+        .tunes
+        .get(&key)
+        .filter(|t| t.health.is_dead())
+        .map(|t| t.id);
+    if let Some(id) = stale {
+        retire_tune(state, &key, id);
+    }
     let existing = state.livetv.tunes.contains_key(&key);
     if !existing {
         let lease = state.livetv.leases.acquire(LeaseRequest {
@@ -400,8 +488,9 @@ async fn tune(
         tokio::fs::create_dir_all(&buffer_dir)
             .await
             .map_err(|e| SessionError::Other(anyhow!("creating buffer dir: {e}")))?;
-        let stream_url = tuner_stream_url(&tuner.base_url, lcn);
+        let candidates = source_candidates(state, &channel, &tuner).await;
         let cancel = CancellationToken::new();
+        let health = Arc::new(TuneHealth::default());
 
         // Decision 12.4: the segmenter starts on tune, so the player attaches to a
         // buffer that is already filling — and it runs for DirectPlay too, which
@@ -410,11 +499,12 @@ async fn tune(
         let transcode = start_segmenter(
             state,
             &buffer_dir,
-            &stream_url,
+            candidates,
             &facts,
             &runtime,
             cancel.clone(),
             bytes.clone(),
+            health.clone(),
         )
         .await?;
 
@@ -429,9 +519,23 @@ async fn tune(
             ));
         }
 
+        let tune_id = Uuid::now_v7();
+        {
+            let state = state.clone();
+            let key = key.clone();
+            let health = health.clone();
+            let cancel = cancel.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = health.wait_dead() => retire_tune(&state, &key, tune_id),
+                    _ = cancel.cancelled() => {}
+                }
+            });
+        }
         state.livetv.tunes.insert(
             key.clone(),
             LiveTune {
+                id: tune_id,
                 key: key.clone(),
                 channel_id,
                 tuner_id: tuner.id,
@@ -443,24 +547,12 @@ async fn tune(
                 transcode: Some(transcode),
                 cancel,
                 bytes,
+                health,
             },
         );
     }
 
-    let (lease_info, buffer_dir, started_at) = {
-        let mut tune = state
-            .livetv
-            .tunes
-            .get_mut(&key)
-            .ok_or_else(|| SessionError::Other(anyhow!("tune vanished")))?;
-        tune.attached.insert(session_id.to_string());
-        (
-            tune.lease.info.clone(),
-            tune.buffer_dir.clone(),
-            tune.started_at,
-        )
-    };
-
+    let health = state.livetv.tunes.get(&key).map(|t| t.health.clone());
     let now =
         livetv_guide::now_and_next(&state.pool, channel_id, OffsetDateTime::now_utc()).await?;
     let guide_now = now.0;
@@ -475,11 +567,30 @@ async fn tune(
         series_id: guide_now.as_ref().and_then(|g| g.series_id.clone()),
         episode_key: guide_now.as_ref().and_then(|g| g.episode_key.clone()),
         source: "live".to_string(),
+        last_seen: std::time::Instant::now(),
+        failure: None,
     };
-    state
-        .livetv
-        .sessions
-        .insert(session_id.to_string(), session_state);
+
+    // Attached and recorded together, with nothing awaited between: the sweeper lets go
+    // of a tune whose attached sessions it cannot find.
+    let (lease_info, buffer_dir, started_at) = {
+        let Some(mut tune) = state.livetv.tunes.get_mut(&key) else {
+            return Err(match health.and_then(|h| h.reason()) {
+                Some(reason) => SessionError::TuneFailed(reason),
+                None => SessionError::Other(anyhow!("tune vanished")),
+            });
+        };
+        tune.attached.insert(session_id.to_string());
+        state
+            .livetv
+            .sessions
+            .insert(session_id.to_string(), session_state);
+        (
+            tune.lease.info.clone(),
+            tune.buffer_dir.clone(),
+            tune.started_at,
+        )
+    };
 
     let buffer_dir_s = buffer_dir.to_string_lossy().to_string();
     if retune {
@@ -551,14 +662,29 @@ fn transcode_dimensions(facts: &StreamFacts, cap: i64) -> (u32, u32) {
     (width + (width % 2), height + (height % 2))
 }
 
+/// Where the feeder hands bytes to the segmenter. Swapped when a segmenter is restarted,
+/// and emptied when the feeder stops so a segmenter waiting on input sees the end of it.
+type SegmenterSink = Arc<std::sync::Mutex<Option<std::sync::mpsc::Sender<Vec<u8>>>>>;
+
+/// A broadcast that jumps its timestamps back — a programme change, a splice — makes the
+/// muxer refuse the next packet and the segmenter die. It is restarted into the same
+/// directory, where the DVR playlist is appended to behind a discontinuity, so the buffer
+/// carries on. One that keeps dying is not a glitch and takes the tune down.
+const SEGMENTER_RESTARTS: usize = 3;
+const SEGMENTER_RESTART_WINDOW: Duration = Duration::from_secs(60);
+
+type SegmenterRun = tokio::task::JoinHandle<kob_ffmpeg::Result<()>>;
+
+#[allow(clippy::too_many_arguments)]
 async fn start_segmenter(
     state: &crate::AppState,
     buffer_dir: &Path,
-    stream_url: &str,
+    candidates: Vec<SourceCandidate>,
     facts: &StreamFacts,
     runtime: &crate::runtime_config::RuntimeConfig,
     cancel: CancellationToken,
     bytes: tokio::sync::broadcast::Sender<Bytes>,
+    health: Arc<TuneHealth>,
 ) -> Result<TranscodeProcess> {
     let playlist_path = buffer_dir.join("stream.m3u8");
     let (width, height) = transcode_dimensions(facts, runtime.livetv_transcode_height);
@@ -568,63 +694,101 @@ async fn start_segmenter(
         .encoder_for("h264")
         .unwrap_or(&state.encoder_caps.h264)
         .to_string();
-
-    let mut config = kob_ffmpeg::transcode::HlsConfig::new(buffer_dir)
-        .segment_duration(SEGMENT_SECONDS)
-        .video_encoder(&encoder)
-        .video_bitrate(video_bitrate_for(height))
-        .audio_encoder(aac_encoder())
-        .audio_bitrate(128_000)
-        .hls_window(kob_ffmpeg::transcode::HlsWindow::Dvr);
-    // x264's default `medium` spends rc_lookahead=40 frames — 0.8 s at 50 fps —
-    // before the first segment exists, which is most of Decision 12's budget.
-    // The strings are passed through verbatim, so NVENC (which wants p1-p7) must
-    // keep its own defaults.
-    if encoder == "libx264" {
-        config = config.preset("veryfast").tune("zerolatency");
-    }
-    if runtime.livetv_deinterlace_web {
-        config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
-    }
-    config.scale_width = Some(width as i32);
-    config.scale_height = Some(height as i32);
-    config.live_source = true;
-    config.run = Some(kob_ffmpeg::progress::RunContext::cancellable(
-        cancel.clone(),
-    ));
-    if let Some(hw) = state.hw_device.get() {
-        config = config.hw_device(hw);
-    }
-
-    let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
-    let t0 = std::time::Instant::now();
-    let handle = tokio::task::spawn_blocking(move || {
-        let mut io = kob_ffmpeg::format::io_context::CustomIoContext::from_channel(rx)?;
-        let mut ctx = kob_ffmpeg::format::input::InputContext::open_custom(&mut io)?;
-        // Measured: this returns in ~1.1 s of stream on a real DVB-T service and
-        // capping probesize/analyzeduration below that buys no latency at all but
-        // silently drops the AC-3 track, so the ffmpeg defaults stand.
-        ctx.find_stream_info()?;
-        info!(
-            analysed_ms = t0.elapsed().as_millis(),
-            "live TV input analysed"
-        );
-        kob_ffmpeg::transcode::transcode_to_hls_from_ctx(ctx, &config).map(|_| ())
-    });
-
-    spawn_feeder(tx, bytes, stream_url.to_string(), cancel.clone(), t0);
-
-    // A segmenter that dies leaves an empty buffer directory and nothing else, so
-    // its error has to reach the log or the failure is invisible.
+    let deinterlace = runtime.livetv_deinterlace_web;
+    let hw = state.hw_device.get();
     let dir = buffer_dir.to_path_buf();
-    let handle = tokio::spawn(async move {
-        let outcome = handle.await;
-        match &outcome {
-            Ok(Err(e)) => warn!(error = %e, dir = %dir.display(), "live TV segmenter failed"),
-            Err(e) => warn!(error = %e, dir = %dir.display(), "live TV segmenter panicked"),
-            Ok(Ok(())) => {}
+
+    let launch = {
+        let dir = dir.clone();
+        let cancel = cancel.clone();
+        move || -> (std::sync::mpsc::Sender<Vec<u8>>, SegmenterRun) {
+            let mut config = kob_ffmpeg::transcode::HlsConfig::new(&dir)
+                .segment_duration(SEGMENT_SECONDS)
+                .video_encoder(&encoder)
+                .video_bitrate(video_bitrate_for(height))
+                .audio_encoder(aac_encoder())
+                .audio_bitrate(128_000)
+                .hls_window(kob_ffmpeg::transcode::HlsWindow::Dvr);
+            // x264's default `medium` spends rc_lookahead=40 frames — 0.8 s at 50 fps —
+            // before the first segment exists, which is most of Decision 12's budget.
+            // The strings are passed through verbatim, so NVENC (which wants p1-p7) must
+            // keep its own defaults.
+            if encoder == "libx264" {
+                config = config.preset("veryfast").tune("zerolatency");
+            }
+            if deinterlace {
+                config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
+            }
+            config.scale_width = Some(width as i32);
+            config.scale_height = Some(height as i32);
+            config.live_source = true;
+            config.run = Some(kob_ffmpeg::progress::RunContext::cancellable(
+                cancel.clone(),
+            ));
+            if let Some(hw) = hw.clone() {
+                config = config.hw_device(hw);
+            }
+
+            let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+            let t0 = std::time::Instant::now();
+            let run = tokio::task::spawn_blocking(move || {
+                let mut io = kob_ffmpeg::format::io_context::CustomIoContext::from_channel(rx)?;
+                let mut ctx = kob_ffmpeg::format::input::InputContext::open_custom(&mut io)?;
+                // Measured: this returns in ~1.1 s of stream on a real DVB-T service and
+                // capping probesize/analyzeduration below that buys no latency at all but
+                // silently drops the AC-3 track, so the ffmpeg defaults stand.
+                ctx.find_stream_info()?;
+                info!(
+                    analysed_ms = t0.elapsed().as_millis(),
+                    "live TV input analysed"
+                );
+                kob_ffmpeg::transcode::transcode_to_hls_from_ctx(ctx, &config).map(|_| ())
+            });
+            (tx, run)
         }
-        outcome.unwrap_or(Ok(()))
+    };
+
+    let (tx, first) = launch();
+    let sink: SegmenterSink = Arc::new(std::sync::Mutex::new(Some(tx)));
+    spawn_feeder(
+        sink.clone(),
+        bytes,
+        candidates,
+        cancel.clone(),
+        std::time::Instant::now(),
+        health.clone(),
+    );
+
+    let supervisor_cancel = cancel.clone();
+    let handle = tokio::spawn(async move {
+        let mut running = first;
+        let mut restarts: std::collections::VecDeque<std::time::Instant> = Default::default();
+        loop {
+            let outcome = running.await;
+            if supervisor_cancel.is_cancelled() || health.is_dead() {
+                return outcome.unwrap_or(Ok(()));
+            }
+            // A segmenter that dies leaves the buffer frozen and nothing else, so its
+            // error has to reach the log or the failure is invisible.
+            match &outcome {
+                Ok(Err(e)) => warn!(error = %e, dir = %dir.display(), "live TV segmenter failed"),
+                Err(e) => warn!(error = %e, dir = %dir.display(), "live TV segmenter panicked"),
+                Ok(Ok(())) => warn!(dir = %dir.display(), "live TV segmenter stopped"),
+            }
+            let now = std::time::Instant::now();
+            restarts.retain(|t| now.duration_since(*t) < SEGMENTER_RESTART_WINDOW);
+            if restarts.len() >= SEGMENTER_RESTARTS {
+                health.die("The live buffer for this channel kept failing".to_string());
+                return outcome.unwrap_or(Ok(()));
+            }
+            restarts.push_back(now);
+            let (tx, next) = launch();
+            if let Ok(mut current) = sink.lock() {
+                *current = Some(tx);
+            }
+            info!(dir = %dir.display(), restarts = restarts.len(), "live TV segmenter restarted");
+            running = next;
+        }
     });
 
     info!(dir = %buffer_dir.display(), "live TV segmenter started");
@@ -637,109 +801,171 @@ async fn start_segmenter(
     })
 }
 
-/// HTTP bytes -> both sinks. Neither consumer can stall the other and neither
-/// can stop the feed: the feeder only ever stops on cancellation or an exhausted
-/// reconnect budget, so a dead segmenter cannot starve a DirectPlay client and a
-/// vanished client cannot interrupt a recording.
+/// HTTP bytes -> both sinks. Neither consumer can stall the other: no subscribers is
+/// the normal case for a web-only tune, and a dead segmenter is restarted behind it.
+/// The feeder stops on cancellation, an exhausted reconnect budget or a mux with no
+/// signal; the last two kill the tune, which is torn down rather than left for the
+/// next viewer of the channel to join.
+///
+/// Until the first byte arrives each attempt walks every candidate; after it, only the
+/// one that delivered is reconnected to, because another member can be a different
+/// codec and the segmenter has already analysed this one.
 fn spawn_feeder(
-    tx: std::sync::mpsc::Sender<Vec<u8>>,
+    sink: SegmenterSink,
     bytes: tokio::sync::broadcast::Sender<Bytes>,
-    url: String,
+    candidates: Vec<SourceCandidate>,
     cancel: CancellationToken,
     t0: std::time::Instant,
+    health: Arc<TuneHealth>,
 ) {
     tokio::spawn(async move {
-        let http = crate::http::new_client();
-        let mut attempt = 0usize;
-        let mut first_byte = true;
-        loop {
-            if cancel.is_cancelled() {
-                return;
-            }
-            let resp = tokio::select! {
-                _ = cancel.cancelled() => return,
-                r = http.get(&url).timeout(Duration::from_secs(86400)).send() => r,
-            };
-            match resp.and_then(|r| r.error_for_status()) {
-                Ok(resp) => {
-                    attempt = 0;
-                    let mut body: ByteStream = Box::pin(resp.bytes_stream());
-                    loop {
-                        let next = tokio::select! {
-                            _ = cancel.cancelled() => return,
-                            n = body.next() => n,
-                        };
-                        match next {
-                            Some(Ok(chunk)) => {
-                                if first_byte {
-                                    first_byte = false;
-                                    info!(ttfb_ms = t0.elapsed().as_millis(), "live TV tuner open");
-                                }
-                                // Both sends are non-blocking and both failures are
-                                // survivable: no subscribers is the normal case for a
-                                // web-only tune, and a dead segmenter is already logged.
-                                let _ = bytes.send(chunk.clone());
-                                if tx.send(chunk.to_vec()).is_err() && bytes.receiver_count() == 0 {
-                                    return;
-                                }
-                            }
-                            Some(Err(e)) => {
-                                warn!(error = %e, "live TV source read error");
-                                break;
-                            }
-                            None => break,
-                        }
-                    }
-                }
-                Err(e) => warn!(error = %e, url = %url, "live TV source connect failed"),
-            }
-
-            // Never re-probe on reconnect: the parameters are the ones the scan
-            // already recorded.
-            let Some(delay) = RECONNECT_DELAYS_MS.get(attempt).copied() else {
-                warn!(url = %url, "live TV source reconnect budget exhausted");
-                return;
-            };
-            attempt += 1;
-            tokio::select! {
-                _ = cancel.cancelled() => return,
-                _ = tokio::time::sleep(Duration::from_millis(delay)) => {}
-            }
+        let death = feed(&sink, &bytes, &candidates, &cancel, t0, &health).await;
+        if let Some(reason) = death {
+            health.die(reason);
+        }
+        if let Ok(mut current) = sink.lock() {
+            *current = None;
         }
     });
 }
 
-/// Open the device and hand back the still-open body. Never probed.
-pub async fn open_tuner_stream(stream_url: &str) -> Option<(ByteStream, String)> {
-    let resp = crate::http::new_client()
-        .get(stream_url)
-        .timeout(Duration::from_secs(86400))
-        .send()
-        .await
-        .and_then(|r| r.error_for_status())
-        .ok()?;
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("video/mp2t")
-        .to_string();
-    Some((Box::pin(resp.bytes_stream()) as ByteStream, content_type))
+/// `None` when cancelled, otherwise why the feed stopped for good.
+async fn feed(
+    sink: &SegmenterSink,
+    bytes: &tokio::sync::broadcast::Sender<Bytes>,
+    candidates: &[SourceCandidate],
+    cancel: &CancellationToken,
+    t0: std::time::Instant,
+    health: &TuneHealth,
+) -> Option<String> {
+    let Some(requested) = candidates.first().map(|c| c.name.clone()) else {
+        return Some("This channel has no number the tuner can tune".to_string());
+    };
+    let http = crate::http::new_client();
+    let mut attempt = 0usize;
+    let mut locked: Option<usize> = None;
+    loop {
+        if cancel.is_cancelled() {
+            return None;
+        }
+        let pool = match locked {
+            Some(i) => &candidates[i..=i],
+            None => candidates,
+        };
+        match tuner_source::open_first(&http, pool, FIRST_BYTE_DEADLINE, cancel).await {
+            Ok(opened) => {
+                attempt = 0;
+                if locked.is_none() {
+                    let index = opened.index;
+                    locked = Some(index);
+                    health.mark_delivered();
+                    info!(ttfb_ms = t0.elapsed().as_millis(), "live TV tuner open");
+                    if index > 0 {
+                        info!(
+                            requested = %requested,
+                            alternate = %candidates[index].name,
+                            alternate_id = %candidates[index].channel_id,
+                            url = %candidates[index].url,
+                            "live TV tuned a stacked alternate"
+                        );
+                    }
+                }
+                let mut chunk = Some(opened.first);
+                let mut body = opened.body;
+                loop {
+                    if let Some(chunk) = chunk.take() {
+                        let _ = bytes.send(chunk.clone());
+                        if let Ok(mut current) = sink.lock() {
+                            let gone = current
+                                .as_ref()
+                                .is_some_and(|tx| tx.send(chunk.to_vec()).is_err());
+                            if gone {
+                                *current = None;
+                            }
+                        }
+                    }
+                    let next = tokio::select! {
+                        _ = cancel.cancelled() => return None,
+                        n = body.next() => n,
+                    };
+                    match next {
+                        Some(Ok(c)) => chunk = Some(c),
+                        Some(Err(e)) => {
+                            warn!(error = %e, "live TV source read error");
+                            break;
+                        }
+                        None => break,
+                    }
+                }
+            }
+            Err(errors) => {
+                if cancel.is_cancelled() {
+                    return None;
+                }
+                if locked.is_none() {
+                    health.fail(tuner_source::failure_message(&requested, &errors));
+                }
+                // The device already spent ~10 s looking for a lock before it said
+                // so; dialling the same mux again only makes the viewer wait longer.
+                if !errors.is_empty() && errors.iter().all(|e| e.is_no_signal()) {
+                    warn!(channel = %requested, "live TV source has no signal, giving up");
+                    return Some(match locked {
+                        Some(_) => format!("{requested} has lost its signal"),
+                        None => tuner_source::failure_message(&requested, &errors),
+                    });
+                }
+            }
+        }
+
+        // Never re-probe on reconnect: the parameters are the ones the scan
+        // already recorded.
+        let Some(delay) = RECONNECT_DELAYS_MS.get(attempt).copied() else {
+            warn!(channel = %requested, "live TV source reconnect budget exhausted");
+            return Some(
+                health
+                    .failure()
+                    .unwrap_or_else(|| format!("The tuner stopped sending {requested}")),
+            );
+        };
+        attempt += 1;
+        tokio::select! {
+            _ = cancel.cancelled() => return None,
+            _ = tokio::time::sleep(Duration::from_millis(delay)) => {}
+        }
+    }
 }
+
+/// How long a direct client riding a tune waits for its first byte, before which the
+/// response status cannot yet say whether the tune worked.
+const DIRECT_FIRST_BYTE_WAIT: Duration = Duration::from_secs(15);
 
 /// Subscribe to the tune's byte fan-out. The tuner connection is already open and
 /// already flowing, so this is the live edge with no second connection and no
 /// probe; a session with no tune left falls back to opening the device itself.
+///
+/// Errors are the viewer-facing reason the tune never produced a byte.
 pub async fn take_direct_stream(
     state: &crate::AppState,
     session_id: Option<&str>,
-    stream_url: &str,
-) -> Option<(ByteStream, String)> {
-    if let Some(sid) = session_id
-        && let Some(key) = tune_for_session(state, sid)
-        && let Some(tune) = state.livetv.tunes.get(&key)
-    {
-        let rx = tune.bytes.subscribe();
+    candidates: &[SourceCandidate],
+) -> std::result::Result<(ByteStream, String), String> {
+    let riding = session_id
+        .and_then(|sid| tune_for_session(state, sid))
+        .and_then(|key| {
+            state
+                .livetv
+                .tunes
+                .get(&key)
+                .map(|t| (t.bytes.subscribe(), t.health.clone()))
+        });
+    if let Some((rx, health)) = riding {
+        let deadline = std::time::Instant::now() + DIRECT_FIRST_BYTE_WAIT;
+        while !health.delivered() && std::time::Instant::now() < deadline {
+            if let Some(reason) = health.failure() {
+                return Err(reason);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|item| async {
             match item {
                 Ok(chunk) => Some(Ok(chunk)),
@@ -751,9 +977,37 @@ pub async fn take_direct_stream(
                 }
             }
         });
-        return Some((Box::pin(stream) as ByteStream, "video/mp2t".to_string()));
+        return Ok((Box::pin(stream) as ByteStream, "video/mp2t".to_string()));
     }
-    open_tuner_stream(stream_url).await
+
+    let requested = candidates
+        .first()
+        .map(|c| c.name.clone())
+        .unwrap_or_default();
+    match tuner_source::open_first(
+        &crate::http::new_client(),
+        candidates,
+        FIRST_BYTE_DEADLINE,
+        &CancellationToken::new(),
+    )
+    .await
+    {
+        Ok(opened) => {
+            if opened.index > 0 {
+                info!(
+                    requested = %requested,
+                    alternate = %candidates[opened.index].name,
+                    "live TV direct stream tuned a stacked alternate"
+                );
+            }
+            let first = futures_util::stream::once(async move { Ok(opened.first) });
+            Ok((
+                Box::pin(first.chain(opened.body)) as ByteStream,
+                opened.content_type,
+            ))
+        }
+        Err(errors) => Err(tuner_source::failure_message(&requested, &errors)),
+    }
 }
 
 fn detach(state: &crate::AppState, session_id: &str) {
@@ -795,6 +1049,97 @@ fn detach_from_tune(state: &crate::AppState, session_id: &str, tune_key: &str) {
         }
         discard_buffer(dir, key).await;
     });
+}
+
+/// Take a dead tune out of service: nothing may join it, its tuner is released, and
+/// every session on it is told why.
+fn retire_tune(state: &crate::AppState, key: &str, id: Uuid) {
+    let Some((_, mut tune)) = state.livetv.tunes.remove_if(key, |_, t| t.id == id) else {
+        return;
+    };
+    let reason = tune
+        .health
+        .reason()
+        .unwrap_or_else(|| "The tuner stopped sending this channel".to_string());
+    for sid in &tune.attached {
+        if let Some(mut session) = state.livetv.sessions.get_mut(sid)
+            && session.tune_key == key
+        {
+            session.failure = Some(reason.clone());
+        }
+    }
+    warn!(key = %key, reason = %reason, "live TV tune died, tuner released");
+    tune.cancel.cancel();
+    let transcode = tune.transcode.take();
+    let keep = tune.recording_id.is_some();
+    let dir = tune.buffer_dir.clone();
+    let key = key.to_string();
+    drop(tune);
+    tokio::spawn(async move {
+        if let Some(mut t) = transcode {
+            t.kill().await;
+        }
+        if !keep {
+            discard_buffer(dir, key).await;
+        }
+    });
+}
+
+/// Ends sessions nobody has heartbeated for `idle`, then lets go of every tune left
+/// holding a session that no longer exists.
+pub async fn sweep_sessions(state: &crate::AppState, idle: Duration) {
+    let now = std::time::Instant::now();
+    let abandoned: Vec<String> = state
+        .livetv
+        .sessions
+        .iter()
+        .filter(|s| now.duration_since(s.last_seen) >= idle)
+        .map(|s| s.key().clone())
+        .collect();
+    for sid in abandoned {
+        info!(session_id = %sid, "live TV session abandoned, ending it");
+        destroy_session(state, &sid).await;
+    }
+
+    let orphaned: Vec<(String, Vec<String>)> = state
+        .livetv
+        .tunes
+        .iter()
+        .filter(|t| t.recording_id.is_none())
+        // A tune is inserted a moment before its first session attaches.
+        .filter(|t| !t.attached.is_empty() || t.started_at < now_pg() - EMPTY_TUNE_GRACE)
+        .map(|t| {
+            let gone: Vec<String> = t
+                .attached
+                .iter()
+                .filter(|sid| {
+                    !state
+                        .livetv
+                        .sessions
+                        .get(*sid)
+                        .is_some_and(|s| s.tune_key == t.key)
+                })
+                .cloned()
+                .collect();
+            (t.key.clone(), gone)
+        })
+        .collect();
+    for (key, gone) in orphaned {
+        if gone.is_empty() {
+            detach_from_tune(state, "", &key);
+        }
+        for sid in gone {
+            detach_from_tune(state, &sid, &key);
+        }
+    }
+}
+
+pub fn session_failure(state: &crate::AppState, session_id: &str) -> Option<String> {
+    state
+        .livetv
+        .sessions
+        .get(session_id)
+        .and_then(|s| s.failure.clone())
 }
 
 /// Discard a torn-down tune's segments.
@@ -859,6 +1204,7 @@ pub async fn heartbeat(state: &crate::AppState, session_id: &str, source: Option
     let Some(mut session) = state.livetv.sessions.get_mut(session_id) else {
         return false;
     };
+    session.last_seen = std::time::Instant::now();
     if let Some(src) = source
         && matches!(src, "live" | "buffer" | "recording")
     {
@@ -1053,6 +1399,7 @@ pub fn spawn_sweeper(state: crate::AppState) {
         let mut tick = tokio::time::interval(Duration::from_secs(30));
         loop {
             tick.tick().await;
+            sweep_sessions(&state, SESSION_IDLE).await;
             state.livetv.leases.reap_expired();
 
             let runtime = state.runtime_config.get().await;
@@ -1136,6 +1483,11 @@ pub fn buffer_dir_of(state: &crate::AppState, session_id: &str) -> Option<PathBu
     state.livetv.tunes.get(&key).map(|t| t.buffer_dir.clone())
 }
 
+pub fn tune_health_of(state: &crate::AppState, session_id: &str) -> Option<Arc<TuneHealth>> {
+    let key = tune_for_session(state, session_id)?;
+    state.livetv.tunes.get(&key).map(|t| t.health.clone())
+}
+
 /// Whether [session_id] names a tune that is already open.
 ///
 /// This is the same lookup [take_direct_stream] makes before it decides to ride an
@@ -1145,9 +1497,11 @@ pub fn has_open_tune(state: &crate::AppState, session_id: &str) -> bool {
     tune_for_session(state, session_id).is_some_and(|key| state.livetv.tunes.contains_key(&key))
 }
 
+/// Gives up early once `health` says the tune will never produce a segment.
 pub async fn wait_for_first_segment(
     dir: &Path,
     timeout: Duration,
+    health: Option<&TuneHealth>,
 ) -> Option<(String, BufferStatus)> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
@@ -1156,7 +1510,7 @@ pub async fn wait_for_first_segment(
         {
             return Some((playlist, status));
         }
-        if std::time::Instant::now() >= deadline {
+        if std::time::Instant::now() >= deadline || health.is_some_and(|h| h.failure().is_some()) {
             return read_buffer(dir).await;
         }
         // Poll fast: the whole budget from tune to first frame is 1.2-1.8 s.

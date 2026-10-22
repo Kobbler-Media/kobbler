@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE movie_watch_states ws\n        SET watched = FALSE, watched_at = NULL, position_seconds = NULL, updated_at = NOW()\n        FROM movies m\n        WHERE m.id = ws.movie_id\n          AND ws.user_id = $1\n          AND m.identifiers->>'tmdb_id' = ANY($2)\n          AND (ws.watched OR ws.position_seconds IS NOT NULL)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6922286161a68f7dbfa0fe139364c02784458e85e5a14f77299e9acbae85bb7e"
+}

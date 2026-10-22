@@ -786,7 +786,11 @@ pub async fn get_show(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get watch states: {e}")))?;
 
-    response.continue_episode = compute_continue_episode(&response.seasons, &watch_states);
+    response.continue_episode = compute_continue_episode(
+        &response.seasons,
+        &watch_states,
+        response.content_category == "sport",
+    );
     annotate_episodes_with_watch_states(&mut response.seasons, &watch_states);
     response.in_watchlist =
         crate::repositories::watchlist::contains(&state.pool, auth.user_id, "show", id)
@@ -4001,6 +4005,18 @@ struct ContinueCandidate {
     episode_idx: usize,
     episode_id: Uuid,
     available: bool,
+    aired: (Option<time::Date>, Option<OffsetDateTime>),
+}
+
+impl ContinueCandidate {
+    fn response(&self, position_seconds: i32) -> ContinueEpisodeResponse {
+        ContinueEpisodeResponse {
+            season_idx: self.season_idx,
+            episode_idx: self.episode_idx,
+            episode_id: self.episode_id,
+            position_seconds,
+        }
+    }
 }
 
 /// Compute the continue/next-up episode for a show.
@@ -4011,11 +4027,15 @@ struct ContinueCandidate {
 /// 3. First available episode if no watch history.
 /// 4. None if nothing qualifies.
 ///
+/// A sport league is followed live, so steps 2 and 3 take the newest available event
+/// instead, and only when it is newer than every watched one.
+///
 /// Available is a local file, or an aired episode nobody has wanted, which the client
 /// offers as "Stream" rather than "Resume".
 fn compute_continue_episode(
     seasons: &[SeasonResponse],
     watch_states: &[tv_watch_states::TvWatchStateRow],
+    is_sport: bool,
 ) -> Option<ContinueEpisodeResponse> {
     let today = time::OffsetDateTime::now_utc().date();
 
@@ -4039,12 +4059,12 @@ fn compute_continue_episode(
                     episode_idx: ei,
                     episode_id: ep.id,
                     available: ep.is_in_library || streamable,
+                    aired: (ep.air_date, ep.air_time),
                 }
             })
         })
         .collect();
 
-    // 1. Find in-progress episode (position_seconds > 0, not watched, most recently updated)
     let in_progress = watch_states
         .iter()
         .filter(|ws| !ws.watched && ws.position_seconds.unwrap_or(0) > 0)
@@ -4053,56 +4073,53 @@ fn compute_continue_episode(
     if let Some(ws) = in_progress
         && let Some(c) = episodes.iter().find(|c| c.episode_id == ws.episode_id)
     {
-        return Some(ContinueEpisodeResponse {
-            season_idx: c.season_idx,
-            episode_idx: c.episode_idx,
-            episode_id: c.episode_id,
-            position_seconds: ws.position_seconds.unwrap_or(0),
-        });
+        return Some(c.response(ws.position_seconds.unwrap_or(0)));
     }
 
-    // 2. Find the most recently watched episode, then pick the next available unwatched one
+    let watched_ids: std::collections::HashSet<Uuid> = watch_states
+        .iter()
+        .filter(|ws| ws.watched)
+        .map(|ws| ws.episode_id)
+        .collect();
+
+    if is_sport {
+        return newest_unwatched_event(&episodes, &watched_ids).map(|c| c.response(0));
+    }
+
     let last_watched = watch_states
         .iter()
         .filter(|ws| ws.watched)
         .max_by_key(|ws| ws.watched_at);
 
-    if let Some(ws) = last_watched
-        && let Some(pos) = episodes.iter().position(|c| c.episode_id == ws.episode_id)
-    {
-        let watched_ids: std::collections::HashSet<Uuid> = watch_states
+    if let Some(ws) = last_watched {
+        let pos = episodes
             .iter()
-            .filter(|ws| ws.watched)
-            .map(|ws| ws.episode_id)
-            .collect();
-
-        for c in &episodes[pos + 1..] {
-            if c.available && !watched_ids.contains(&c.episode_id) {
-                return Some(ContinueEpisodeResponse {
-                    season_idx: c.season_idx,
-                    episode_idx: c.episode_idx,
-                    episode_id: c.episode_id,
-                    position_seconds: 0,
-                });
-            }
-        }
-        // All episodes after the last watched are either unavailable or watched
-        return None;
-    } else if last_watched.is_some() {
-        // Watched episode not found in response (e.g. filtered special) — nothing to continue
-        return None;
+            .position(|c| c.episode_id == ws.episode_id)?;
+        return episodes[pos + 1..]
+            .iter()
+            .find(|c| c.available && !watched_ids.contains(&c.episode_id))
+            .map(|c| c.response(0));
     }
 
-    // 3. No watch history — pick the first available episode.
-    episodes
+    episodes.iter().find(|c| c.available).map(|c| c.response(0))
+}
+
+/// Events in air order, season order breaking ties: the newest available one, unless a
+/// watched event is at least as new.
+fn newest_unwatched_event<'a>(
+    episodes: &'a [ContinueCandidate],
+    watched_ids: &std::collections::HashSet<Uuid>,
+) -> Option<&'a ContinueCandidate> {
+    let order = |c: &&ContinueCandidate| (c.aired, c.season_idx, c.episode_idx);
+    let newest = episodes.iter().filter(|c| c.available).max_by_key(order)?;
+    let newest_watched = episodes
         .iter()
-        .find(|c| c.available)
-        .map(|c| ContinueEpisodeResponse {
-            season_idx: c.season_idx,
-            episode_idx: c.episode_idx,
-            episode_id: c.episode_id,
-            position_seconds: 0,
-        })
+        .filter(|c| watched_ids.contains(&c.episode_id))
+        .max_by_key(order);
+    match newest_watched {
+        Some(w) if order(&w) >= order(&newest) => None,
+        _ => Some(newest),
+    }
 }
 // =============================================================================
 // Skip Segment Manual Override

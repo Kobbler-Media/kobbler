@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { showMessage } from '$lib/context/app.svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { mediaTypeChip } from '$lib/utils/chip-mappings';
@@ -18,6 +19,8 @@
     createTvShow,
     createBook,
     getDiscoverLists,
+    dismissForYou,
+    undismissForYou,
     getVideoMetadataProviders,
     getMetadataProviders,
     type MetadataResult,
@@ -504,6 +507,36 @@
     return item.progress_percent != null || item.position_seconds != null;
   }
 
+  let dismissed = $state<Set<string>>(new Set());
+
+  const forYouKey = (item: ForYouItem) => `${item.media_type}:${item.provider_id}`;
+
+  function forYouTitle(item: ForYouItem) {
+    const tmdbId = item.provider === 'tmdb' ? Number(item.provider_id) : NaN;
+    if (!Number.isFinite(tmdbId) || (item.media_type !== 'movie' && item.media_type !== 'tv')) {
+      return null;
+    }
+    return { media_type: item.media_type, tmdb_id: tmdbId } as const;
+  }
+
+  async function setDismissed(item: ForYouItem, hide: boolean) {
+    const title = forYouTitle(item);
+    if (!title) return;
+    const next = new Set(dismissed);
+    if (hide) next.add(forYouKey(item));
+    else next.delete(forYouKey(item));
+    dismissed = next;
+    try {
+      await (hide ? dismissForYou(title) : undismissForYou(title));
+    } catch {
+      const back = new Set(dismissed);
+      if (hide) back.delete(forYouKey(item));
+      else back.add(forYouKey(item));
+      dismissed = back;
+      showMessage(hide ? 'Could not hide that title' : 'Could not restore that title');
+    }
+  }
+
   function becauseLabel(because: string[]): string | null {
     if (because.length === 0) return null;
     const more = because.length > 1 ? ` +${because.length - 1}` : '';
@@ -795,8 +828,21 @@
 
       {#if forYou.length > 0}
         <ScrollRow title="For You">
-          {#each forYou as item (item.media_type + ':' + item.provider_id)}
-            <DiscoverCard {item} subtitle={becauseLabel(item.because)} />
+          {#each forYou as item (forYouKey(item))}
+            {#if dismissed.has(forYouKey(item))}
+              <div class="media-card undo-tile">
+                <span class="muted">{item.title} hidden</span>
+                <button class="undo-btn" type="button" onclick={() => setDismissed(item, false)}>
+                  Undo
+                </button>
+              </div>
+            {:else}
+              <DiscoverCard
+                {item}
+                subtitle={becauseLabel(item.because)}
+                ondismiss={forYouTitle(item) ? () => setDismissed(item, true) : undefined}
+              />
+            {/if}
           {/each}
         </ScrollRow>
       {/if}
@@ -881,6 +927,31 @@
   /* ── Discover rows ── */
   .discover-rows {
     padding: 12px 0 16px;
+  }
+
+  .undo-tile {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px;
+    text-align: center;
+    font-size: 12px;
+    border: 1px dashed var(--ring);
+    border-radius: 10px;
+    aspect-ratio: 2 / 3;
+  }
+
+  .undo-btn {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--ring);
+    background: var(--card);
+    color: var(--ink);
+    font-size: 12px;
+    cursor: pointer;
   }
 
   .discover-loading {

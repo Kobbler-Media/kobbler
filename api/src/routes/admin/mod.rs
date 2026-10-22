@@ -25,6 +25,7 @@ pub mod discover;
 pub(crate) mod downloads;
 pub mod episode_cast;
 mod filesystem;
+pub mod for_you;
 pub mod inbox;
 pub mod iptv;
 mod kindle;
@@ -62,6 +63,7 @@ pub mod tv;
 mod users;
 pub mod video_metadata;
 pub mod video_sync;
+pub mod watch_history;
 pub mod watchlist;
 
 // Re-export all handlers used in the router

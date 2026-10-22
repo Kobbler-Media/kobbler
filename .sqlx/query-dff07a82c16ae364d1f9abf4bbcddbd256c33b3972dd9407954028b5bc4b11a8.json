@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT g.channel_id AS \"channel_id!\",\n               md5(string_agg(\n                   extract(epoch FROM g.start_time)::bigint::text || ' ' || g.title,\n                   E'\\n' ORDER BY g.start_time, g.title\n               )) AS \"fingerprint!\"\n        FROM livetv_guide g\n        JOIN livetv_channels c ON c.id = g.channel_id AND c.enabled\n        WHERE g.start_time >= $1 AND g.start_time < $2\n        GROUP BY g.channel_id\n        HAVING COUNT(*) >= $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "livetv_guide",
+            "name": "channel_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "fingerprint!",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "dff07a82c16ae364d1f9abf4bbcddbd256c33b3972dd9407954028b5bc4b11a8"
+}

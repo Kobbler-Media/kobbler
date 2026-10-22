@@ -10,5 +10,7 @@ pub mod recorder;
 pub mod retention;
 pub mod sdt;
 pub mod series_rules;
+pub mod stacking;
 pub mod trickplay;
 pub mod tuner_lease;
+pub mod tuner_source;

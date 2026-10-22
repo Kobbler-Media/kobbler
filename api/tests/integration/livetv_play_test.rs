@@ -1246,19 +1246,27 @@ async fn asap_playback_against_a_real_hdhomerun() {
 
     // 1. Raw TS: TTFB plus one GOP and nothing else.
     {
-        use futures_util::StreamExt;
-        let url = live_session::tuner_stream_url(&base_url, lcn);
+        let candidate = api::livetv::tuner_source::SourceCandidate {
+            channel_id: channel,
+            name: format!("LCN {lcn}"),
+            url: live_session::tuner_stream_url(&base_url, lcn),
+            frequency: entry.frequency,
+        };
         let t0 = std::time::Instant::now();
-        let (mut stream, _) = live_session::open_tuner_stream(&url).await.unwrap();
-        let ttfb = t0.elapsed();
-        let first = stream.next().await.unwrap().unwrap();
+        let opened = api::livetv::tuner_source::open_first(
+            &api::http::new_client(),
+            &[candidate],
+            api::livetv::tuner_source::FIRST_BYTE_DEADLINE,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("tune failed: {e:?}"));
         println!(
-            "RAW /auto/v{lcn}: connect+headers {:?}, first {} bytes at {:?}",
-            ttfb,
-            first.len(),
+            "RAW /auto/v{lcn}: first {} bytes at {:?}",
+            opened.first.len(),
             t0.elapsed()
         );
-        drop(stream);
+        drop(opened);
     }
 
     // 2. Transcoded buffer: POST /sessions -> first playable segment on disk.

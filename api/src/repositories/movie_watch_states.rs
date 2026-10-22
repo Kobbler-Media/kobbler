@@ -83,6 +83,7 @@ where
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (movie_id, user_id)
         DO UPDATE SET
+            source = 'local',
             watched = EXCLUDED.watched,
             watched_at = COALESCE(EXCLUDED.watched_at, movie_watch_states.watched_at),
             position_seconds = COALESCE(EXCLUDED.position_seconds, movie_watch_states.position_seconds),
@@ -102,6 +103,63 @@ where
     .await?;
 
     Ok(row)
+}
+
+/// A watch recorded somewhere else. It never clears or backdates what the library
+/// already knows, and a row the library wrote keeps its source.
+pub async fn upsert_imported<'e, E>(
+    exec: E,
+    movie_id: Uuid,
+    user_id: Uuid,
+    watched_at: Option<OffsetDateTime>,
+    source: &str,
+) -> Result<Uuid>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let row = sqlx::query_scalar!(
+        r#"
+        INSERT INTO movie_watch_states (id, movie_id, user_id, watched, watched_at, source)
+        VALUES ($1, $2, $3, TRUE, $4, $5)
+        ON CONFLICT (movie_id, user_id)
+        DO UPDATE SET
+            watched = TRUE,
+            watched_at = GREATEST(movie_watch_states.watched_at, EXCLUDED.watched_at),
+            updated_at = NOW()
+        RETURNING id
+        "#,
+        Uuid::now_v7(),
+        movie_id,
+        user_id,
+        watched_at,
+        source,
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(row)
+}
+
+/// Unwatches every library copy of the given TMDB titles for one user.
+pub async fn clear_for_tmdb<'e, E>(exec: E, user_id: Uuid, tmdb_ids: &[String]) -> Result<u64>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let done = sqlx::query!(
+        r#"
+        UPDATE movie_watch_states ws
+        SET watched = FALSE, watched_at = NULL, position_seconds = NULL, updated_at = NOW()
+        FROM movies m
+        WHERE m.id = ws.movie_id
+          AND ws.user_id = $1
+          AND m.identifiers->>'tmdb_id' = ANY($2)
+          AND (ws.watched OR ws.position_seconds IS NOT NULL)
+        "#,
+        user_id,
+        tmdb_ids,
+    )
+    .execute(exec)
+    .await?;
+    Ok(done.rows_affected())
 }
 
 /// Fetch watch states for multiple movies (for a given user).
@@ -161,6 +219,7 @@ where
         VALUES ($1, $2, $3, FALSE, $4)
         ON CONFLICT (movie_id, user_id)
         DO UPDATE SET
+            source = 'local',
             position_seconds = EXCLUDED.position_seconds,
             updated_at = NOW()
         RETURNING id

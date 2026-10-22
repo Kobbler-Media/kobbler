@@ -346,6 +346,7 @@
     { href: '/settings/devices', label: 'Devices', icon: ICON.devices },
     { href: '/settings/sessions', label: 'Sessions', icon: ICON.sessions },
     { href: '/settings/stremio-history', label: 'Stremio History', icon: ICON.chatMemory },
+    { href: '/settings/watch-history', label: 'Watch History', icon: ICON.chatMemory },
     { href: '/settings/tokens', label: 'Tokens', icon: ICON.tokens, minRole: 'admin' },
     { href: '/settings/kobo', label: 'Kobo Proxy', icon: ICON.kobo, minRole: 'admin' }
   ];

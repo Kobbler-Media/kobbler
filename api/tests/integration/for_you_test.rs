@@ -281,3 +281,130 @@ async fn discover_requires_auth() {
         .await;
     assert_eq!(resp.status, reqwest::StatusCode::UNAUTHORIZED);
 }
+
+async fn seeded_viewer(server: &TestServer, mock: &MockServer) -> (TestClient, Uuid) {
+    let viewer = create_user_client(server, "viewer@test.com", "viewer").await;
+    let viewer_id = user_id(server, "viewer@test.com").await;
+    let watched = seed_show(server, "Show A", 100, None).await;
+    watch_episode(server, watched, viewer_id).await;
+    let recs: Vec<i64> = (1000..1020).collect();
+    mock_related(mock, "tv", "100", "recommendations", &recs).await;
+    mock_related(mock, "tv", "100", "similar", &[1020, 1021]).await;
+    finish_mock(mock).await;
+    run_sync(server).await;
+    (viewer, watched)
+}
+
+#[tokio::test]
+async fn a_dismissed_title_leaves_the_shelf_and_the_next_pick_fills_its_place() {
+    let server = TestServer::start_api_only().await;
+    let mock = tmdb_mock(&server).await;
+    let (viewer, show) = seeded_viewer(&server, &mock).await;
+
+    let before = ids(&for_you(&viewer).await);
+    assert_eq!(before.len(), 20);
+    assert!(before.contains("1000"));
+    assert!(!before.contains("1020"));
+
+    let body = json!({ "media_type": "tv", "tmdb_id": 1000 });
+    viewer
+        .post_json("/api/v1/admin/discover/for-you/dismiss", &body)
+        .await
+        .assert_status(reqwest::StatusCode::NO_CONTENT);
+
+    let after = ids(&for_you(&viewer).await);
+    assert_eq!(after.len(), 20);
+    assert!(!after.contains("1000"));
+    assert!(after.contains("1020"));
+
+    let other = create_user_client(&server, "other@test.com", "viewer").await;
+    let other_id = user_id(&server, "other@test.com").await;
+    sqlx::query(
+        "INSERT INTO tv_watch_states (episode_id, user_id, watched, watched_at)
+         SELECT e.id, $2, true, NOW() FROM tv_episodes e
+         JOIN tv_seasons s ON s.id = e.season_id WHERE s.show_id = $1",
+    )
+    .bind(show)
+    .bind(other_id)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    assert!(ids(&for_you(&other).await).contains("1000"));
+
+    viewer
+        .delete_json("/api/v1/admin/discover/for-you/dismiss", &body)
+        .await
+        .assert_status(reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(ids(&for_you(&viewer).await), before);
+}
+
+#[tokio::test]
+async fn dismiss_rejects_unknown_media_types_and_anonymous_callers() {
+    let server = TestServer::start_api_only().await;
+    let viewer = create_user_client(&server, "viewer@test.com", "viewer").await;
+    let resp = viewer
+        .post_json(
+            "/api/v1/admin/discover/for-you/dismiss",
+            &json!({ "media_type": "book", "tmdb_id": 1 }),
+        )
+        .await;
+    assert_eq!(resp.status, reqwest::StatusCode::BAD_REQUEST);
+
+    let resp = TestClient::new(&server.api_url)
+        .post_json(
+            "/api/v1/admin/discover/for-you/dismiss",
+            &json!({ "media_type": "tv", "tmdb_id": 1 }),
+        )
+        .await;
+    assert_eq!(resp.status, reqwest::StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn an_excluded_title_is_never_a_seed() {
+    let server = TestServer::start_api_only().await;
+    let mock = tmdb_mock(&server).await;
+    let viewer = create_user_client(&server, "viewer@test.com", "viewer").await;
+    let viewer_id = user_id(&server, "viewer@test.com").await;
+    let mine = seed_show(&server, "Mine", 100, None).await;
+    watch_episode(&server, mine, viewer_id).await;
+    let theirs = seed_show(&server, "Theirs", 200, None).await;
+    watch_episode(&server, theirs, viewer_id).await;
+    mock_related(
+        &mock,
+        "tv",
+        "100",
+        "recommendations",
+        &[101, 102, 103, 104, 105, 106],
+    )
+    .await;
+    mock_related(
+        &mock,
+        "tv",
+        "200",
+        "recommendations",
+        &[201, 202, 203, 204, 205, 206],
+    )
+    .await;
+    finish_mock(&mock).await;
+    run_sync(&server).await;
+    assert!(ids(&for_you(&viewer).await).contains("201"));
+
+    viewer
+        .post_json(
+            "/api/v1/admin/watch-history/exclude",
+            &json!({ "items": [{ "media_type": "tv", "tmdb_id": 200 }], "excluded": true }),
+        )
+        .await
+        .assert_status(reqwest::StatusCode::NO_CONTENT);
+
+    let shelf = for_you(&viewer).await;
+    assert_eq!(
+        ids(&shelf),
+        BTreeSet::from(["101", "102", "103", "104", "105", "106"].map(String::from))
+    );
+    assert!(shelf.iter().all(|i| i["because"] == json!(["Mine"])));
+    let history = api::for_you::history(&server.pool, viewer_id)
+        .await
+        .unwrap();
+    assert!(history.iter().all(|h| h.tmdb_id != "200"));
+}

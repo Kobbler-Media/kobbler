@@ -5695,9 +5695,17 @@ export interface StremioContinueItem extends DiscoverItem {
   last_watched: string;
 }
 
+export interface ForYouSeed {
+  media_type: 'movie' | 'tv';
+  tmdb_id: number | null;
+  title: string;
+}
+
 export interface ForYouItem extends DiscoverItem {
   /** Watched titles that led here, strongest first. */
   because: string[];
+  /** The same seeds as `because`, in the same order. */
+  because_items: ForYouSeed[];
 }
 
 export interface DiscoverResponse {
@@ -5788,6 +5796,71 @@ export interface DiscoverDetailResponse {
 
 export async function getDiscoverLists(): Promise<DiscoverResponse> {
   return request('/api/v1/admin/discover');
+}
+
+export interface RecommendationTitle {
+  media_type: 'movie' | 'tv';
+  tmdb_id: number;
+}
+
+export async function dismissForYou(title: RecommendationTitle): Promise<void> {
+  return request('/api/v1/admin/discover/for-you/dismiss', {
+    method: 'POST',
+    body: JSON.stringify(title)
+  });
+}
+
+export async function undismissForYou(title: RecommendationTitle): Promise<void> {
+  return request('/api/v1/admin/discover/for-you/dismiss', {
+    method: 'DELETE',
+    body: JSON.stringify(title)
+  });
+}
+
+export type WatchHistorySource = 'local' | 'trakt' | 'stremio';
+
+export interface WatchHistoryItem {
+  media_type: 'movie' | 'tv';
+  tmdb_id: number | null;
+  movie_id?: string | null;
+  show_id?: string | null;
+  title: string;
+  year: number | null;
+  poster_url: string | null;
+  last_watched_at: string | null;
+  sources: WatchHistorySource[];
+  excluded: boolean;
+}
+
+export async function getWatchHistory(params: {
+  source?: WatchHistorySource;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ items: WatchHistoryItem[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params.source) qs.set('source', params.source);
+  if (params.search) qs.set('search', params.search);
+  if (params.limit != null) qs.set('limit', String(params.limit));
+  if (params.offset != null) qs.set('offset', String(params.offset));
+  return request(`/api/v1/admin/watch-history?${qs}`);
+}
+
+export async function setWatchHistoryExcluded(
+  items: RecommendationTitle[],
+  excluded: boolean
+): Promise<void> {
+  return request('/api/v1/admin/watch-history/exclude', {
+    method: 'POST',
+    body: JSON.stringify({ items, excluded })
+  });
+}
+
+export async function removeWatchHistory(items: RecommendationTitle[]): Promise<void> {
+  return request('/api/v1/admin/watch-history/remove', {
+    method: 'POST',
+    body: JSON.stringify({ items })
+  });
 }
 
 export async function getDiscoverWatchProviders(

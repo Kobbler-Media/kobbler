@@ -275,8 +275,8 @@ pub async fn mark_movie(pool: &PgPool, movie_id: Uuid, p: &PendingImport) -> Res
     sqlx::query!(
         r#"
         INSERT INTO movie_watch_states (id, movie_id, user_id, watched, watched_at,
-                                        position_seconds, updated_at)
-        VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN $6::timestamptz END, $5, $6)
+                                        position_seconds, updated_at, source)
+        VALUES ($1, $2, $3, $4, CASE WHEN $4 THEN $6::timestamptz END, $5, $6, 'stremio')
         ON CONFLICT (movie_id, user_id) DO UPDATE SET
             watched = TRUE,
             watched_at = COALESCE(movie_watch_states.watched_at, EXCLUDED.watched_at),
@@ -307,8 +307,9 @@ pub async fn mark_episodes(
     let mut tx = pool.begin().await?;
     sqlx::query!(
         r#"
-        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, watched_at, updated_at)
-        SELECT gen_random_uuid(), te.id, $2, TRUE, $6, $6
+        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, watched_at, updated_at,
+                                     source)
+        SELECT gen_random_uuid(), te.id, $2, TRUE, $6, $6, 'stremio'
         FROM tv_episodes te
         JOIN tv_seasons ts ON ts.id = te.season_id AND NOT ts.is_special
         WHERE ts.show_id = $1
@@ -333,8 +334,8 @@ pub async fn mark_episodes(
         sqlx::query!(
             r#"
             INSERT INTO tv_watch_states (id, episode_id, user_id, watched, position_seconds,
-                                         updated_at)
-            SELECT gen_random_uuid(), te.id, $2, FALSE, $5, $6
+                                         updated_at, source)
+            SELECT gen_random_uuid(), te.id, $2, FALSE, $5, $6, 'stremio'
             FROM tv_episodes te
             JOIN tv_seasons ts ON ts.id = te.season_id AND NOT ts.is_special
             WHERE ts.show_id = $1 AND ts.season_sort_order = $3 AND te.episode_sort_order = $4

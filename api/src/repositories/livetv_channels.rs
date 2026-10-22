@@ -82,6 +82,7 @@ pub struct ChannelFilters {
     pub favourite: Option<bool>,
     pub has_guide: Option<bool>,
     pub mux: Option<i64>,
+    pub exclude_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Clone)]
@@ -455,6 +456,11 @@ fn push_filters(qb: &mut QueryBuilder<Postgres>, f: &ChannelFilters) {
     if let Some(v) = f.mux {
         qb.push(" AND c.frequency = ").push_bind(v);
     }
+    if !f.exclude_ids.is_empty() {
+        qb.push(" AND NOT (c.id = ANY(")
+            .push_bind(f.exclude_ids.clone())
+            .push("))");
+    }
     if let Some(v) = f.has_guide {
         qb.push(if v {
             " AND EXISTS (SELECT 1 FROM livetv_guide g WHERE g.channel_id = c.id)"
@@ -569,6 +575,42 @@ where
     .fetch_all(exec)
     .await?;
     Ok(rows.iter().map(row_from).collect())
+}
+
+/// One digest per enabled channel of the (start, title) sequence it airs in the window,
+/// for channels with at least `min_entries` entries in it.
+pub async fn guide_fingerprints<'e, E>(
+    exec: E,
+    from: OffsetDateTime,
+    to: OffsetDateTime,
+    min_entries: i64,
+) -> Result<Vec<(Uuid, String)>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let rows = sqlx::query!(
+        r#"
+        SELECT g.channel_id AS "channel_id!",
+               md5(string_agg(
+                   extract(epoch FROM g.start_time)::bigint::text || ' ' || g.title,
+                   E'\n' ORDER BY g.start_time, g.title
+               )) AS "fingerprint!"
+        FROM livetv_guide g
+        JOIN livetv_channels c ON c.id = g.channel_id AND c.enabled
+        WHERE g.start_time >= $1 AND g.start_time < $2
+        GROUP BY g.channel_id
+        HAVING COUNT(*) >= $3
+        "#,
+        from,
+        to,
+        min_entries,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.channel_id, r.fingerprint))
+        .collect())
 }
 
 pub async fn physical_ids_with_guide<'e, E>(exec: E, tuner_id: Uuid) -> Result<Vec<(i64, i32)>>

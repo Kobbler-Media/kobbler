@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO tv_watch_states (id, episode_id, user_id, watched, position_seconds,\n                                         updated_at, source)\n            SELECT gen_random_uuid(), te.id, $2, FALSE, $5, $6, 'stremio'\n            FROM tv_episodes te\n            JOIN tv_seasons ts ON ts.id = te.season_id AND NOT ts.is_special\n            WHERE ts.show_id = $1 AND ts.season_sort_order = $3 AND te.episode_sort_order = $4\n            ON CONFLICT (episode_id, user_id) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6b333078e8199fc22f90ec3f311dc47b48850330ded00bd0232af6c8a3623acb"
+}

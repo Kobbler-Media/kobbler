@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH acct AS (\n            SELECT id FROM stremio_accounts\n            WHERE user_id = $1 OR user_id IS NULL\n            ORDER BY user_id NULLS LAST\n            LIMIT 1\n        ),\n        started AS (\n            SELECT 'movie' AS media_type, NULLIF(m.identifiers->>'tmdb_id', '') AS tmdb_id,\n                   m.id AS library_id, m.title, m.year, m.images, NULL::text AS poster_url,\n                   ws.source,\n                   CASE WHEN ws.source = 'local' THEN COALESCE(ws.watched_at, ws.updated_at)\n                        ELSE ws.watched_at END AS at\n            FROM movie_watch_states ws\n            JOIN movies m ON m.id = ws.movie_id\n            WHERE ws.user_id = $1 AND (ws.watched OR ws.position_seconds > 0)\n            UNION ALL\n            SELECT 'tv', NULLIF(s.identifiers->>'tmdb_id', ''), s.id, s.title, s.year, s.images,\n                   NULL::text, ws.source,\n                   CASE WHEN ws.source = 'local' THEN COALESCE(ws.watched_at, ws.updated_at)\n                        ELSE ws.watched_at END\n            FROM tv_watch_states ws\n            JOIN tv_episodes e ON e.id = ws.episode_id\n            JOIN tv_seasons se ON se.id = e.season_id\n            JOIN tv_shows s ON s.id = se.show_id\n            WHERE ws.user_id = $1 AND (ws.watched OR ws.position_seconds > 0)\n            UNION ALL\n            SELECT h.media_type, NULLIF(h.tmdb_id, ''), NULL::uuid, COALESCE(h.title, h.name),\n                   h.year, NULL::jsonb, h.poster_url, 'stremio', h.last_watched\n            FROM stremio_history_items h\n            JOIN acct ON acct.id = h.account_id\n        ),\n        titles AS (\n            SELECT media_type,\n                   MAX(tmdb_id) AS tmdb_id,\n                   (array_agg(library_id ORDER BY library_id IS NULL, at DESC NULLS LAST))[1]\n                       AS library_id,\n                   (array_agg(title ORDER BY library_id IS NULL, at DESC NULLS LAST))[1] AS title,\n                   (array_agg(year ORDER BY library_id IS NULL, at DESC NULLS LAST))[1] AS year,\n                   (array_agg(images ORDER BY library_id IS NULL, at DESC NULLS LAST))[1] AS images,\n                   (array_agg(poster_url) FILTER (WHERE poster_url IS NOT NULL))[1] AS poster_url,\n                   MAX(at) AS last_watched_at,\n                   array_agg(DISTINCT source ORDER BY source) AS sources\n            FROM started\n            GROUP BY media_type, COALESCE(tmdb_id, 'library:' || library_id::text)\n        ),\n        filtered AS (\n            SELECT t.*,\n                   EXISTS (\n                       SELECT 1 FROM watch_history_exclusions x\n                       WHERE x.user_id = $1 AND x.media_type = t.media_type\n                         AND x.tmdb_id = t.tmdb_id\n                   ) AS excluded\n            FROM titles t\n            WHERE ($2::text IS NULL OR t.title ILIKE '%' || $2 || '%')\n              AND ($3::text IS NULL OR $3 = ANY(t.sources))\n        )\n        SELECT\n            (SELECT COUNT(*) FROM filtered) AS \"total!\",\n            COALESCE(\n                (SELECT jsonb_agg(to_jsonb(p) ORDER BY p.last_watched_at DESC NULLS LAST,\n                                                       p.title, p.media_type)\n                 FROM (\n                     SELECT * FROM filtered\n                     ORDER BY last_watched_at DESC NULLS LAST, title, media_type\n                     LIMIT $4 OFFSET $5\n                 ) p),\n                '[]'::jsonb\n            ) AS \"items!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "total!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "items!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "b76e8cbb87dee9580d9d9d088a536e1f705fdddebb2d3f5b4650567f4ad3f38e"
+}

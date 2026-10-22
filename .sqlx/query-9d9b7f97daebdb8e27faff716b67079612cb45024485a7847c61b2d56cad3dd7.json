@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT media_type, tmdb_id FROM for_you_dismissals WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "for_you_dismissals",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tmdb_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "for_you_dismissals",
+            "name": "tmdb_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9d9b7f97daebdb8e27faff716b67079612cb45024485a7847c61b2d56cad3dd7"
+}

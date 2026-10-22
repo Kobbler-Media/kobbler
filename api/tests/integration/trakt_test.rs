@@ -872,3 +872,138 @@ async fn test_trakt_bulk_mark_empty_episodes() {
     let result = provider.mark_episodes_unwatched("67890", &[]).await;
     assert!(result.is_ok());
 }
+
+// =============================================================================
+// Import History: recency comes from Trakt, never from the import itself
+// =============================================================================
+
+async fn run_trakt_import(server: &TestServer, user_id: uuid::Uuid, trakt: &MockServer) {
+    use api::jobs::worker::JobHandler;
+    api::repositories::user_sync_providers::upsert(
+        &server.pool,
+        user_id,
+        "trakt",
+        true,
+        &json!({ "access_token": "t", "client_id": "c" }),
+    )
+    .await
+    .unwrap();
+    let registry = api::video_sync_providers::VideoSyncProviderRegistry::with_urls(
+        api::video_sync_providers::VideoSyncProviderUrls {
+            trakt: Some(trakt.uri()),
+        },
+    );
+    api::jobs::handlers::TraktImportHistoryHandler::new(server.pool.clone(), registry)
+        .execute(
+            uuid::Uuid::now_v7(),
+            json!({ "provider": "trakt", "user_id": user_id }),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+}
+
+async fn tmdb_movie(server: &TestServer, title: &str, tmdb_id: i64) -> uuid::Uuid {
+    let id = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO movies (id, title, identifiers) VALUES ($1, $2, jsonb_build_object('tmdb_id', $3::text))",
+    )
+    .bind(id)
+    .bind(title)
+    .bind(tmdb_id.to_string())
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    id
+}
+
+#[tokio::test]
+async fn imported_trakt_history_keeps_its_own_dates_and_never_looks_recent() {
+    let server = TestServer::start_api_only().await;
+    let viewer = create_user_client(&server, "viewer@test.com", "viewer").await;
+    let user_id: uuid::Uuid =
+        sqlx::query_scalar("SELECT id FROM users WHERE email = 'viewer@test.com'")
+            .fetch_one(&server.pool)
+            .await
+            .unwrap();
+
+    let recent = tmdb_movie(&server, "Watched Yesterday Here", 1).await;
+    viewer
+        .put_json(
+            &format!("/api/v1/admin/movies/{recent}/watch-state"),
+            &json!({ "watched": true }),
+        )
+        .await
+        .assert_ok();
+    sqlx::query("UPDATE movie_watch_states SET watched_at = NOW() - INTERVAL '1 day'")
+        .execute(&server.pool)
+        .await
+        .unwrap();
+    tmdb_movie(&server, "Old Trakt Watch", 2).await;
+    tmdb_movie(&server, "Older Trakt Watch", 3).await;
+    tmdb_movie(&server, "Undated Trakt Watch", 4).await;
+
+    let trakt = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/sync/watched/movies"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            { "plays": 1, "last_watched_at": "2014-09-01T09:10:11.000Z",
+              "movie": { "title": "Old Trakt Watch", "ids": { "slug": "a", "tmdb": 2 } } },
+            { "plays": 1, "last_watched_at": "2013-01-02T03:04:05Z",
+              "movie": { "title": "Older Trakt Watch", "ids": { "slug": "b", "tmdb": 3 } } },
+            { "plays": 1, "last_watched_at": null,
+              "movie": { "title": "Undated Trakt Watch", "ids": { "slug": "c", "tmdb": 4 } } }
+        ])))
+        .mount(&trakt)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/sync/watched/shows"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .mount(&trakt)
+        .await;
+    run_trakt_import(&server, user_id, &trakt).await;
+
+    let order: Vec<String> = api::for_you::history(&server.pool, user_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|h| h.title)
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            "Watched Yesterday Here",
+            "Old Trakt Watch",
+            "Older Trakt Watch",
+            "Undated Trakt Watch"
+        ]
+    );
+
+    let page: Value = viewer.get("/api/v1/admin/watch-history").await.json();
+    let items = page["items"].as_array().unwrap();
+    assert_eq!(items[1]["sources"], json!(["trakt"]));
+    assert!(
+        items[1]["last_watched_at"]
+            .as_str()
+            .unwrap()
+            .starts_with("2014-09-01T09:10:11")
+    );
+    assert!(items[3]["last_watched_at"].is_null());
+    assert_eq!(items[0]["sources"], json!(["local"]));
+}
+
+#[test]
+fn trakt_timestamps_parse_in_every_shape_trakt_sends() {
+    use api::video_sync_providers::trakt::parse_watched_at;
+    for raw in [
+        "2014-09-01T09:10:11.000Z",
+        "2014-09-01T09:10:11Z",
+        "2014-09-01T09:10:11+00:00",
+        "2014-09-01T09:10:11.000",
+        "2014-09-01 09:10:11",
+    ] {
+        let t = parse_watched_at(raw).unwrap_or_else(|| panic!("{raw} did not parse"));
+        assert_eq!(t.unix_timestamp(), 1_409_562_611, "{raw}");
+    }
+    assert!(parse_watched_at("yesterday").is_none());
+}

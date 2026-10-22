@@ -36,6 +36,7 @@ impl From<SessionError> for AppError {
             // Tuner exhaustion is a hard fail, never a degrade: there is no
             // second source to fall back to.
             SessionError::Exhausted(msg) => AppError::BadRequest(msg),
+            SessionError::TuneFailed(msg) => AppError::BadGateway(msg),
             SessionError::Repository(e) => AppError::Internal(e.to_string()),
             SessionError::Other(e) => AppError::Internal(e.to_string()),
         }
@@ -267,10 +268,20 @@ pub async fn heartbeat(
     Path(sid): Path<String>,
     Json(input): Json<HeartbeatInput>,
 ) -> Result<impl IntoResponse, AppError> {
+    tune_still_alive(&state, &sid)?;
     if !live_session::heartbeat(&state, &sid, input.source.as_deref()).await {
         return Err(AppError::NotFound("Session not found".to_string()));
     }
     Ok(Json(json!({ "ok": true })))
+}
+
+/// A session whose tune died answers every request with why, until the viewer tunes
+/// again — a 404 would read as "your session expired" and a client would retry into it.
+fn tune_still_alive(state: &AppState, sid: &str) -> Result<(), AppError> {
+    match live_session::session_failure(state, sid) {
+        Some(reason) => Err(AppError::BadGateway(reason)),
+        None => Ok(()),
+    }
 }
 
 pub async fn buffer_status(
@@ -278,9 +289,10 @@ pub async fn buffer_status(
     _user: AuthUser,
     Path(sid): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
+    tune_still_alive(&state, &sid)?;
     let key = live_session::tune_for_session(&state, &sid)
         .ok_or_else(|| AppError::NotFound("Session not found".to_string()))?;
-    let (dir, start, evicted, preempted_by, recording_id) = {
+    let (dir, start, evicted, preempted_by, recording_id, tune_error) = {
         let tune = state
             .livetv
             .tunes
@@ -292,6 +304,7 @@ pub async fn buffer_status(
             tune.lease.is_evicted(),
             tune.lease.flags.preempted_by(),
             tune.recording_id,
+            tune.health.failure(),
         )
     };
 
@@ -318,6 +331,8 @@ pub async fn buffer_status(
         "preempted": evicted,
         "preempted_by_recording_id": preempted_by,
         "can_jump_to_live": !evicted,
+        // Set only while the tune has never produced a byte: the reason, for the viewer.
+        "tune_error": tune_error,
     })))
 }
 
@@ -339,10 +354,20 @@ pub async fn stream_playlist(
     State(state): State<AppState>,
     Path(sid): Path<String>,
 ) -> Result<axum::response::Response, AppError> {
+    tune_still_alive(&state, &sid)?;
     let dir = buffer_dir_for(&state, &sid)?;
-    let Some((playlist, status)) =
-        live_session::wait_for_first_segment(&dir, std::time::Duration::from_secs(8)).await
-    else {
+    let health = live_session::tune_health_of(&state, &sid);
+    let waited = live_session::wait_for_first_segment(
+        &dir,
+        std::time::Duration::from_secs(8),
+        health.as_deref(),
+    )
+    .await;
+    let ready = waited.as_ref().is_some_and(|(_, s)| s.segments > 0);
+    if !ready && let Some(reason) = health.as_ref().and_then(|h| h.failure()) {
+        return Err(AppError::BadGateway(reason));
+    }
+    let Some((playlist, status)) = waited else {
         return Err(AppError::Internal("Buffer not ready".to_string()));
     };
     if status.segments == 0 {
@@ -458,7 +483,13 @@ pub async fn stream_ts(
         .as_deref()
         .is_some_and(|sid| live_session::has_open_tune(&state, sid));
     if user.is_none() && !rides_existing_tune {
+        if let Some(sid) = q.session.as_deref() {
+            tune_still_alive(&state, sid)?;
+        }
         return Err(AppError::Unauthorized);
+    }
+    if let Some(sid) = q.session.as_deref() {
+        tune_still_alive(&state, sid)?;
     }
     let channel = livetv_channels::get_by_id(&state.pool, id)
         .await?
@@ -466,15 +497,17 @@ pub async fn stream_ts(
     let tuner = livetv_tuners::get_by_id(&state.pool, channel.tuner_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Tuner not found".to_string()))?;
-    let lcn = channel
-        .lcn
-        .ok_or_else(|| AppError::BadRequest("Channel has no LCN to tune".to_string()))?;
-    let url = live_session::tuner_stream_url(&tuner.base_url, lcn);
+    if channel.lcn.is_none() {
+        return Err(AppError::BadRequest(
+            "Channel has no LCN to tune".to_string(),
+        ));
+    }
+    let candidates = live_session::source_candidates(&state, &channel, &tuner).await;
 
     let (stream, content_type) =
-        live_session::take_direct_stream(&state, q.session.as_deref(), &url)
+        live_session::take_direct_stream(&state, q.session.as_deref(), &candidates)
             .await
-            .ok_or_else(|| AppError::Internal("Could not open the tuner".to_string()))?;
+            .map_err(AppError::BadGateway)?;
 
     Ok(axum::response::Response::builder()
         .status(StatusCode::OK)

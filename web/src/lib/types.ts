@@ -2147,6 +2147,8 @@ export type LivetvChannel = {
   type_label: string;
   has_guide: boolean;
   guide_entry_count: number;
+  /** Other members of this channel's stack, best first; filled only with `stacked=true`. */
+  alternate_ids: string[];
   now: LivetvGuideNow | null;
   created_at: string;
   updated_at: string;

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, watched_at, source)\n        VALUES ($1, $2, $3, TRUE, $4, $5)\n        ON CONFLICT (episode_id, user_id)\n        DO UPDATE SET\n            watched = TRUE,\n            watched_at = GREATEST(tv_watch_states.watched_at, EXCLUDED.watched_at),\n            updated_at = NOW()\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_watch_states",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6e9e585cca8808bded10535f2fc12199a862d84d8205749dae5b3e7d3836019b"
+}

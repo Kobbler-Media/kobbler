@@ -517,6 +517,7 @@ pub async fn start_nats_worker(
     // Trakt sync handlers
     worker.register_handler(HandlerAdapter::new(TraktImportHistoryHandler::new(
         pool.clone(),
+        crate::video_sync_providers::VideoSyncProviderRegistry::new(),
     )));
     worker.register_handler(HandlerAdapter::new(TraktSyncWatchStateHandler::new(
         pool.clone(),

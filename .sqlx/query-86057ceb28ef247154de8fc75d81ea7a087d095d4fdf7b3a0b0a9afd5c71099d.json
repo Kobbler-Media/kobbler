@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, position_seconds)\n        VALUES ($1, $2, $3, FALSE, $4)\n        ON CONFLICT (episode_id, user_id)\n        DO UPDATE SET\n            position_seconds = EXCLUDED.position_seconds,\n            updated_at = NOW()\n        RETURNING id\n        ",
+  "query": "\n        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, position_seconds)\n        VALUES ($1, $2, $3, FALSE, $4)\n        ON CONFLICT (episode_id, user_id)\n        DO UPDATE SET\n            source = 'local',\n            position_seconds = EXCLUDED.position_seconds,\n            updated_at = NOW()\n        RETURNING id\n        ",
   "describe": {
     "columns": [
       {
@@ -27,5 +27,5 @@
       false
     ]
   },
-  "hash": "b14bbd58043ee525861c0ba0f9fc31bc20d63820d928efa90df3c40f19350cbf"
+  "hash": "86057ceb28ef247154de8fc75d81ea7a087d095d4fdf7b3a0b0a9afd5c71099d"
 }

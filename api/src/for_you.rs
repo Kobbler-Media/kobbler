@@ -40,10 +40,17 @@ pub struct RelatedTitles {
     pub similar: Vec<DiscoverItem>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Seed {
+    pub media_type: String,
+    pub tmdb_id: Option<i64>,
+    pub title: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct Pick {
     pub item: DiscoverItem,
-    pub because: Vec<String>,
+    pub because: Vec<Seed>,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,6 +58,7 @@ pub struct ForYouItem {
     #[serde(flatten)]
     pub item: DiscoverItemWithStatus,
     pub because: Vec<String>,
+    pub because_items: Vec<Seed>,
 }
 
 fn related_key(media_type: &str, tmdb_id: &str) -> String {
@@ -58,7 +66,8 @@ fn related_key(media_type: &str, tmdb_id: &str) -> String {
 }
 
 /// Every title the user has started, most recent first: library watch state plus the
-/// history of their Stremio account (or the instance-wide one).
+/// history of their Stremio account (or the instance-wide one). Titles the user excluded
+/// are left out, and a watch imported without a date sorts last rather than as new.
 pub async fn history(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<HistoryEntry>> {
     let rows = sqlx::query!(
         r#"
@@ -70,13 +79,15 @@ pub async fn history(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<HistoryEn
         ),
         started AS (
             SELECT 'movie' AS media_type, m.identifiers->>'tmdb_id' AS tmdb_id, m.title,
-                   COALESCE(ws.watched_at, ws.updated_at) AS at
+                   CASE WHEN ws.source = 'local' THEN COALESCE(ws.watched_at, ws.updated_at)
+                        ELSE ws.watched_at END AS at
             FROM movie_watch_states ws
             JOIN movies m ON m.id = ws.movie_id
             WHERE ws.user_id = $1 AND (ws.watched OR ws.position_seconds > 0)
             UNION ALL
             SELECT 'tv', s.identifiers->>'tmdb_id', s.title,
-                   COALESCE(ws.watched_at, ws.updated_at)
+                   CASE WHEN ws.source = 'local' THEN COALESCE(ws.watched_at, ws.updated_at)
+                        ELSE ws.watched_at END
             FROM tv_watch_states ws
             JOIN tv_episodes e ON e.id = ws.episode_id
             JOIN tv_seasons se ON se.id = e.season_id
@@ -89,11 +100,16 @@ pub async fn history(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<HistoryEn
         )
         SELECT media_type AS "media_type!",
                tmdb_id AS "tmdb_id!",
-               (array_agg(title ORDER BY at DESC))[1] AS "title!"
+               (array_agg(title ORDER BY at DESC NULLS LAST))[1] AS "title!"
         FROM started
         WHERE tmdb_id IS NOT NULL AND tmdb_id <> ''
+          AND NOT EXISTS (
+              SELECT 1 FROM watch_history_exclusions x
+              WHERE x.user_id = $1 AND x.media_type = started.media_type
+                AND x.tmdb_id = started.tmdb_id
+          )
         GROUP BY media_type, tmdb_id
-        ORDER BY MAX(at) DESC
+        ORDER BY MAX(at) DESC NULLS LAST, media_type, tmdb_id
         "#,
         user_id,
     )
@@ -206,12 +222,12 @@ pub fn rank(
     struct Candidate {
         item: DiscoverItem,
         score: f64,
-        by_seed: Vec<(String, f64)>,
+        by_seed: Vec<(usize, f64)>,
     }
 
     let mut candidates: HashMap<(String, String), Candidate> = HashMap::new();
     let seed_count = seeds.len().max(1) as f64;
-    for (i, (seed, related)) in seeds.iter().enumerate() {
+    for (i, (_, related)) in seeds.iter().enumerate() {
         let seed_weight = 1.0 - 0.5 * i as f64 / seed_count;
         for (list, list_weight) in [
             (&related.recommendations, 1.0),
@@ -230,9 +246,9 @@ pub fn rank(
                     by_seed: Vec::new(),
                 });
                 candidate.score += weight;
-                match candidate.by_seed.iter_mut().find(|(t, _)| *t == seed.title) {
+                match candidate.by_seed.iter_mut().find(|(s, _)| *s == i) {
                     Some((_, w)) => *w += weight,
-                    None => candidate.by_seed.push((seed.title.clone(), weight)),
+                    None => candidate.by_seed.push((i, weight)),
                 }
             }
         }
@@ -251,7 +267,18 @@ pub fn rank(
             c.by_seed.sort_by(|a, b| b.1.total_cmp(&a.1));
             Pick {
                 item: c.item,
-                because: c.by_seed.into_iter().map(|(title, _)| title).collect(),
+                because: c
+                    .by_seed
+                    .into_iter()
+                    .map(|(i, _)| {
+                        let seed = &seeds[i].0;
+                        Seed {
+                            media_type: seed.media_type.clone(),
+                            tmdb_id: seed.tmdb_id.parse().ok(),
+                            title: seed.title.clone(),
+                        }
+                    })
+                    .collect(),
             }
         })
         .collect()
@@ -263,10 +290,11 @@ pub async fn picks(pool: &PgPool, user_id: Uuid, is_kids: bool) -> repositories:
     if history.is_empty() {
         return Ok(Vec::new());
     }
-    let seen: HashSet<(String, String)> = history
+    let mut seen: HashSet<(String, String)> = history
         .iter()
         .map(|h| (h.media_type.clone(), h.tmdb_id.clone()))
         .collect();
+    seen.extend(repositories::for_you_dismissals::list(pool, user_id).await?);
     let seeds: Vec<HistoryEntry> = history.into_iter().take(SEED_COUNT).collect();
     let keys: Vec<String> = seeds
         .iter()
@@ -309,13 +337,17 @@ pub async fn for_you(pool: &PgPool, user_id: Uuid, is_kids: bool) -> Vec<ForYouI
             return Vec::new();
         }
     };
-    let (items, because): (Vec<DiscoverItem>, Vec<Vec<String>>) =
+    let (items, because): (Vec<DiscoverItem>, Vec<Vec<Seed>>) =
         picks.into_iter().map(|p| (p.item, p.because)).unzip();
     attach_status(pool, items)
         .await
         .into_iter()
         .zip(because)
-        .map(|(item, because)| ForYouItem { item, because })
+        .map(|(item, because_items)| ForYouItem {
+            item,
+            because: because_items.iter().map(|s| s.title.clone()).collect(),
+            because_items,
+        })
         .collect()
 }
 
@@ -414,6 +446,7 @@ mod tests {
     fn because_names_the_strongest_seed_first() {
         let seeds = [seed("Weak", &[], &["x"]), seed("Strong", &["x"], &[])];
         let picks = rank(&seeds, &HashSet::new());
-        assert_eq!(picks[0].because, vec!["Strong", "Weak"]);
+        let titles: Vec<&str> = picks[0].because.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titles, vec!["Strong", "Weak"]);
     }
 }

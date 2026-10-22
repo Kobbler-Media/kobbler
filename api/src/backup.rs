@@ -159,6 +159,8 @@ pub const TABLES_IN_ORDER: &[&str] = &[
     "device_sync_state",
     // Depends on movies, users
     "movie_watch_states",
+    "for_you_dismissals",
+    "watch_history_exclusions",
     // Depends on shelves, books
     "shelf_items",
     "shelf_archives",

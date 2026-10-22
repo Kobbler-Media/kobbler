@@ -83,6 +83,7 @@ where
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (episode_id, user_id)
         DO UPDATE SET
+            source = 'local',
             watched = EXCLUDED.watched,
             watched_at = COALESCE(EXCLUDED.watched_at, tv_watch_states.watched_at),
             position_seconds = COALESCE(EXCLUDED.position_seconds, tv_watch_states.position_seconds),
@@ -101,6 +102,40 @@ where
     .fetch_one(exec)
     .await?;
 
+    Ok(row)
+}
+
+/// A watch recorded somewhere else. It never clears or backdates what the library
+/// already knows, and a row the library wrote keeps its source.
+pub async fn upsert_imported<'e, E>(
+    exec: E,
+    episode_id: Uuid,
+    user_id: Uuid,
+    watched_at: Option<OffsetDateTime>,
+    source: &str,
+) -> Result<Uuid>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let row = sqlx::query_scalar!(
+        r#"
+        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, watched_at, source)
+        VALUES ($1, $2, $3, TRUE, $4, $5)
+        ON CONFLICT (episode_id, user_id)
+        DO UPDATE SET
+            watched = TRUE,
+            watched_at = GREATEST(tv_watch_states.watched_at, EXCLUDED.watched_at),
+            updated_at = NOW()
+        RETURNING id
+        "#,
+        Uuid::now_v7(),
+        episode_id,
+        user_id,
+        watched_at,
+        source,
+    )
+    .fetch_one(exec)
+    .await?;
     Ok(row)
 }
 
@@ -205,6 +240,7 @@ where
         WHERE s.show_id = $3
         ON CONFLICT (episode_id, user_id)
         DO UPDATE SET
+            source = 'local',
             watched = TRUE,
             watched_at = $2,
             position_seconds = NULL,
@@ -271,6 +307,7 @@ where
         WHERE e.season_id = $3
         ON CONFLICT (episode_id, user_id)
         DO UPDATE SET
+            source = 'local',
             watched = TRUE,
             watched_at = $2,
             position_seconds = NULL,
@@ -336,6 +373,7 @@ where
         WHERE e.id = ANY($3)
         ON CONFLICT (episode_id, user_id)
         DO UPDATE SET
+            source = 'local',
             watched = TRUE,
             watched_at = $2,
             position_seconds = NULL,
@@ -397,6 +435,7 @@ where
         VALUES ($1, $2, $3, FALSE, $4)
         ON CONFLICT (episode_id, user_id)
         DO UPDATE SET
+            source = 'local',
             position_seconds = EXCLUDED.position_seconds,
             updated_at = NOW()
         RETURNING id

@@ -680,7 +680,7 @@ pub async fn stream_progress(
                         INSERT INTO movie_watch_states (id, movie_id, user_id, watched, position_seconds)
                         VALUES ($1, $2, $3, FALSE, $4)
                         ON CONFLICT (movie_id, user_id)
-                        DO UPDATE SET position_seconds = $4, updated_at = NOW()
+                        DO UPDATE SET position_seconds = $4, source = 'local', updated_at = NOW()
                         "#,
                         Uuid::now_v7(),
                         session.media_id,
@@ -710,7 +710,7 @@ pub async fn stream_progress(
                         INSERT INTO tv_watch_states (id, episode_id, user_id, watched, position_seconds)
                         VALUES ($1, $2, $3, FALSE, $4)
                         ON CONFLICT (episode_id, user_id)
-                        DO UPDATE SET position_seconds = $4, updated_at = NOW()
+                        DO UPDATE SET position_seconds = $4, source = 'local', updated_at = NOW()
                         "#,
                         Uuid::now_v7(),
                         session.media_id,

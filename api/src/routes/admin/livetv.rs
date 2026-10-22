@@ -12,6 +12,7 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::livetv::stacking::Stacks;
 use crate::livetv::{classify, hdhomerun};
 use crate::repositories::{livetv_channels, livetv_guide, livetv_recordings, livetv_tuners};
 use crate::routes::AuthUser;
@@ -22,6 +23,7 @@ pub enum AppError {
     NotFound(String),
     BadRequest(String),
     Conflict(String),
+    BadGateway(String),
     Internal(String),
 }
 
@@ -33,6 +35,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg),
+            AppError::BadGateway(msg) => (StatusCode::BAD_GATEWAY, msg),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
         (status, Json(json!({ "error": message }))).into_response()
@@ -119,6 +122,7 @@ pub struct ChannelResponse {
     type_label: String,
     has_guide: bool,
     guide_entry_count: i64,
+    alternate_ids: Vec<Uuid>,
     now: Option<Box<GuideNowResponse>>,
     #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
@@ -235,10 +239,36 @@ pub(crate) fn channel_response(
         type_label: classify::type_label(kind, row.video_codec.as_deref(), row.hd),
         has_guide: guide_entry_count > 0,
         guide_entry_count,
+        alternate_ids: Vec::new(),
         now: None,
         created_at: row.created_at,
         updated_at: row.updated_at,
     }
+}
+
+impl ChannelResponse {
+    /// A stack's primary speaks for the whole stack.
+    pub(crate) fn stacked(mut self, stacks: &Stacks) -> Self {
+        self.alternate_ids = stacks.alternates(self.id).to_vec();
+        self.favourite |= stacks.any_favourite(self.id);
+        self
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct StackedQuery {
+    #[serde(default)]
+    pub stacked: bool,
+}
+
+pub(crate) async fn stacks_for(
+    state: &AppState,
+    stacked: bool,
+) -> Result<std::sync::Arc<Stacks>, AppError> {
+    if !stacked {
+        return Ok(Default::default());
+    }
+    Ok(state.livetv.stacks.get(&state.pool).await?)
 }
 
 pub(crate) fn guide_entry_response(
@@ -565,6 +595,8 @@ pub struct ChannelQuery {
     pub offset: Option<i64>,
     #[serde(default)]
     pub with_now: bool,
+    #[serde(default)]
+    pub stacked: bool,
 }
 
 fn tally(values: impl Iterator<Item = (String, String)>) -> Vec<Facet> {
@@ -633,6 +665,7 @@ pub async fn list_channels(
 ) -> Result<impl IntoResponse, AppError> {
     require_contributor(&user)?;
 
+    let stacks = stacks_for(&state, q.stacked).await?;
     let filters = livetv_channels::ChannelFilters {
         tuner_id: q.tuner_id,
         search: q.search.clone(),
@@ -644,6 +677,7 @@ pub async fn list_channels(
         favourite: q.favourite,
         has_guide: q.has_guide,
         mux: q.mux,
+        exclude_ids: stacks.hidden_ids(),
     };
     let limit = q.limit.unwrap_or(200).clamp(1, 1000);
     let offset = q.offset.unwrap_or(0).max(0);
@@ -655,7 +689,7 @@ pub async fn list_channels(
 
     let mut items: Vec<ChannelResponse> = rows
         .iter()
-        .map(|r| channel_response(&r.channel, r.guide_entry_count))
+        .map(|r| channel_response(&r.channel, r.guide_entry_count).stacked(&stacks))
         .collect();
 
     if q.with_now && !items.is_empty() {
@@ -667,7 +701,7 @@ pub async fn list_channels(
                 continue;
             };
             item.now = Some(Box::new(GuideNowResponse {
-                channel: channel_response(&row.channel, row.guide_entry_count),
+                channel: channel_response(&row.channel, row.guide_entry_count).stacked(&stacks),
                 minutes_left: current
                     .as_ref()
                     .map(|e| (e.end_time - now).whole_minutes().max(0)),
@@ -776,6 +810,7 @@ pub async fn update_channel(
     .await?
     .ok_or_else(|| AppError::NotFound("Channel not found".to_string()))?;
 
+    state.livetv.stacks.invalidate().await;
     if let Err(e) =
         crate::search::index_livetv_channel(state.search.as_ref(), &state.pool, id).await
     {
@@ -816,6 +851,7 @@ pub async fn bulk_channels(
     };
 
     let updated = livetv_channels::bulk_set(&state.pool, &input.ids, enabled, favourite).await?;
+    state.livetv.stacks.invalidate().await;
 
     match crate::search::fetch_all_livetv_channel_docs(&state.pool).await {
         Ok(docs) => {
@@ -842,6 +878,8 @@ pub struct GuideQuery {
     pub genre: Option<String>,
     #[serde(default)]
     pub include_hidden: bool,
+    #[serde(default)]
+    pub stacked: bool,
 }
 
 fn parse_time(raw: Option<&String>, fallback: OffsetDateTime) -> Result<OffsetDateTime, AppError> {
@@ -907,9 +945,11 @@ pub async fn get_guide(
     }
     let channel_ids = parse_ids(q.channel_ids.as_ref())?;
 
-    let channels =
+    let stacks = stacks_for(&state, q.stacked).await?;
+    let mut channels =
         livetv_channels::list_for_guide(&state.pool, channel_ids.clone(), !q.include_hidden)
             .await?;
+    channels.retain(|c| !stacks.is_hidden(c.id));
     let wanted: Vec<Uuid> = channels.iter().map(|c| c.id).collect();
 
     let search = q.search.as_deref().map(str::trim).filter(|s| !s.is_empty());
@@ -969,7 +1009,8 @@ pub async fn get_guide(
                 return None;
             }
             Some(GuideChannelResponse {
-                channel: channel_response(c, counts.get(&c.id).copied().unwrap_or(0)),
+                channel: channel_response(c, counts.get(&c.id).copied().unwrap_or(0))
+                    .stacked(&stacks),
                 entries,
             })
         })
@@ -1081,6 +1122,8 @@ pub(crate) async fn now_next_map(
 pub struct GuideNowQuery {
     pub channel_ids: Option<String>,
     pub limit: Option<i64>,
+    #[serde(default)]
+    pub stacked: bool,
 }
 
 pub async fn get_guide_now(
@@ -1091,7 +1134,9 @@ pub async fn get_guide_now(
     require_contributor(&user)?;
 
     let channel_ids = parse_ids(q.channel_ids.as_ref())?;
+    let stacks = stacks_for(&state, q.stacked).await?;
     let mut channels = livetv_channels::list_for_guide(&state.pool, channel_ids, true).await?;
+    channels.retain(|c| !stacks.is_hidden(c.id));
     if let Some(limit) = q.limit {
         channels.truncate(limit.clamp(1, 500) as usize);
     }
@@ -1108,7 +1153,7 @@ pub async fn get_guide_now(
         .map(|c| {
             let (current, next) = map.get(&c.id).cloned().unwrap_or((None, None));
             GuideNowResponse {
-                channel: channel_response(c, 0),
+                channel: channel_response(c, 0).stacked(&stacks),
                 minutes_left: current
                     .as_ref()
                     .map(|e| (e.end_time - now).whole_minutes().max(0)),

@@ -88,6 +88,7 @@ use routes::admin::debrid_stream as debrid_stream_routes;
 use routes::admin::diagnostics as diagnostics_routes;
 use routes::admin::discover as discover_routes;
 use routes::admin::episode_cast as episode_cast_routes;
+use routes::admin::for_you as for_you_routes;
 use routes::admin::inbox as inbox_routes;
 use routes::admin::iptv as iptv_routes;
 use routes::admin::livetv as livetv_routes;
@@ -107,6 +108,7 @@ use routes::admin::tts as tts_routes;
 use routes::admin::tv as tv_routes;
 use routes::admin::video_metadata as video_metadata_routes;
 use routes::admin::video_sync as video_sync_routes;
+use routes::admin::watch_history as watch_history_routes;
 use routes::admin::watchlist as watchlist_routes;
 use routes::providers::library as provider_library_routes;
 use routes::stremio as stremio_routes;
@@ -265,6 +267,22 @@ pub fn create_router(state: AppState) -> Router {
             get(discover_routes::list_discover),
         )
         .route(discover_art::ART_ROUTE, get(discover_art::serve))
+        .route(
+            "/api/v1/admin/discover/for-you/dismiss",
+            post(for_you_routes::dismiss).delete(for_you_routes::undismiss),
+        )
+        .route(
+            "/api/v1/admin/watch-history",
+            get(watch_history_routes::list_history),
+        )
+        .route(
+            "/api/v1/admin/watch-history/exclude",
+            post(watch_history_routes::exclude),
+        )
+        .route(
+            "/api/v1/admin/watch-history/remove",
+            post(watch_history_routes::remove),
+        )
         .route(
             "/api/v1/admin/discover/refresh",
             post(discover_routes::refresh_discover),

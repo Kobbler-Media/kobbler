@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH acct AS (\n            SELECT id FROM stremio_accounts\n            WHERE user_id = $1 OR user_id IS NULL\n            ORDER BY user_id NULLS LAST\n            LIMIT 1\n        )\n        SELECT DISTINCT h.media_type, h.tmdb_id AS \"tmdb_id!\"\n        FROM stremio_history_items h\n        JOIN acct ON acct.id = h.account_id\n        JOIN UNNEST($2::text[], $3::text[]) AS k(media_type, tmdb_id)\n          ON k.media_type = h.media_type AND k.tmdb_id = h.tmdb_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tmdb_id!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "stremio_history_items",
+            "name": "tmdb_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "db02630cb1eebf01ef62c0bfd15ebf627c0db6c35fb30c4a47e3659e96d1e750"
+}
