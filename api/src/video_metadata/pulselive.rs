@@ -53,18 +53,8 @@ async fn get<T: serde::de::DeserializeOwned>(
     client: &reqwest::Client,
     url: &str,
 ) -> Result<T, VideoProviderError> {
-    let resp = client
-        .get(url)
-        .timeout(crate::source_cache::LOOKUP_TIMEOUT)
-        .send()
-        .await?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(VideoProviderError::Other(format!(
-            "pulselive returned HTTP {status} for {url}"
-        )));
-    }
-    resp.json().await.map_err(VideoProviderError::from)
+    let body = crate::source_cache::get_text(client, "pulselive", url).await?;
+    serde_json::from_str(&body).map_err(|e| VideoProviderError::Parse(e.to_string()))
 }
 
 /// A season pulselive does not list has no events, which is an answer.

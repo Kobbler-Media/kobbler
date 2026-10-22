@@ -106,9 +106,10 @@ pub async fn event_want(registry: &VideoProviderRegistry, want: EventWant<'_>) -
 #[cfg(test)]
 mod tests {
     use super::aliases::{Gathered, finish};
-    use super::enrich::{EventRef, gather_from_motogp, gather_from_season};
+    use super::enrich::{EventRef, gather_from_motogp, gather_from_season, gather_from_worldsbk};
     use crate::video_metadata::pulselive::{self, MotoGpEvent, TEST_EVENTS_2026};
     use crate::video_metadata::types::{EpisodeDetails, SeasonDetails, SportEventSource};
+    use crate::video_metadata::worldsbk::{self, TEST_ROUNDS_2026, TEST_SESSIONS_2026_JER};
 
     fn session(
         number: u32,
@@ -320,6 +321,61 @@ mod tests {
             Some(vec!["WSB".into(), "WSBK".into(), "World Superbike".into()])
         );
         assert_eq!(meta.region.as_deref(), Some("Andalusia"));
+    }
+
+    #[test]
+    fn sbk_round_carries_worldsbks_names_and_session_start() {
+        let event = EventRef {
+            league_id: Some("4454"),
+            class: Some("SBK"),
+            season: Some(2026),
+            air_date: date(2026, time::Month::October, 18),
+            provider_event_id: None,
+            sort_order: 12002,
+            title: Some("Pirelli Spanish Round Superpole - Race"),
+            session: Some("Superpole Race"),
+        };
+        let rounds = worldsbk::parse_rounds(TEST_ROUNDS_2026).unwrap();
+        let sessions = worldsbk::parse_sessions(TEST_SESSIONS_2026_JER).unwrap();
+        let round = worldsbk::round_on(&rounds, event.air_date.unwrap()).unwrap();
+        let session = worldsbk::session_named(&sessions, "SBK", "Superpole Race");
+
+        let mut gathered = Gathered::default();
+        gather_from_worldsbk(round, session, &mut gathered);
+        let meta = finish(gathered, Some("Spain"), "SBK", Some("SBK"));
+
+        assert_has(
+            &meta.location_aliases,
+            &[
+                "Spain",
+                "Jerez",
+                "Jerez de la Frontera",
+                "Circuito de Jerez - Ángel Nieto",
+                "Andalusia",
+                "ESP",
+            ],
+        );
+        assert_has(&meta.event_aliases, &["Pirelli Spanish Round"]);
+        assert_eq!(
+            meta.session_start.as_deref(),
+            Some("2026-10-18T09:10:00+00:00")
+        );
+        assert_eq!(meta.country_iso.as_deref(), Some("ES"));
+        assert_eq!(
+            meta.identifiers.unwrap().official_id.as_deref(),
+            Some("2026-JER")
+        );
+    }
+
+    #[test]
+    fn worldsbk_fim_country_codes_resolve() {
+        let rounds = worldsbk::parse_rounds(TEST_ROUNDS_2026).unwrap();
+        let portimao = rounds.iter().find(|r| r.code == "POR").unwrap();
+        let mut gathered = Gathered::default();
+        gather_from_worldsbk(portimao, None, &mut gathered);
+        let meta = finish(gathered, None, "SBK", Some("SBK"));
+        assert_eq!(meta.country_iso.as_deref(), Some("PT"));
+        assert_has(&meta.location_aliases, &["Portimão", "Algarve", "Portugal"]);
     }
 
     #[test]

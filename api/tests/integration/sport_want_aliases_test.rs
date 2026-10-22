@@ -2,12 +2,13 @@
 //! league and session go by, not just the title-parsed location.
 //!
 //! Providers are read through the metadata cache, which these tests fill, so
-//! nothing here reaches Sportarr or pulselive.
+//! nothing here reaches Sportarr, pulselive or WorldSBK.
 
 use crate::common::*;
 use api::jobs::handlers::SportsWantHandler;
 use api::jobs::worker::JobHandler;
 use api::routes::admin::stream_search_request::{self, SearchTarget};
+use api::video_metadata::worldsbk;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -112,6 +113,25 @@ async fn sbk_superpole_race(pool: &sqlx::PgPool) -> SportEvent {
         json!(["SBK", "WSB", "WSBK", "World Superbike"]),
     )
     .await;
+    cache(
+        pool,
+        "worldsbk",
+        "sbk_rounds:2026",
+        json!(
+            worldsbk::parse_rounds(include_str!("../fixtures/worldsbk/rounds_2026.json")).unwrap()
+        ),
+    )
+    .await;
+    cache(
+        pool,
+        "worldsbk",
+        "sbk_sessions:2026:JER",
+        json!(
+            worldsbk::parse_sessions(include_str!("../fixtures/worldsbk/sessions_2026_jer.json"))
+                .unwrap()
+        ),
+    )
+    .await;
 
     SportEvent {
         show,
@@ -152,6 +172,11 @@ fn assert_carries_the_jerez_round(entry: &str, want: &Value) {
         ["SBK", "WSB", "World Superbike"],
         "{entry}"
     );
+    assert!(
+        names(want, "event_aliases").contains(&"Pirelli Spanish Round".to_string()),
+        "{entry}: {want}"
+    );
+    assert_eq!(want["identifiers"]["official_id"], "2026-JER", "{entry}");
 }
 
 #[tokio::test]

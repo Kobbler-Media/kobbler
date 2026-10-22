@@ -1,5 +1,6 @@
-//! Lookups against optional metadata sources (pulselive, Jolpica, Sportarr's
-//! league names and teams, TMDB alternative titles, Hardcover editions).
+//! Lookups against optional metadata sources (pulselive, WorldSBK, Jolpica,
+//! Sportarr's league names and teams, TMDB alternative titles, Hardcover
+//! editions).
 //!
 //! Wants are built from these on every search, so a source that is down must
 //! not cost every build a timeout and a warning: a failure is remembered per
@@ -14,11 +15,27 @@ use sqlx::PgPool;
 use tracing::warn;
 
 use crate::repositories::metadata_cache as cache_repo;
+use crate::video_metadata::VideoProviderError;
 
 /// Per-request timeout for these sources, well under the shared client's.
 pub const LOOKUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 const FAILURE_WINDOW: time::Duration = time::Duration::hours(1);
+
+pub async fn get_text(
+    client: &reqwest::Client,
+    source: &str,
+    url: &str,
+) -> Result<String, VideoProviderError> {
+    let resp = client.get(url).timeout(LOOKUP_TIMEOUT).send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(VideoProviderError::Other(format!(
+            "{source} returned HTTP {status} for {url}"
+        )));
+    }
+    Ok(resp.text().await?)
+}
 
 fn failure_key(key: &str) -> String {
     format!("failed:{key}")

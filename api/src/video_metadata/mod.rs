@@ -9,6 +9,7 @@ pub mod tmdb;
 mod tvdb;
 pub mod tvmaze;
 pub mod types;
+pub mod worldsbk;
 
 use async_trait::async_trait;
 use sqlx::PgPool;
@@ -26,6 +27,7 @@ pub use types::{
 
 pub const PULSELIVE: &str = "pulselive";
 pub const JOLPICA: &str = "jolpica";
+pub const WORLDSBK: &str = "worldsbk";
 
 /// Most metadata is effectively immutable — an ended show's back catalogue does
 /// not change — so it caches for a week.
@@ -780,8 +782,8 @@ impl VideoProviderRegistry {
     }
 
     /// A sport source's base URL: the TheSportsDB provider's config can point
-    /// one elsewhere (`pulselive_url`, `jolpica_url`, `sportarr_url`,
-    /// `sportarr_public_url`).
+    /// one elsewhere (`pulselive_url`, `jolpica_url`, `worldsbk_url`,
+    /// `sportarr_url`, `sportarr_public_url`).
     async fn sport_source_url(&self, key: &str, default: &str) -> String {
         self.get_provider_config(thesportsdb::INFO.id)
             .await
@@ -851,6 +853,38 @@ impl VideoProviderRegistry {
             &format!("motogp_events:{year}"),
             CACHE_TTL_ACTIVE,
             || pulselive::fetch_events(&self.http_client, &base, year),
+        )
+        .await
+    }
+
+    pub async fn get_sbk_rounds(&self, year: u32) -> Option<Vec<worldsbk::SbkRound>> {
+        let base = self
+            .sport_source_url("worldsbk_url", worldsbk::BASE_URL)
+            .await;
+        crate::source_cache::lookup(
+            &self.pool,
+            WORLDSBK,
+            &format!("sbk_rounds:{year}"),
+            CACHE_TTL_ACTIVE,
+            || worldsbk::fetch_rounds(&self.http_client, &base, year),
+        )
+        .await
+    }
+
+    pub async fn get_sbk_sessions(
+        &self,
+        year: u32,
+        round_code: &str,
+    ) -> Option<Vec<worldsbk::SbkSession>> {
+        let base = self
+            .sport_source_url("worldsbk_url", worldsbk::BASE_URL)
+            .await;
+        crate::source_cache::lookup(
+            &self.pool,
+            WORLDSBK,
+            &format!("sbk_sessions:{year}:{round_code}"),
+            CACHE_TTL_ACTIVE,
+            || worldsbk::fetch_sessions(&self.http_client, &base, year, round_code),
         )
         .await
     }

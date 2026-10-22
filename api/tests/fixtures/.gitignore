@@ -1,6 +1,7 @@
 *.json
 *.xml
 
-# The Live TV fixtures are not test data the tests read at runtime — they are
-# include_str!'d from api/src, so the library does not compile without them.
+# The Live TV and WorldSBK fixtures are not test data the tests read at runtime —
+# they are include_str!'d from api/src, so the library does not compile without them.
 !livetv/*.json
+!worldsbk/*.json

@@ -6,6 +6,7 @@ use crate::video_metadata::jolpica::{self, F1Race};
 use crate::video_metadata::pulselive::{self, MotoGpEvent};
 use crate::video_metadata::thesportsdb;
 use crate::video_metadata::types::{EpisodeDetails, SeasonDetails};
+use crate::video_metadata::worldsbk::{self, SbkRound, SbkSession};
 use crate::video_metadata::{VideoProviderError, VideoProviderRegistry};
 
 pub struct EventRef<'a> {
@@ -34,7 +35,7 @@ pub trait SportEnricher: Sync {
     ) -> Result<(), VideoProviderError>;
 }
 
-pub const ENRICHERS: &[&dyn SportEnricher] = &[&Sportarr, &Pulselive, &Jolpica];
+pub const ENRICHERS: &[&dyn SportEnricher] = &[&Sportarr, &Pulselive, &WorldSbk, &Jolpica];
 
 const MOTOGP_CLASSES: &[&str] = &["MotoGP", "Moto2", "Moto3"];
 
@@ -235,6 +236,73 @@ pub fn gather_from_motogp(event: &MotoGpEvent, into: &mut Gathered) {
     into.ids.official_id = Some(event.id.clone());
 }
 
+pub struct WorldSbk;
+
+#[async_trait]
+impl SportEnricher for WorldSbk {
+    fn name(&self) -> &'static str {
+        "worldsbk"
+    }
+
+    fn covers(&self, event: &EventRef<'_>) -> bool {
+        event.class.and_then(worldsbk::category_of).is_some()
+            && event.season.is_some()
+            && event.air_date.is_some()
+    }
+
+    async fn gather(
+        &self,
+        registry: &VideoProviderRegistry,
+        event: &EventRef<'_>,
+        into: &mut Gathered,
+    ) -> Result<(), VideoProviderError> {
+        let (Some(season), Some(date), Some(category)) = (
+            event.season,
+            event.air_date,
+            event.class.and_then(worldsbk::category_of),
+        ) else {
+            return Ok(());
+        };
+        let rounds = registry.get_sbk_rounds(season).await.unwrap_or_default();
+        let Some(round) = worldsbk::round_on(&rounds, date) else {
+            return Ok(());
+        };
+        let sessions = match event.session {
+            Some(_) => registry
+                .get_sbk_sessions(season, &round.code)
+                .await
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+        let session = event
+            .session
+            .and_then(|s| worldsbk::session_named(&sessions, category, s));
+        gather_from_worldsbk(round, session, into);
+        Ok(())
+    }
+}
+
+pub fn gather_from_worldsbk(round: &SbkRound, session: Option<&SbkSession>, into: &mut Gathered) {
+    into.venues.extend(round.name.as_deref().and_then(tidy));
+    if let Some(circuit) = &round.circuit {
+        into.venues.extend(
+            [&circuit.description, &circuit.name]
+                .into_iter()
+                .filter_map(|n| n.as_deref().and_then(tidy)),
+        );
+        into.cities
+            .extend(circuit.locality.as_deref().and_then(tidy));
+    }
+    into.places.extend(round.place.as_deref().and_then(tidy));
+    into.country_from(round.country.as_deref().map(worldsbk::country_code));
+    into.event_aliases
+        .extend(round.description.as_deref().and_then(tidy));
+    if into.session_start.is_none() {
+        into.session_start = session.and_then(|s| s.start.clone());
+    }
+    into.ids.official_id = Some(round.id.clone());
+}
+
 /// Events Sportarr reports as postponed or cancelled ("Match Postponed",
 /// "cancelled") are not wanted: nothing will be released for them on that date.
 pub fn called_off(status: Option<&str>) -> bool {
@@ -305,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn pulselive_covers_only_the_motogp_classes() {
+    fn organiser_sources_cover_only_their_own_classes() {
         let event = |class| EventRef {
             league_id: Some("4407"),
             class,
@@ -319,6 +387,9 @@ mod tests {
         assert!(Pulselive.covers(&event(Some("MotoGP"))));
         assert!(Pulselive.covers(&event(Some("Moto3"))));
         assert!(!Pulselive.covers(&event(Some("SBK"))));
+        assert!(WorldSbk.covers(&event(Some("SBK"))));
+        assert!(WorldSbk.covers(&event(Some("WorldSSP"))));
+        assert!(!WorldSbk.covers(&event(Some("MotoGP"))));
         assert!(!Pulselive.covers(&event(None)));
         assert!(Sportarr.covers(&event(Some("SBK"))));
     }
