@@ -130,6 +130,7 @@ mod skip_detect_test;
 mod smoke_test;
 mod sport_continue_test;
 mod sport_event_dedupe_test;
+mod sport_want_aliases_test;
 mod sports_tallies_test;
 mod stall_watchdog_test;
 mod stream_discover_test;

@@ -1,6 +1,7 @@
 pub mod cinemeta;
 pub mod merge;
 mod omdb;
+pub mod pulselive;
 pub mod release_dates;
 pub mod thesportsdb;
 pub mod tmdb;
@@ -21,6 +22,8 @@ pub use types::{
 // ============================================================================
 // Cache freshness
 // ============================================================================
+
+pub const PULSELIVE: &str = "pulselive";
 
 /// Most metadata is effectively immutable — an ended show's back catalogue does
 /// not change — so it caches for a week.
@@ -751,6 +754,46 @@ impl VideoProviderRegistry {
             .await
     }
 
+    pub async fn get_league_alternate_names(
+        &self,
+        league_id: &str,
+    ) -> Result<Vec<String>, VideoProviderError> {
+        let cache_key = format!("league_alternate_names:{league_id}");
+        if let Ok(Some(cached)) = self.cache_get(thesportsdb::INFO.id, &cache_key).await
+            && let Ok(names) = serde_json::from_value::<Vec<String>>(cached)
+        {
+            return Ok(names);
+        }
+        let names = thesportsdb::fetch_league_alternate_names(&self.http_client, league_id).await?;
+        if let Ok(json) = serde_json::to_value(&names) {
+            let _ = self
+                .cache_set(thesportsdb::INFO.id, &cache_key, &json)
+                .await;
+        }
+        Ok(names)
+    }
+
+    pub async fn get_motogp_events(
+        &self,
+        year: u32,
+    ) -> Result<Vec<pulselive::MotoGpEvent>, VideoProviderError> {
+        let cache_key = format!("motogp_events:{year}");
+        if let Ok(Some(cached)) = self.cache_get(PULSELIVE, &cache_key).await
+            && let Ok(events) = serde_json::from_value::<Vec<pulselive::MotoGpEvent>>(cached)
+        {
+            return Ok(events);
+        }
+        let events = pulselive::fetch_events(&self.http_client, year).await?;
+        if !events.is_empty()
+            && let Ok(json) = serde_json::to_value(&events)
+        {
+            let _ = self
+                .cache_set_for(PULSELIVE, &cache_key, &json, CACHE_TTL_ACTIVE)
+                .await;
+        }
+        Ok(events)
+    }
+
     /// Fetch alternate titles for a TV show from TMDB.
     pub async fn get_tv_alternate_titles(
         &self,
@@ -1019,6 +1062,7 @@ mod cache_ttl_tests {
                     provider_id: None,
                     country: None,
                     credits: None,
+                    sport: None,
                 })
                 .collect(),
         }

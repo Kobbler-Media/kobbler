@@ -31,7 +31,7 @@ use crate::routes::library::helpers::{
     NameCursor, decode_name_cursor, encode_name_cursor, paginated_window,
 };
 use crate::routes::library::types::PaginatedResponse;
-use crate::video_metadata::thesportsdb::parse_sport_event_details;
+use crate::sport_want::{EventWant, event_want};
 use crate::video_metadata::{TvQuery, VideoProviderRegistry};
 use tracing::{info, warn};
 
@@ -1934,38 +1934,17 @@ pub async fn search_event_releases(
         .filter(|v| !v.is_empty())
         .map(str::to_string);
 
-    // Parse sport event details from episode title/identifier
-    let mut details = parse_sport_event_details(
-        episode.title.as_deref(),
-        &episode.episode_identifier,
-        episode.episode_sort_order,
-    );
-
-    // Prefer structured country from provider over title-parsed location
-    if let Some(ref country) = episode.country
-        && !country.is_empty()
-    {
-        details.location = Some(country.clone());
-    }
-
-    let media_want = nats_jobs::MediaWant::SportEvent {
-        league_name: show.title.clone(),
-        season: season.season_identifier.clone(),
-        round: details.round,
-        location: details.location,
-        session_type: details.session_type,
-        event_title: details.event_title,
-        event_date: episode.air_date.map(|d| d.to_string()),
-        quality_profile_id: show.quality_profile_id,
-        quality_overrides: show.preferred_languages.as_ref().map(|langs| {
-            nats_jobs::QualityOverrides {
-                preferred_languages: Some(langs.clone()),
-                ..Default::default()
-            }
-        }),
-        in_library: None,
-        library_video_height: None,
-    };
+    let media_want = event_want(
+        &VideoProviderRegistry::new(state.pool.clone()),
+        EventWant {
+            show: &show,
+            season: &season,
+            episode: &episode,
+            in_library: None,
+            library_video_height: None,
+        },
+    )
+    .await;
 
     // Free text overrides the structured terms, but must not drop the media
     // type with them: Kobload derives its category filter from one or the

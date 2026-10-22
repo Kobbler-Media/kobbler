@@ -12,8 +12,9 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::debrid_outcomes::{self, SearchPreference};
 use crate::repositories::{movies, tv_episodes, tv_seasons, tv_shows};
+use crate::sport_want::{EventWant, event_want};
 use crate::streaming::decision::search_audio_languages;
-use crate::video_metadata::thesportsdb::parse_sport_event_details;
+use crate::video_metadata::VideoProviderRegistry;
 
 pub enum SearchTarget {
     Movie(Uuid),
@@ -286,37 +287,17 @@ async fn episode_request(
         // the 2026 San Marino race search returned a MotoGP video-game repack.
         // The structured SportEvent want searches "MotoGP San Marino Race" instead,
         // the same shape the want pipeline sends.
-        let mut details = parse_sport_event_details(
-            episode.title.as_deref(),
-            &episode.episode_identifier,
-            episode.episode_sort_order,
-        );
-
-        // Prefer structured country from provider over title-parsed location
-        if let Some(ref country) = episode.country
-            && !country.is_empty()
-        {
-            details.location = Some(country.clone());
-        }
-
-        nats_jobs::MediaWant::SportEvent {
-            league_name: show.title,
-            season: season.season_identifier,
-            round: details.round,
-            location: details.location,
-            session_type: details.session_type,
-            event_title: details.event_title,
-            event_date: episode.air_date.map(|d| d.to_string()),
-            quality_profile_id: show.quality_profile_id,
-            quality_overrides: show.preferred_languages.as_ref().map(|langs| {
-                nats_jobs::QualityOverrides {
-                    preferred_languages: Some(langs.clone()),
-                    ..Default::default()
-                }
-            }),
-            in_library: None,
-            library_video_height: None,
-        }
+        event_want(
+            &VideoProviderRegistry::new(state.pool.clone()),
+            EventWant {
+                show: &show,
+                season: &season,
+                episode: &episode,
+                in_library: None,
+                library_video_height: None,
+            },
+        )
+        .await
     } else {
         let identifiers = nats_jobs::TvIdentifiers {
             tmdb_id: show

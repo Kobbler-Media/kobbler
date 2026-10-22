@@ -423,6 +423,7 @@ impl VideoMetadataProvider for TvdbProvider {
                 provider_id: ep.id.map(|id| id.to_string()),
                 country: None,
                 credits: None,
+                sport: None,
             })
             .collect();
 

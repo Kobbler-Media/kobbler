@@ -136,6 +136,7 @@ pub fn wanted_to_sync_items(
                 series: item.series.clone(),
                 series_position: item.series_index.map(|idx| idx.to_string()),
                 release_date: item.pubdate.map(|dt| dt.date().to_string()),
+                alternate_titles: None,
             },
         ));
     }
@@ -161,6 +162,7 @@ pub fn wanted_to_sync_items(
                 series: item.series.clone(),
                 series_position: item.series_index.map(|idx| idx.to_string()),
                 release_date: item.pubdate.map(|dt| dt.date().to_string()),
+                alternate_titles: None,
             },
         ));
     }

@@ -1788,6 +1788,7 @@ pub async fn create_book(
                     series: series_name.clone(),
                     series_position: series_index.map(|idx| idx.to_string()),
                     release_date: None,
+                    alternate_titles: None,
                 };
 
                 let metadata = serde_json::json!({

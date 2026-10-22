@@ -80,6 +80,7 @@ pub async fn search_releases(
             series: metadata.series_name,
             series_position: metadata.series_index.map(|idx| idx.to_string()),
             release_date: metadata.pubdate.map(|dt| dt.date().to_string()),
+            alternate_titles: None,
         }
     } else {
         nats_jobs::MediaWant::Book {
@@ -94,6 +95,7 @@ pub async fn search_releases(
             series: metadata.series_name,
             series_position: metadata.series_index.map(|idx| idx.to_string()),
             release_date: metadata.pubdate.map(|dt| dt.date().to_string()),
+            alternate_titles: None,
         }
     };
 

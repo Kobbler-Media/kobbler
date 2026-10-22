@@ -1174,6 +1174,7 @@ impl VideoMetadataProvider for TmdbProvider {
                 provider_id: ep.id.map(|id| id.to_string()),
                 country: None,
                 credits: Some(Self::map_episode_credits(&ep.guest_stars, &ep.crew)),
+                sport: None,
             })
             .collect();
 

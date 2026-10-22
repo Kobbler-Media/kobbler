@@ -3,8 +3,8 @@ use chrono::Datelike;
 use serde::Deserialize;
 
 use super::types::{
-    EpisodeDetails, MovieResult, SeasonSummary, TvShowResult, VideoCapability, VideoCapabilitySet,
-    VideoConfigField, VideoIdentifiers, VideoProviderInfo,
+    EpisodeDetails, MovieResult, SeasonSummary, SportEventSource, TvShowResult, VideoCapability,
+    VideoCapabilitySet, VideoConfigField, VideoIdentifiers, VideoProviderInfo,
 };
 use super::{
     MovieDetails, MovieQuery, SeasonDetails, TvQuery, TvShowDetails, VideoMetadataProvider,
@@ -39,6 +39,10 @@ const BASE_URL: &str = "https://www.thesportsdb.com/api/v1/json/3";
 /// Sportarr proxy API — wraps TheSportsDB with server-side caching and no
 /// result-count caps. Used as primary source; falls back to direct TheSportsDB.
 const SPORTARR_BASE_URL: &str = "https://sportarr.net/api/v2/json";
+
+/// Sportarr's own league records, the only place its alternate names are
+/// published without an API key.
+const SPORTARR_PUBLIC_URL: &str = "https://sportarr.net/api/public/v1";
 
 /// How many years of seasons to generate when enriching a league.
 const LOOKBACK_YEARS: u32 = 3;
@@ -137,6 +141,14 @@ struct ApiEvent {
     str_description_en: Option<String>,
     #[serde(rename = "strSeason")]
     str_season: Option<String>,
+    #[serde(rename = "strTimestamp", default)]
+    str_timestamp: Option<String>,
+    #[serde(rename = "strFilename", default)]
+    str_filename: Option<String>,
+    #[serde(rename = "strEventAlternate", default)]
+    str_event_alternate: Option<String>,
+    #[serde(rename = "tsdbId", default)]
+    tsdb_id: Option<String>,
 }
 
 // ============================================================================
@@ -552,6 +564,124 @@ struct RoundGroup<'a> {
     events: Vec<&'a ApiEvent>,
 }
 
+fn episodes_from_events(events: &[ApiEvent]) -> Vec<EpisodeDetails> {
+    let mut sorted_events: Vec<&ApiEvent> = events.iter().collect();
+    sorted_events.sort_by(|a, b| {
+        let date_a = a.date_event.as_deref().unwrap_or("");
+        let date_b = b.date_event.as_deref().unwrap_or("");
+        let name_a = a.str_event.as_deref().unwrap_or("");
+        let name_b = b.str_event.as_deref().unwrap_or("");
+        date_a
+            .cmp(date_b)
+            .then_with(|| {
+                session_sort_index_from_name(name_a).cmp(&session_sort_index_from_name(name_b))
+            })
+            .then_with(|| name_a.cmp(name_b))
+    });
+
+    let mut round_seq: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+
+    sorted_events
+        .into_iter()
+        .map(|event| {
+            let round = event
+                .int_round
+                .as_deref()
+                .and_then(|r| r.parse::<u32>().ok())
+                .unwrap_or(0);
+
+            let seq = round_seq.entry(round).or_insert(0);
+            let episode_number = round * 1000 + *seq;
+            *seq += 1;
+
+            EpisodeDetails {
+                episode_number,
+                title: event.str_event.clone(),
+                air_date: event.date_event.clone(),
+                air_time: session_start(event.str_timestamp.as_deref()),
+                runtime: None,
+                still_url: event
+                    .str_thumb
+                    .as_deref()
+                    .or(event.str_poster.as_deref())
+                    .map(String::from),
+                description: event.str_description_en.clone(),
+                provider_id: Some(event.id_event.clone()),
+                country: event.str_country.clone(),
+                credits: None,
+                sport: Some(SportEventSource {
+                    venue: non_empty(&event.str_venue),
+                    city: non_empty(&event.str_city),
+                    alternate_name: non_empty(&event.str_event_alternate),
+                    filename: non_empty(&event.str_filename),
+                    thesportsdb_id: non_empty(&event.tsdb_id),
+                }),
+            }
+        })
+        .collect()
+}
+
+fn non_empty(value: &Option<String>) -> Option<String> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(String::from)
+}
+
+/// Sessions of older seasons are all stamped 00:00:00 UTC, which is the date
+/// with no time rather than a midnight start.
+fn session_start(timestamp: Option<&str>) -> Option<String> {
+    let parsed = chrono::DateTime::parse_from_rfc3339(timestamp?.trim()).ok()?;
+    let utc = parsed.with_timezone(&chrono::Utc);
+    (utc.time() != chrono::NaiveTime::MIN).then(|| parsed.to_rfc3339())
+}
+
+fn parse_league_alternate_names(body: &str) -> Vec<String> {
+    #[derive(Deserialize)]
+    struct PublicLeague {
+        #[serde(rename = "alternateNames", default)]
+        alternate_names: Vec<String>,
+    }
+    serde_json::from_str::<PublicLeague>(body)
+        .map(|l| {
+            l.alternate_names
+                .into_iter()
+                .map(|n| n.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The names release groups also file a league under ("WSBK", "World
+/// Superbike"). A TheSportsDB id is resolved to Sportarr's id first.
+pub async fn fetch_league_alternate_names(
+    client: &reqwest::Client,
+    league_id: &str,
+) -> Result<Vec<String>, VideoProviderError> {
+    let provider = TheSportsDbProvider {
+        client: client.clone(),
+    };
+    let short_id = if league_id.starts_with("lg-") {
+        league_id.to_string()
+    } else {
+        provider.get_league(league_id).await?.id_league
+    };
+    let url = format!(
+        "{SPORTARR_PUBLIC_URL}/leagues/{}",
+        urlencoding::encode(&short_id)
+    );
+    let resp = client.get(&url).send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(VideoProviderError::Other(format!(
+            "Sportarr returned HTTP {status} for {url}"
+        )));
+    }
+    Ok(parse_league_alternate_names(&resp.text().await?))
+}
+
 /// Trim and collapse runs of whitespace to single spaces.
 /// TheSportsDB titles often have trailing spaces ("United States Grand Prix Moto2 ")
 /// and double spaces ("Austrian Grand Prix  Moto2").
@@ -583,9 +713,10 @@ const ROUND_SPONSORS: &[&str] = &[
 ///
 /// WorldSBK titles are "{Sponsor} {Demonym} Round[ Superpole] - {Session}", so
 /// after the session is gone the sponsor, "Round", "Superpole" and the dash are
-/// left over. Kept, they made every SBK want look for a place no release is
-/// named after ("Pirelli Spanish Round" vs `WSBK.2026.Round12.Spain.Jerez`) and
-/// nothing was grabbed from round 5 on.
+/// left over. Through 2023 the Superpole Race was "{Round}[ Race] (Superpole)".
+/// Kept, they made every SBK want look for a place no release is named after
+/// ("Pirelli Spanish Round" vs `WSBK.2026.Round12.Spain.Jerez`) and nothing
+/// was grabbed from round 5 on.
 fn normalize_location(location: &str) -> String {
     // Strip leading articles
     let mut location = location
@@ -597,7 +728,12 @@ fn normalize_location(location: &str) -> String {
     loop {
         let before = location;
         location = location.trim_end_matches(['-', ' ']);
-        for suffix in [" Superpole", " Round"] {
+        if location.ends_with(')')
+            && let Some(open) = location.rfind('(')
+        {
+            location = &location[..open];
+        }
+        for suffix in [" Superpole", " Round", " Race"] {
             if let Some(stripped) = location.strip_suffix(suffix) {
                 location = stripped;
             }
@@ -1096,68 +1232,14 @@ impl VideoMetadataProvider for TheSportsDbProvider {
             return Err(VideoProviderError::NotFound);
         }
 
-        // 1:1 mapping: each TheSportsDB event becomes one episode.
-        // Sort by date first, then by session type (practices before races),
-        // then by event name for deterministic ordering.
-        let mut sorted_events: Vec<&ApiEvent> = events.iter().collect();
-        sorted_events.sort_by(|a, b| {
-            let date_a = a.date_event.as_deref().unwrap_or("");
-            let date_b = b.date_event.as_deref().unwrap_or("");
-            let name_a = a.str_event.as_deref().unwrap_or("");
-            let name_b = b.str_event.as_deref().unwrap_or("");
-            date_a
-                .cmp(date_b)
-                .then_with(|| {
-                    session_sort_index_from_name(name_a).cmp(&session_sort_index_from_name(name_b))
-                })
-                .then_with(|| name_a.cmp(name_b))
-        });
-
-        // Track position within each round for seq calculation
-        let mut round_seq: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
-
-        let mut episodes = Vec::new();
-
-        for event in &sorted_events {
-            let round = event
-                .int_round
-                .as_deref()
-                .and_then(|r| r.parse::<u32>().ok())
-                .unwrap_or(0);
-
-            let seq = round_seq.entry(round).or_insert(0);
-            let episode_number = round * 1000 + *seq;
-            *seq += 1;
-
-            let title = event.str_event.clone();
-            let air_date = event.date_event.clone();
-            let still_url = event
-                .str_thumb
-                .as_deref()
-                .or(event.str_poster.as_deref())
-                .map(String::from);
-            let description = event.str_description_en.clone();
-
-            episodes.push(EpisodeDetails {
-                episode_number,
-                title,
-                air_date,
-                air_time: None,
-                runtime: None,
-                still_url,
-                description,
-                provider_id: Some(event.id_event.clone()),
-                country: event.str_country.clone(),
-                credits: None,
-            });
-        }
+        let episodes = episodes_from_events(&events);
 
         Ok(SeasonDetails {
             provider: "thesportsdb".to_string(),
             show_id: show_id.to_string(),
             season_number: season,
             title: Some(season_str),
-            air_date: sorted_events.first().and_then(|e| e.date_event.clone()),
+            air_date: episodes.first().and_then(|e| e.air_date.clone()),
             description: None,
             poster_url: None,
             episodes,
@@ -1187,8 +1269,13 @@ pub struct SportEventDetails {
 /// unique and stays as it is: changing it would fork every existing row. The
 /// want has to say "Superpole Race", though, or it never matches the
 /// `...Superpole.Race...` release.
+///
+/// The bracketed form ("Motul French Round  (Superpole)") yields no session
+/// the identifier recognises, so those rows keep the provider-id form and only
+/// the want learns which race it is.
 fn want_session(title: &str, session: String) -> String {
-    if session == "Race" && title.to_lowercase().contains("superpole") {
+    let title = title.to_lowercase();
+    if (session == "Race" && title.contains("superpole")) || title.contains("(superpole)") {
         "Superpole Race".to_string()
     } else {
         session
@@ -1686,6 +1773,10 @@ mod tests {
             str_poster: None,
             str_description_en: None,
             str_season: None,
+            str_timestamp: None,
+            str_filename: None,
+            str_event_alternate: None,
+            tsdb_id: None,
         }
     }
 
@@ -1804,5 +1895,128 @@ mod tests {
         // round 0 (no int_round) -> provider-id form, never evt-r0-*.
         let id = sport_episode_identifier(0, Some("Hungary Race Moto3"), Some("777"));
         assert_eq!(id, "evt-777");
+    }
+
+    /// WorldSBK titled its Superpole Race "{Round}  (Superpole)" or
+    /// "{Round} Race (Superpole)" through 2023. The bracket kept the sponsor,
+    /// "Round" and the demonym in the location.
+    #[test]
+    fn sbk_parenthesised_superpole_titles_give_the_place() {
+        let cases = [
+            ("Motul French Round  (Superpole)", "France"),
+            ("Pirelli Dutch Round  (Superpole)", "Netherlands"),
+            (
+                "Grand Ridge Brewery Australian Round  (Superpole)",
+                "Australia",
+            ),
+            ("Aragon Round Race (Superpole)", "Aragon"),
+            ("Emilia Romagna Round Race (Superpole)", "Emilia Romagna"),
+            ("Catalunya Round  (Superpole)", "Catalunya"),
+        ];
+        for (title, want) in cases {
+            assert_eq!(extract_location(Some(title)), want, "location for {title}");
+        }
+    }
+
+    #[test]
+    fn sbk_parenthesised_superpole_wants_name_the_superpole_race() {
+        for (title, ord) in [
+            ("Motul French Round  (Superpole)", 8002),
+            ("Aragon Round Race (Superpole)", 1001),
+        ] {
+            let d = parse_sport_event_details(Some(title), "evt-123", ord);
+            assert_eq!(d.session_type.as_deref(), Some("Superpole Race"), "{title}");
+        }
+    }
+
+    /// Those rows were stored under the provider-id form; a fix to the location
+    /// must not move them onto a natural key and fork every one.
+    #[test]
+    fn sbk_parenthesised_superpole_identifiers_are_unchanged() {
+        for (title, ord) in [
+            ("Motul French Round  (Superpole)", 8002),
+            ("Aragon Round Race (Superpole)", 1001),
+        ] {
+            assert_eq!(
+                sport_episode_identifier(ord, Some(title), Some("123")),
+                "evt-123",
+                "identifier for {title}"
+            );
+        }
+    }
+
+    const AMERICAS_SCHEDULE: &str = r#"{"data":{"schedule":[
+        {"idEvent":"ev-2561852","tsdbId":"2568439","strEvent":"USA - Free Practice 1","intRound":"3",
+         "dateEvent":"2026-03-27","strTimestamp":"2026-03-27T15:45:00+00:00",
+         "strVenue":"Circuit of the Americas","strCity":"Austin","strCountry":"US",
+         "strFilename":"MotoGP 2026-03-27 USA Free Practice 1","strEventAlternate":null},
+        {"idEvent":"ev-361462","tsdbId":"2424575","strEvent":"USA - Race","intRound":"3",
+         "dateEvent":"2026-03-29","strTimestamp":"2026-03-29T19:00:00+00:00",
+         "strVenue":null,"strCity":null,"strCountry":null,
+         "strFilename":"MotoGP 2026-03-29 USA Race","strEventAlternate":"Grand Prix of the Americas"},
+        {"idEvent":"ev-1","strEvent":"Grand Ridge Brewery Australian Round - Race 1","intRound":"1",
+         "dateEvent":"2024-02-24","strTimestamp":"2024-02-24T00:00:00+00:00",
+         "strVenue":"Phillip Island Grand Prix Circuit","strCity":"Phillip Island","strCountry":"AU"}
+    ]}}"#;
+
+    #[test]
+    fn sportarr_rows_carry_venue_city_and_start_into_episodes() {
+        let resp: SportarrResponse<SportarrScheduleData> =
+            serde_json::from_str(AMERICAS_SCHEDULE).unwrap();
+        let events = resp.data.unwrap().schedule;
+        let episodes = episodes_from_events(&events);
+        let by_id = |id: &str| {
+            episodes
+                .iter()
+                .find(|e| e.provider_id.as_deref() == Some(id))
+                .unwrap()
+        };
+
+        let fp1 = by_id("ev-2561852");
+        assert_eq!(fp1.air_time.as_deref(), Some("2026-03-27T15:45:00+00:00"));
+        assert_eq!(
+            fp1.sport,
+            Some(SportEventSource {
+                venue: Some("Circuit of the Americas".into()),
+                city: Some("Austin".into()),
+                alternate_name: None,
+                filename: Some("MotoGP 2026-03-27 USA Free Practice 1".into()),
+                thesportsdb_id: Some("2568439".into()),
+            })
+        );
+
+        let race = by_id("ev-361462");
+        let sport = race.sport.as_ref().unwrap();
+        assert_eq!(sport.venue, None);
+        assert_eq!(
+            sport.alternate_name.as_deref(),
+            Some("Grand Prix of the Americas")
+        );
+        assert_eq!(race.air_time.as_deref(), Some("2026-03-29T19:00:00+00:00"));
+    }
+
+    /// Older seasons stamp every session at midnight UTC: a date, not a time.
+    #[test]
+    fn sportarr_midnight_timestamps_are_not_a_start_time() {
+        let resp: SportarrResponse<SportarrScheduleData> =
+            serde_json::from_str(AMERICAS_SCHEDULE).unwrap();
+        let episodes = episodes_from_events(&resp.data.unwrap().schedule);
+        let round1 = episodes
+            .iter()
+            .find(|e| e.provider_id.as_deref() == Some("ev-1"))
+            .unwrap();
+        assert_eq!(round1.air_time, None);
+    }
+
+    #[test]
+    fn sportarr_league_alternate_names_are_read() {
+        let body = r#"{"id":"1e1c7821","shortId":"lg-000090","name":"SBK","tsdbId":"4454",
+            "alternateNames":["SBK","WSB","WSBK","World Superbike"]}"#;
+        assert_eq!(
+            parse_league_alternate_names(body),
+            vec!["SBK", "WSB", "WSBK", "World Superbike"]
+        );
+        assert!(parse_league_alternate_names(r#"{"alternateNames":[]}"#).is_empty());
+        assert!(parse_league_alternate_names(r#"{"detail":"nope"}"#).is_empty());
     }
 }

@@ -328,6 +328,23 @@ pub struct EpisodeDetails {
     /// includes them (TMDB does). Empty is not "none" — see `EpisodeCredits`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credits: Option<EpisodeCredits>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sport: Option<SportEventSource>,
+}
+
+/// Venue and city are patchy per row, so readers merge them across a round.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SportEventSource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub venue: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alternate_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thesportsdb_id: Option<String>,
 }
 
 /// Full season details from a provider.

@@ -152,6 +152,7 @@ impl JobHandler for BookWantHandler {
                 series: book_data.series_name.clone(),
                 series_position: book_data.series_index.map(|idx| idx.to_string()),
                 release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
+                alternate_titles: None,
             });
         }
 
@@ -169,6 +170,7 @@ impl JobHandler for BookWantHandler {
                 series: book_data.series_name.clone(),
                 series_position: book_data.series_index.map(|idx| idx.to_string()),
                 release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
+                alternate_titles: None,
             });
         }
 

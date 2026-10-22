@@ -360,6 +360,7 @@ async fn build_watch_pattern_payload(
             series: series.map(String::from),
             series_position: series_index.map(|idx| idx.to_string()),
             release_date: None,
+            alternate_titles: None,
         },
         _ => nats_jobs::MediaWant::Book {
             title: title.to_string(),
@@ -373,6 +374,7 @@ async fn build_watch_pattern_payload(
             series: series.map(String::from),
             series_position: series_index.map(|idx| idx.to_string()),
             release_date: None,
+            alternate_titles: None,
         },
     };
 

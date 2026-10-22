@@ -263,6 +263,7 @@ mod tests {
             provider_id: None,
             country: None,
             credits: None,
+            sport: None,
         }
     }
 
