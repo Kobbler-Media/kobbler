@@ -10,7 +10,9 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::repositories::{authors as authors_repo, books as books_repo, series as series_repo};
+use crate::repositories::{
+    authors as authors_repo, books as books_repo, provider_reconcile, series as series_repo,
+};
 use crate::routes::AuthUser;
 
 // =============================================================================
@@ -425,6 +427,22 @@ pub async fn apply_series_metadata(
         Ok(false) => (StatusCode::NOT_FOUND, "series not found").into_response(),
         Err(e) => {
             tracing::error!(error = %e, series_id = %series_id, "Failed to apply series metadata");
+            (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response()
+        }
+    }
+}
+
+/// GET /api/v1/library/provider-link-issues
+/// Links reconcile could not settle on its own: Hardcover deleted something we hold
+/// user data for (now unlinked), or merged two things we both hold user data for.
+pub async fn list_provider_link_issues(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+) -> impl IntoResponse {
+    match provider_reconcile::list_issues(&state.pool).await {
+        Ok(rows) => AxumJson(rows).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "failed to list provider link issues");
             (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response()
         }
     }

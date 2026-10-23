@@ -63,6 +63,7 @@ mod event_subscriber_test;
 mod events_test;
 mod file_replacement_test;
 mod for_you_test;
+mod hardcover_reconcile_test;
 mod hardcover_sync_test;
 mod images_test;
 mod ingest_test;

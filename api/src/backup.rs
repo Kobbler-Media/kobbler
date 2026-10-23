@@ -101,6 +101,8 @@ pub const TABLES_IN_ORDER: &[&str] = &[
     "book_authors",
     // Depends on books, series
     "book_series",
+    // Polymorphic entity_id (authors, series, books), no FK
+    "provider_link_issues",
     // Depends on books
     "book_files",
     "book_ingest_source",

@@ -319,6 +319,7 @@ const ROUTINE_JOB_TYPES: &[&str] = &[
     "person_sync_check",
     "series_sync_check",
     "author_sync_check",
+    "hardcover_reconcile",
     "kepub_check",
     "movie_want_check",
     "book_want_check",

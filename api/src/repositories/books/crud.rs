@@ -807,32 +807,34 @@ where
     Ok(result.rows_affected())
 }
 
-/// Delete discovered books for an author that are NOT in the given set of Hardcover IDs,
-/// AND are not in the library, AND have want_status = 'none' (not wanted/skipped).
+/// Delete the books discovered from an author that Hardcover no longer lists for it,
+/// unless they hold user data. Returns the deleted ids.
 pub async fn delete_stale_discovered<'e, E>(
     exec: E,
     author_id: Uuid,
     current_hardcover_ids: &[String],
-) -> Result<u64>
+) -> Result<Vec<Uuid>>
 where
     E: Executor<'e, Database = Postgres>,
 {
-    let result = sqlx::query!(
+    // Discovered books are created 'pending', so a want_status = 'none' test here never
+    // matched one and nothing was ever cleaned. book_has_user_data is the real line.
+    // A book without a Hardcover id compares NULL and is kept.
+    let ids = sqlx::query_scalar!(
         r#"
         DELETE FROM books
         WHERE discovered_from_author_id = $1
-          AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = books.id)
-                   OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = books.id))
-          AND want_status = 'none'
+          AND NOT book_has_user_data(id)
           AND NOT (identifiers->>'hardcover' = ANY($2))
+        RETURNING id
         "#,
         author_id,
         current_hardcover_ids,
     )
-    .execute(exec)
+    .fetch_all(exec)
     .await?;
 
-    Ok(result.rows_affected())
+    Ok(ids)
 }
 
 /// Delete orphaned books: no files (ebook or audiobook), not wanted, no media

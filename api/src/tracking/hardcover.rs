@@ -1,5 +1,7 @@
 //! Hardcover author provider for tracking functionality.
 
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use time::Date;
@@ -444,7 +446,6 @@ impl TrackedAuthorProvider for HardcoverAuthorProvider {
         // series entries (e.g. two "Cradle" series with different IDs). When this happens,
         // keep only slots from the series with the most books to avoid phantom entries.
         let all_series_slots = {
-            use std::collections::HashMap;
             // For each series name, track the series_id with the highest books_count.
             let mut best_series: HashMap<String, (i64, i32)> = HashMap::new();
             for slot in &all_series_slots {
@@ -482,7 +483,6 @@ impl TrackedAuthorProvider for HardcoverAuthorProvider {
 
         // Group series_slots by book ID, collecting all series memberships per book
         let mut books: Vec<AuthorBook> = {
-            use std::collections::HashMap;
             let mut book_map: HashMap<i64, (AuthorBook, Vec<SeriesMembership>)> = HashMap::new();
 
             for slot in all_series_slots {
@@ -680,6 +680,173 @@ impl TrackedAuthorProvider for HardcoverAuthorProvider {
 
     async fn get_series_books(&self, series_id: &str) -> Result<SeriesWithBooks, String> {
         self.get_series_books_impl(series_id).await
+    }
+}
+
+/// A Hardcover table whose ids we store, for [`HardcoverAuthorProvider::lookup_canonical`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HardcoverEntity {
+    Author,
+    Series,
+    Book,
+}
+
+impl HardcoverEntity {
+    fn table(self) -> &'static str {
+        match self {
+            HardcoverEntity::Author => "authors",
+            HardcoverEntity::Series => "series",
+            HardcoverEntity::Book => "books",
+        }
+    }
+}
+
+/// Ids per lookup. Hardcover silently caps rows per query -- 100 for authors and
+/// series, more for books -- so this stays well under the smallest cap seen.
+const LOOKUP_CHUNK: usize = 50;
+
+impl HardcoverAuthorProvider {
+    /// Ask Hardcover what became of `ids`. Each id it still has maps to its
+    /// `canonical_id` (`None` when the id is itself canonical, `Some` when Hardcover
+    /// merged it into another). An id Hardcover no longer has is absent from the map,
+    /// which is the only way a deletion shows -- so any error fails the whole call, and
+    /// an id missing from a batch is asked for again on its own before it counts as
+    /// gone, since a capped batch drops rows without saying so.
+    pub async fn lookup_canonical(
+        &self,
+        entity: HardcoverEntity,
+        ids: &[i64],
+    ) -> Result<HashMap<i64, Option<i64>>, String> {
+        let mut out = HashMap::with_capacity(ids.len());
+        for chunk in ids.chunks(LOOKUP_CHUNK) {
+            let gql = GraphQLQuery {
+                query: format!(
+                    "query($ids: [Int!]!) {{ items: {}(where: {{ id: {{ _in: $ids }} }}) {{ id canonical_id }} }}",
+                    entity.table()
+                ),
+                variables: serde_json::json!({ "ids": chunk }),
+            };
+
+            let response = self
+                .client
+                .execute(
+                    self.client
+                        .post(&format!("{}/v1/graphql", self.base_url))
+                        .header("Authorization", format!("Bearer {}", self.api_key))
+                        .json(&gql),
+                )
+                .await
+                .map_err(|e| format!("HTTP error: {}", e))?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let text = response.text().await.unwrap_or_default();
+                return Err(format!("API error: {} - {}", status, text));
+            }
+
+            let bytes = response
+                .bytes()
+                .await
+                .map_err(|e| format!("HTTP body error: {}", e))?;
+            let resp: LookupResponse =
+                serde_json::from_slice(&bytes).map_err(|e| format!("JSON parse error: {}", e))?;
+
+            if let Some(errors) = resp.errors
+                && !errors.is_empty()
+            {
+                return Err(format!("GraphQL error: {:?}", errors));
+            }
+
+            let data = resp.data.ok_or("No data in response")?;
+            for item in data.items {
+                out.insert(item.id, item.canonical_id);
+            }
+
+            let missing: Vec<i64> = chunk
+                .iter()
+                .copied()
+                .filter(|id| !out.contains_key(id))
+                .collect();
+            if !missing.is_empty() {
+                let confirmed = self.lookup_by_pk(entity, &missing).await?;
+                if !confirmed.is_empty() {
+                    tracing::warn!(
+                        table = entity.table(),
+                        dropped = confirmed.len(),
+                        "Hardcover batch lookup dropped rows that exist; LOOKUP_CHUNK may exceed its cap"
+                    );
+                }
+                out.extend(confirmed);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Look ids up one by one (`<table>_by_pk`, aliased into one request), which answers
+    /// definitively: an object, or null for an id Hardcover does not have.
+    async fn lookup_by_pk(
+        &self,
+        entity: HardcoverEntity,
+        ids: &[i64],
+    ) -> Result<HashMap<i64, Option<i64>>, String> {
+        let fields: String = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                format!(
+                    "m{i}: {}_by_pk(id: {id}) {{ id canonical_id }} ",
+                    entity.table()
+                )
+            })
+            .collect();
+        let gql = GraphQLQuery {
+            query: format!("query {{ {fields}}}"),
+            variables: serde_json::json!({}),
+        };
+
+        let response = self
+            .client
+            .execute(
+                self.client
+                    .post(&format!("{}/v1/graphql", self.base_url))
+                    .header("Authorization", format!("Bearer {}", self.api_key))
+                    .json(&gql),
+            )
+            .await
+            .map_err(|e| format!("HTTP error: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(format!("API error: {} - {}", status, text));
+        }
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| format!("HTTP body error: {}", e))?;
+        let resp: ByPkResponse =
+            serde_json::from_slice(&bytes).map_err(|e| format!("JSON parse error: {}", e))?;
+
+        if let Some(errors) = resp.errors
+            && !errors.is_empty()
+        {
+            return Err(format!("GraphQL error: {:?}", errors));
+        }
+
+        let data = resp.data.ok_or("No data in response")?;
+        if data.len() != ids.len() {
+            return Err(format!(
+                "by_pk lookup answered {} of {} ids",
+                data.len(),
+                ids.len()
+            ));
+        }
+        Ok(data
+            .into_values()
+            .flatten()
+            .map(|item| (item.id, item.canonical_id))
+            .collect())
     }
 }
 
@@ -1132,6 +1299,30 @@ struct SeriesData {
 #[derive(Debug, Deserialize)]
 struct ImageData {
     url: String,
+}
+
+// Response types for lookup_canonical
+#[derive(Debug, Deserialize)]
+struct LookupResponse {
+    data: Option<LookupData>,
+    errors: Option<Vec<GraphQLError>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LookupData {
+    items: Vec<LookupItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LookupItem {
+    id: i64,
+    canonical_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ByPkResponse {
+    data: Option<HashMap<String, Option<LookupItem>>>,
+    errors: Option<Vec<GraphQLError>>,
 }
 
 // Response types for GetSeriesBooks query

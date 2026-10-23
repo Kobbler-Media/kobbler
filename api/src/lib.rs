@@ -2115,6 +2115,10 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/api/v1/library/series/merge", post(library::merge_series))
         .route(
+            "/api/v1/library/provider-link-issues",
+            get(library::list_provider_link_issues),
+        )
+        .route(
             "/api/v1/library/series/{series_id}/reorder",
             post(library::reorder_series),
         )

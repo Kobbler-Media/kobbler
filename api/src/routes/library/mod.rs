@@ -61,8 +61,9 @@ pub use images::{get_author_image, get_series_image};
 
 // Monitoring
 pub use monitoring::{
-    apply_author_metadata, apply_series_metadata, refresh_author_metadata, refresh_series_metadata,
-    update_author_monitoring, update_series_monitoring,
+    apply_author_metadata, apply_series_metadata, list_provider_link_issues,
+    refresh_author_metadata, refresh_series_metadata, update_author_monitoring,
+    update_series_monitoring,
 };
 
 // Search & Download

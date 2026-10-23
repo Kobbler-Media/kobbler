@@ -2,11 +2,12 @@
 
 pub mod cached;
 pub mod hardcover;
+pub mod reconcile;
 
 pub use cached::CachedAuthorProvider;
 pub use hardcover::{
-    AuthorBook, AuthorSearchResult, AuthorWithBooks, HardcoverAuthorProvider, SeriesBook,
-    SeriesWithBooks, TrackedAuthorProvider,
+    AuthorBook, AuthorSearchResult, AuthorWithBooks, HardcoverAuthorProvider, HardcoverEntity,
+    SeriesBook, SeriesWithBooks, TrackedAuthorProvider,
 };
 
 /// Create a `CachedAuthorProvider` for the given provider type.

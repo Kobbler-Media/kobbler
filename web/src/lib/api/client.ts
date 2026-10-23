@@ -29,6 +29,7 @@ import type {
   PaginatedResponse,
   PersonDetail,
   PersonFilmographyCredit,
+  ProviderLinkIssue,
   Job,
   WantedDetail,
   ListWantedResponse,
@@ -668,6 +669,11 @@ export async function refreshSeriesMetadata(seriesId: string): Promise<{ message
   return request(`/api/v1/library/series/${seriesId}/refresh`, {
     method: 'POST'
   });
+}
+
+/** Hardcover links that need a person: deleted upstream while holding user data, or merge conflicts. */
+export async function getProviderLinkIssues(): Promise<ProviderLinkIssue[]> {
+  return request('/api/v1/library/provider-link-issues');
 }
 
 // Shelves

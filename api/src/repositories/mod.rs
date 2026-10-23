@@ -91,6 +91,7 @@ pub mod movies;
 pub mod notification_agents;
 pub mod people;
 pub mod playback_tokens;
+pub mod provider_reconcile;
 pub mod proxy_logs;
 pub mod reading_states;
 pub mod search_meta;

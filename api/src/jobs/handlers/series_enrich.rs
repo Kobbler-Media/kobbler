@@ -8,9 +8,10 @@ use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::repositories::{
     authors, book_series, books, metadata_providers,
+    provider_reconcile::{self, EntityKind},
     series::{self, SeriesRefreshInput},
 };
-use crate::tracking::CachedAuthorProvider;
+use crate::tracking::{CachedAuthorProvider, reconcile};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -116,7 +117,7 @@ impl JobHandler for SeriesEnrichHandler {
 
         // Get provider API key and create provider
         let api_key = self.get_tracking_api_key().await?;
-        let provider = self.create_provider(api_key)?;
+        let provider = self.create_provider(api_key.clone())?;
         let pid = provider.provider_id();
         let slug_key = format!("{}_slug", pid);
 
@@ -138,11 +139,28 @@ impl JobHandler for SeriesEnrichHandler {
             "Fetching series from tracking provider"
         );
 
-        let series_data = provider
-            .get_series_books(&external_id)
-            .await
-            .map_err(|e| JobError::retryable(format!("Provider API error: {}", e)))?
-            .data;
+        let series_data = match provider.get_series_books(&external_id).await {
+            Ok(outcome) => outcome.data,
+            Err(e) => {
+                if reconcile::settle_after_fetch_failure(
+                    &self.pool,
+                    &self.nats_publisher,
+                    &api_key,
+                    EntityKind::Series,
+                    payload.series_id,
+                    &external_id,
+                )
+                .await
+                {
+                    return Ok(json!({
+                        "series_id": payload.series_id,
+                        "series_name": series_name,
+                        "status": "followed_hardcover",
+                    }));
+                }
+                return Err(JobError::retryable(format!("Provider API error: {}", e)));
+            }
+        };
 
         // Update series metadata
         let refresh_input = SeriesRefreshInput {
@@ -204,6 +222,7 @@ impl JobHandler for SeriesEnrichHandler {
         let mut created_count = 0;
         let mut updated_count = 0;
         let mut wanted_count = 0;
+        let current_ids: Vec<String> = series_data.books.iter().map(|b| b.id.clone()).collect();
 
         for book in series_data.books {
             nats_jobs::check_cancelled(&cancel)?;
@@ -397,6 +416,37 @@ impl JobHandler for SeriesEnrichHandler {
                 position = ?book.position,
                 "Processed series book"
             );
+        }
+
+        // Follow Hardcover: books it no longer lists here leave the series, and any that
+        // only this series had brought in go. An empty list is more likely a bad
+        // response than an empty series.
+        if !current_ids.is_empty() {
+            match provider_reconcile::remove_stale_series_members(
+                &self.pool,
+                payload.series_id,
+                &current_ids,
+            )
+            .await
+            {
+                Ok(removed) if !removed.is_empty() => {
+                    let deleted = provider_reconcile::delete_unanchored_books(&self.pool, &removed)
+                        .await
+                        .unwrap_or_default();
+                    info!(
+                        series_id = %payload.series_id,
+                        removed = removed.len(),
+                        deleted = deleted.len(),
+                        "Removed books Hardcover no longer lists in this series"
+                    );
+                    for book_id in removed {
+                        crate::jobs::enqueue_book_index(&self.pool, &self.nats_publisher, book_id)
+                            .await;
+                    }
+                }
+                Err(e) => warn!(error = %e, "Failed to remove stale series members"),
+                _ => {}
+            }
         }
 
         // Post-hoc cleanup: match any discovered books to library books now that

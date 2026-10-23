@@ -45,6 +45,7 @@ use crate::jobs::handlers::{
     FileAvailabilityHandler,
     ForcedSubtitleCheckHandler,
     FormatConversionHandler,
+    HardcoverReconcileHandler,
     IptvEpgCleanupHandler,
     IptvHealthCheckHandler,
     IptvOrgRefreshHandler,
@@ -393,6 +394,10 @@ pub async fn start_nats_worker(
         library_events.clone(),
     )));
     worker.register_handler(HandlerAdapter::new(SeriesSyncCheckHandler::new(
+        pool.clone(),
+        nats_publisher.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(HardcoverReconcileHandler::new(
         pool.clone(),
         nats_publisher.clone(),
     )));
@@ -920,6 +925,15 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
         )
         .run_immediately(),
     );
+
+    // Follow Hardcover's merges and deletions across everything linked to it. Not run
+    // on boot: it walks the whole catalogue (~600 rate-limited Hardcover requests).
+    scheduler.register(ScheduledJob::new(
+        "hardcover-reconcile",
+        "kobbler",
+        "hardcover_reconcile",
+        std::time::Duration::from_secs(24 * 3600), // daily
+    ));
 
     // Job cleanup - cleans up stale pending jobs and old completed jobs
     scheduler.register(

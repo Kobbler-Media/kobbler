@@ -1701,6 +1701,20 @@ export interface SeriesFormData {
   coverFile?: File;
 }
 
+/** A Hardcover link reconcile could not settle on its own. */
+export interface ProviderLinkIssue {
+  entity_type: 'author' | 'series' | 'book';
+  entity_id: string;
+  name: string | null;
+  provider: string;
+  external_id: string;
+  /** deleted: gone upstream but holds user data, so unlinked. merge_conflict: merged into an entity that also holds user data. */
+  kind: 'deleted' | 'merge_conflict';
+  canonical_external_id: string | null;
+  conflicting_entity_id: string | null;
+  detected_at: string;
+}
+
 // =============================================================================
 // Media Roots
 // =============================================================================

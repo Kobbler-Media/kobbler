@@ -15,9 +15,10 @@ use crate::repositories::{
     book_series,
     books::{self, DiscoveredBookInput},
     metadata_providers,
+    provider_reconcile::EntityKind,
     series::{self, SeriesInput},
 };
-use crate::tracking::CachedAuthorProvider;
+use crate::tracking::{CachedAuthorProvider, reconcile};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -442,10 +443,20 @@ impl AuthorSyncCheckHandler {
         }
 
         // Clean up stale discovered books no longer in provider results
+        // An empty list is more likely a bad response than an author with no books.
         let current_ids: Vec<String> = author_data.books.iter().map(|b| b.id.clone()).collect();
-        match books::delete_stale_discovered(&self.pool, author.id, &current_ids).await {
-            Ok(deleted) if deleted > 0 => {
-                info!(deleted = deleted, author_id = %author.id, "Cleaned up stale discovered books");
+        let stale = if current_ids.is_empty() {
+            Ok(Vec::new())
+        } else {
+            books::delete_stale_discovered(&self.pool, author.id, &current_ids).await
+        };
+        match stale {
+            Ok(deleted) if !deleted.is_empty() => {
+                info!(deleted = deleted.len(), author_id = %author.id, "Cleaned up stale discovered books");
+                for book_id in deleted {
+                    crate::jobs::enqueue_book_index(&self.pool, &self.nats_publisher, book_id)
+                        .await;
+                }
             }
             Err(e) => {
                 warn!(error = %e, "Failed to clean up stale discovered books");
@@ -499,7 +510,7 @@ impl JobHandler for AuthorSyncCheckHandler {
         }
 
         let api_key = get_tracking_api_key(&self.pool).await?;
-        let provider = create_provider(api_key, self.pool.clone())?;
+        let provider = create_provider(api_key.clone(), self.pool.clone())?;
         let mut total_new_books = 0;
         let mut total_wanted = 0;
         let mut checked = 0;
@@ -527,12 +538,23 @@ impl JobHandler for AuthorSyncCheckHandler {
                     api_called
                 }
                 Err(e) => {
-                    error!(
-                        author_id = %author_data.id,
-                        name = %author_data.name,
-                        error = %e,
-                        "Error checking author"
-                    );
+                    let followed = reconcile::settle_after_fetch_failure(
+                        &self.pool,
+                        &self.nats_publisher,
+                        &api_key,
+                        EntityKind::Author,
+                        author_data.id,
+                        &author_data.hardcover_id,
+                    )
+                    .await;
+                    if !followed {
+                        error!(
+                            author_id = %author_data.id,
+                            name = %author_data.name,
+                            error = %e,
+                            "Error checking author"
+                        );
+                    }
                     true
                 }
             };
@@ -827,10 +849,20 @@ impl AuthorEnrichHandler {
         }
 
         // Clean up stale discovered books no longer in provider results
+        // An empty list is more likely a bad response than an author with no books.
         let current_ids: Vec<String> = author_data.books.iter().map(|b| b.id.clone()).collect();
-        match books::delete_stale_discovered(&self.pool, author_id, &current_ids).await {
-            Ok(deleted) if deleted > 0 => {
-                info!(deleted = deleted, author_id = %author_id, "Cleaned up stale discovered books");
+        let stale = if current_ids.is_empty() {
+            Ok(Vec::new())
+        } else {
+            books::delete_stale_discovered(&self.pool, author_id, &current_ids).await
+        };
+        match stale {
+            Ok(deleted) if !deleted.is_empty() => {
+                info!(deleted = deleted.len(), author_id = %author_id, "Cleaned up stale discovered books");
+                for book_id in deleted {
+                    crate::jobs::enqueue_book_index(&self.pool, &self.nats_publisher, book_id)
+                        .await;
+                }
             }
             Err(e) => {
                 warn!(error = %e, "Failed to clean up stale discovered books");
@@ -883,11 +915,11 @@ impl JobHandler for AuthorEnrichHandler {
             })?;
 
         let api_key = get_tracking_api_key(&self.pool).await?;
-        let provider = create_provider(api_key, self.pool.clone())?;
+        let provider = create_provider(api_key.clone(), self.pool.clone())?;
 
         info!(author_id = %author_id, name = %author_info.name, "Enriching author metadata");
 
-        let (new_books, wanted_created) = self
+        let synced = self
             .sync_author(
                 &provider,
                 author_id,
@@ -896,7 +928,29 @@ impl JobHandler for AuthorEnrichHandler {
                 author_info.monitoring_started_at,
                 author_info.is_monitored,
             )
-            .await?;
+            .await;
+        let (new_books, wanted_created) = match synced {
+            Ok(counts) => counts,
+            Err(e) => {
+                if reconcile::settle_after_fetch_failure(
+                    &self.pool,
+                    &self.nats_publisher,
+                    &api_key,
+                    EntityKind::Author,
+                    author_id,
+                    &external_id,
+                )
+                .await
+                {
+                    return Ok(json!({
+                        "author_id": author_id,
+                        "author_name": author_info.name,
+                        "status": "followed_hardcover",
+                    }));
+                }
+                return Err(e);
+            }
+        };
 
         Ok(json!({
             "author_id": author_id,
