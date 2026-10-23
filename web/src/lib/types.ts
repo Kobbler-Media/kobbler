@@ -2417,12 +2417,13 @@ export type LivetvOnNowItem = {
   channel: LivetvChannel;
   guide: LivetvGuideEntry;
   minutes_left: number | null;
+  starts_in_minutes: number | null;
   reason: string | null;
   confidence?: number | null;
 };
 
 export type LivetvOnNowGroup = {
-  key: 'series' | 'timeofday' | 'channel' | 'genre';
+  key: 'usual' | 'series' | 'timeofday' | 'channel' | 'genre';
   title: string;
   subtitle: string | null;
   items: LivetvOnNowItem[];

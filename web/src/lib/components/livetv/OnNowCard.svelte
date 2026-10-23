@@ -31,7 +31,11 @@
 
   const timing = $derived([
     `${clock(item.guide.start_time)} – ${clock(item.guide.end_time)}`,
-    item.minutes_left != null ? `${item.minutes_left} min left` : null,
+    item.starts_in_minutes != null
+      ? `starts in ${item.starts_in_minutes} min`
+      : item.minutes_left != null
+        ? `${item.minutes_left} min left`
+        : null,
     item.guide.episode_number
   ]);
 </script>

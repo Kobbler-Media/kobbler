@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT series_id AS \"series_id!\", started_at\n        FROM livetv_watch_events\n        WHERE user_id = $1 AND series_id = ANY($2) AND started_at >= $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "series_id!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "livetv_watch_events",
+            "name": "series_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "livetv_watch_events",
+            "name": "started_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "f4c73160f59bfab8f0553d20bb7f551bb3dfd5c9be882820d8eb7cd5fdbdb09d"
+}

@@ -116,6 +116,7 @@ pub struct OnNowItem {
     channel: serde_json::Value,
     guide: serde_json::Value,
     minutes_left: Option<i64>,
+    starts_in_minutes: Option<i64>,
     reason: String,
     /// Null when there is not enough history — the UI hides the dots entirely
     /// rather than rendering a fabricated value.
@@ -157,6 +158,15 @@ pub async fn on_now(
                 .map(|entry| (c, entry))
         })
         .collect();
+    let soon: Vec<(&livetv_channels::ChannelRow, livetv_guide::GuideRow)> = channels
+        .iter()
+        .filter_map(|c| {
+            map.get(&c.id)
+                .and_then(|(_, next)| next.clone())
+                .filter(|entry| entry.start_time <= now + USUAL_LOOKAHEAD)
+                .map(|entry| (c, entry))
+        })
+        .collect();
 
     let zone = crate::notifications::prefs::zone_for_user(&state.pool, user.user_id).await;
     let local = now.to_offset(zone.offset_at(now));
@@ -178,6 +188,7 @@ pub async fn on_now(
 
     let series_ids: Vec<String> = live
         .iter()
+        .chain(soon.iter())
         .filter_map(|(_, e)| e.series_id.clone())
         .collect::<HashSet<_>>()
         .into_iter()
@@ -215,10 +226,45 @@ pub async fn on_now(
         channel: serde_json::to_value(channel_response(channel, 0).stacked(&stacks))
             .unwrap_or(json!({})),
         guide: serde_json::to_value(guide_entry_response(entry, now, 0, None)).unwrap_or(json!({})),
-        minutes_left: Some((entry.end_time - now).whole_minutes().max(0)),
+        minutes_left: (entry.start_time <= now)
+            .then(|| (entry.end_time - now).whole_minutes().max(0)),
+        starts_in_minutes: (entry.start_time > now)
+            .then(|| (entry.start_time - now).whole_minutes().max(0)),
         reason,
         confidence,
     };
+
+    let candidates: Vec<(&livetv_channels::ChannelRow, &livetv_guide::GuideRow)> = live
+        .iter()
+        .chain(soon.iter())
+        .map(|(c, e)| (*c, e))
+        .collect();
+    let usual_hour = (u16::from(local.hour()) * 60 + u16::from(local.minute()) + 30) / 60 % 24;
+    let usual_items: Vec<OnNowItem> =
+        usual_airings(&state, user.user_id, &zone, local, now, &candidates)
+            .await?
+            .into_iter()
+            .map(|(channel, entry, _)| {
+                let confidence = entry
+                    .series_id
+                    .as_ref()
+                    .and_then(|s| series_rows.get(s))
+                    .and_then(|row| {
+                        affinity::confidence(
+                            row.watch_count,
+                            row.mean_completion,
+                            regularity,
+                            row.mean_completion > 0.0,
+                        )
+                    });
+                item(
+                    channel,
+                    entry,
+                    format!("you usually watch this around {usual_hour:02}:00"),
+                    confidence,
+                )
+            })
+            .collect();
 
     let mut series_items: Vec<OnNowItem> = Vec::new();
     for (channel, entry) in &live {
@@ -314,6 +360,12 @@ pub async fn on_now(
 
     let groups: Vec<OnNowGroup> = [
         (
+            "usual",
+            "Your usual",
+            "On around now — you usually watch these at this time",
+            usual_items,
+        ),
+        (
             "series",
             "Because you watch it",
             "On now, and you keep coming back",
@@ -353,6 +405,88 @@ pub async fn on_now(
         "tuner_notice": notice,
         "groups": groups,
     })))
+}
+
+const USUAL_LOOKAHEAD: time::Duration = time::Duration::minutes(30);
+const USUAL_HISTORY: time::Duration = time::Duration::days(90);
+const USUAL_WINDOW_MINUTES: u16 = 90;
+const USUAL_MIN_WATCHES: usize = 2;
+const USUAL_LIMIT: usize = 12;
+
+/// Weekday is deliberately ignored: a weeknight show is watched at the same
+/// time on different days, and requiring a weekday match would need weeks of
+/// history before it ever fired.
+async fn usual_airings<'a>(
+    state: &AppState,
+    user_id: Uuid,
+    zone: &crate::notifications::prefs::Zone,
+    local_now: OffsetDateTime,
+    now: OffsetDateTime,
+    candidates: &[(&'a livetv_channels::ChannelRow, &'a livetv_guide::GuideRow)],
+) -> Result<
+    Vec<(
+        &'a livetv_channels::ChannelRow,
+        &'a livetv_guide::GuideRow,
+        usize,
+    )>,
+    AppError,
+> {
+    let series_ids: Vec<String> = candidates
+        .iter()
+        .filter_map(|(_, e)| e.series_id.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    if series_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for (series, at) in livetv_watch_events::series_watch_starts(
+        &state.pool,
+        user_id,
+        &series_ids,
+        now - USUAL_HISTORY,
+    )
+    .await?
+    {
+        let local = at.to_offset(zone.offset_at(at));
+        if affinity::clock_minutes_apart(local.time(), local_now.time()) <= USUAL_WINDOW_MINUTES {
+            *counts.entry(series).or_default() += 1;
+        }
+    }
+
+    // Earliest start wins, which is what makes an airing that is already on
+    // beat a later repeat of the same series.
+    let mut best: HashMap<&str, (&livetv_channels::ChannelRow, &livetv_guide::GuideRow)> =
+        HashMap::new();
+    for &(channel, entry) in candidates {
+        let Some(series) = entry.series_id.as_deref() else {
+            continue;
+        };
+        if counts.get(series).is_none_or(|c| *c < USUAL_MIN_WATCHES) {
+            continue;
+        }
+        best.entry(series)
+            .and_modify(|b| {
+                if entry.start_time < b.1.start_time {
+                    *b = (channel, entry);
+                }
+            })
+            .or_insert((channel, entry));
+    }
+
+    let mut out: Vec<_> = best
+        .into_iter()
+        .map(|(series, (channel, entry))| (channel, entry, counts[series]))
+        .collect();
+    out.sort_by(|a, b| {
+        b.2.cmp(&a.2)
+            .then(a.1.start_time.cmp(&b.1.start_time))
+            .then(a.0.id.cmp(&b.0.id))
+    });
+    out.truncate(USUAL_LIMIT);
+    Ok(out)
 }
 
 /// The notice only works because Decision 6 already computes repeat clusters:

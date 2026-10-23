@@ -154,3 +154,30 @@ where
         .map(|r| (r.completion.clamp(0.0, 1.0), r.started_at))
         .collect())
 }
+
+pub async fn series_watch_starts<'e, E>(
+    exec: E,
+    user_id: Uuid,
+    series_ids: &[String],
+    since: OffsetDateTime,
+) -> Result<Vec<(String, OffsetDateTime)>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let rows = sqlx::query!(
+        r#"
+        SELECT series_id AS "series_id!", started_at
+        FROM livetv_watch_events
+        WHERE user_id = $1 AND series_id = ANY($2) AND started_at >= $3
+        "#,
+        user_id,
+        series_ids,
+        since
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.series_id, r.started_at))
+        .collect())
+}

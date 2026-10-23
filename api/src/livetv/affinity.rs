@@ -268,6 +268,12 @@ pub fn confidence(
     Some((base * multiplier).clamp(0.0, 1.0))
 }
 
+pub fn clock_minutes_apart(a: time::Time, b: time::Time) -> u16 {
+    let minutes = |t: time::Time| u16::from(t.hour()) * 60 + u16::from(t.minute());
+    let diff = minutes(a).abs_diff(minutes(b));
+    diff.min(24 * 60 - diff)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -345,6 +351,15 @@ mod tests {
             bailed < unknown && unknown < finished,
             "{bailed} {unknown} {finished}"
         );
+    }
+
+    #[test]
+    fn clock_minutes_apart_wraps_midnight() {
+        let t = |h, m| time::Time::from_hms(h, m, 0).unwrap();
+        assert_eq!(clock_minutes_apart(t(19, 0), t(20, 30)), 90);
+        assert_eq!(clock_minutes_apart(t(23, 30), t(0, 45)), 75);
+        assert_eq!(clock_minutes_apart(t(0, 45), t(23, 30)), 75);
+        assert_eq!(clock_minutes_apart(t(7, 0), t(19, 0)), 720);
     }
 
     #[test]

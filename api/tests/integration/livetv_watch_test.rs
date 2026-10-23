@@ -58,14 +58,25 @@ async fn make_channel(pool: &sqlx::PgPool, tuner_id: Uuid, lcn: i32) -> Uuid {
 
 /// On now, so `/on-now` has something to group.
 async fn make_live_guide(pool: &sqlx::PgPool, channel_id: Uuid, series_id: &str) -> Uuid {
+    make_guide_at(pool, channel_id, series_id, "Hard Quiz", -10, 20).await
+}
+
+async fn make_guide_at(
+    pool: &sqlx::PgPool,
+    channel_id: Uuid,
+    series_id: &str,
+    title: &str,
+    starts_in_mins: i64,
+    ends_in_mins: i64,
+) -> Uuid {
     let now = OffsetDateTime::now_utc();
     livetv_guide::upsert(
         pool,
         livetv_guide::UpsertGuideEntry {
             channel_id,
-            start_time: now - time::Duration::minutes(10),
-            end_time: now + time::Duration::minutes(20),
-            title: "Hard Quiz".to_string(),
+            start_time: now + time::Duration::minutes(starts_in_mins),
+            end_time: now + time::Duration::minutes(ends_in_mins),
+            title: title.to_string(),
             episode_number: Some("S01E01".to_string()),
             episode_title: None,
             synopsis: Some("A synopsis".to_string()),
@@ -323,6 +334,230 @@ async fn on_now_needs_a_logged_in_caller() {
         .get("/api/v1/admin/livetv/on-now")
         .await
         .assert_status(StatusCode::UNAUTHORIZED);
+}
+
+async fn login_viewer(server: &TestServer, email: &str) -> (Uuid, TestClient) {
+    let user_id = create_user_with_role(server, email, "viewer").await;
+    let resp = TestClient::new(&server.api_url)
+        .post_json(
+            "/api/v1/admin/login",
+            &json!({ "email": email, "password": "testpass123" }),
+        )
+        .await;
+    resp.assert_ok();
+    let token = resp.json::<Value>()["token"].as_str().unwrap().to_string();
+    (user_id, TestClient::new(&server.api_url).with_auth(&token))
+}
+
+async fn seed_watches(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    channel_id: Uuid,
+    series_id: &str,
+    started: &[OffsetDateTime],
+) {
+    for at in started {
+        api::repositories::livetv_watch_events::create(
+            pool,
+            api::repositories::livetv_watch_events::CreateWatchEvent {
+                user_id: Some(user_id),
+                channel_id,
+                guide_id: None,
+                series_id: Some(series_id.to_string()),
+                title: Some(series_id.to_string()),
+                episode_key: None,
+                started_at: *at,
+                ended_at: Some(*at + time::Duration::minutes(30)),
+                watched_secs: 1700,
+                programme_secs: Some(1800),
+                source: "live".to_string(),
+            },
+        )
+        .await
+        .unwrap();
+    }
+}
+
+fn days_ago_at(now: OffsetDateTime, shift_mins: i64, days: &[i64]) -> Vec<OffsetDateTime> {
+    days.iter()
+        .map(|d| now - time::Duration::days(*d) + time::Duration::minutes(shift_mins))
+        .collect()
+}
+
+async fn series_affinity(pool: &sqlx::PgPool, user_id: Uuid, series_id: &str) {
+    livetv_affinity::upsert(
+        pool,
+        user_id,
+        livetv_affinity::UpsertAffinity {
+            series_id: Some(series_id.to_string()),
+            channel_id: None,
+            genre: None,
+            weekday: None,
+            hour: None,
+            watch_count: 14,
+            total_secs: 25_200,
+            mean_completion: 0.95,
+            last_watched_at: Some(OffsetDateTime::now_utc()),
+        },
+    )
+    .await
+    .unwrap();
+}
+
+fn group<'a>(body: &'a Value, key: &str) -> Option<&'a Value> {
+    body["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["key"] == key)
+}
+
+fn titles(group: &Value) -> Vec<String> {
+    group["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["guide"]["title"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// "She watches The Block at 7pm": a series is offered when it is on, or about
+/// to start, at the time of day it is usually watched — not at any other time.
+#[tokio::test]
+async fn on_now_usual_offers_series_watched_at_this_time_of_day_on_now_or_starting_soon() {
+    let server = TestServer::start_api_only().await;
+    let tuner = make_tuner(&server.pool, "USUAL001").await;
+    let (user_id, viewer) = login_viewer(&server, "livetv-usual@example.com").await;
+    let now = OffsetDateTime::now_utc();
+
+    let mut lcn = 0;
+    let mut channel = || {
+        lcn += 1;
+        make_channel(&server.pool, tuner, lcn)
+    };
+
+    let on_now = channel().await;
+    make_guide_at(&server.pool, on_now, "NOWSHOW", "Now Show", -10, 20).await;
+    seed_watches(
+        &server.pool,
+        user_id,
+        on_now,
+        "NOWSHOW",
+        &days_ago_at(now, -15, &[1, 2, 3]),
+    )
+    .await;
+    series_affinity(&server.pool, user_id, "NOWSHOW").await;
+
+    let rerun = channel().await;
+    make_guide_at(&server.pool, rerun, "NOWSHOW", "Now Show Again", 20, 50).await;
+
+    let soon = channel().await;
+    make_guide_at(&server.pool, soon, "FILLER", "Filler", -50, 10).await;
+    make_guide_at(&server.pool, soon, "SOONSHOW", "Soon Show", 10, 40).await;
+    seed_watches(
+        &server.pool,
+        user_id,
+        soon,
+        "SOONSHOW",
+        &days_ago_at(now, 10, &[1, 2, 7, 8]),
+    )
+    .await;
+    series_affinity(&server.pool, user_id, "SOONSHOW").await;
+
+    let elsewhen = channel().await;
+    make_guide_at(&server.pool, elsewhen, "ELSEWHEN", "Other Time", -5, 25).await;
+    seed_watches(
+        &server.pool,
+        user_id,
+        elsewhen,
+        "ELSEWHEN",
+        &days_ago_at(now, -8 * 60, &[1, 2, 3, 4]),
+    )
+    .await;
+    series_affinity(&server.pool, user_id, "ELSEWHEN").await;
+
+    let later = channel().await;
+    make_guide_at(&server.pool, later, "LATESHOW", "Later Show", 120, 150).await;
+    seed_watches(
+        &server.pool,
+        user_id,
+        later,
+        "LATESHOW",
+        &days_ago_at(now, 0, &[1, 2, 3]),
+    )
+    .await;
+
+    let once = channel().await;
+    make_guide_at(&server.pool, once, "ONCESHOW", "Once Show", -5, 25).await;
+    seed_watches(
+        &server.pool,
+        user_id,
+        once,
+        "ONCESHOW",
+        &days_ago_at(now, 0, &[1]),
+    )
+    .await;
+
+    let body: Value = viewer.get("/api/v1/admin/livetv/on-now").await.json();
+    assert_eq!(body["groups"][0]["key"], "usual", "{body}");
+    let usual = &body["groups"][0];
+    assert_eq!(usual["title"], "Your usual");
+    assert_eq!(
+        titles(usual),
+        vec!["Soon Show".to_string(), "Now Show".to_string()],
+        "ranked by how often it is watched at this time, one airing per series: {usual}"
+    );
+
+    let soon_item = &usual["items"][0];
+    let starts_in = soon_item["starts_in_minutes"]
+        .as_i64()
+        .expect("an upcoming airing");
+    assert!((9..=10).contains(&starts_in), "{soon_item}");
+    assert!(soon_item["minutes_left"].is_null(), "{soon_item}");
+    assert!(
+        soon_item["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("you usually watch this around ")
+    );
+    assert!(soon_item["confidence"].as_f64().is_some());
+    assert_eq!(soon_item["channel"]["id"], json!(soon));
+
+    let now_item = &usual["items"][1];
+    assert!(now_item["starts_in_minutes"].is_null(), "{now_item}");
+    assert!(now_item["minutes_left"].as_i64().unwrap() > 0);
+    assert_eq!(now_item["channel"]["id"], json!(on_now));
+
+    let series = group(&body, "series").expect("a series group");
+    assert!(
+        !titles(series).iter().any(|t| t == "Soon Show"),
+        "the existing groups stay on what is airing now: {series}"
+    );
+    for g in body["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|g| g["key"] != "usual")
+    {
+        for item in g["items"].as_array().unwrap() {
+            assert!(item["starts_in_minutes"].is_null(), "{item}");
+            assert!(item.as_object().unwrap().contains_key("starts_in_minutes"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn on_now_has_no_usual_group_without_time_of_day_history() {
+    let server = TestServer::start_api_only().await;
+    let tuner = make_tuner(&server.pool, "USUAL002").await;
+    let channel = make_channel(&server.pool, tuner, 7).await;
+    make_live_guide(&server.pool, channel, "SERIESNOUSUAL").await;
+    let (user_id, viewer) = login_viewer(&server, "livetv-nousual@example.com").await;
+    series_affinity(&server.pool, user_id, "SERIESNOUSUAL").await;
+
+    let body: Value = viewer.get("/api/v1/admin/livetv/on-now").await.json();
+    assert!(group(&body, "usual").is_none(), "{body}");
+    assert_eq!(body["groups"][0]["key"], "series");
 }
 
 // =============================================================================
