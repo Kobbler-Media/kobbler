@@ -185,6 +185,7 @@ impl PlaybackSession {
                 audio_mode: crate::streaming::decision::AudioMode::Copy,
                 audio_stream_index: 0,
                 subtitle_handling: crate::streaming::decision::SubtitleHandling::None,
+                deinterlace: false,
             },
             transcode: None,
             segment_cache: SegmentCache::new(PathBuf::new(), 6, 0.0),

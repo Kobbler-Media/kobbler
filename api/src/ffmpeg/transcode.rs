@@ -71,6 +71,7 @@ pub struct TranscodeArgs {
     pub hw_device: Option<kob_ffmpeg::hw::device::SharedHwDevice>,
     /// Generations an earlier process left in `output_dir`, adopted rather than redone.
     pub prior_runs: Vec<kob_ffmpeg::session::PriorRun>,
+    pub deinterlace: bool,
 }
 
 /// Health state for a live IPTV stream, shared between the feeder task and playlist handler.
@@ -125,6 +126,7 @@ pub struct HybridProbeInfo {
     pub audio_stream_index: i32,
     pub video_width: u32,
     pub video_height: u32,
+    pub interlaced: bool,
     pub audio_tracks: Vec<HybridAudioTrack>,
 }
 
@@ -145,6 +147,7 @@ impl HybridProbeInfo {
         let mut video_codec = String::new();
         let mut video_width = 1920u32;
         let mut video_height = 1080u32;
+        let mut interlaced = false;
         let mut audio_codec = String::new();
         let mut audio_stream_index = 0i32;
         let mut audio_tracks = Vec::new();
@@ -164,6 +167,7 @@ impl HybridProbeInfo {
                             .into_owned();
                         video_width = (*params).width as u32;
                         video_height = (*params).height as u32;
+                        interlaced = kob_ffmpeg::filter::graph::codec_parameters_interlaced(params);
                     }
                 }
                 MediaType::Audio => {
@@ -199,6 +203,7 @@ impl HybridProbeInfo {
             audio_stream_index,
             video_width,
             video_height,
+            interlaced,
             audio_tracks,
         }
     }
@@ -263,6 +268,9 @@ fn build_config_for_args(args: &TranscodeArgs) -> kob_ffmpeg::session::SessionCo
 
     if let VideoMode::Transcode = &args.video_mode {
         config = config.video_encoder(&args.target_encoder);
+        if args.deinterlace {
+            config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
+        }
     }
     if let AudioMode::Transcode {
         target_codec,
@@ -321,6 +329,9 @@ fn build_config_for_hybrid(
 
     if let Some(ref enc) = video_encoder {
         config = config.video_encoder(enc);
+        if decision.deinterlace {
+            config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
+        }
     }
     if let Some((ref codec, bitrate)) = audio_config {
         config = config
@@ -670,6 +681,14 @@ impl TranscodeProcess {
     /// is *not* performed here — that's the playlist/segment handler's job
     /// (demand-driven). A paused ffmpeg with the player reading cached/ahead
     /// segments is legitimate backpressure, not a stall.
+    /// Give a just-started encoder long enough to die on a stream it cannot handle (nvenc
+    /// on 10-bit, say), which it does at once. One that has already finished cleanly was
+    /// handed a short file and is done.
+    pub async fn survived_launch(&mut self) -> Result<(), String> {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        self.check_health().map(|_| ())
+    }
+
     pub fn check_health(&mut self) -> Result<bool, String> {
         match &mut self.backend {
             TranscodeBackend::Session { session } => {
@@ -961,6 +980,7 @@ mod tests {
             initial_generation: 0,
             hw_device: None,
             prior_runs: Vec::new(),
+            deinterlace: false,
         }
     }
 
@@ -971,7 +991,34 @@ mod tests {
             audio_mode: DecisionAudioMode::Copy,
             audio_stream_index,
             subtitle_handling: SubtitleHandling::None,
+            deinterlace: false,
         }
+    }
+
+    #[test]
+    fn a_deinterlacing_decision_reaches_both_transcode_configs() {
+        use kob_ffmpeg::filter::graph::Deinterlace;
+        let mut args = dummy_args(0);
+        args.deinterlace = true;
+        assert_eq!(build_config_for_args(&args).deinterlace, Deinterlace::None);
+        args.video_mode = VideoMode::Transcode;
+        assert_eq!(build_config_for_args(&args).deinterlace, Deinterlace::Auto);
+
+        let mut decision = dummy_decision(0);
+        decision.video_mode = DecisionVideoMode::Transcode {
+            target_codec: "h264".into(),
+        };
+        decision.deinterlace = true;
+        let hybrid = build_config_for_hybrid(
+            &decision,
+            Path::new("/tmp/out"),
+            1.0,
+            6,
+            "libx264",
+            None,
+            None,
+        );
+        assert_eq!(hybrid.deinterlace, Deinterlace::Auto);
     }
 
     #[test]

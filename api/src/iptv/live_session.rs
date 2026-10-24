@@ -147,7 +147,14 @@ pub async fn create_live_session(
         // Probe the stream via single-connection: open HTTP, buffer, probe with kob-ffmpeg
         let probe_result = probe_and_hold_stream(&http, &stream_url).await;
 
-        let (video_codec, audio_tracks, live_stream) = match probe_result {
+        let (
+            LiveProbe {
+                video_codec,
+                interlaced,
+                audio_tracks,
+            },
+            live_stream,
+        ) = match probe_result {
             Ok(info) => info,
             Err(e) => {
                 let err_msg = e.to_string();
@@ -196,7 +203,7 @@ pub async fn create_live_session(
             video_codec: video_codec.clone(),
             video_width: 1920, // Assume 1080p for live streams
             video_height: 1080,
-            interlaced: false,
+            interlaced,
         };
 
         let preferred_codecs = state.encoder_caps.preferred_codecs();
@@ -303,7 +310,7 @@ pub fn is_connection_limit_error(error_msg: &str) -> bool {
 }
 
 /// Probe a live stream URL to get codec info using kob-ffmpeg.
-pub async fn probe_live_stream(url: &str) -> Result<(String, Vec<AudioTrackMeta>)> {
+pub async fn probe_live_stream(url: &str) -> Result<LiveProbe> {
     let url = url.to_string();
     tokio::task::spawn_blocking(move || {
         let result = kob_ffmpeg::iptv::probe_stream(&url)
@@ -314,14 +321,17 @@ pub async fn probe_live_stream(url: &str) -> Result<(String, Vec<AudioTrackMeta>
     .context("probe task join error")?
 }
 
-/// Convert a kob-ffmpeg ProbeResult into (video_codec, audio_tracks).
-pub fn probe_result_to_meta(
-    result: &kob_ffmpeg::probe::ProbeResult,
-) -> Result<(String, Vec<AudioTrackMeta>)> {
-    let video_codec = result
+#[derive(Debug)]
+pub struct LiveProbe {
+    pub video_codec: String,
+    pub interlaced: bool,
+    pub audio_tracks: Vec<AudioTrackMeta>,
+}
+
+pub fn probe_result_to_meta(result: &kob_ffmpeg::probe::ProbeResult) -> Result<LiveProbe> {
+    let video = result
         .video_streams
         .first()
-        .map(|v| v.codec.clone())
         .context("no video stream found in probe output")?;
 
     let audio_tracks: Vec<AudioTrackMeta> = result
@@ -337,7 +347,11 @@ pub fn probe_result_to_meta(
         })
         .collect();
 
-    Ok((video_codec, audio_tracks))
+    Ok(LiveProbe {
+        video_codec: video.codec.clone(),
+        interlaced: video.is_interlaced,
+        audio_tracks,
+    })
 }
 
 /// Boxed byte stream from an HTTP response body.
@@ -363,7 +377,7 @@ pub struct LiveStream {
 async fn probe_and_hold_stream(
     http: &reqwest::Client,
     stream_url: &str,
-) -> Result<(String, Vec<AudioTrackMeta>, LiveStream)> {
+) -> Result<(LiveProbe, LiveStream)> {
     // Open the stream — override the shared client's 30s timeout for live streams
     let resp = http
         .get(stream_url)
@@ -394,7 +408,7 @@ async fn probe_and_hold_stream(
 
     // Write buffer to temp file for kob-ffmpeg to probe
     let probe_data = probe_buf.clone();
-    let (video_codec, audio_tracks) = tokio::task::spawn_blocking(move || {
+    let probe = tokio::task::spawn_blocking(move || {
         let tmp = tempfile::Builder::new()
             .suffix(".ts")
             .tempfile()
@@ -417,8 +431,7 @@ async fn probe_and_hold_stream(
     .context("probe task join error")??;
 
     Ok((
-        video_codec,
-        audio_tracks,
+        probe,
         LiveStream {
             probe_buf,
             byte_stream: std::sync::Mutex::new(byte_stream),
@@ -587,6 +600,9 @@ async fn start_live_transcode(
     let mut config = kob_ffmpeg::transcode::HlsConfig::new(&hls_dir_owned).segment_duration(4.0);
     if let Some(enc) = video_encoder {
         config = config.video_encoder(&enc);
+        if decision.deinterlace {
+            config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
+        }
     }
     if let Some(enc) = audio_encoder {
         config = config.audio_encoder(&enc);

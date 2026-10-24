@@ -86,6 +86,8 @@ pub struct PlaybackDecision {
     /// Which audio stream index (from ffprobe) to use.
     pub audio_stream_index: i32,
     pub subtitle_handling: SubtitleHandling,
+    #[serde(default)]
+    pub deinterlace: bool,
 }
 
 /// Metadata about a file needed for the decision.
@@ -95,7 +97,7 @@ pub struct FileMeta {
     pub video_codec: String,
     pub video_width: u32,
     pub video_height: u32,
-    /// Field-coded source. A browser cannot deinterlace, so a copy would comb.
+    /// Field-coded (PAFF/MBAFF) source.
     pub interlaced: bool,
 }
 
@@ -132,7 +134,7 @@ pub struct ClientCapabilities {
     pub audio_codecs: Vec<String>,
     /// Supported container formats (e.g., ["mp4", "webm"]).
     pub containers: Vec<String>,
-    /// Client can present field-coded video itself (ExoPlayer can; no browser can).
+    /// `None` is taken as yes; only a client that says no is sent a deinterlaced encode.
     #[serde(default)]
     pub supports_interlaced: Option<bool>,
 }
@@ -180,11 +182,12 @@ pub fn decide(
     prefs: ViewerPrefs<'_>,
     server_preferred_codecs: &[&str],
 ) -> PlaybackDecision {
-    let video_supported = capabilities
-        .video_codecs
-        .iter()
-        .any(|c| normalize_codec(c) == normalize_codec(&file.video_codec))
-        && (!file.interlaced || capabilities.supports_interlaced == Some(true));
+    let deinterlace = file.interlaced && capabilities.supports_interlaced == Some(false);
+    let video_supported = !deinterlace
+        && capabilities
+            .video_codecs
+            .iter()
+            .any(|c| normalize_codec(c) == normalize_codec(&file.video_codec));
 
     // Pick audio track: preferred > first supported > default > first
     let audio = select_audio_track(audio_tracks, capabilities, prefs.preferred_audio_index);
@@ -224,6 +227,7 @@ pub fn decide(
             audio_mode: AudioMode::Copy,
             audio_stream_index,
             subtitle_handling,
+            deinterlace,
         }
     } else if video_supported && audio_supported {
         // Codecs fine, container needs remux (MKV → fMP4)
@@ -233,6 +237,7 @@ pub fn decide(
             audio_mode: AudioMode::Copy,
             audio_stream_index,
             subtitle_handling,
+            deinterlace,
         }
     } else if video_supported {
         // Video fine, audio needs transcode
@@ -246,6 +251,7 @@ pub fn decide(
             audio_mode,
             audio_stream_index,
             subtitle_handling,
+            deinterlace,
         }
     } else {
         // Video needs transcode (and possibly audio too)
@@ -264,6 +270,7 @@ pub fn decide(
             audio_mode,
             audio_stream_index,
             subtitle_handling,
+            deinterlace,
         }
     };
 
@@ -630,6 +637,34 @@ mod tests {
             "mpegts",
             &firefox_caps().containers
         ));
+    }
+
+    #[test]
+    fn only_a_client_that_says_it_cannot_show_fields_is_sent_a_deinterlaced_transcode() {
+        let cases = [
+            (false, None, PlaybackMethod::DirectPlay),
+            (false, Some(true), PlaybackMethod::DirectPlay),
+            (false, Some(false), PlaybackMethod::DirectPlay),
+            (true, None, PlaybackMethod::DirectPlay),
+            (true, Some(true), PlaybackMethod::DirectPlay),
+            (true, Some(false), PlaybackMethod::VideoTranscode),
+        ];
+        for (interlaced, supports_interlaced, method) in cases {
+            let (mut file, audio) = mp4_h264_aac();
+            file.interlaced = interlaced;
+            let caps = ClientCapabilities {
+                supports_interlaced,
+                ..safari_caps()
+            };
+            let decision = decide(&file, &audio, &[], &caps, ViewerPrefs::default(), H264_ONLY);
+            let case = format!("interlaced={interlaced} supports={supports_interlaced:?}");
+            assert_eq!(decision.method, method, "{case}");
+            assert_eq!(
+                decision.deinterlace,
+                method == PlaybackMethod::VideoTranscode,
+                "{case}"
+            );
+        }
     }
 
     fn mp4_h264_aac() -> (FileMeta, Vec<AudioTrackMeta>) {

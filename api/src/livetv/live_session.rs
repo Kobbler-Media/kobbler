@@ -348,15 +348,15 @@ fn decide_mode(facts: &StreamFacts, capabilities: &ClientCapabilities) -> Mode {
     }];
     // A client that reads MPEG-TS natively is libVLC or ExoPlayer, which present
     // field-coded video themselves; no browser does either. So that is the signal for a
-    // client that says nothing — one that says its decoder cannot is believed.
+    // client that says nothing — one that says either way is believed.
     let mut capabilities = capabilities.clone();
-    if capabilities.supports_interlaced.is_none()
-        && capabilities
-            .containers
-            .iter()
-            .any(|c| c == "mpegts" || c == "ts")
-    {
-        capabilities.supports_interlaced = Some(true);
+    if capabilities.supports_interlaced.is_none() {
+        capabilities.supports_interlaced = Some(
+            capabilities
+                .containers
+                .iter()
+                .any(|c| c == "mpegts" || c == "ts"),
+        );
     }
     let decision = decision::decide(
         &file,

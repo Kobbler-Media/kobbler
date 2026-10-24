@@ -142,6 +142,7 @@ pub(super) async fn run(ctx: Prepare) {
             audio_stream_index: result.probe.audio_stream_index,
             video_width: result.probe.video_width,
             video_height: result.probe.video_height,
+            interlaced: result.probe.interlaced,
             audio_tracks: result
                 .probe
                 .audio_tracks
@@ -175,7 +176,7 @@ pub(super) async fn run(ctx: Prepare) {
         video_codec: video_codec.clone(),
         video_width,
         video_height,
-        interlaced: false,
+        interlaced: probe_info.interlaced,
     };
     let audio_metas: Vec<crate::streaming::decision::AudioTrackMeta> = probe_info
         .audio_tracks
@@ -311,34 +312,19 @@ pub(super) async fn run(ctx: Prepare) {
         )
         .await
         {
-            Ok(mut process) => {
-                // Health check: detect immediate encoder crashes (e.g. nvenc 10-bit issues)
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                match process.check_health() {
-                    Ok(true) => {
-                        transcode = Some(process);
-                    }
-                    Err(e) => {
-                        warn!(
-                            session_id = %session_id,
-                            encoder = %primary_encoder,
-                            error = %e,
-                            "Hybrid encoder crashed immediately, will retry from cache"
-                        );
-                        fail_reason = Some("hybrid_health_fail");
-                        process.kill().await;
-                    }
-                    Ok(false) => {
-                        warn!(
-                            session_id = %session_id,
-                            encoder = %primary_encoder,
-                            "Hybrid encoder exited immediately, will retry from cache"
-                        );
-                        fail_reason = Some("hybrid_health_fail");
-                        process.kill().await;
-                    }
+            Ok(mut process) => match process.survived_launch().await {
+                Ok(()) => transcode = Some(process),
+                Err(e) => {
+                    warn!(
+                        session_id = %session_id,
+                        encoder = %primary_encoder,
+                        error = %e,
+                        "Hybrid encoder crashed immediately, will retry from cache"
+                    );
+                    fail_reason = Some("hybrid_health_fail");
+                    process.kill().await;
                 }
-            }
+            },
             Err(e) => {
                 warn!(
                     session_id = %session_id,
@@ -435,40 +421,30 @@ pub(super) async fn run(ctx: Prepare) {
                 initial_generation: 0,
                 hw_device,
                 prior_runs: Vec::new(),
+                deinterlace: decision.deinterlace,
             };
 
             match crate::ffmpeg::transcode::TranscodeProcess::start(args).await {
-                Ok(mut process) => {
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                    match process.check_health() {
-                        Ok(true) => {
-                            info!(
-                                session_id = %session_id,
-                                encoder = %encoder,
-                                "Encoder fallback succeeded (hybrid→cached)"
-                            );
-                            transcode = Some(process);
-                            break;
-                        }
-                        Err(e) => {
-                            warn!(
-                                session_id = %session_id,
-                                encoder = %encoder,
-                                error = %e,
-                                "Fallback encoder crashed immediately, trying next"
-                            );
-                            process.kill().await;
-                        }
-                        Ok(false) => {
-                            warn!(
-                                session_id = %session_id,
-                                encoder = %encoder,
-                                "Fallback encoder exited immediately, trying next"
-                            );
-                            process.kill().await;
-                        }
+                Ok(mut process) => match process.survived_launch().await {
+                    Ok(()) => {
+                        info!(
+                            session_id = %session_id,
+                            encoder = %encoder,
+                            "Encoder fallback succeeded (hybrid→cached)"
+                        );
+                        transcode = Some(process);
+                        break;
                     }
-                }
+                    Err(e) => {
+                        warn!(
+                            session_id = %session_id,
+                            encoder = %encoder,
+                            error = %e,
+                            "Fallback encoder crashed immediately, trying next"
+                        );
+                        process.kill().await;
+                    }
+                },
                 Err(e) => {
                     warn!(
                         session_id = %session_id,

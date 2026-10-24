@@ -74,7 +74,7 @@ fn test_probe_result_to_meta_valid() {
             bit_depth: Some(8),
             is_hdr: false,
             hdr_format: None,
-            is_interlaced: false,
+            is_interlaced: true,
         }],
         audio_streams: vec![
             AudioStream {
@@ -102,9 +102,14 @@ fn test_probe_result_to_meta_valid() {
         chapters: vec![],
     };
 
-    let (video_codec, audio_tracks) = probe_result_to_meta(&result).unwrap();
+    let meta = probe_result_to_meta(&result).unwrap();
+    let audio_tracks = meta.audio_tracks;
 
-    assert_eq!(video_codec, "hevc");
+    assert_eq!(meta.video_codec, "hevc");
+    assert!(
+        meta.interlaced,
+        "a 1080i channel must be known as field-coded"
+    );
     assert_eq!(audio_tracks.len(), 2);
 
     assert_eq!(audio_tracks[0].stream_index, 1);

@@ -439,24 +439,14 @@ pub(crate) async fn open_file_session(
 ) -> Result<SessionResponse, Response<Body>> {
     let config = state.runtime_config.get().await;
 
-    // Look up file metadata from DB
-    let (
-        file_path,
-        container,
-        video_codec,
-        duration,
-        audio_metas,
-        sub_metas,
-        keyframes,
-        video_width,
-        video_height,
-    ) = match req.media_type {
+    let stored = match req.media_type {
         MediaType::Movie => load_movie_file_meta(state, file_id).await?,
         MediaType::Episode => load_episode_file_meta(state, file_id).await?,
         MediaType::Recording => load_recording_file_meta(state, file_id).await?,
     };
 
-    let full_path = crate::audio::path::resolve_file_path(&state.config.storage_root, &file_path);
+    let full_path =
+        crate::audio::path::resolve_file_path(&state.config.storage_root, &stored.file_path);
     if !full_path.exists() {
         return Err((StatusCode::NOT_FOUND, "file not found on disk").into_response());
     }
@@ -466,8 +456,10 @@ pub(crate) async fn open_file_session(
     // create_or_update reset duration → reprobe pending), probe it now so the
     // decision engine + SegmentCache have real data instead of a 0-length
     // session (which would map every seek to segment 0 and instant-ENDLIST).
-    #[allow(clippy::type_complexity)]
-    let (
+    // An unrecorded field order only matters to a client that has said it cannot show fields.
+    let interlace_unknown =
+        stored.interlaced.is_none() && req.capabilities.supports_interlaced == Some(false);
+    let StoredFileMeta {
         container,
         video_codec,
         duration,
@@ -476,16 +468,13 @@ pub(crate) async fn open_file_session(
         keyframes,
         video_width,
         video_height,
-    ): (
-        String,
-        String,
-        f64,
-        Vec<AudioTrackMeta>,
-        Vec<SubtitleTrackMeta>,
-        Option<Vec<f64>>,
-        u32,
-        u32,
-    ) = if video_codec.is_empty() || container.is_empty() || duration <= 0.0 {
+        interlaced,
+        ..
+    } = if stored.video_codec.is_empty()
+        || stored.container.is_empty()
+        || stored.duration <= 0.0
+        || interlace_unknown
+    {
         match crate::ffmpeg::probe::probe(&full_path).await {
             Ok(probe) => {
                 let probed_container = probe.format.format_name.clone();
@@ -494,7 +483,7 @@ pub(crate) async fn open_file_session(
                     .first()
                     .map(|v| v.codec.clone())
                     .unwrap_or_default();
-                let probed_duration = probe.format.duration_seconds.unwrap_or(duration);
+                let probed_duration = probe.format.duration_seconds.unwrap_or(stored.duration);
                 let probed_audio: Vec<AudioTrackMeta> = probe
                     .audio_streams
                     .iter()
@@ -555,42 +544,26 @@ pub(crate) async fn open_file_session(
                     .map(|v| (v.width as u32, v.height as u32))
                     .unwrap_or((0, 0));
 
-                (
-                    probed_container,
-                    probed_video_codec,
-                    probed_duration,
-                    probed_audio,
-                    probed_subs,
-                    None, // keyframes not available during inline probe
-                    probed_width,
-                    probed_height,
-                )
+                StoredFileMeta {
+                    file_path: stored.file_path,
+                    container: probed_container,
+                    video_codec: probed_video_codec,
+                    duration: probed_duration,
+                    audio_metas: probed_audio,
+                    sub_metas: probed_subs,
+                    keyframes: None,
+                    video_width: probed_width,
+                    video_height: probed_height,
+                    interlaced: Some(probe.video_streams.first().is_some_and(|v| v.is_interlaced)),
+                }
             }
             Err(e) => {
                 warn!(error = %e, "Inline probe failed, using DB metadata");
-                (
-                    container,
-                    video_codec,
-                    duration,
-                    audio_metas,
-                    sub_metas,
-                    keyframes,
-                    video_width,
-                    video_height,
-                )
+                stored
             }
         }
     } else {
-        (
-            container,
-            video_codec,
-            duration,
-            audio_metas,
-            sub_metas,
-            keyframes,
-            video_width,
-            video_height,
-        )
+        stored
     };
 
     // Resolve preferred audio/subtitle from language settings when the client
@@ -629,7 +602,7 @@ pub(crate) async fn open_file_session(
         video_codec: video_codec.clone(),
         video_width,
         video_height,
-        interlaced: false,
+        interlaced: interlaced.unwrap_or(false),
     };
     let preferred_codecs = state.encoder_caps.preferred_codecs();
     let mut decision = decision::decide(
@@ -766,6 +739,7 @@ pub(crate) async fn open_file_session(
             initial_generation: 0,
             hw_device: state.hw_device.get(),
             prior_runs: Vec::new(),
+            deinterlace: decision.deinterlace,
         };
 
         // Ensure segment dir exists for subtitle extraction before response
@@ -3805,6 +3779,7 @@ async fn start_ffmpeg_for_session(
         initial_generation,
         hw_device: state.hw_device.get(),
         prior_runs,
+        deinterlace: session.decision.deinterlace,
     };
 
     transcode::TranscodeProcess::start(args).await
@@ -4233,17 +4208,19 @@ async fn enqueue_session_cleanup(state: &AppState, dir: &std::path::Path) {
     }
 }
 
-type FileMetaTuple = (
-    String,                 // file_path
-    String,                 // container
-    String,                 // video_codec
-    f64,                    // duration_seconds
-    Vec<AudioTrackMeta>,    // audio tracks
-    Vec<SubtitleTrackMeta>, // subtitle tracks
-    Option<Vec<f64>>,       // keyframes
-    u32,                    // video_width
-    u32,                    // video_height
-);
+struct StoredFileMeta {
+    file_path: String,
+    container: String,
+    video_codec: String,
+    duration: f64,
+    audio_metas: Vec<AudioTrackMeta>,
+    sub_metas: Vec<SubtitleTrackMeta>,
+    keyframes: Option<Vec<f64>>,
+    video_width: u32,
+    video_height: u32,
+    /// `None` where nothing has recorded it, so a probe has to say.
+    interlaced: Option<bool>,
+}
 
 /// The file a create-session request names, directly or by media id.
 ///
@@ -4316,7 +4293,7 @@ async fn resolve_session_file_id(
 async fn load_movie_file_meta(
     state: &AppState,
     file_id: Uuid,
-) -> Result<FileMetaTuple, axum::response::Response> {
+) -> Result<StoredFileMeta, axum::response::Response> {
     let file = movie_files::get(&state.pool, file_id)
         .await
         .map_err(|e| {
@@ -4358,23 +4335,24 @@ async fn load_movie_file_meta(
 
     let keyframes: Option<Vec<f64>> = file.keyframes.and_then(|v| serde_json::from_value(v).ok());
 
-    Ok((
-        file.file_path,
-        file.container.unwrap_or_default(),
-        file.video_codec.unwrap_or_default(),
-        file.duration_seconds.unwrap_or(0.0),
+    Ok(StoredFileMeta {
+        file_path: file.file_path,
+        container: file.container.unwrap_or_default(),
+        video_codec: file.video_codec.unwrap_or_default(),
+        duration: file.duration_seconds.unwrap_or(0.0),
         audio_metas,
         sub_metas,
         keyframes,
-        file.video_width.unwrap_or(0) as u32,
-        file.video_height.unwrap_or(0) as u32,
-    ))
+        video_width: file.video_width.unwrap_or(0) as u32,
+        video_height: file.video_height.unwrap_or(0) as u32,
+        interlaced: Some(file.is_interlaced),
+    })
 }
 
 async fn load_episode_file_meta(
     state: &AppState,
     file_id: Uuid,
-) -> Result<FileMetaTuple, axum::response::Response> {
+) -> Result<StoredFileMeta, axum::response::Response> {
     let file = tv_episode_files::get(&state.pool, file_id)
         .await
         .map_err(|e| {
@@ -4416,23 +4394,24 @@ async fn load_episode_file_meta(
 
     let keyframes: Option<Vec<f64>> = file.keyframes.and_then(|v| serde_json::from_value(v).ok());
 
-    Ok((
-        file.file_path,
-        file.container.unwrap_or_default(),
-        file.video_codec.unwrap_or_default(),
-        file.duration_seconds.unwrap_or(0.0),
+    Ok(StoredFileMeta {
+        file_path: file.file_path,
+        container: file.container.unwrap_or_default(),
+        video_codec: file.video_codec.unwrap_or_default(),
+        duration: file.duration_seconds.unwrap_or(0.0),
         audio_metas,
         sub_metas,
         keyframes,
-        file.video_width.unwrap_or(0) as u32,
-        file.video_height.unwrap_or(0) as u32,
-    ))
+        video_width: file.video_width.unwrap_or(0) as u32,
+        video_height: file.video_height.unwrap_or(0) as u32,
+        interlaced: Some(file.is_interlaced),
+    })
 }
 
 async fn load_recording_file_meta(
     state: &AppState,
     file_id: Uuid,
-) -> Result<FileMetaTuple, axum::response::Response> {
+) -> Result<StoredFileMeta, axum::response::Response> {
     let rec = iptv_recordings::get_by_id(&state.pool, file_id)
         .await
         .map_err(|e| {
@@ -4451,17 +4430,18 @@ async fn load_recording_file_meta(
 
     // Recordings store absolute paths and have no separate audio/subtitle track
     // tables — the inline probe fallback in create_session handles discovery.
-    Ok((
+    Ok(StoredFileMeta {
         file_path,
-        rec.container.unwrap_or_default(),
-        rec.video_codec.unwrap_or_default(),
-        rec.duration_seconds.unwrap_or(0.0),
-        vec![], // audio tracks (discovered via inline probe)
-        vec![], // subtitle tracks
-        None,   // keyframes
-        0,      // video_width (discovered via inline probe)
-        0,      // video_height
-    ))
+        container: rec.container.unwrap_or_default(),
+        video_codec: rec.video_codec.unwrap_or_default(),
+        duration: rec.duration_seconds.unwrap_or(0.0),
+        audio_metas: vec![],
+        sub_metas: vec![],
+        keyframes: None,
+        video_width: 0,
+        video_height: 0,
+        interlaced: None,
+    })
 }
 
 /// Build subtitle metadata for a session.

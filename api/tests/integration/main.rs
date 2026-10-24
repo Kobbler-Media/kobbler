@@ -67,6 +67,7 @@ mod hardcover_reconcile_test;
 mod hardcover_sync_test;
 mod images_test;
 mod ingest_test;
+mod interlaced_playback_test;
 mod iptv_live_session_test;
 mod iptv_matching_test;
 mod iptv_recording_schedule_test;

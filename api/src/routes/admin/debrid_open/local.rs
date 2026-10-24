@@ -94,9 +94,15 @@ pub(super) async fn open(
         preferred.unwrap_or_else(|| probe.audio_streams.first().map(|a| a.index).unwrap_or(0));
     let audio_track = audio_metas.iter().find(|a| a.stream_index == audio_index);
 
-    let direct_play = body.capabilities.as_ref().is_some_and(|caps| {
-        crate::streaming::decision::is_container_compatible(&container, &caps.containers)
-    });
+    let deinterlace = video.is_some_and(|v| v.is_interlaced)
+        && body
+            .capabilities
+            .as_ref()
+            .is_some_and(|caps| caps.supports_interlaced == Some(false));
+    let direct_play = !deinterlace
+        && body.capabilities.as_ref().is_some_and(|caps| {
+            crate::streaming::decision::is_container_compatible(&container, &caps.containers)
+        });
     let segment_dir = super::segment_dir(state, runtime, session_id);
     let (decision, transcode) = if direct_play {
         info!(session_id = %session_id, file = %filename, "Direct play from local cache (no debrid, no transcode)");
@@ -107,12 +113,13 @@ pub(super) async fn open(
                 audio_mode: AudioMode::Copy,
                 audio_stream_index: audio_index,
                 subtitle_handling: SubtitleHandling::None,
+                deinterlace: false,
             },
             None,
         )
     } else {
         info!(session_id = %session_id, file = %filename, "Playing from local cache (no debrid)");
-        let needs_transcode = video_codec == "hevc" || video_codec == "av1";
+        let needs_transcode = deinterlace || video_codec == "hevc" || video_codec == "av1";
         let audio_mode = if audio_track.is_some_and(|a| a.codec == "aac") {
             AudioMode::Copy
         } else {
@@ -134,6 +141,7 @@ pub(super) async fn open(
             &file_path,
             &segment_dir,
             needs_transcode,
+            deinterlace,
             &audio_mode,
             audio_index,
             &video_codec,
@@ -154,6 +162,7 @@ pub(super) async fn open(
                 audio_mode,
                 audio_stream_index: audio_index,
                 subtitle_handling: SubtitleHandling::None,
+                deinterlace,
             },
             Some(process),
         )
@@ -288,6 +297,7 @@ async fn start_transcode(
     file_path: &std::path::Path,
     segment_dir: &std::path::Path,
     needs_transcode: bool,
+    deinterlace: bool,
     audio_mode: &AudioMode,
     audio_index: i32,
     video_codec: &str,
@@ -365,30 +375,22 @@ async fn start_transcode(
             initial_generation: 0,
             hw_device,
             prior_runs: Vec::new(),
+            deinterlace,
         };
         match crate::ffmpeg::transcode::TranscodeProcess::start(args).await {
-            Ok(mut process) => {
-                // Encoders that cannot handle the stream (nvenc on 10-bit, say) die at once.
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                match process.check_health() {
-                    Ok(true) => {
-                        if encoder != &primary {
-                            info!(session_id = %session_id, encoder = %encoder, "Encoder fallback succeeded");
-                        }
-                        return Ok(process);
+            Ok(mut process) => match process.survived_launch().await {
+                Ok(()) => {
+                    if encoder != &primary {
+                        info!(session_id = %session_id, encoder = %encoder, "Encoder fallback succeeded");
                     }
-                    Err(e) => {
-                        warn!(session_id = %session_id, encoder = %encoder, error = %e, "Encoder crashed immediately, trying fallback");
-                        process.kill().await;
-                        last_error = e;
-                    }
-                    Ok(false) => {
-                        warn!(session_id = %session_id, encoder = %encoder, "Encoder exited immediately, trying fallback");
-                        process.kill().await;
-                        last_error = "encoder exited without error".to_string();
-                    }
+                    return Ok(process);
                 }
-            }
+                Err(e) => {
+                    warn!(session_id = %session_id, encoder = %encoder, error = %e, "Encoder crashed immediately, trying fallback");
+                    process.kill().await;
+                    last_error = e;
+                }
+            },
             Err(e) => {
                 warn!(session_id = %session_id, encoder = %encoder, error = %e, "Failed to start encoder, trying fallback");
                 last_error = e.to_string();
