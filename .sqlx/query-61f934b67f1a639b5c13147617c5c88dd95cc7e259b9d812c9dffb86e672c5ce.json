@@ -1,0 +1,117 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT i.entity_type, i.entity_id, COALESCE(b.title, s.name, a.name) AS name,\n               i.provider, i.external_id, i.kind, i.canonical_external_id,\n               i.conflicting_entity_id, i.detected_at\n        FROM provider_link_issues i\n        LEFT JOIN books b ON i.entity_type = 'book' AND b.id = i.entity_id\n        LEFT JOIN series s ON i.entity_type = 'series' AND s.id = i.entity_id\n        LEFT JOIN authors a ON i.entity_type = 'author' AND a.id = i.entity_id\n        ORDER BY i.detected_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "entity_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "provider_link_issues",
+            "name": "entity_type"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "entity_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "provider_link_issues",
+            "name": "entity_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "provider",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "provider_link_issues",
+            "name": "provider"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "provider_link_issues",
+            "name": "external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "provider_link_issues",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "canonical_external_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "provider_link_issues",
+            "name": "canonical_external_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "conflicting_entity_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "provider_link_issues",
+            "name": "conflicting_entity_id"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "detected_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "provider_link_issues",
+            "name": "detected_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      null,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "61f934b67f1a639b5c13147617c5c88dd95cc7e259b9d812c9dffb86e672c5ce"
+}

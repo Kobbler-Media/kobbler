@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE books SET discovered_from_author_id = $2 WHERE discovered_from_author_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ff29a54580a179841efbb87ac7c11da3c2f59cd0550a8da7c51d6c00037e3827"
+}

@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT book_has_user_data($1) AS \"attached!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attached!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f409b22cd6203d6ad9a75366bedf669f59c14f83ebdfa677adb810ddd6074c5e"
+}

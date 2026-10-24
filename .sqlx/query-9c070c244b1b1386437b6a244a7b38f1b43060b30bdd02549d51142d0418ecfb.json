@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM provider_link_issues i\n        WHERE (i.entity_type = 'book' AND NOT EXISTS (SELECT 1 FROM books WHERE id = i.entity_id))\n           OR (i.entity_type = 'series' AND NOT EXISTS (SELECT 1 FROM series WHERE id = i.entity_id))\n           OR (i.entity_type = 'author' AND NOT EXISTS (SELECT 1 FROM authors WHERE id = i.entity_id))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "9c070c244b1b1386437b6a244a7b38f1b43060b30bdd02549d51142d0418ecfb"
+}

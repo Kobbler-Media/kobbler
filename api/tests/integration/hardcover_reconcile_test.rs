@@ -386,7 +386,9 @@ async fn implausibly_many_deletions_are_withheld() {
     }
 
     let (_mock, hc) = hardcover(Hardcover::default()).await;
-    let report = reconcile::run(pool, &server.nats_publisher, &hc).await.unwrap();
+    let report = reconcile::run(pool, &server.nats_publisher, &hc)
+        .await
+        .unwrap();
 
     assert_eq!(report.deletions_withheld, 30, "{report:?}");
     for id in ids {

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM books\n        WHERE id = ANY($1)\n          AND discovered_from_author_id IS NULL\n          AND NOT EXISTS (SELECT 1 FROM book_series WHERE book_id = books.id)\n          AND NOT book_has_user_data(id)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "80eda00d22b1781213cedec553497d3164d81f2b9a3339c0a626beea1800dc4d"
+}

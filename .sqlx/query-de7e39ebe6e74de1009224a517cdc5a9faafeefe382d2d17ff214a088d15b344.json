@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO provider_link_issues\n            (entity_type, entity_id, provider, external_id, kind,\n             canonical_external_id, conflicting_entity_id)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        ON CONFLICT (entity_type, entity_id, provider) DO UPDATE SET\n            external_id = EXCLUDED.external_id,\n            kind = EXCLUDED.kind,\n            canonical_external_id = EXCLUDED.canonical_external_id,\n            conflicting_entity_id = EXCLUDED.conflicting_entity_id,\n            detected_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de7e39ebe6e74de1009224a517cdc5a9faafeefe382d2d17ff214a088d15b344"
+}

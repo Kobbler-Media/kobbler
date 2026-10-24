@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM provider_link_issues WHERE entity_type = $1 AND entity_id = $2 AND provider = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a5c50c9b8d2dd3ed2732dc3a1f85c887d6750c18dcfcfa7ef35de7a86cb61e52"
+}
