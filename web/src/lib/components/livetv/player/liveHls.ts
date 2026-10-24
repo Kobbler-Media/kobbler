@@ -1,4 +1,5 @@
 import type Hls from 'hls.js';
+import { liveSyncRate, liveTargetLatency, tunerFollowLimit } from '$lib/streaming/liveLatency';
 
 type HlsCtor = typeof Hls;
 
@@ -33,6 +34,8 @@ const FRAG_POLICY = {
   }
 };
 
+const LIVE_SYNC_DURATION_S = 1;
+
 const RECOVERY_WINDOW_MS = 60_000;
 const MAX_RECOVERIES = 4;
 
@@ -54,7 +57,29 @@ export function createLiveHls(
     if (!instance) return;
     instance.destroy();
     instance = null;
+    video.playbackRate = 1;
   }
+
+  // A tuner a hair slower than realtime eats a 1s holdback within minutes, and with
+  // no cushion every segment lands just in time and playback stalls once per second.
+  function steer() {
+    const details = instance?.latestLevelDetails;
+    if (!instance || video.paused || !details?.live) return;
+    const target = liveTargetLatency(
+      LIVE_SYNC_DURATION_S,
+      details.totalduration,
+      details.targetduration
+    );
+    const rate = liveSyncRate({
+      latency: Number.isFinite(instance.latency) ? instance.latency : null,
+      targetLatency: target,
+      targetDurationS: details.targetduration,
+      currentRate: video.playbackRate,
+      followLimitS: tunerFollowLimit(target, details.targetduration)
+    });
+    if (rate !== video.playbackRate) video.playbackRate = rate;
+  }
+  video.addEventListener('timeupdate', steer);
 
   function budgetLeft(): boolean {
     const cutoff = Date.now() - RECOVERY_WINDOW_MS;
@@ -77,7 +102,7 @@ export function createLiveHls(
       // it buys nothing (Decision 12). liveMaxLatencyDuration is deliberately
       // unset: capping latency makes hls.js drag the playhead back to the live
       // edge, which would undo every scrub-back.
-      liveSyncDuration: 1,
+      liveSyncDuration: LIVE_SYNC_DURATION_S,
       maxBufferLength: 30,
       maxMaxBufferLength: 60,
       startPosition: -1,
@@ -123,6 +148,7 @@ export function createLiveHls(
     load,
     destroy() {
       destroyed = true;
+      video.removeEventListener('timeupdate', steer);
       tearDown();
     }
   };

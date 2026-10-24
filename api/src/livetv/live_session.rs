@@ -346,16 +346,17 @@ fn decide_mode(facts: &StreamFacts, capabilities: &ClientCapabilities) -> Mode {
         title: None,
         is_default: true,
     }];
-    // kobapp's libVLC presents field-coded video itself and reads MPEG-TS
-    // natively; no browser does either, so an mpegts container is the honest
-    // signal for a client that can.
+    // A client that reads MPEG-TS natively is libVLC or ExoPlayer, which present
+    // field-coded video themselves; no browser does either. So that is the signal for a
+    // client that says nothing — one that says its decoder cannot is believed.
     let mut capabilities = capabilities.clone();
-    if capabilities
-        .containers
-        .iter()
-        .any(|c| c == "mpegts" || c == "ts")
+    if capabilities.supports_interlaced.is_none()
+        && capabilities
+            .containers
+            .iter()
+            .any(|c| c == "mpegts" || c == "ts")
     {
-        capabilities.supports_interlaced = true;
+        capabilities.supports_interlaced = Some(true);
     }
     let decision = decision::decide(
         &file,
@@ -1592,7 +1593,7 @@ mod tests {
                 .to_vec(),
             audio_codecs: ["aac", "ac3", "eac3", "mp3"].map(str::to_string).to_vec(),
             containers: ["mp4", "mkv", "ts"].map(str::to_string).to_vec(),
-            supports_interlaced: false,
+            supports_interlaced: None,
         }
     }
 
@@ -1620,6 +1621,27 @@ mod tests {
             decide_mode(&tuner_facts("h264", "aac", false), &caps),
             Mode::Direct
         );
+    }
+
+    /// MPEG-TS says the client can read the broadcast, not that its decoder can show it.
+    /// The Tensor VPU errors on every field picture, so kobapp on one says so — and is
+    /// handed the GPU's deinterlaced encode, which its hardware decodes, rather than a
+    /// raw stream it could only decode on the CPU.
+    #[test]
+    fn a_client_that_cannot_decode_fields_gets_a_deinterlaced_encode() {
+        let caps = ClientCapabilities {
+            supports_interlaced: Some(false),
+            ..tuner_client()
+        };
+        assert_eq!(
+            decide_mode(&tuner_facts("h264", "ac3", true), &caps),
+            Mode::Transcode
+        );
+        let progressive = StreamFacts {
+            interlaced: false,
+            ..tuner_facts("h264", "ac3", true)
+        };
+        assert_eq!(decide_mode(&progressive, &caps), Mode::Direct);
     }
 
     /// MPEG-2 direct play was blocked for a while on the theory that libVLC could
@@ -1650,7 +1672,7 @@ mod tests {
             video_codecs: vec!["h264".into()],
             audio_codecs: vec!["aac".into()],
             containers: vec!["mp4".into()],
-            supports_interlaced: false,
+            supports_interlaced: None,
         };
         assert_eq!(
             decide_mode(&tuner_facts("h264", "aac", true), &browser),

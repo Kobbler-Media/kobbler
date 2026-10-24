@@ -47,6 +47,7 @@ mod reader;
 mod reading;
 mod recents;
 mod search;
+pub mod session_restore;
 pub mod sessions;
 pub mod sports;
 pub mod stream_keep;

@@ -340,6 +340,7 @@ const ROUTINE_JOB_TYPES: &[&str] = &[
     "livetv_retention",
     // Housekeeping
     "session_cleanup",
+    "playback_session_expiry",
     "job_cleanup",
     "database_cleanup",
     "orphan_cleanup",

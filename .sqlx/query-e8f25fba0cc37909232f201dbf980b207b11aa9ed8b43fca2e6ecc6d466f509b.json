@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM playback_sessions WHERE id = $1 RETURNING dir",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dir",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "playback_sessions",
+            "name": "dir"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e8f25fba0cc37909232f201dbf980b207b11aa9ed8b43fca2e6ecc6d466f509b"
+}

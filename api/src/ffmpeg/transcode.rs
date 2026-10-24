@@ -69,6 +69,8 @@ pub struct TranscodeArgs {
     pub initial_generation: u32,
     /// Shared GPU device context for hardware-accelerated decoding.
     pub hw_device: Option<kob_ffmpeg::hw::device::SharedHwDevice>,
+    /// Generations an earlier process left in `output_dir`, adopted rather than redone.
+    pub prior_runs: Vec<kob_ffmpeg::session::PriorRun>,
 }
 
 /// Health state for a live IPTV stream, shared between the feeder task and playlist handler.
@@ -289,7 +291,7 @@ fn build_config_for_args(args: &TranscodeArgs) -> kob_ffmpeg::session::SessionCo
     if let Some(ref hw) = args.hw_device {
         config = config.hw_device(hw.clone());
     }
-    config
+    config.prior_runs(args.prior_runs.clone())
 }
 
 /// Build a `SessionConfig` for a hybrid (debrid) transcode from probe + decision.
@@ -574,6 +576,13 @@ impl TranscodeProcess {
     pub fn evict_if_needed(&self, playback_segment: u32) {
         if let TranscodeBackend::Session { session } = &self.backend {
             session.evict_if_needed(playback_segment);
+        }
+    }
+
+    pub fn runs(&self) -> Vec<kob_ffmpeg::session::PriorRun> {
+        match &self.backend {
+            TranscodeBackend::Session { session } => session.runs(),
+            _ => Vec::new(),
         }
     }
 
@@ -951,6 +960,7 @@ mod tests {
             duration_seconds: 120.0,
             initial_generation: 0,
             hw_device: None,
+            prior_runs: Vec::new(),
         }
     }
 

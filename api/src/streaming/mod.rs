@@ -9,6 +9,7 @@ pub mod debrid_session;
 pub mod decision;
 pub mod download_meter;
 pub mod feed;
+pub mod persist;
 pub mod progressive;
 pub mod segment_cache;
 pub mod session;

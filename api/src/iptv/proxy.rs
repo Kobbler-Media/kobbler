@@ -196,7 +196,7 @@ async fn rewrite_hls_playlist(resp: reqwest::Response, channel_id: Uuid) -> Resu
         SEGMENT_CACHE.insert(key, (absolute_url, Instant::now()));
 
         rewritten.push_str(&format!(
-            "/api/v1/admin/iptv/play/{channel_id}/segment/{segment_idx}\n"
+            "/api/v1/admin/iptv/channels/{channel_id}/play/{segment_idx}\n"
         ));
         segment_idx += 1;
     }

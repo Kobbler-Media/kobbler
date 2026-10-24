@@ -203,6 +203,7 @@ pub(super) async fn open(
             feed: Some(StreamFeed::new()),
             download: Some(download_meter.clone()),
             cue_gate: None,
+            persisted: false,
         },
     );
     if matches!(mode, OpenMode::Play) {

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE playback_sessions SET progress = $2, last_activity_at = NOW() - make_interval(secs => $3) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7c6f3bba47ae5fa1b06f64ba8d4930d4f3db3f5e10341f103f9736d22a36be75"
+}

@@ -912,3 +912,82 @@ async fn test_recording_path_used_from_config() {
         "recording path should update"
     );
 }
+
+// =============================================================================
+// HLS proxy
+// =============================================================================
+
+/// An upstream HLS channel: a live playlist of relative segment names, and the segments.
+async fn hls_upstream() -> String {
+    use axum::{Router, extract::Path, routing::get};
+    let app = Router::new()
+        .route(
+            "/live/u/p/42.m3u8",
+            get(|| async {
+                "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:7\n\
+                 #EXTINF:4.0,\nseg0.ts\n#EXTINF:4.0,\nseg1.ts\n#EXTINF:4.0,\nseg2.ts\n"
+            }),
+        )
+        .route(
+            "/live/u/p/{name}",
+            get(|Path(name): Path<String>| async move { format!("bytes of {name}") }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    url
+}
+
+#[tokio::test]
+async fn test_iptv_proxied_playlist_segments_resolve() {
+    let server = TestServer::start_api_only().await;
+    let client = server.admin_client();
+    let upstream = hls_upstream().await;
+
+    let resp = client
+        .post_json(
+            "/api/v1/admin/iptv/providers",
+            &json!({ "name": "HLS Provider", "url": upstream, "username": "u", "password": "p" }),
+        )
+        .await;
+    resp.assert_status(StatusCode::CREATED);
+    let provider_id: uuid::Uuid = resp.json::<Value>()["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let ch = uuid::Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO iptv_channels (id, name, normalized_name, enabled) VALUES ($1, 'HLS', 'hls', true)",
+    )
+    .bind(ch)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO iptv_sources (id, channel_id, provider_id, remote_stream_id, stream_type) VALUES ($1, $2, $3, 42, 'live')",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(ch)
+    .bind(provider_id)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+
+    let playlist = client
+        .get(&format!("/api/v1/admin/iptv/channels/{ch}/play"))
+        .await;
+    playlist.assert_ok();
+    let uris: Vec<String> = playlist
+        .text()
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .map(str::to_string)
+        .collect();
+    assert_eq!(uris.len(), 3, "{}", playlist.text());
+    for (i, uri) in uris.iter().enumerate() {
+        let segment = client.get(uri).await;
+        segment.assert_ok();
+        assert_eq!(segment.text(), format!("bytes of seg{i}.ts"), "{uri}");
+    }
+}

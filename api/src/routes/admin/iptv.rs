@@ -21,7 +21,7 @@ use crate::repositories::{
     iptv_channels, iptv_epg, iptv_favourites, iptv_groups, iptv_programme_watches, iptv_providers,
     iptv_recordings, iptv_series_rules, iptv_sources, iptv_unmatched, iptv_watch_history,
 };
-use crate::routes::AuthUser;
+use crate::routes::{AuthUser, PlaybackAuth};
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
 
 // =============================================================================
@@ -1511,7 +1511,7 @@ pub async fn play_segment(
 
 pub async fn play_ts(
     State(state): State<AppState>,
-    _user: AuthUser,
+    _auth: PlaybackAuth,
     Path(id): Path<Uuid>,
 ) -> Result<impl IntoResponse, AppError> {
     // Try to consume a pre-opened stream from session creation (single-connection path)

@@ -378,3 +378,21 @@ async fn playback_token_authenticates_livetv_direct_channel_route_without_sessio
 
     resp.assert_status(StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn playback_token_authenticates_iptv_direct_play_route() {
+    let server = TestServer::start_api_only().await;
+    let token = mint_playback_token(&server).await;
+
+    // The direct url an IPTV session hands libVLC carries no session, so kobapp
+    // tokenises it. No such channel: the handler fails downstream, not at auth.
+    let resp = server
+        .api_client()
+        .get(&with_token(
+            &format!("/api/v1/admin/iptv/channels/{}/play.ts", Uuid::now_v7()),
+            &token,
+        ))
+        .await;
+
+    assert_ne!(resp.status, StatusCode::UNAUTHORIZED);
+}

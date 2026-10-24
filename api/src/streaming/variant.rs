@@ -15,6 +15,8 @@ pub struct QualityVariant {
     pub spec: VariantSpec,
     pub transcode: Option<TranscodeProcess>,
     pub segment_cache: SegmentCache,
+    /// Runs a restored session found on disk, handed to the variant's first transcode.
+    pub prior_runs: Vec<kob_ffmpeg::session::PriorRun>,
 }
 
 /// Specification for a quality variant (computed before session creation).

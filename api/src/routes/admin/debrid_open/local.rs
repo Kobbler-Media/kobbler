@@ -233,6 +233,7 @@ pub(super) async fn open(
                 filesize.max(0) as u64,
             )),
             cue_gate: None,
+            persisted: false,
         },
     );
     if matches!(mode, OpenMode::Play) {
@@ -363,6 +364,7 @@ async fn start_transcode(
             duration_seconds: duration,
             initial_generation: 0,
             hw_device,
+            prior_runs: Vec::new(),
         };
         match crate::ffmpeg::transcode::TranscodeProcess::start(args).await {
             Ok(mut process) => {

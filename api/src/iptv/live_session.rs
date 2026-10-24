@@ -521,6 +521,7 @@ async fn build_session(
         feed: None,
         download: None,
         cue_gate: None,
+        persisted: false,
     };
 
     state.playback_sessions.insert(session_id, session);

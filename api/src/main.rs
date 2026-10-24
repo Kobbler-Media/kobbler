@@ -730,7 +730,7 @@ async fn main() {
         let reaper_state = state.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
-            let max_idle_vod = std::time::Duration::from_secs(14_400); // 4 hours for VOD
+            let max_idle_vod = api::streaming::persist::VOD_IDLE_TTL;
             let max_idle_live = std::time::Duration::from_secs(30); // 30s for IPTV live
             let max_download_idle = std::time::Duration::from_secs(300); // 5 min for debrid downloads
             loop {
@@ -772,6 +772,12 @@ async fn main() {
                     .collect();
                 for id in expired {
                     if let Some((_, mut session)) = sessions.remove(&id) {
+                        if session.persisted
+                            && let Err(e) =
+                                api::repositories::playback_sessions::delete(&reaper_pool, id).await
+                        {
+                            tracing::warn!(session_id = %id, error = %e, "failed to delete playback session row");
+                        }
                         // Cancel debrid download if still running
                         if let Some(ref cancel) = session.download_cancel {
                             cancel.cancel();
@@ -819,6 +825,27 @@ async fn main() {
             }
         });
         info!("Playback session reaper started");
+    }
+
+    tokio::spawn(api::streaming::persist::run_snapshots(state.clone()));
+    {
+        // A restart's sessions are rebuilt from their last snapshot; take one on the way out
+        // so it is the position the player was at, not up to a snapshot interval before.
+        let state = state.clone();
+        tokio::spawn(async move {
+            let Ok(mut term) =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            else {
+                return;
+            };
+            tokio::select! {
+                _ = term.recv() => {}
+                _ = tokio::signal::ctrl_c() => {}
+            }
+            api::streaming::persist::flush(&state).await;
+            info!("Saved playback sessions, exiting");
+            std::process::exit(0);
+        });
     }
 
     let trace_headers = env::var("KOBBLER_HTTP_TRACE")

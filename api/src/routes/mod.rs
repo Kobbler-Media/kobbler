@@ -122,11 +122,11 @@ where
 /// the ones kobapp's player (`KobblerApi.playerUrl`) or the bundled Cast receiver
 /// (`web/static/cast-receiver/receiver.js`) actually call with no Authorization
 /// header or session cookie available to them — session lifecycle, position/
-/// watch-state saves, debrid search/resolve/play, and the direct-tuner fallback.
-/// Bearer and cookie auth work here too, so kobapp's own authenticated calls to
-/// the same routes are unaffected. Every other route takes `AuthUser`, which no
-/// longer accepts `?token=` at all — a playback token only ever reaches the
-/// handlers that explicitly ask for `PlaybackAuth`.
+/// watch-state saves, debrid search/resolve/play, the direct-tuner fallback and
+/// IPTV direct play. Bearer and cookie auth work here too, so kobapp's own
+/// authenticated calls to the same routes are unaffected. Every other route takes
+/// `AuthUser`, which no longer accepts `?token=` at all — a playback token only
+/// ever reaches the handlers that explicitly ask for `PlaybackAuth`.
 #[derive(Debug, Clone)]
 pub struct PlaybackAuth {
     pub user_id: Uuid,

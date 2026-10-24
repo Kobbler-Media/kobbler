@@ -150,6 +150,8 @@ pub struct PlaybackSession {
     pub download: Option<Arc<DownloadMeter>>,
     /// Debrid sessions only: the cue trim decision every response must agree on.
     pub cue_gate: Option<Arc<CueGate>>,
+    /// Has a `playback_sessions` row to be rebuilt from after a restart.
+    pub persisted: bool,
 }
 
 /// An extracted/prepared subtitle file for a session.
@@ -214,12 +216,20 @@ impl PlaybackSession {
             feed: None,
             download: None,
             cue_gate: None,
+            persisted: false,
         }
     }
 
     /// The session's base directory (containing gen_N/ subdirs and subtitles).
     pub fn segment_dir(&self) -> &Path {
         &self.segment_cache.base_dir
+    }
+
+    /// Start the playlist somewhere else. The player's progress through the old one says
+    /// nothing about where it is in this one.
+    pub fn move_playlist_start(&mut self, segment: u32, secs: f64) {
+        self.segment_cache.set_playback_start(segment, secs);
+        self.highest_served_segment = None;
     }
 
     /// Update the last activity timestamp (call on every client request).

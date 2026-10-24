@@ -23,7 +23,9 @@
     reportStreamOutcome
   } from '$lib/api/client';
   import { superviseStart } from '$lib/streaming/startLiveness';
+  import { reconnectStep } from '$lib/streaming/reconnect';
   import { startingAudio } from '$lib/streaming/audioPreference';
+  import { liveSyncRate, liveTargetLatency } from '$lib/streaming/liveLatency';
   import { useKeep } from '$lib/composables/useKeep.svelte';
   import type { CachingState } from '$lib/streaming/cacheWait';
   import StartShell from './StartShell.svelte';
@@ -267,6 +269,7 @@
   let videoEl: HTMLVideoElement | undefined = $state();
   let containerEl: HTMLDivElement | undefined = $state();
   let hlsInstance: Hls | null = null;
+  const LIVE_SYNC_DURATION_S = 20;
   /**
    * Refined `method` value seen on the SSE `probe_complete` event (debrid
    * sessions only). Set by the SSE handler; consumed by a $effect that
@@ -633,6 +636,7 @@
   // per-instance hls retry counter, so a broken-playback loop would recover
   // forever. Cap recoveries within a rolling window and surface an error past it.
   let recoveryTimestamps: number[] = [];
+  let reusedSessionId: string | null = null;
   const RECOVERY_WINDOW_MS = 90_000;
   const MAX_RECOVERIES_IN_WINDOW = 4;
 
@@ -709,14 +713,10 @@
       ? (session.subtitles.find((s) => s.track_id === activeSubtitleId)?.stream_index ?? undefined)
       : undefined;
 
-    // Tear down the broken instance before we start re-creating. The old session
-    // is almost certainly gone (restart), so this destroy is best-effort.
     cleanup();
-    try {
-      await maybeDestroySession(session.session_id);
-    } catch {
-      // Expected if the session already expired
-    }
+    const previousId = session.session_id;
+    // Reopening the same session twice running means it is the session that is broken.
+    let reusable = reusedSessionId !== previousId;
 
     let lastError: unknown = null;
     for (let attempt = 0; attempt < RECOVERY_BACKOFFS_MS.length; attempt++) {
@@ -729,6 +729,27 @@
       if (unmounted) {
         recovering = false;
         return;
+      }
+      if (reusable) {
+        const step = reconnectStep(await getPlaybackSessionStatus(previousId));
+        if (step === 'wait') {
+          lastError = new Error('The server could not be reached');
+          continue;
+        }
+        if (step === 'reuse') {
+          reusedSessionId = previousId;
+          initPlayer();
+          startHeartbeat();
+          if (!isLive && savedPosition > 5) await handleSeek(savedPosition);
+          recovering = false;
+          return;
+        }
+        reusable = false;
+        try {
+          await maybeDestroySession(previousId);
+        } catch {
+          // Expected if the session already expired
+        }
       }
       try {
         const newSession = await recreateSession({
@@ -2128,13 +2149,13 @@
     hlsInstance = new HlsClass(
       isLive
         ? {
-            // IPTV segments are stream-copied at source GOP boundaries (~10s).
+            // IPTV segments are 4s, cut at the first source keyframe past that.
             // liveMaxLatencyDuration must exceed segment duration with margin —
             // setting it near the segment size makes hls.js seek forward on
             // every fragment to maintain the latency cap, which the user sees
             // as a skip at every fragment boundary.
             lowLatencyMode: false,
-            liveSyncDuration: 20,
+            liveSyncDuration: LIVE_SYNC_DURATION_S,
             liveMaxLatencyDuration: 45,
             manifestLoadingTimeOut: 20000,
             manifestLoadPolicy: loadPolicy,
@@ -2320,6 +2341,25 @@
     currentTime = videoEl.currentTime;
     updateBuffered();
     updateMediaSessionPosition();
+    if (isLive) steerLiveLatency();
+  }
+
+  function steerLiveLatency() {
+    if (!videoEl || !hlsInstance || videoEl.paused) return;
+    const details = hlsInstance.latestLevelDetails;
+    if (!details?.live) return;
+    const latency = hlsInstance.latency;
+    const rate = liveSyncRate({
+      latency: latency > 0 ? latency : null,
+      targetLatency: liveTargetLatency(
+        LIVE_SYNC_DURATION_S,
+        details.totalduration,
+        details.targetduration
+      ),
+      targetDurationS: details.targetduration,
+      currentRate: videoEl.playbackRate
+    });
+    if (rate !== videoEl.playbackRate) videoEl.playbackRate = rate;
   }
 
   function updateBuffered() {

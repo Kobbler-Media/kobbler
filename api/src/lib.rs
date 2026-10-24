@@ -1893,58 +1893,7 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/admin/playback/sessions/{id}",
             delete(streaming_routes::destroy_session),
         )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/heartbeat",
-            get(streaming_routes::heartbeat),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/status",
-            get(streaming_routes::status),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/master.m3u8",
-            get(streaming_routes::master_playlist),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/stream.m3u8",
-            get(streaming_routes::stream_playlist),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/segments/{*path}",
-            get(streaming_routes::serve_segment),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/seek",
-            post(streaming_routes::seek),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/decode-error",
-            post(streaming_routes::decode_error),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/switch-audio",
-            post(streaming_routes::switch_audio),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/direct",
-            get(streaming_routes::direct_play),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/subtitles",
-            post(streaming_routes::download_subtitle_to_session),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/subtitles/{track_filename}",
-            get(streaming_routes::serve_subtitle),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/thumbnails.vtt",
-            get(streaming_routes::serve_thumbnails_vtt),
-        )
-        .route(
-            "/api/v1/admin/playback/sessions/{id}/thumbnails/{filename}",
-            get(streaming_routes::serve_thumbnail_sprite),
-        )
+        .merge(playback_session_routes(&state))
         .route(
             "/api/v1/admin/playback/enrich-backfill",
             post(streaming_routes::trigger_enrichment_backfill),
@@ -2298,6 +2247,67 @@ pub fn create_router(state: AppState) -> Router {
         .layer(DefaultBodyLimit::max(state.config.http_max_body_bytes))
         .layer(cors)
         .with_state(state)
+}
+
+/// Routes addressed to one playback session, rebuilt from its row when a restart lost it.
+fn playback_session_routes(state: &AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/heartbeat",
+            get(streaming_routes::heartbeat),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/status",
+            get(streaming_routes::status),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/master.m3u8",
+            get(streaming_routes::master_playlist),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/stream.m3u8",
+            get(streaming_routes::stream_playlist),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/segments/{*path}",
+            get(streaming_routes::serve_segment),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/seek",
+            post(streaming_routes::seek),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/decode-error",
+            post(streaming_routes::decode_error),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/switch-audio",
+            post(streaming_routes::switch_audio),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/direct",
+            get(streaming_routes::direct_play),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/subtitles",
+            post(streaming_routes::download_subtitle_to_session),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/subtitles/{track_filename}",
+            get(streaming_routes::serve_subtitle),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/thumbnails.vtt",
+            get(streaming_routes::serve_thumbnails_vtt),
+        )
+        .route(
+            "/api/v1/admin/playback/sessions/{id}/thumbnails/{filename}",
+            get(streaming_routes::serve_thumbnail_sprite),
+        )
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            routes::admin::session_restore::restore_on_miss,
+        ))
 }
 
 /// Explicit override for the standalone GPU-scheduler fallback.

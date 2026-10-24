@@ -389,6 +389,21 @@ async fn a_client_that_reads_mpegts_gets_the_raw_transport_stream() {
     assert_eq!(body["video_codec"], "h264");
 }
 
+#[tokio::test]
+async fn a_client_whose_decoder_cannot_show_fields_is_sent_the_deinterlaced_encode() {
+    let server = TestServer::start_api_only().await;
+    let client = server.admin_client();
+    let tuner_id = make_tuner(&server.pool, "FIELDS01", 4).await;
+    let channel = make_channel(&server.pool, tuner_id, 7, true).await;
+
+    let mut caps = exoplayer_caps();
+    caps["supports_interlaced"] = json!(false);
+    let body = open_session(&client, channel, caps).await;
+    assert_eq!(body["method"], "transcode");
+    assert!(body["playlist_url"].is_string());
+    assert!(body["direct_url"].is_null());
+}
+
 /// One physical tune serves every consumer of a channel: two DirectPlay clients,
 /// a browser and a recording all share one lease and one buffer, and the buffer
 /// exists for the direct path too — which is what makes pause, Restart and a

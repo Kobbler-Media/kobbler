@@ -31,7 +31,7 @@ pub enum PlaybackMethod {
 }
 
 /// What to do with the video stream.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VideoMode {
     /// Copy the video stream as-is.
     Copy,
@@ -40,7 +40,7 @@ pub enum VideoMode {
 }
 
 /// What to do with the audio stream.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AudioMode {
     /// Copy the audio stream as-is.
     Copy,
@@ -52,7 +52,7 @@ pub enum AudioMode {
 }
 
 /// How to handle subtitles for this playback session.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubtitleHandling {
     /// No subtitles selected.
     None,
@@ -78,7 +78,7 @@ impl SubtitleHandling {
 }
 
 /// The complete playback decision.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybackDecision {
     pub method: PlaybackMethod,
     pub video_mode: VideoMode,
@@ -134,7 +134,7 @@ pub struct ClientCapabilities {
     pub containers: Vec<String>,
     /// Client can present field-coded video itself (ExoPlayer can; no browser can).
     #[serde(default)]
-    pub supports_interlaced: bool,
+    pub supports_interlaced: Option<bool>,
 }
 
 impl Default for ClientCapabilities {
@@ -144,7 +144,7 @@ impl Default for ClientCapabilities {
             video_codecs: vec!["h264".to_string()],
             audio_codecs: vec!["aac".to_string()],
             containers: vec!["mp4".to_string()],
-            supports_interlaced: false,
+            supports_interlaced: None,
         }
     }
 }
@@ -184,7 +184,7 @@ pub fn decide(
         .video_codecs
         .iter()
         .any(|c| normalize_codec(c) == normalize_codec(&file.video_codec))
-        && (!file.interlaced || capabilities.supports_interlaced);
+        && (!file.interlaced || capabilities.supports_interlaced == Some(true));
 
     // Pick audio track: preferred > first supported > default > first
     let audio = select_audio_track(audio_tracks, capabilities, prefs.preferred_audio_index);
@@ -560,7 +560,7 @@ mod tests {
             video_codecs: vec!["h264".to_string()],
             audio_codecs: vec!["aac".to_string(), "opus".to_string(), "flac".to_string()],
             containers: vec!["mp4".to_string(), "webm".to_string()],
-            supports_interlaced: false,
+            supports_interlaced: None,
         }
     }
 
@@ -569,7 +569,7 @@ mod tests {
             video_codecs: vec!["h264".to_string(), "hevc".to_string()],
             audio_codecs: vec!["aac".to_string()],
             containers: vec!["mp4".to_string()],
-            supports_interlaced: false,
+            supports_interlaced: None,
         }
     }
 
@@ -578,7 +578,7 @@ mod tests {
             video_codecs: vec!["h264".to_string(), "hevc".to_string()],
             audio_codecs: vec!["aac".to_string(), "opus".to_string(), "flac".to_string()],
             containers: vec!["mp4".to_string(), "webm".to_string()],
-            supports_interlaced: false,
+            supports_interlaced: None,
         }
     }
 
@@ -592,7 +592,7 @@ mod tests {
             video_codecs: vec!["h264".to_string(), "mpeg2video".to_string()],
             audio_codecs: vec!["ac3".to_string(), "aac".to_string()],
             containers: vec!["mp4".to_string(), "mkv".to_string(), "ts".to_string()],
-            supports_interlaced: true,
+            supports_interlaced: Some(true),
         };
         assert!(is_container_compatible("mpegts", &caps.containers));
         assert!(is_container_compatible("ts", &caps.containers));
@@ -1459,7 +1459,7 @@ mod tests {
             video_codecs: vec!["h264".to_string()],
             audio_codecs: vec!["aac".to_string(), "eac3".to_string()],
             containers: vec!["mp4".to_string()],
-            supports_interlaced: false,
+            supports_interlaced: None,
         };
         let d = decide(
             &file,
@@ -1498,7 +1498,7 @@ mod tests {
             video_codecs: vec!["h264".to_string(), "mpeg2".to_string()],
             audio_codecs: vec!["aac".to_string()],
             containers: vec!["mp4".to_string()],
-            supports_interlaced: false,
+            supports_interlaced: None,
         };
         let d = decide(
             &file,
@@ -1548,7 +1548,7 @@ mod tests {
             video_codecs: vec!["h264".to_string()],
             audio_codecs: vec!["aac".to_string()],
             containers: vec!["mkv".to_string()],
-            supports_interlaced: false,
+            supports_interlaced: None,
         };
         let d = decide(
             &file,

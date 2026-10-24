@@ -434,6 +434,7 @@ pub(super) async fn run(ctx: Prepare) {
                 duration_seconds: duration,
                 initial_generation: 0,
                 hw_device,
+                prior_runs: Vec::new(),
             };
 
             match crate::ffmpeg::transcode::TranscodeProcess::start(args).await {

@@ -37,6 +37,7 @@ use crate::streaming::decision::{
     SubtitleTrackMeta, ViewerPrefs,
 };
 use crate::streaming::feed::FeedStatus;
+use crate::streaming::persist::Progress;
 use crate::streaming::segment_cache::SegmentCache;
 use crate::streaming::session::{
     MediaType, PendingSegmentRequest, PlaybackSession, SessionError, SubtitleFile,
@@ -98,7 +99,7 @@ fn session_pending_response() -> Response<Body> {
 // Request/Response Types
 // =============================================================================
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSessionRequest {
     pub media_type: MediaType,
     /// The exact file to play. Optional: a client that only knows what the viewer
@@ -413,6 +414,29 @@ pub async fn create_session(
         Err(resp) => return resp,
     };
 
+    let session_id = Uuid::new_v4();
+    match open_file_session(&state, auth.user_id, &req, file_id, session_id, None).await {
+        Ok(response) => {
+            super::session_restore::remember(&state, session_id, auth.user_id, file_id, &req).await;
+            Json(response).into_response()
+        }
+        Err(resp) => resp,
+    }
+}
+
+/// Build a file session under [session_id] and put it in the session map.
+///
+/// [restore] carries how far the session had got before the API restarted under it;
+/// the session is then rebuilt at that point, its playlist and segments as they were,
+/// rather than opened at [CreateSessionRequest::start_time].
+pub(crate) async fn open_file_session(
+    state: &AppState,
+    user_id: Uuid,
+    req: &CreateSessionRequest,
+    file_id: Uuid,
+    session_id: Uuid,
+    restore: Option<Progress>,
+) -> Result<SessionResponse, Response<Body>> {
     let config = state.runtime_config.get().await;
 
     // Look up file metadata from DB
@@ -427,23 +451,14 @@ pub async fn create_session(
         video_width,
         video_height,
     ) = match req.media_type {
-        MediaType::Movie => match load_movie_file_meta(&state, file_id).await {
-            Ok(meta) => meta,
-            Err(resp) => return resp,
-        },
-        MediaType::Episode => match load_episode_file_meta(&state, file_id).await {
-            Ok(meta) => meta,
-            Err(resp) => return resp,
-        },
-        MediaType::Recording => match load_recording_file_meta(&state, file_id).await {
-            Ok(meta) => meta,
-            Err(resp) => return resp,
-        },
+        MediaType::Movie => load_movie_file_meta(state, file_id).await?,
+        MediaType::Episode => load_episode_file_meta(state, file_id).await?,
+        MediaType::Recording => load_recording_file_meta(state, file_id).await?,
     };
 
     let full_path = crate::audio::path::resolve_file_path(&state.config.storage_root, &file_path);
     if !full_path.exists() {
-        return (StatusCode::NOT_FOUND, "file not found on disk").into_response();
+        return Err((StatusCode::NOT_FOUND, "file not found on disk").into_response());
     }
 
     // If the file hasn't been probed yet (no video_codec in DB), or its cached
@@ -642,7 +657,6 @@ pub async fn create_session(
         // decision already handled that. We only change the video path.
     }
 
-    let session_id = Uuid::new_v4();
     let cache_dir = config
         .transcode_cache_dir
         .as_deref()
@@ -668,7 +682,12 @@ pub async fn create_session(
     // The one answer for all three places a resume has to reach: where the playlist
     // starts, where FFmpeg starts, and what the client is told its zero is.
     let resume_start = accepted_resume(req.start_time, duration);
-    if let Some(st) = resume_start {
+    if let Some(ref progress) = restore {
+        segment_cache.set_playback_start(
+            progress.playback_start_segment,
+            progress.playback_start_secs,
+        );
+    } else if let Some(st) = resume_start {
         segment_cache.set_playback_start(segment_cache.time_to_segment(st), st);
     }
 
@@ -699,11 +718,14 @@ pub async fn create_session(
             decision.method = PlaybackMethod::VideoTranscode;
         }
     }
+    if let Some(ref progress) = restore {
+        decision = progress.decision.clone();
+    }
 
     // Build transcode args if not direct play — FFmpeg startup is deferred to a
     // background task so the session response returns immediately (~35ms vs ~2s
     // over SMB cold cache).
-    let deferred_transcode = if decision.method != PlaybackMethod::DirectPlay {
+    let deferred_transcode = if decision.method != PlaybackMethod::DirectPlay && restore.is_none() {
         let (video_mode, target_encoder) = match &decision.video_mode {
             decision::VideoMode::Copy => (VideoMode::Copy, state.encoder_caps.h264.clone()),
             decision::VideoMode::Transcode { target_codec } => {
@@ -743,6 +765,7 @@ pub async fn create_session(
             duration_seconds: duration,
             initial_generation: 0,
             hw_device: state.hw_device.get(),
+            prior_runs: Vec::new(),
         };
 
         // Ensure segment dir exists for subtitle extraction before response
@@ -751,7 +774,7 @@ pub async fn create_session(
         Some((args, keyframes.clone()))
     } else {
         // Ensure segment dir exists even for direct play (for extracted subtitles)
-        if !subtitle_files.is_empty() {
+        if !subtitle_files.is_empty() || restore.is_some() {
             let _ = tokio::fs::create_dir_all(&segment_dir).await;
         }
         None
@@ -1000,12 +1023,17 @@ pub async fn create_session(
                 // Match the primary's start position so variants start from
                 // the same resume position (not from 0).
                 variant_cache.follow_playback_start(&segment_cache);
+                let prior_runs = restore
+                    .as_ref()
+                    .map(|p| p.variant_prior_runs(&spec.id))
+                    .unwrap_or_default();
                 map.insert(
                     spec.id.clone(),
                     QualityVariant {
                         spec,
                         transcode: None,
                         segment_cache: variant_cache,
+                        prior_runs,
                     },
                 );
             }
@@ -1015,10 +1043,9 @@ pub async fn create_session(
         None
     };
 
-    // Store session
-    let session = PlaybackSession {
+    let mut session = PlaybackSession {
         id: session_id,
-        user_id: auth.user_id,
+        user_id,
         media_type: req.media_type,
         file_id,
         file_path: full_path,
@@ -1027,7 +1054,7 @@ pub async fn create_session(
         segment_cache,
         created_at: Instant::now(),
         last_activity: Instant::now(),
-        seek_generation: 0,
+        seek_generation: restore.as_ref().map_or(0, Progress::next_seek_generation),
         duration_seconds: duration,
         container,
         video_codec,
@@ -1046,14 +1073,41 @@ pub async fn create_session(
         debrid_cache_key: None,
         audio_metas: audio_metas.clone(),
         preferred_audio_index: None,
-        force_video_transcode: false,
+        force_video_transcode: restore.as_ref().is_some_and(|p| p.force_video_transcode),
         corrupt_ranges,
         overlay_spawned_starts: std::collections::HashSet::new(),
-        highest_served_segment: None,
+        highest_served_segment: restore.as_ref().and_then(|p| p.highest_served_segment),
         feed: None,
         download: None,
         cue_gate: None,
+        persisted: true,
     };
+
+    if let Some(ref progress) = restore
+        && session.decision.method != PlaybackMethod::DirectPlay
+    {
+        let process = start_ffmpeg_for_session(
+            &session,
+            segment_dir.clone(),
+            Some(progress.resume_secs(&session.segment_cache)),
+            state,
+            None,
+            progress.next_generation(),
+            progress.prior_runs(),
+        )
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to restart transcode: {e}"),
+            )
+                .into_response()
+        })?;
+        if let Some(ref kf) = session.keyframes {
+            process.set_keyframes(kf.clone());
+        }
+        session.transcode = Some(process);
+    }
 
     state.playback_sessions.insert(session_id, session);
 
@@ -1091,7 +1145,7 @@ pub async fn create_session(
         });
     }
 
-    Json(response).into_response()
+    Ok(response)
 }
 
 // =============================================================================
@@ -1118,8 +1172,16 @@ pub async fn destroy_session(
 /// its dedup entry. A fully downloaded cache file stays on disk for the cache layer.
 pub(crate) async fn end_session(state: &AppState, session_id: Uuid) -> bool {
     let Some((_, mut session)) = state.playback_sessions.remove(&session_id) else {
-        return false;
+        // Lost to a restart and never asked for since: only its row and segments remain.
+        let Some(dir) = super::session_restore::forget(state, session_id).await else {
+            return false;
+        };
+        enqueue_session_cleanup(state, std::path::Path::new(&dir)).await;
+        return true;
     };
+    if session.persisted {
+        super::session_restore::forget(state, session_id).await;
+    }
     if let Some(provider_id) = session.provider_id {
         crate::iptv::provider_tracker::release(provider_id);
         state.live_streams.remove(&session.file_id);
@@ -1397,7 +1459,8 @@ pub async fn status(
     let facts = SessionFacts {
         is_live,
         probing,
-        source_readable: tokio::fs::metadata(&file_path).await.is_ok(),
+        // A live session's file_path is its upstream url, which the filesystem never has.
+        source_readable: is_live || tokio::fs::metadata(&file_path).await.is_ok(),
         transcode_running,
         segments_ready,
         session_error,
@@ -2205,10 +2268,22 @@ pub async fn serve_segment(
         && let Some(idx) = requested_index
         && let Some(mut session) = state.playback_sessions.get_mut(&session_id)
     {
+        // The file name counts from its own generation's first segment.
+        let run_start = parse_generation(&sanitized)
+            .and_then(|g| {
+                session
+                    .transcode
+                    .as_ref()?
+                    .runs()
+                    .into_iter()
+                    .find(|r| r.generation == g)
+            })
+            .map_or(0, |r| r.run_start);
+        let abs = run_start + idx;
         session.highest_served_segment = Some(
             session
                 .highest_served_segment
-                .map_or(idx, |prev| prev.max(idx)),
+                .map_or(abs, |prev| prev.max(abs)),
         );
     }
 
@@ -2478,6 +2553,14 @@ fn sanitize_segment_path(path: &str) -> Option<String> {
 
 /// Parse the segment index from a path like `.../gen_0/seg_00005.m4s`.
 /// Returns `None` for init.mp4 or unparseable names.
+fn parse_generation(segment_path: &str) -> Option<u32> {
+    segment_path
+        .split('/')
+        .find_map(|part| part.strip_prefix("gen_"))?
+        .parse()
+        .ok()
+}
+
 fn parse_segment_index(path: &std::path::Path) -> Option<u32> {
     let filename = path.file_name()?.to_str()?;
     let stem = filename.strip_prefix("seg_")?;
@@ -2592,9 +2675,7 @@ pub async fn seek(
         }
         session.seek_generation += 1;
         let end = session.segment_cache.total_segments;
-        session
-            .segment_cache
-            .set_playback_start(end, session.duration_seconds);
+        session.move_playlist_start(end, session.duration_seconds);
         let generation = session.seek_generation;
         let start_time = session.duration_seconds;
         state.playback_sessions.insert(session_id, session);
@@ -2625,9 +2706,7 @@ pub async fn seek(
         transcode.update_segments();
         let segments = transcode.playlist_segments_from(target_segment);
         if !segments.is_empty() {
-            session
-                .segment_cache
-                .set_playback_start(target_segment, aligned_start_time);
+            session.move_playlist_start(target_segment, aligned_start_time);
             session.seek_generation += 1;
             let generation = session.seek_generation;
             info!(
@@ -2657,9 +2736,7 @@ pub async fn seek(
     }
 
     // Update playback start
-    session
-        .segment_cache
-        .set_playback_start(target_segment, aligned_start_time);
+    session.move_playlist_start(target_segment, aligned_start_time);
     session.seek_generation += 1;
 
     // Update variant caches with the new playback start
@@ -2720,6 +2797,7 @@ pub async fn seek(
                 &state,
                 None,
                 session.seek_generation,
+                Vec::new(),
             )
             .await
             {
@@ -2750,6 +2828,7 @@ pub async fn seek(
             &state,
             None,
             session.seek_generation,
+            Vec::new(),
         )
         .await
         {
@@ -2965,9 +3044,7 @@ pub async fn decode_error(
         session.seek_generation += 1;
 
         let target_segment = session.segment_cache.time_to_segment(snapped_start);
-        session
-            .segment_cache
-            .set_playback_start(target_segment, snapped_start);
+        session.move_playlist_start(target_segment, snapped_start);
         if let Some(ref mut variants) = session.variants {
             for variant in variants.values_mut() {
                 variant
@@ -2985,6 +3062,7 @@ pub async fn decode_error(
             &state,
             None,
             generation,
+            Vec::new(),
         )
         .await;
         match restart_result {
@@ -3252,7 +3330,7 @@ pub async fn switch_audio(
     // Use seek_generation+1 as initial_generation to avoid segment dir collisions.
     session.seek_generation += 1;
     let new_generation = session.seek_generation;
-    session.segment_cache.set_playback_start(0, 0.0);
+    session.move_playlist_start(0, 0.0);
 
     // Reset variant caches too
     if let Some(ref mut variants) = session.variants {
@@ -3266,7 +3344,7 @@ pub async fn switch_audio(
     let start_time = req.resume_time.filter(|&t| t > 1.0);
     if let Some(st) = start_time {
         let target_segment = session.segment_cache.time_to_segment(st);
-        session.segment_cache.set_playback_start(target_segment, st);
+        session.move_playlist_start(target_segment, st);
         if let Some(ref mut variants) = session.variants {
             for variant in variants.values_mut() {
                 variant
@@ -3276,8 +3354,16 @@ pub async fn switch_audio(
         }
     }
 
-    match start_ffmpeg_for_session(&session, base_dir, start_time, &state, None, new_generation)
-        .await
+    match start_ffmpeg_for_session(
+        &session,
+        base_dir,
+        start_time,
+        &state,
+        None,
+        new_generation,
+        Vec::new(),
+    )
+    .await
     {
         Ok(process) => {
             if let Some(ref kf) = session.keyframes {
@@ -3621,6 +3707,7 @@ async fn start_ffmpeg_for_session(
     state: &AppState,
     variant_spec: Option<&VariantSpec>,
     initial_generation: u32,
+    prior_runs: Vec<kob_ffmpeg::session::PriorRun>,
 ) -> Result<transcode::TranscodeProcess, transcode::TranscodeError> {
     if session.file_path.as_os_str().is_empty() {
         return Err(transcode::TranscodeError::StartFailed(
@@ -3717,6 +3804,7 @@ async fn start_ffmpeg_for_session(
         duration_seconds: session.duration_seconds,
         initial_generation,
         hw_device: state.hw_device.get(),
+        prior_runs,
     };
 
     transcode::TranscodeProcess::start(args).await
@@ -3769,7 +3857,7 @@ async fn lazy_start_variant(
     }
 
     // Extract variant info needed for FFmpeg start
-    let (start_time, base_dir, spec) = {
+    let start = {
         let variant = match session
             .variants
             .as_mut()
@@ -3792,9 +3880,15 @@ async fn lazy_start_variant(
         // The TranscodeSession registers the initial run internally on start
         let base_dir = variant.segment_cache.base_dir.clone();
         let spec = variant.spec.clone();
+        let prior_runs = std::mem::take(&mut variant.prior_runs);
 
-        (start_time, base_dir, spec)
+        (start_time, base_dir, spec, prior_runs)
     };
+    let (start_time, base_dir, spec, prior_runs) = start;
+    let generation = prior_runs
+        .iter()
+        .map(|r| r.generation + 1)
+        .fold(session.seek_generation, u32::max);
 
     match start_ffmpeg_for_session(
         &session,
@@ -3802,7 +3896,8 @@ async fn lazy_start_variant(
         start_time,
         state,
         Some(&spec),
-        session.seek_generation,
+        generation,
+        prior_runs,
     )
     .await
     {

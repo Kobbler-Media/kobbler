@@ -93,6 +93,7 @@ use crate::jobs::handlers::{
     OrphanCleanupHandler,
     PersonEnrichHandler,
     PersonSyncCheckHandler,
+    PlaybackSessionExpiryHandler,
     ProxyLogCleanupHandler,
     SearchIndexHandler,
     SearchReindexHandler,
@@ -734,6 +735,9 @@ pub async fn start_nats_worker(
 
     // Session cleanup handler (background directory deletion with retries)
     worker.register_handler(HandlerAdapter::new(SessionCleanupHandler));
+    worker.register_handler(HandlerAdapter::new(PlaybackSessionExpiryHandler::new(
+        pool.clone(),
+    )));
 
     // IPTV handlers
     let iptv_http = crate::http::new_client();
@@ -880,6 +884,16 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
             std::time::Duration::from_secs(24 * 3600), // daily
         )
         .with_payload(|| serde_json::json!({ "mode": "retention" })),
+    );
+
+    scheduler.register(
+        ScheduledJob::new(
+            "playback-session-expiry",
+            "kobbler",
+            "playback_session_expiry",
+            std::time::Duration::from_secs(600),
+        )
+        .run_immediately(),
     );
 
     // Chat watch expiry — every expired watch gets a final message before its row goes
