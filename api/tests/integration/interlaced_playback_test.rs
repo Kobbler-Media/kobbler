@@ -214,21 +214,53 @@ async fn a_library_file_is_deinterlaced_only_for_a_client_that_cannot_show_field
     }
 }
 
-/// Several segments long, unlike the fixture, so a seek can land somewhere not yet encoded.
-fn long_interlaced_mkv() -> Vec<u8> {
+fn encode_mkv(args: &str) -> Vec<u8> {
     let file = tempfile::NamedTempFile::with_suffix(".mkv").unwrap();
     let status = std::process::Command::new("ffmpeg")
-        .args(
-            "-v error -y -f lavfi -i testsrc=s=64x64:r=25 -f lavfi -i sine=r=48000 -t 20 \
-             -c:v libx264 -preset ultrafast -g 25 -flags +ildct+ilme -x264opts tff=1 \
-             -c:a aac -b:a 32k -ac 1"
-                .split_whitespace(),
-        )
+        .args(args.split_whitespace())
         .arg(file.path())
         .status()
         .expect("ffmpeg");
     assert!(status.success());
     std::fs::read(file.path()).unwrap()
+}
+
+/// Several segments long, unlike the fixture, so a seek can land somewhere not yet encoded.
+fn long_interlaced_mkv() -> Vec<u8> {
+    encode_mkv(
+        "-v error -y -f lavfi -i testsrc=s=64x64:r=25 -f lavfi -i sine=r=48000 -t 20 \
+         -c:v libx264 -preset ultrafast -g 25 -flags +ildct+ilme -x264opts tff=1 \
+         -c:a aac -b:a 32k -ac 1",
+    )
+}
+
+/// A film carried in a 1080i service: progressive frames under a field-coded sequence
+/// header, so the container and picture timing both say progressive.
+fn fake_interlaced_mkv() -> Vec<u8> {
+    encode_mkv(
+        "-v error -y -f lavfi -i testsrc=s=64x64:r=25 -f lavfi -i sine=r=48000 -t 4 \
+         -c:v libx264 -preset ultrafast -x264-params fake-interlaced=1:pic-struct=1 \
+         -c:a aac -b:a 32k -ac 1",
+    )
+}
+
+#[tokio::test]
+async fn progressive_frames_under_a_field_coded_header_are_still_deinterlaced() {
+    let server = TestServer::start_api_only().await;
+    for supports in [None, Some(false)] {
+        let file_id = seed_movie_file(&server, Seed::Unprobed).await;
+        let path = movie_files::get(&server.pool, file_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .file_path;
+        std::fs::write(path, fake_interlaced_mkv()).unwrap();
+        let session = open_session(&server, "movie", file_id, caps(supports)).await;
+        match supports {
+            None => assert_eq!(session["method"], "direct_play", "{session}"),
+            _ => assert_session_deinterlaces(&server, &session, "fake interlaced").await,
+        }
+    }
 }
 
 /// A seek outside what is encoded, an audio switch or a decode-error fallback starts the

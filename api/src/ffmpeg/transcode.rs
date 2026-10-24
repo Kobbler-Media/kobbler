@@ -167,7 +167,7 @@ impl HybridProbeInfo {
                             .into_owned();
                         video_width = (*params).width as u32;
                         video_height = (*params).height as u32;
-                        interlaced = kob_ffmpeg::filter::graph::codec_parameters_interlaced(params);
+                        interlaced = kob_ffmpeg::interlace::codec_parameters_interlaced(params);
                     }
                 }
                 MediaType::Audio => {
