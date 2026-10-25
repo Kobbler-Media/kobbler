@@ -46,6 +46,7 @@ mod dashboard_test;
 mod database_cleanup_test;
 mod debrid_audio_test;
 mod debrid_cache_test;
+mod debrid_dead_source_test;
 mod debrid_outcomes_test;
 mod debrid_play_test;
 mod debrid_stream_test;

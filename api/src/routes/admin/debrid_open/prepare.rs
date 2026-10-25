@@ -500,7 +500,9 @@ pub(crate) async fn fail_debrid_session(
 ) {
     let code = error.code;
     if let Some(mut session) = state.playback_sessions.get_mut(&session_id) {
-        session.error = Some(error);
+        // The first diagnosis names the cause; a probe failing after the host refused the
+        // file only reports what that did to the probe.
+        session.error.get_or_insert(error);
     }
     debrid_outcomes::report_failure(state, release, code).await;
 }

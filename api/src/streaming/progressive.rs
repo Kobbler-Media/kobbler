@@ -20,6 +20,31 @@ use uuid::Uuid;
 
 const LANDED_AFTER_IDLE: std::time::Duration = std::time::Duration::from_millis(50);
 
+/// A host still refusing after this many retries has not handed over a single byte: the
+/// client is watching a spinner over it, so it is a dead link, not a hiccup.
+const MAX_ATTEMPTS_BEFORE_FIRST_BYTE: u32 = 1;
+
+#[derive(Debug)]
+pub enum DownloadError {
+    /// The host answered, and not with the file.
+    Refused(String),
+    Failed(String),
+}
+
+impl std::fmt::Display for DownloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Refused(m) | Self::Failed(m) => f.write_str(m),
+        }
+    }
+}
+
+impl From<String> for DownloadError {
+    fn from(message: String) -> Self {
+        Self::Failed(message)
+    }
+}
+
 /// Configuration for the progressive download manager.
 #[derive(Debug, Clone)]
 pub struct ProgressiveDownloadConfig {
@@ -88,7 +113,7 @@ impl ProgressiveDownloadManager {
         target: DownloadTarget,
         cancel: CancellationToken,
         meter: Arc<DownloadMeter>,
-    ) -> Result<(), String> {
+    ) -> Result<(), DownloadError> {
         meter.started();
         let outcome = self.download(target, &cancel, &meter).await;
         if outcome.is_err() {
@@ -102,7 +127,7 @@ impl ProgressiveDownloadManager {
         target: DownloadTarget,
         cancel: &CancellationToken,
         meter: &DownloadMeter,
-    ) -> Result<(), String> {
+    ) -> Result<(), DownloadError> {
         let DownloadTarget {
             session_id,
             url: debrid_url,
@@ -114,7 +139,7 @@ impl ProgressiveDownloadManager {
             && let Err(e) = tokio::fs::create_dir_all(parent).await
         {
             error!(session_id = %session_id, error = %e, "Failed to create cache directory");
-            return Err(format!("Failed to create cache directory: {e}"));
+            return Err(format!("Failed to create cache directory: {e}").into());
         }
 
         let cache_path_str = cache_path.to_string_lossy().to_string();
@@ -133,7 +158,7 @@ impl ProgressiveDownloadManager {
         .await
         {
             error!(session_id = %session_id, error = %e, "Failed to update cache path");
-            return Err(format!("Failed to update cache path: {e}"));
+            return Err(format!("Failed to update cache path: {e}").into());
         }
 
         let expires_at =
@@ -191,7 +216,7 @@ impl ProgressiveDownloadManager {
         expected_size: i64,
         cancel: &CancellationToken,
         meter: &DownloadMeter,
-    ) -> Result<(), String> {
+    ) -> Result<(), DownloadError> {
         use futures_util::StreamExt;
 
         let mut downloaded: i64 = 0;
@@ -258,14 +283,19 @@ impl ProgressiveDownloadManager {
                 // request fine, so a transient status is a retry, not a failure.
                 // A permanent one (404/410/dead link) still fails immediately.
                 if !is_transient_status(status) {
-                    return Err(format!("HTTP {status}"));
+                    return Err(DownloadError::Refused(format!("HTTP {status}")));
                 }
                 resume_attempts += 1;
-                if resume_attempts > MAX_RESUME_ATTEMPTS {
-                    return Err(format!(
-                        "HTTP {status} after {MAX_RESUME_ATTEMPTS} retries at {}MB",
+                let max_attempts = if downloaded == 0 {
+                    MAX_ATTEMPTS_BEFORE_FIRST_BYTE
+                } else {
+                    MAX_RESUME_ATTEMPTS
+                };
+                if resume_attempts > max_attempts {
+                    return Err(DownloadError::Refused(format!(
+                        "HTTP {status} after {max_attempts} retries at {}MB",
                         downloaded / (1024 * 1024)
-                    ));
+                    )));
                 }
                 let delay = std::time::Duration::from_secs(1 << resume_attempts.min(4));
                 warn!(
@@ -278,7 +308,7 @@ impl ProgressiveDownloadManager {
                 );
                 tokio::time::sleep(delay).await;
                 if cancel.is_cancelled() {
-                    return Err("Cancelled".to_string());
+                    return Err(DownloadError::Failed("Cancelled".to_string()));
                 }
                 continue;
             }
@@ -320,7 +350,7 @@ impl ProgressiveDownloadManager {
                         // file: whoever resumes it would append alongside.
                         tokio::select! {
                             chunk = stream.next() => chunk,
-                            _ = cancel.cancelled() => return Err("Cancelled".to_string()),
+                            _ = cancel.cancelled() => return Err(DownloadError::Failed("Cancelled".to_string())),
                         }
                     }
                 };
@@ -330,14 +360,14 @@ impl ProgressiveDownloadManager {
                 if cancel.is_cancelled() {
                     // Keep partial file on disk for resume on next playback.
                     // Cache cleanup job handles expiration.
-                    return Err("Cancelled".to_string());
+                    return Err(DownloadError::Failed("Cancelled".to_string()));
                 }
 
                 match chunk {
                     Ok(data) => {
                         let durable = downloaded;
                         if let Err(e) = file.write_all(&data).await {
-                            return Err(format!("Write error: {e}"));
+                            return Err(format!("Write error: {e}").into());
                         }
                         downloaded += data.len() as i64;
                         // tokio's File hands writes to a blocking thread and returns before
@@ -401,7 +431,8 @@ impl ProgressiveDownloadManager {
                 return Err(format!(
                     "Download failed after {MAX_RESUME_ATTEMPTS} resume attempts at {}MB",
                     downloaded / (1024 * 1024)
-                ));
+                )
+                .into());
             }
 
             // Flush what we have before resuming

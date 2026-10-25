@@ -7,8 +7,9 @@ use tracing::warn;
 use crate::AppState;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::progressive::{
-    DownloadTarget, ProgressiveDownloadConfig, ProgressiveDownloadManager,
+    DownloadError, DownloadTarget, ProgressiveDownloadConfig, ProgressiveDownloadManager,
 };
+use crate::streaming::session::SessionError;
 
 pub fn cache_dir(state: &AppState, runtime: &crate::runtime_config::RuntimeConfig) -> PathBuf {
     runtime
@@ -26,6 +27,17 @@ pub async fn download(
     cancel: CancellationToken,
     meter: Arc<DownloadMeter>,
 ) -> Result<(), String> {
+    fetch(state, target, cancel, meter)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+async fn fetch(
+    state: &AppState,
+    target: DownloadTarget,
+    cancel: CancellationToken,
+    meter: Arc<DownloadMeter>,
+) -> Result<(), DownloadError> {
     let runtime = state.runtime_config.get().await;
     let config = ProgressiveDownloadConfig {
         cache_dir: cache_dir(state, &runtime),
@@ -35,7 +47,7 @@ pub async fn download(
     let client = crate::http::builder()
         .timeout(std::time::Duration::from_secs(3600))
         .build()
-        .map_err(|e| format!("download client: {e}"))?;
+        .map_err(|e| DownloadError::Failed(format!("download client: {e}")))?;
     let manager = Arc::new(ProgressiveDownloadManager::new(
         config,
         state.pool.clone(),
@@ -54,8 +66,22 @@ pub fn spawn(
     let state = state.clone();
     tokio::spawn(async move {
         let session_id = target.session_id;
-        if let Err(e) = download(&state, target, cancel, meter).await {
-            warn!(%session_id, error = %e, "Download did not complete; leaving HybridIo on HTTP fallback");
+        match fetch(&state, target, cancel, meter.clone()).await {
+            Ok(()) => {}
+            // Nothing landed and the host will not serve it: the probe and the player would
+            // each only find that out by retrying the same link until they gave up.
+            Err(DownloadError::Refused(reason)) if meter.downloaded() == 0 => {
+                warn!(%session_id, %reason, "Debrid host refused the file before its first byte; failing the session");
+                if let Some(mut session) = state.playback_sessions.get_mut(&session_id) {
+                    session.error = Some(SessionError::new(
+                        "source_refused",
+                        format!("The debrid host refused the file ({reason})"),
+                    ));
+                }
+            }
+            Err(e) => {
+                warn!(%session_id, error = %e, "Download did not complete; leaving HybridIo on HTTP fallback");
+            }
         }
     });
 }
