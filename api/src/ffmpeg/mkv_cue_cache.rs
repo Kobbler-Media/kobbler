@@ -17,8 +17,10 @@ use tokio::sync::OnceCell;
 use tracing::{debug, warn};
 
 use super::mkv_cue_trim::{
-    CuePatch, TrimOutcome, build_patch, cues_element_len, kept_tracks, read_layout,
+    CuePatch, CuesLayout, TrimOutcome, build_patch, cues_element_len, kept_tracks, read_layout,
 };
+use super::mkv_seekhead::reorder_seekhead;
+use super::mkv_splice::IndexPatch;
 
 /// Enough to cover the SeekHead and Tracks of anything mkvmerge produces.
 const HEAD_BYTES: usize = 512 * 1024;
@@ -159,10 +161,20 @@ impl ByteSource for HeadMemo {
     }
 }
 
-/// Where the Cues element starts, from the head of the file alone.
-pub async fn locate_cues(source: &dyn ByteSource) -> Option<u64> {
+/// What the head of the file alone decides: where the Cues element starts, and the
+/// SeekHead rewrite every read of the file's first bytes needs.
+pub struct HeadIndex {
+    pub cues_at: u64,
+    pub seekhead: Option<Arc<IndexPatch>>,
+}
+
+pub async fn read_head_index(source: &dyn ByteSource) -> Option<HeadIndex> {
     let head = source.read_at(0, HEAD_BYTES).await.ok()?;
-    read_layout(&head).map(|l| l.element_offset)
+    let layout = read_layout(&head)?;
+    Some(HeadIndex {
+        cues_at: layout.element_offset,
+        seekhead: IndexPatch::new(reorder_seekhead(&head), None).map(Arc::new),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,7 +196,7 @@ impl CueTrimPolicy {
 }
 
 struct Entry {
-    cell: Arc<OnceCell<Option<Arc<CuePatch>>>>,
+    cell: Arc<OnceCell<Option<Arc<IndexPatch>>>>,
     last_used: AtomicU64,
 }
 
@@ -206,7 +218,7 @@ impl CueTrimCache {
         identity: &str,
         policy: &CueTrimPolicy,
         source: &dyn ByteSource,
-    ) -> Option<Arc<CuePatch>> {
+    ) -> Option<Arc<IndexPatch>> {
         let key = format!("{identity}|{}", policy.discriminator());
         let now = self.clock.fetch_add(1, Ordering::Relaxed);
 
@@ -256,36 +268,45 @@ impl CueTrimCache {
 async fn build(
     policy: &CueTrimPolicy,
     source: &dyn ByteSource,
-) -> Result<Option<Arc<CuePatch>>, ()> {
-    // Ok(None) from a read means the source will never serve this, so the decision
-    // not to patch is worth remembering; Err means try again on the next request.
-    let read = async |offset: u64, len: usize| -> Result<Option<Vec<u8>>, ()> {
-        match source.read_at(offset, len).await {
-            Ok(bytes) => Ok(Some(bytes)),
-            Err(e) if e.kind() == std::io::ErrorKind::Unsupported => {
-                debug!(error = %e, "cue trim: source cannot serve ranges");
-                Ok(None)
-            }
-            Err(e) => {
-                debug!(error = %e, offset, "cue trim: read failed");
-                Err(())
-            }
-        }
-    };
-
-    let Some(head) = read(0, HEAD_BYTES).await? else {
+) -> Result<Option<Arc<IndexPatch>>, ()> {
+    let Some(head) = read(source, 0, HEAD_BYTES).await? else {
         return Ok(None);
     };
     let Some(layout) = read_layout(&head) else {
         return Ok(None);
     };
+    let cues = trim_cues(policy, source, &layout).await?;
+    Ok(IndexPatch::new(reorder_seekhead(&head), cues).map(Arc::new))
+}
+
+/// Ok(None) means the source will never serve this, so the decision not to patch is
+/// worth remembering; Err means try again on the next request.
+async fn read(source: &dyn ByteSource, offset: u64, len: usize) -> Result<Option<Vec<u8>>, ()> {
+    match source.read_at(offset, len).await {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if e.kind() == std::io::ErrorKind::Unsupported => {
+            debug!(error = %e, "cue trim: source cannot serve ranges");
+            Ok(None)
+        }
+        Err(e) => {
+            debug!(error = %e, offset, "cue trim: read failed");
+            Err(())
+        }
+    }
+}
+
+async fn trim_cues(
+    policy: &CueTrimPolicy,
+    source: &dyn ByteSource,
+    layout: &CuesLayout,
+) -> Result<Option<CuePatch>, ()> {
     let keep = kept_tracks(
         &layout.tracks,
         policy.sidecars_available,
         &policy.preferred_languages,
     );
 
-    let Some(header) = read(layout.element_offset, 16).await? else {
+    let Some(header) = read(source, layout.element_offset, 16).await? else {
         return Ok(None);
     };
     let Some(element_len) = cues_element_len(&header) else {
@@ -296,7 +317,7 @@ async fn build(
         return Ok(None);
     }
 
-    let Some(element) = read(layout.element_offset, element_len).await? else {
+    let Some(element) = read(source, layout.element_offset, element_len).await? else {
         return Ok(None);
     };
     if element.len() != element_len {
@@ -311,7 +332,7 @@ async fn build(
                 bytes = element_len,
                 "cue trim: index trimmed"
             );
-            Some(Arc::new(*patch))
+            Some(*patch)
         }
         TrimOutcome::NotWorthIt | TrimOutcome::Unsupported => None,
     })
@@ -321,7 +342,7 @@ async fn build(
 pub fn patched_stream<S, E>(
     inner: S,
     start: u64,
-    patch: Arc<CuePatch>,
+    patch: Arc<IndexPatch>,
 ) -> impl Stream<Item = Result<Bytes, E>> + Send
 where
     S: Stream<Item = Result<Bytes, E>> + Send + 'static,
@@ -355,7 +376,7 @@ pub async fn patch_for_local_file(
     container_or_name: &str,
     policy: &CueTrimPolicy,
     enabled: bool,
-) -> Option<Arc<CuePatch>> {
+) -> Option<Arc<IndexPatch>> {
     if !enabled || !is_matroska(container_or_name) {
         return None;
     }
@@ -429,9 +450,11 @@ mod tests {
         let cache = CueTrimCache::new();
 
         let patch = cache.get("f", &policy(true), &src).await.expect("patch");
-        assert_eq!(patch.offset, built.cues_offset);
+        assert_eq!(patch.seekhead, None);
+        let patch = patch.cues.as_ref().expect("cue patch");
+        assert_eq!(patch.splice.offset, built.cues_offset);
         // The patch covers exactly the Cues element and nothing beyond it.
-        assert_eq!(patch.region_len(), built.cues_len);
+        assert_eq!(patch.splice.region_len(), built.cues_len);
         assert!(patch.kept_points < patch.original_points);
     }
 
@@ -487,6 +510,10 @@ mod tests {
 
         let with_sidecars = cache.get("f", &policy(true), &src).await.unwrap();
         let without = cache.get("f", &policy(false), &src).await.unwrap();
+        let (with_sidecars, without) = (
+            with_sidecars.cues.as_ref().unwrap(),
+            without.cues.as_ref().unwrap(),
+        );
         assert_eq!(cache.entry_count(), 2);
         assert!(
             without.kept_points > with_sidecars.kept_points,
@@ -610,8 +637,9 @@ mod tests {
         let mut expected = built.file.clone();
         patch.apply(0, &mut expected);
 
+        let cues = &patch.cues.as_ref().unwrap().splice;
         for chunk in [1usize, 3, 1024, 100_000] {
-            for start in [0u64, patch.offset - 5, patch.offset, patch.end() - 3] {
+            for start in [0u64, cues.offset - 5, cues.offset, cues.end() - 3] {
                 let tail: Vec<Bytes> = built.file[start as usize..]
                     .chunks(chunk)
                     .map(Bytes::copy_from_slice)
@@ -668,17 +696,23 @@ mod real_file {
             let started = std::time::Instant::now();
             let patch = super::patch_for_local_file(&cache, &path, "matroska", &pol, true).await;
             let elapsed = started.elapsed();
-            match patch {
-                Some(p) => println!(
-                    "  {label}\n    {} -> {} cue points, element {} B, {} B held ({:.1}% of points), built in {:?}",
+            let Some(patch) = patch else {
+                println!("  {label}\n    no patch");
+                continue;
+            };
+            println!(
+                "  {label}\n    SeekHead reordered: {}, built in {elapsed:?}",
+                patch.seekhead.is_some()
+            );
+            if let Some(p) = &patch.cues {
+                println!(
+                    "    {} -> {} cue points, element {} B, {} B held ({:.1}% of points)",
                     p.original_points,
                     p.kept_points,
-                    p.region_len(),
-                    p.stored_bytes(),
+                    p.splice.region_len(),
+                    p.splice.stored_bytes(),
                     100.0 * p.kept_points as f64 / p.original_points.max(1) as f64,
-                    elapsed
-                ),
-                None => println!("  {label}\n    no patch"),
+                );
             }
         }
     }

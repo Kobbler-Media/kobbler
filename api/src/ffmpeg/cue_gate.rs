@@ -14,13 +14,15 @@ use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use tokio::sync::OnceCell;
 
-use super::mkv_cue_cache::{ByteSource, CueTrimCache, CueTrimPolicy, HeadMemo, locate_cues};
-use super::mkv_cue_trim::CuePatch;
+use super::mkv_cue_cache::{
+    ByteSource, CueTrimCache, CueTrimPolicy, HeadIndex, HeadMemo, read_head_index,
+};
+use super::mkv_splice::IndexPatch;
 
 pub struct CueGate {
     build: Option<Build>,
-    cues_at: OnceCell<Option<u64>>,
-    patch: OnceCell<Option<Arc<CuePatch>>>,
+    head: OnceCell<Option<HeadIndex>>,
+    patch: OnceCell<Option<Arc<IndexPatch>>>,
 }
 
 struct Build {
@@ -34,7 +36,7 @@ impl CueGate {
     pub fn off() -> Arc<Self> {
         Arc::new(Self {
             build: None,
-            cues_at: OnceCell::new_with(Some(None)),
+            head: OnceCell::new_with(Some(None)),
             patch: OnceCell::new_with(Some(None)),
         })
     }
@@ -52,47 +54,49 @@ impl CueGate {
                 policy,
                 source: HeadMemo::new(source),
             }),
-            cues_at: OnceCell::new(),
+            head: OnceCell::new(),
             patch: OnceCell::new(),
         })
     }
 
     /// Settle the session's decision ahead of the read that needs it.
     pub async fn warm(&self) {
-        if let Some(at) = self.cues_at().await {
+        if let Some(at) = self.head().await.map(|h| h.cues_at) {
             self.patch_for(at, 1).await;
         }
     }
 
-    async fn cues_at(&self) -> Option<u64> {
-        let Some(build) = &self.build else {
-            return None;
-        };
-        *self
-            .cues_at
-            .get_or_init(|| locate_cues(&build.source))
+    async fn head(&self) -> Option<&HeadIndex> {
+        let build = self.build.as_ref()?;
+        self.head
+            .get_or_init(|| read_head_index(&build.source))
             .await
+            .as_ref()
     }
 
     /// The patch to splice into `len` bytes read at `start`, or None to pass them
     /// through untouched.
-    pub async fn patch_for(&self, start: u64, len: u64) -> Option<Arc<CuePatch>> {
+    pub async fn patch_for(&self, start: u64, len: u64) -> Option<Arc<IndexPatch>> {
         if let Some(decided) = self.patch.get() {
             return decided.clone();
         }
         let build = self.build.as_ref()?;
-        let Some(cues_at) = self.cues_at().await else {
+        let Some(head) = self.head().await else {
             let _ = self.patch.set(None);
             return self.patch.get().cloned().flatten();
         };
-        if start.saturating_add(len) <= cues_at {
-            return None;
+        if start.saturating_add(len) <= head.cues_at {
+            return head.seekhead.clone();
         }
+        // A trim that could not be built still leaves the SeekHead rewrite, which
+        // earlier reads of this session have already served.
         self.patch
-            .get_or_init(|| {
+            .get_or_init(|| async {
                 build
                     .cache
                     .get(&build.identity, &build.policy, &build.source)
+                    .await
+                    .or_else(|| head.seekhead.clone())
             })
             .await
             .clone()
@@ -102,7 +106,7 @@ impl CueGate {
     /// Only once the index has been located — a read that cannot know yet goes to the
     /// source and is patched on the way through instead.
     pub async fn whole_range(&self, start: u64, len: u64) -> Option<Vec<u8>> {
-        let cues_at = (*self.cues_at.get()?)?;
+        let cues_at = self.head.get()?.as_ref()?.cues_at;
         if start.saturating_add(len) <= cues_at {
             return None;
         }

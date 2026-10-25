@@ -20,11 +20,12 @@ use super::mkv_cues::{
     TRACK_NUMBER, TRACK_TYPE, TRACK_TYPE_AUDIO, TRACK_TYPE_SUBTITLE, TRACK_TYPE_VIDEO, TRACKS,
     VOID,
 };
+use super::mkv_splice::Splice;
 
 /// An unknown-size element: every value bit set. Only the Segment uses this in practice.
 const UNKNOWN_SIZE: u64 = 0x00FF_FFFF_FFFF_FFFF;
 
-fn read_id(b: &[u8], p: usize) -> Option<(u32, usize)> {
+pub(super) fn read_id(b: &[u8], p: usize) -> Option<(u32, usize)> {
     let first = *b.get(p)?;
     if first == 0 {
         return None;
@@ -40,7 +41,7 @@ fn read_id(b: &[u8], p: usize) -> Option<(u32, usize)> {
     Some((v, width))
 }
 
-fn read_size(b: &[u8], p: usize) -> Option<(u64, usize)> {
+pub(super) fn read_size(b: &[u8], p: usize) -> Option<(u64, usize)> {
     let first = *b.get(p)?;
     if first == 0 {
         return None;
@@ -60,44 +61,44 @@ fn read_size(b: &[u8], p: usize) -> Option<(u64, usize)> {
     Some((if v == all_ones { UNKNOWN_SIZE } else { v }, width))
 }
 
-fn read_uint(b: &[u8]) -> u64 {
+pub(super) fn read_uint(b: &[u8]) -> u64 {
     b.iter().fold(0u64, |acc, &x| (acc << 8) | x as u64)
 }
 
-fn id_width(id: u32) -> usize {
+pub(super) fn id_width(id: u32) -> usize {
     (32 - id.leading_zeros() as usize).div_ceil(8).max(1)
 }
 
-fn write_id(id: u32, out: &mut Vec<u8>) {
+pub(super) fn write_id(id: u32, out: &mut Vec<u8>) {
     let w = id_width(id);
     for i in (0..w).rev() {
         out.push((id >> (8 * i)) as u8);
     }
 }
 
-fn size_width(v: u64) -> usize {
+pub(super) fn size_width(v: u64) -> usize {
     (1..=8)
         .find(|w| v < (1u64 << (7 * w)) - 1)
         .expect("size fits in 8 bytes")
 }
 
-fn write_size(v: u64, width: usize, out: &mut Vec<u8>) {
+pub(super) fn write_size(v: u64, width: usize, out: &mut Vec<u8>) {
     let val = v | (1u64 << (7 * width));
     for i in (0..width).rev() {
         out.push((val >> (8 * i)) as u8);
     }
 }
 
-struct Element<'a> {
-    id: u32,
-    body: &'a [u8],
+pub(super) struct Element<'a> {
+    pub id: u32,
+    pub body: &'a [u8],
     /// Whole element including its header, for verbatim copies.
-    raw: &'a [u8],
+    pub raw: &'a [u8],
 }
 
 /// Walk the direct children of a container body. Stops rather than panics on a
 /// malformed child, so a truncated or unusual file degrades to "no patch".
-fn children(buf: &[u8]) -> impl Iterator<Item = Element<'_>> {
+pub(super) fn children(buf: &[u8]) -> impl Iterator<Item = Element<'_>> {
     let mut p = 0usize;
     std::iter::from_fn(move || {
         if p >= buf.len() {
@@ -151,6 +152,36 @@ pub struct CuesLayout {
 /// front of the file. Returns None for anything unexpected — the caller then serves
 /// the file untouched.
 pub fn read_layout(head: &[u8]) -> Option<CuesLayout> {
+    let sh = first_seekhead(head)?;
+    let mut cues_pos = None;
+    let mut tracks_pos = None;
+    for seek in children(sh.body).filter(|c| c.id == SEEK) {
+        match seek_entry(seek.body) {
+            (Some(CUES), Some(v)) => cues_pos = Some(v),
+            (Some(TRACKS), Some(v)) => tracks_pos = Some(v),
+            _ => {}
+        }
+    }
+
+    let cues_pos = cues_pos?;
+    let tracks_at = (sh.segment_data + tracks_pos?) as usize;
+    let tracks = parse_tracks(head.get(tracks_at..)?)?;
+
+    Some(CuesLayout {
+        element_offset: sh.segment_data + cues_pos,
+        tracks,
+    })
+}
+
+pub(super) struct SeekHeadAt<'a> {
+    /// Absolute offset of the Segment's data, which every SeekPosition is relative to.
+    pub segment_data: u64,
+    /// Absolute offset of the SeekHead's body.
+    pub body_offset: u64,
+    pub body: &'a [u8],
+}
+
+pub(super) fn first_seekhead(head: &[u8]) -> Option<SeekHeadAt<'_>> {
     let (id, idw) = read_id(head, 0)?;
     if id != EBML_HEADER {
         return None;
@@ -166,41 +197,26 @@ pub fn read_layout(head: &[u8]) -> Option<CuesLayout> {
     p += sidw + sszw;
     let segment_data = p as u64;
 
-    let mut cues_pos = None;
-    let mut tracks_pos = None;
-    for el in children(head.get(p..)?) {
-        if el.id != SEEKHEAD {
-            continue;
-        }
-        for seek in children(el.body) {
-            if seek.id != SEEK {
-                continue;
-            }
-            let (mut target, mut pos) = (None, None);
-            for f in children(seek.body) {
-                match f.id {
-                    SEEKID => target = Some(read_uint(f.body) as u32),
-                    SEEKPOSITION => pos = Some(read_uint(f.body)),
-                    _ => {}
-                }
-            }
-            match (target, pos) {
-                (Some(CUES), Some(v)) => cues_pos = Some(v),
-                (Some(TRACKS), Some(v)) => tracks_pos = Some(v),
-                _ => {}
-            }
-        }
-        break;
-    }
-
-    let cues_pos = cues_pos?;
-    let tracks_at = (segment_data + tracks_pos?) as usize;
-    let tracks = parse_tracks(head.get(tracks_at..)?)?;
-
-    Some(CuesLayout {
-        element_offset: segment_data + cues_pos,
-        tracks,
+    let base = head.as_ptr() as usize;
+    let el = children(head.get(p..)?).find(|el| el.id == SEEKHEAD)?;
+    Some(SeekHeadAt {
+        segment_data,
+        body_offset: (el.body.as_ptr() as usize - base) as u64,
+        body: el.body,
     })
+}
+
+/// The (SeekID, SeekPosition) of one Seek element's body.
+pub(super) fn seek_entry(seek_body: &[u8]) -> (Option<u32>, Option<u64>) {
+    let (mut target, mut pos) = (None, None);
+    for f in children(seek_body) {
+        match f.id {
+            SEEKID => target = Some(read_uint(f.body) as u32),
+            SEEKPOSITION => pos = Some(read_uint(f.body)),
+            _ => {}
+        }
+    }
+    (target, pos)
 }
 
 fn parse_tracks(buf: &[u8]) -> Option<Vec<TrackInfo>> {
@@ -312,7 +328,7 @@ fn language_matches(track: &str, want: &str) -> bool {
         .any(|(name, codes)| *name == want && codes.contains(&track))
 }
 
-/// A length-preserving replacement for a byte range of the file.
+/// The trimmed Cues element as a splice over the original one.
 ///
 /// Only the head of the replacement is held: the trimmed Cues element plus the header
 /// of the Void that pads it back out. A Void payload is zeros by definition and is the
@@ -320,70 +336,9 @@ fn language_matches(track: &str, want: &str) -> bool {
 /// nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CuePatch {
-    pub offset: u64,
-    prefix: Vec<u8>,
-    region_len: usize,
+    pub splice: Splice,
     pub original_points: usize,
     pub kept_points: usize,
-}
-
-impl CuePatch {
-    pub fn end(&self) -> u64 {
-        self.offset + self.region_len as u64
-    }
-
-    /// Bytes this patch replaces.
-    pub fn region_len(&self) -> usize {
-        self.region_len
-    }
-
-    /// Bytes it costs to hold.
-    pub fn stored_bytes(&self) -> usize {
-        self.prefix.len()
-    }
-
-    /// Write the region's bytes starting `from` bytes into it, zero-filling the part
-    /// that falls in the Void payload.
-    fn fill(&self, from: usize, out: &mut [u8]) {
-        // `from` runs past the prefix once the range starts inside the Void payload,
-        // and even an empty slice at an out-of-bounds start panics.
-        let start = from.min(self.prefix.len());
-        let real = (self.prefix.len() - start).min(out.len());
-        out[..real].copy_from_slice(&self.prefix[start..start + real]);
-        out[real..].fill(0);
-    }
-
-    pub fn overlaps(&self, start: u64, len: usize) -> bool {
-        start < self.end() && self.offset < start + len as u64
-    }
-
-    /// The patched bytes for a range lying wholly inside the replaced region.
-    ///
-    /// Worth checking before reading anything: the demuxer fetches the cue index as
-    /// one range, and answering it from here skips the read (or, on debrid, the
-    /// upstream request) for bytes we were going to overwrite in full anyway.
-    pub fn whole_range(&self, start: u64, len: usize) -> Option<Vec<u8>> {
-        let end = start.checked_add(len as u64)?;
-        if start < self.offset || end > self.end() {
-            return None;
-        }
-        let mut out = vec![0u8; len];
-        self.fill((start - self.offset) as usize, &mut out);
-        Some(out)
-    }
-
-    /// Overwrite the part of an already-read chunk that falls inside the patch.
-    pub fn apply(&self, chunk_start: u64, chunk: &mut [u8]) {
-        let chunk_end = chunk_start + chunk.len() as u64;
-        let from = chunk_start.max(self.offset);
-        let to = chunk_end.min(self.end());
-        if from >= to {
-            return;
-        }
-        let ci = (from - chunk_start) as usize;
-        let n = (to - from) as usize;
-        self.fill((from - self.offset) as usize, &mut chunk[ci..ci + n]);
-    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -487,9 +442,7 @@ pub fn build_patch(element: &[u8], offset: u64, keep: &BTreeSet<u64>) -> TrimOut
 
     debug_assert!(patched.len() <= element.len());
     TrimOutcome::Trimmed(Box::new(CuePatch {
-        offset,
-        prefix: patched,
-        region_len: element.len(),
+        splice: Splice::new(offset, patched, element.len()),
         original_points,
         kept_points,
     }))
@@ -770,7 +723,8 @@ mod tests {
     /// The full replacement bytes, Void payload included.
     fn region(patch: &CuePatch) -> Vec<u8> {
         patch
-            .whole_range(patch.offset, patch.region_len())
+            .splice
+            .whole_range(patch.splice.offset, patch.splice.region_len())
             .expect("its own region")
     }
 
@@ -790,7 +744,7 @@ mod tests {
     fn the_patch_is_exactly_as_long_as_what_it_replaces() {
         let built = build_file(&many_langs(), 400, None);
         let patch = trim(&built, &BTreeSet::from([1, 2]));
-        assert_eq!(patch.region_len(), built.cues_len);
+        assert_eq!(patch.splice.region_len(), built.cues_len);
     }
 
     #[test]
@@ -798,15 +752,15 @@ mod tests {
         let built = build_file(&many_langs(), 400, None);
         let patch = trim(&built, &BTreeSet::from([1, 2]));
         assert!(
-            patch.stored_bytes() * 4 < patch.region_len(),
+            patch.splice.stored_bytes() * 4 < patch.splice.region_len(),
             "holding {} of a {} byte region",
-            patch.stored_bytes(),
-            patch.region_len()
+            patch.splice.stored_bytes(),
+            patch.splice.region_len()
         );
         // What it does not store still has to read back as zeros.
         let full = region(&patch);
         assert_eq!(full.len(), built.cues_len);
-        assert!(full[patch.stored_bytes()..].iter().all(|&b| b == 0));
+        assert!(full[patch.splice.stored_bytes()..].iter().all(|&b| b == 0));
     }
 
     #[test]
@@ -832,7 +786,7 @@ mod tests {
         let built = build_file(&many_langs(), 400, None);
         let patch = trim(&built, &BTreeSet::from([1, 2]));
         let mut file = built.file.clone();
-        patch.apply(0, &mut file);
+        patch.splice.apply(0, &mut file);
 
         let layout = read_layout(&file).expect("patched file lost its layout");
         assert_eq!(layout.element_offset, built.cues_offset);
@@ -887,7 +841,7 @@ mod tests {
 
     fn expected_patched(built: &Built, patch: &CuePatch) -> Vec<u8> {
         let mut f = built.file.clone();
-        patch.apply(0, &mut f);
+        patch.splice.apply(0, &mut f);
         f
     }
 
@@ -898,18 +852,31 @@ mod tests {
         let expected = expected_patched(&built, &patch);
 
         for (start, len) in [
-            (patch.offset, patch.region_len()),
-            (patch.offset, 1),
-            (patch.end() - 1, 1),
-            (patch.offset + 1000, 5000),
+            (patch.splice.offset, patch.splice.region_len()),
+            (patch.splice.offset, 1),
+            (patch.splice.end() - 1, 1),
+            (patch.splice.offset + 1000, 5000),
         ] {
-            let got = patch.whole_range(start, len).expect("should be contained");
+            let got = patch
+                .splice
+                .whole_range(start, len)
+                .expect("should be contained");
             assert_eq!(got, expected[start as usize..start as usize + len]);
         }
 
-        assert!(patch.whole_range(patch.offset - 1, 4).is_none());
-        assert!(patch.whole_range(patch.end() - 1, 2).is_none());
-        assert!(patch.whole_range(0, built.file.len()).is_none());
+        assert!(
+            patch
+                .splice
+                .whole_range(patch.splice.offset - 1, 4)
+                .is_none()
+        );
+        assert!(
+            patch
+                .splice
+                .whole_range(patch.splice.end() - 1, 2)
+                .is_none()
+        );
+        assert!(patch.splice.whole_range(0, built.file.len()).is_none());
     }
 
     #[test]
@@ -918,8 +885,8 @@ mod tests {
         let patch = trim(&built, &BTreeSet::from([1, 2]));
         let expected = expected_patched(&built, &patch);
         let total = built.file.len() as u64;
-        let p0 = patch.offset;
-        let p1 = patch.end();
+        let p0 = patch.splice.offset;
+        let p1 = patch.splice.end();
 
         // Edges of the patch region are where offset arithmetic goes wrong.
         let mut cases: Vec<(u64, u64)> = vec![
@@ -954,8 +921,8 @@ mod tests {
                 while pos < end {
                     let n = chunk.min((end - pos) as usize);
                     let mut buf = built.file[pos as usize..pos as usize + n].to_vec();
-                    if patch.overlaps(pos, n) {
-                        patch.apply(pos, &mut buf);
+                    if patch.splice.overlaps(pos, n) {
+                        patch.splice.apply(pos, &mut buf);
                     }
                     got.extend_from_slice(&buf);
                     pos += n as u64;
@@ -973,14 +940,14 @@ mod tests {
     fn a_chunk_that_misses_the_patch_is_untouched() {
         let built = build_file(&many_langs(), 400, None);
         let patch = trim(&built, &BTreeSet::from([1, 2]));
-        assert!(!patch.overlaps(0, patch.offset as usize));
-        assert!(!patch.overlaps(patch.end(), 4096));
-        assert!(patch.overlaps(patch.end() - 1, 4096));
-        assert!(patch.overlaps(0, built.file.len()));
+        assert!(!patch.splice.overlaps(0, patch.splice.offset as usize));
+        assert!(!patch.splice.overlaps(patch.splice.end(), 4096));
+        assert!(patch.splice.overlaps(patch.splice.end() - 1, 4096));
+        assert!(patch.splice.overlaps(0, built.file.len()));
 
-        let mut buf = built.file[..patch.offset as usize].to_vec();
+        let mut buf = built.file[..patch.splice.offset as usize].to_vec();
         let before = buf.clone();
-        patch.apply(0, &mut buf);
+        patch.splice.apply(0, &mut buf);
         assert_eq!(buf, before);
     }
 }

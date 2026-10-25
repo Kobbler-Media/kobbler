@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::ffmpeg::mkv_cue_cache::{CueTrimPolicy, patch_for_local_file, patched_stream};
-use crate::ffmpeg::mkv_cue_trim::CuePatch;
+use crate::ffmpeg::mkv_splice::IndexPatch;
 use crate::ffmpeg::transcode::{self, AudioMode, TranscodeArgs, VideoMode};
 use crate::jobs::handlers::SessionCleanupPayload;
 use crate::repositories::{
@@ -4004,7 +4004,7 @@ async fn serve_range(
     file_size: u64,
     content_type: &str,
     range: ByteRange,
-    patch: Option<Arc<CuePatch>>,
+    patch: Option<Arc<IndexPatch>>,
 ) -> axum::response::Response {
     let length = range.end - range.start + 1;
     let partial = |body: Body| {

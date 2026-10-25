@@ -99,6 +99,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "console-subscriber",
+ "crc32fast",
  "csv",
  "dashmap",
  "dotenvy",

@@ -129,6 +129,7 @@ mod search_backend_test;
 mod search_facets_test;
 mod search_test;
 mod season_episode_people_test;
+mod seekhead_order_test;
 mod session_restore_test;
 mod sessions_test;
 mod sidecar_pipeline_test;

@@ -314,3 +314,52 @@ pub async fn session_status(server: &TestServer, session_id: Uuid) -> TestRespon
         ))
         .await
 }
+
+/// A debrid session that has never been downloaded, read straight off a slow upstream,
+/// with the same file behind a library direct-play session of the same id.
+pub async fn proxied_mkv_session(
+    plan: UpstreamPlan,
+) -> (TestServer, Upstream, Uuid, tempfile::TempDir) {
+    let total = plan.data.len();
+    let data = plan.data.clone();
+    let upstream = Upstream::start(plan).await;
+    let server = TestServer::start_api_only().await;
+    let user_id = sqlx::query_scalar::<_, Uuid>("SELECT id FROM users LIMIT 1")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    let movie_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO movies (id, title, year, identifiers) VALUES ($1, 'Cue Movie', 2025, '{}')",
+    )
+    .bind(movie_id)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    let session_id = Uuid::now_v7();
+    sqlx::query(
+        r#"INSERT INTO debrid_stream_sessions
+            (id, user_id, media_type, media_id, release_title, info_hash,
+             debrid_provider, filename, filesize, debrid_url, debrid_url_expires_at)
+        VALUES ($1, $2, 'movie', $3, 'Cue.Movie.2025', $4, $5, 'film.mkv', $6, $7, NULL)"#,
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .bind(movie_id)
+    .bind(format!("cue{}", session_id.simple()))
+    .bind(PROVIDER_ID)
+    .bind(total as i64)
+    .bind(upstream.url("film.mkv"))
+    .execute(&server.pool)
+    .await
+    .unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let local = dir.path().join("film.mkv");
+    std::fs::write(&local, data.as_slice()).unwrap();
+    server.app_state.playback_sessions.insert(
+        session_id,
+        api::streaming::session::PlaybackSession::test_direct_play(session_id, user_id, local),
+    );
+    (server, upstream, session_id, dir)
+}
