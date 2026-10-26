@@ -1,6 +1,6 @@
 //! Audiobook transcription job handler.
 //!
-//! Transcribes all audio files for a book using faster-whisper, storing
+//! Transcribes all audio files for a book via the configured STT service, storing
 //! timestamped text segments in the `audiobook_transcripts` table.
 
 use crate::RuntimeConfigManager;
@@ -25,8 +25,8 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudiobookTranscribePayload {
     pub book_id: Uuid,
-    /// When true, skip inter-file delays. User-triggered transcriptions set
-    /// this; background/auto ones leave it false.
+    /// User-triggered: re-transcribe even files already carrying the current
+    /// config tag. Background runs leave it false and skip those files.
     #[serde(default)]
     pub manual: bool,
 }
@@ -114,10 +114,11 @@ impl JobHandler for AudiobookTranscribeHandler {
             }
         };
 
-        let config_tag = stt_config_tag(&effective_url);
+        let config_tag = stt_config_tag(&rt_config);
 
         let total = files.len();
         let mut transcribed = 0u64;
+        let mut up_to_date = 0u64;
         let mut segments_total = 0u64;
         // Set when a file fails with a transient error (STT down/restarting).
         // Used to decide retryable vs. permanent failure below.
@@ -126,12 +127,12 @@ impl JobHandler for AudiobookTranscribeHandler {
         for (i, file) in files.iter().enumerate() {
             nats_jobs::check_cancelled(&cancel)?;
 
-            // Skip files that already have a transcript with the current config tag
-            if audiobook_transcripts::has_transcript_with_tag(&self.pool, file.id, &config_tag)
-                .await
-                .unwrap_or(false)
+            if !payload.manual
+                && audiobook_transcripts::has_transcript_with_tag(&self.pool, file.id, &config_tag)
+                    .await
+                    .unwrap_or(false)
             {
-                transcribed += 1;
+                up_to_date += 1;
                 continue;
             }
 
@@ -231,6 +232,7 @@ impl JobHandler for AudiobookTranscribeHandler {
         info!(
             book_id = %book_id,
             transcribed,
+            up_to_date,
             segments_total,
             "Audiobook transcription complete"
         );
@@ -286,7 +288,7 @@ impl JobHandler for AudiobookTranscribeHandler {
                 .await;
         }
 
-        if transcribed == 0 {
+        if transcribed + up_to_date == 0 {
             let msg = format!("All {total} file(s) failed to transcribe");
             // If at least one file failed transiently (STT crash/restart
             // window), retry the whole job — the audio is fine, the service
@@ -299,6 +301,7 @@ impl JobHandler for AudiobookTranscribeHandler {
 
         Ok(json!({
             "transcribed": transcribed,
+            "up_to_date": up_to_date,
             "segments_total": segments_total,
         }))
     }

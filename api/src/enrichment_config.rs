@@ -4,6 +4,7 @@
 //! which configuration was active when it ran. The backfill handlers compare
 //! stored tags against the current config to decide whether re-runs are needed.
 
+use crate::runtime_config::RuntimeConfig;
 use crate::skip_detect::PipelineMode;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -23,39 +24,36 @@ pub fn skip_detect_config_tag(mode: &PipelineMode, vision_url: &Option<String>) 
 /// Config tag for audiobook transcription.
 ///
 /// Identifies the transcript "generation": backfill re-transcribes any file
-/// whose stored tag differs from the current one. The intent is to invalidate
-/// on a genuine STT *model* change — but the model isn't visible to kobbler,
-/// so historically this hashed the STT service URL. That conflates routing
-/// with model identity: renaming a host or pointing through a gateway (e.g.
-/// requests now go via koblem, not the literal `stt_service_url`) flips the
-/// hash and needlessly re-transcribes the entire library.
+/// whose stored tag differs from the current one. It has two halves:
 ///
-/// `STT_CONFIG_TAG`, when set, pins the tag to an explicit, stable value so
-/// routing/URL changes are inert. Bump it only when you actually want to
-/// force a full re-transcription (a real model swap). When unset, falls back
-/// to the legacy URL hash for backward compatibility. Returns `"none"` if
-/// neither is available.
-pub fn stt_config_tag(stt_url: &Option<String>) -> String {
-    stt_config_tag_inner(stt_url, std::env::var("STT_CONFIG_TAG").ok().as_deref())
+/// - the STT *model*, which kobbler can't see. `STT_CONFIG_TAG` pins it to an
+///   explicit value so routing changes are inert; bump it on a real model
+///   swap. Unset, it falls back to a hash of the effective STT URL.
+/// - [`STT_GENERATION`], bumped to re-transcribe everything kobbler already
+///   holds, e.g. after an engine-side fix that doesn't change the model.
+///
+/// Both the transcribe job and the backfill must derive the tag from the same
+/// config, or the backfill sees every book as stale forever.
+pub fn stt_config_tag(config: &RuntimeConfig) -> String {
+    stt_config_tag_inner(
+        &config.effective_stt_url(),
+        std::env::var("STT_CONFIG_TAG").ok().as_deref(),
+    )
 }
 
-/// Pure core of [`stt_config_tag`], split out so the env-independent logic is
-/// unit-testable without mutating process env (unsafe under edition 2024).
+pub const STT_GENERATION: &str = "g2";
+
 fn stt_config_tag_inner(stt_url: &Option<String>, override_tag: Option<&str>) -> String {
-    if let Some(tag) = override_tag {
-        let tag = tag.trim();
-        if !tag.is_empty() {
-            return tag.to_string();
-        }
-    }
-    match stt_url.as_deref() {
-        Some(url) => {
+    let model = match (override_tag.map(str::trim), stt_url.as_deref()) {
+        (Some(tag), _) if !tag.is_empty() => tag.to_string(),
+        (_, Some(url)) => {
             let mut h = DefaultHasher::new();
             url.hash(&mut h);
             format!("stt:{:08x}", h.finish() as u32)
         }
-        None => "none".to_string(),
-    }
+        _ => "none".to_string(),
+    };
+    format!("{model}/{STT_GENERATION}")
 }
 
 #[cfg(test)]
@@ -75,15 +73,11 @@ mod tests {
 
     #[test]
     fn stt_tags() {
-        // URL-hash fallback (no override). Use the inner fn so the test is
-        // deterministic regardless of STT_CONFIG_TAG in the build env.
-        assert_eq!(stt_config_tag_inner(&None, None), "none");
+        assert_eq!(stt_config_tag_inner(&None, None), "none/g2");
         let tag1 = stt_config_tag_inner(&Some("http://stt:8880".into()), None);
         let tag2 = stt_config_tag_inner(&Some("http://other-stt:8880".into()), None);
-        assert!(tag1.starts_with("stt:"));
-        assert!(tag2.starts_with("stt:"));
-        assert_ne!(tag1, tag2, "Different URLs should produce different tags");
-        // Same URL should be stable
+        assert!(tag1.starts_with("stt:") && tag1.ends_with("/g2"));
+        assert_ne!(tag1, tag2);
         assert_eq!(
             tag1,
             stt_config_tag_inner(&Some("http://stt:8880".into()), None)
@@ -91,17 +85,15 @@ mod tests {
     }
 
     #[test]
-    fn stt_tag_override_pins_value() {
-        // An explicit override wins over the URL — routing changes are inert.
+    fn stt_tag_override_pins_the_model_half() {
         assert_eq!(
             stt_config_tag_inner(&Some("http://stt:8880".into()), Some("stt:45fe0e56")),
-            "stt:45fe0e56"
+            "stt:45fe0e56/g2"
         );
         assert_eq!(
             stt_config_tag_inner(&Some("http://other-stt:9999".into()), Some("stt:45fe0e56")),
-            "stt:45fe0e56"
+            "stt:45fe0e56/g2"
         );
-        // Empty / whitespace override falls back to the URL hash.
         assert_eq!(
             stt_config_tag_inner(&Some("http://stt:8880".into()), Some("  ")),
             stt_config_tag_inner(&Some("http://stt:8880".into()), None)

@@ -238,6 +238,26 @@ pub async fn has_active_job(
         .await?)
 }
 
+/// Whether any job of `job_type` is queued or running. Mirrors the activity
+/// rule of [`has_active_job`], including its stranded-retry cutoff.
+pub async fn has_active_jobs_of_type(pool: &PgPool, job_type: &str) -> JobResult<bool> {
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM job_status
+            WHERE job_type = $1
+              AND (
+                    status IN ('pending', 'running')
+                 OR (status = 'retrying' AND updated_at > NOW() - INTERVAL '10 minutes')
+              )
+        ) AS "exists!"
+        "#,
+        job_type,
+    )
+    .fetch_one(pool)
+    .await?)
+}
+
 /// Cancel pending jobs that have a specific payload field present.
 ///
 /// Used to supersede single-file scans when a full directory scan is enqueued.

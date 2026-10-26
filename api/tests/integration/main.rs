@@ -10,6 +10,7 @@ mod around_pagination_test;
 mod audiobook_chapter_repair_test;
 mod audiobook_chapter_sources_test;
 mod audiobook_editions_test;
+mod audiobook_transcribe_test;
 mod auth_logout_test;
 mod auth_roles_test;
 mod author_dedup_test;

@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT b.id, b.title, COALESCE(SUM(af.duration_seconds), 0) AS \"seconds!\"\n            FROM books b\n            JOIN audiobook_files af ON af.book_id = b.id\n            WHERE af.available = TRUE\n              AND EXISTS (\n                  SELECT 1 FROM media_root_files mrf\n                  WHERE (mrf.file_path = af.file_path OR mrf.file_path = af.source_path)\n                    AND mrf.available = TRUE\n              )\n              AND NOT EXISTS (\n                  SELECT 1 FROM audiobook_transcripts at\n                  WHERE at.audiobook_file_id = af.id AND at.config_tag = $1\n              )\n            GROUP BY b.id, b.title\n            ORDER BY b.id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "seconds!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "a37e356d8af8c98c5778f4ba7af0e964dfe66d3733625872426c82c29550fbf6"
+}
