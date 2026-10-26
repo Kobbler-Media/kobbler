@@ -8,6 +8,7 @@ use crate::RuntimeConfigManager;
 use crate::enrichment_config::stt_config_tag;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
+use crate::repositories::audiobook_transcripts;
 use async_trait::async_trait;
 use nats_jobs::Publisher;
 use serde_json::{Value, json};
@@ -74,29 +75,9 @@ impl JobHandler for TranscribeBackfillHandler {
         let config = self.runtime_config.get().await;
         let current_tag = stt_config_tag(&config);
 
-        let stale = sqlx::query!(
-            r#"
-            SELECT b.id, b.title, COALESCE(SUM(af.duration_seconds), 0) AS "seconds!"
-            FROM books b
-            JOIN audiobook_files af ON af.book_id = b.id
-            WHERE af.available = TRUE
-              AND EXISTS (
-                  SELECT 1 FROM media_root_files mrf
-                  WHERE (mrf.file_path = af.file_path OR mrf.file_path = af.source_path)
-                    AND mrf.available = TRUE
-              )
-              AND NOT EXISTS (
-                  SELECT 1 FROM audiobook_transcripts at
-                  WHERE at.audiobook_file_id = af.id AND at.config_tag = $1
-              )
-            GROUP BY b.id, b.title
-            ORDER BY b.id
-            "#,
-            current_tag,
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e| JobError::ExecutionFailed(format!("DB error: {e}")))?;
+        let stale = audiobook_transcripts::stale_books(&self.pool, &current_tag)
+            .await
+            .map_err(|e| JobError::ExecutionFailed(format!("DB error: {e}")))?;
 
         let found = stale.len();
         let mut budget_seconds = BATCH_AUDIO_HOURS * 3600.0;

@@ -3,6 +3,7 @@ use crate::common::*;
 use api::gpu::GpuLock;
 use api::jobs::handlers::{AudiobookTranscribeHandler, TranscribeBackfillHandler};
 use api::jobs::worker::JobHandler;
+use reqwest::StatusCode;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -201,4 +202,74 @@ async fn rerun_skips_current_files_unless_manually_requested() {
     let manual = transcribe(&server, book_id, true).await;
     assert_eq!(manual["transcribed"], 1, "{manual}");
     assert_eq!(transcription_requests(&stt).await, 2);
+}
+
+async fn transcribe_all(server: &TestServer) -> Value {
+    server
+        .admin_client()
+        .post("/api/v1/admin/books/bulk-transcribe")
+        .await
+        .assert_ok()
+        .json()
+}
+
+#[tokio::test]
+async fn transcribe_all_queues_every_book_without_a_current_transcript() {
+    let stt = stub_stt(&[(0.0, 9.8, "words")]).await;
+    let server = TestServer::start_api_only().await;
+    configure_stt(&server, &stt.uri(), None).await;
+    server
+        .admin_client()
+        .patch_json(
+            "/api/v1/admin/config",
+            &json!({"transcript_mode": "manual"}),
+        )
+        .await
+        .assert_ok();
+    let mut files = Vec::new();
+    let mut books = Vec::new();
+    for title in ["Current", "Stale", "Untouched"] {
+        let (book_id, ids) =
+            seed_audiobook(&server, title, &[file("a.m4b", 10.0, Audio::Tone(10.0))]).await;
+        files.extend(ids);
+        books.push(book_id);
+    }
+    mark_available(&server, &files).await;
+    transcribe(&server, books[0], false).await;
+    transcribe(&server, books[1], false).await;
+    sqlx::query(
+        "UPDATE audiobook_transcripts SET config_tag = 'stt:old/g1' WHERE audiobook_file_id = $1",
+    )
+    .bind(files[1])
+    .execute(&server.pool)
+    .await
+    .unwrap();
+
+    let first = transcribe_all(&server).await;
+    assert_eq!(first["queued"], 2, "{first}");
+    assert_eq!(active_transcribe_jobs(&server).await, 2);
+
+    let again = transcribe_all(&server).await;
+    assert_eq!(again["queued"], 0, "{again}");
+    assert_eq!(active_transcribe_jobs(&server).await, 2);
+}
+
+#[tokio::test]
+async fn transcribe_all_is_refused_while_transcription_is_off() {
+    let server = TestServer::start_api_only().await;
+    server
+        .admin_client()
+        .post("/api/v1/admin/books/bulk-transcribe")
+        .await
+        .assert_status(StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn transcribe_all_needs_a_login() {
+    let server = TestServer::start_api_only().await;
+    server
+        .api_client()
+        .post("/api/v1/admin/books/bulk-transcribe")
+        .await
+        .assert_status(StatusCode::UNAUTHORIZED);
 }

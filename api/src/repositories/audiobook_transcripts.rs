@@ -147,6 +147,45 @@ where
     Ok(row)
 }
 
+/// A book with at least one available audio file lacking a `config_tag`
+/// transcript, with the total duration of its available audio.
+pub struct StaleBook {
+    pub id: Uuid,
+    pub title: String,
+    pub seconds: f64,
+}
+
+/// Books that need (re-)transcribing under `config_tag`.
+pub async fn stale_books<'e, E>(exec: E, config_tag: &str) -> Result<Vec<StaleBook>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let rows = sqlx::query_as!(
+        StaleBook,
+        r#"
+            SELECT b.id, b.title, COALESCE(SUM(af.duration_seconds), 0) AS "seconds!"
+            FROM books b
+            JOIN audiobook_files af ON af.book_id = b.id
+            WHERE af.available = TRUE
+              AND EXISTS (
+                  SELECT 1 FROM media_root_files mrf
+                  WHERE (mrf.file_path = af.file_path OR mrf.file_path = af.source_path)
+                    AND mrf.available = TRUE
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM audiobook_transcripts at
+                  WHERE at.audiobook_file_id = af.id AND at.config_tag = $1
+              )
+            GROUP BY b.id, b.title
+            ORDER BY b.id
+            "#,
+        config_tag,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
+
 /// Get all transcript segments for a book (across all audiobook files), ordered by file index then segment index.
 pub async fn get_for_book<'e, E>(exec: E, book_id: Uuid) -> Result<Vec<TranscriptSegment>>
 where

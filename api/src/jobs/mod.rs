@@ -438,10 +438,8 @@ pub async fn get_by_id(pool: &PgPool, job_id: Uuid) -> JobResult<Option<JobStatu
 // Audiobook Transcribe Helpers
 // =============================================================================
 
-/// Enqueue a background audiobook transcription job for a book.
-///
-/// Background transcriptions yield to media_extract between files and pause
-/// 10 seconds between files to reduce system pressure.
+/// Enqueue an audiobook transcription job that skips files already
+/// transcribed under the current STT config.
 pub async fn enqueue_audiobook_transcribe(
     pool: &PgPool,
     nats: &Publisher,
@@ -489,8 +487,7 @@ pub async fn enqueue_audiobook_probe(pool: &PgPool, nats: &Publisher, book_id: U
 
 /// Enqueue a manual (user-triggered) audiobook transcription job.
 ///
-/// Manual transcriptions hold the I/O-heavy semaphore for the entire job and
-/// skip inter-file delays, so they complete as fast as possible.
+/// Re-transcribes every file, even ones already current.
 pub async fn enqueue_audiobook_transcribe_manual(
     pool: &PgPool,
     nats: &Publisher,

@@ -20,6 +20,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::audio::auto_chapters;
+use crate::enrichment_config::stt_config_tag;
 use crate::jobs::{self, JobContext};
 use crate::metadata::audnexus;
 use crate::repositories::audiobook_chapters::ChapterInput;
@@ -1050,7 +1051,9 @@ pub async fn extract_ebook_text(
     (StatusCode::ACCEPTED, Json(json!({"status": "enqueued"}))).into_response()
 }
 
-/// Bulk transcribe all audiobooks that lack transcripts.
+/// Queue transcription for every audiobook without a transcript from the
+/// current STT config, skipping books already queued. Unlike the backfill this
+/// queues the whole library at once; the job still skips up-to-date files.
 /// POST /api/v1/admin/books/bulk-transcribe
 pub async fn bulk_transcribe(State(state): State<AppState>, _auth: AuthUser) -> impl IntoResponse {
     let config = state.runtime_config.get().await;
@@ -1062,22 +1065,8 @@ pub async fn bulk_transcribe(State(state): State<AppState>, _auth: AuthUser) -> 
             .into_response();
     }
 
-    // Find all books with audiobook files but no transcript segments
-    let rows = sqlx::query!(
-        r#"
-        SELECT DISTINCT af.book_id, b.title
-        FROM audiobook_files af
-        JOIN books b ON b.id = af.book_id
-        WHERE NOT EXISTS (
-            SELECT 1 FROM audiobook_transcripts at
-            WHERE at.audiobook_file_id = af.id
-        )
-        "#
-    )
-    .fetch_all(&state.pool)
-    .await;
-
-    let rows = match rows {
+    let tag = stt_config_tag(&config);
+    let stale = match audiobook_transcripts::stale_books(&state.pool, &tag).await {
         Ok(r) => r,
         Err(e) => {
             error!(error = %e, "Failed to query books for bulk transcribe");
@@ -1086,13 +1075,22 @@ pub async fn bulk_transcribe(State(state): State<AppState>, _auth: AuthUser) -> 
     };
 
     let mut queued = 0u64;
-    for row in &rows {
-        let title = row.title.as_str();
-        jobs::enqueue_audiobook_transcribe_manual(
+    for book in &stale {
+        if let Ok(true) = jobs::has_active_job(
+            &state.pool,
+            "audiobook_transcribe",
+            "book_id",
+            &book.id.to_string(),
+        )
+        .await
+        {
+            continue;
+        }
+        jobs::enqueue_audiobook_transcribe(
             &state.pool,
             state.nats.publisher(),
-            row.book_id,
-            title,
+            book.id,
+            &book.title,
         )
         .await;
         queued += 1;
