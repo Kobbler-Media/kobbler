@@ -1,12 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND avatar IS NOT NULL) as \"exists!\"",
+  "query": "SELECT left(md5(avatar), 12) as \"version!\" FROM users WHERE id = $1 AND avatar IS NOT NULL",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "exists!",
-        "type_info": "Bool",
+        "name": "version!",
+        "type_info": "Text",
         "origin": "Expression"
       }
     ],
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "efa2c9ebeabf7dfe93c194b3161363c8ffccfde862aceeb6884406d81de4f7c5"
+  "hash": "1e4732b24945bdffa1f7a78e553b1672091d24009f559fee155176b1a7f64650"
 }

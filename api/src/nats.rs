@@ -16,6 +16,7 @@ use crate::repositories::{
 use crate::RuntimeConfigManager;
 use crate::jobs::handlers::{
     ArtWarmHandler,
+    AudiobookChapterRepairHandler,
     AudiobookConvertHandler,
     AudiobookProbeHandler,
     AudiobookTranscribeHandler,
@@ -345,6 +346,13 @@ pub async fn start_nats_worker(
         fs_semaphore.clone(),
     )));
 
+    worker.register_handler(HandlerAdapter::new(AudiobookChapterRepairHandler::new(
+        pool.clone(),
+        storage_root.clone(),
+        nats_publisher.clone(),
+        search.clone(),
+    )));
+
     // Ebook repair handler (re-convert books an older pipeline damaged)
     worker.register_handler(HandlerAdapter::new(EbookRepairHandler::new(
         pool.clone(),
@@ -428,6 +436,20 @@ pub async fn start_nats_worker(
         runtime_config.clone(),
         storage_root.clone(),
     )));
+    worker.register_handler(HandlerAdapter::new(
+        crate::jobs::handlers::TmdbTitlesSyncHandler::new(
+            pool.clone(),
+            crate::tmdb_titles::export::EXPORTS_URL.to_string(),
+            crate::tmdb_titles::export::ExportLimits::default(),
+        ),
+    ));
+    worker.register_handler(HandlerAdapter::new(
+        crate::jobs::handlers::HardcoverTitlesSyncHandler::new(
+            pool.clone(),
+            runtime_config.clone(),
+            crate::hardcover_titles::SyncPlan::default(),
+        ),
+    ));
     worker.register_handler(HandlerAdapter::new(
         crate::jobs::handlers::StremioSyncHandler::new(
             pool.clone(),
@@ -1113,6 +1135,28 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
             "kobbler",
             "discover_sync",
             std::time::Duration::from_secs(6 * 3600), // every 6 hours
+        )
+        .run_immediately(),
+    );
+
+    // TMDB titles for search suggestions. The handler skips an export it already has and
+    // localizes weekly, so this interval only bounds how late a new day's file is picked up.
+    scheduler.register(
+        ScheduledJob::new(
+            "tmdb-titles-sync",
+            "kobbler",
+            "tmdb_titles_sync",
+            std::time::Duration::from_secs(6 * 3600),
+        )
+        .run_immediately(),
+    );
+
+    scheduler.register(
+        ScheduledJob::new(
+            "hardcover-titles-sync",
+            "kobbler",
+            "hardcover_titles_sync",
+            std::time::Duration::from_secs(3600),
         )
         .run_immediately(),
     );

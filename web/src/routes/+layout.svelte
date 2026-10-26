@@ -34,7 +34,7 @@
   } from '$lib/stores/notifications.svelte';
   import { updateWantStatus } from '$lib/stores/wantStatus.svelte';
   import { fetchStats } from '$lib/stores/stats.svelte';
-  import { getAuthState, setAuthed, setRole, setEmail } from '$lib/stores/auth.svelte';
+  import { getAuthState } from '$lib/stores/auth.svelte';
   import {
     getUIState,
     setTheme,
@@ -43,7 +43,7 @@
     hasOpenOverlays,
     closeTopOverlay
   } from '$lib/stores/ui.svelte';
-  import { checkAuth, loadLibraryDevices } from '$lib/services/data.svelte';
+  import { checkAuth, login, loadLibraryDevices } from '$lib/services/data.svelte';
   import { loadLibrary, refreshBook, ensureDevices } from '$lib/context/app.svelte';
 
   let { children } = $props();
@@ -68,34 +68,20 @@
   const theme = $derived(ui.theme);
   const menuOpen = $derived(ui.menuOpen);
 
+  async function startSession() {
+    ensureDevices();
+    await loadLibraryDevices();
+    ensureStream(true);
+    if (auth.castReceiverAppId) {
+      initCast(auth.castReceiverAppId);
+    }
+  }
+
   const handleLogin = async (email: string, password: string) => {
     loading = true;
     try {
-      const resp = await fetch(`${apiBase}/api/v1/admin/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include'
-      });
-      if (!resp.ok) {
-        let message = 'Login failed';
-        try {
-          const error = await resp.json();
-          if (typeof error?.message === 'string' && error.message.trim()) {
-            message = error.message.trim();
-          }
-        } catch {
-          // Leave default message
-        }
-        throw new Error(message);
-      }
-      const data = await resp.json();
-      setAuthed(true);
-      setRole(data.role || 'viewer');
-      setEmail(data.email || '');
-      ensureDevices();
-      await loadLibraryDevices();
-      ensureStream(true);
+      await login(email, password);
+      await startSession();
 
       // Navigate to library or restore last page
       const lastPage = localStorage.getItem('kobbler-page') || 'library';
@@ -187,16 +173,7 @@
     // Check if already authenticated with a lightweight probe
     try {
       const authed = await checkAuth();
-      if (authed) {
-        ensureDevices();
-        await loadLibraryDevices();
-        ensureStream(true);
-
-        // Initialize Google Cast SDK if a receiver app ID is configured
-        if (auth.castReceiverAppId) {
-          initCast(auth.castReceiverAppId);
-        }
-      }
+      if (authed) await startSession();
     } catch {
       // Not authenticated, will show login form
     }

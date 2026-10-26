@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM cross_format_sync WHERE audio_file_id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "86ae52f942c3548921d071600f0f1fb9b2436165aa17e01d4aaeaaca5b5adac6"
+}

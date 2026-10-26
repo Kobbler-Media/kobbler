@@ -236,6 +236,26 @@ impl JobHandler for AudiobookTranscribeHandler {
         );
 
         if segments_total > 0 {
+            match crate::audio::book_editions::settle(&self.pool, &self.storage_root, book_id, None)
+                .await
+            {
+                Ok(editions) if editions.changed() => {
+                    info!(book_id = %book_id, editions = ?editions.report, "transcripts showed other audiobook editions");
+                    crate::audio::book_editions::follow_up(
+                        &self.pool,
+                        &self.nats_publisher,
+                        book_id,
+                        &editions,
+                        "audiobook_chapter_repair",
+                    )
+                    .await;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    warn!(error = %e, book_id = %book_id, "failed to settle audiobook editions")
+                }
+            }
+
             // Index transcript segments in MeiliSearch for hybrid semantic search
             if let Err(e) = crate::search::index_transcript_segments_for_book(
                 &self.pool,

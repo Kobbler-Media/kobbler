@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, channel_id, start_time, end_time, title, episode_number, episode_title,\n               synopsis, original_airdate, series_id, genres, image_url, poster_url, is_first,\n               episode_key, episode_key_kind, synced_at\n        FROM livetv_guide\n        WHERE end_time > $1 AND start_time < $2\n          AND ($3::uuid[] IS NULL OR channel_id = ANY($3))\n          AND ($4::text IS NULL OR title ILIKE $4\n               OR COALESCE(episode_title, '') ILIKE $4\n               OR COALESCE(synopsis, '') ILIKE $4)\n          AND ($5::text IS NULL OR $5 = ANY(genres))\n        ORDER BY channel_id, start_time\n        ",
+  "query": "\n        SELECT id, channel_id, start_time, end_time, title, episode_number, episode_title,\n               synopsis, original_airdate, series_id, genres, image_url, poster_url, is_first,\n               episode_key, episode_key_kind, synced_at\n        FROM livetv_guide\n        WHERE end_time > $1 AND start_time < $2\n          AND ($3::uuid[] IS NULL OR channel_id = ANY($3))\n          AND ($4::text IS NULL OR title ILIKE $4)\n          AND ($5::text IS NULL OR $5 = ANY(genres))\n        ORDER BY channel_id, start_time\n        ",
   "describe": {
     "columns": [
       {
@@ -220,5 +220,5 @@
       false
     ]
   },
-  "hash": "b26609c3aabf811c0ba1573c4ccf05c59b4bd58d85d3d2be9a82d494de910274"
+  "hash": "830cf61be3caa3c50ae6d0dfb7bca3ccac597794cccb049db9344963b3e97a3c"
 }

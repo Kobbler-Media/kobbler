@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM tmdb_titles\n         WHERE media_type = $1 AND tmdb_id NOT IN (SELECT unnest($2::int[]))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "473a574d48788a0c003d2915eb34d1504c8088b7d059060fb51cc33aa9a2c14d"
+}

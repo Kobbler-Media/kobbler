@@ -50,6 +50,8 @@ pub struct RuntimeConfig {
     pub media_root_scan_interval_seconds: i32,
     /// Whether metadata providers are enabled for automatic lookups
     pub metadata_providers_enabled: bool,
+    /// Off by default: the weekly sync spends ~100 Hardcover requests of the key's daily budget.
+    pub book_title_suggestions_enabled: bool,
     /// Number of days to cache metadata lookups
     pub metadata_cache_days: i32,
     /// Whether to rewrite external Kobo URLs to go through our proxy
@@ -234,6 +236,7 @@ impl Default for RuntimeConfig {
             watcher_scan_interval_seconds: 60,
             media_root_scan_interval_seconds: 1800,
             metadata_providers_enabled: true,
+            book_title_suggestions_enabled: false,
             metadata_cache_days: 30,
             rewrite_kobo_urls: false,
             wanted_default_provider: None,
@@ -321,6 +324,7 @@ pub struct RuntimeConfigUpdate {
     pub watcher_scan_interval_seconds: Option<i32>,
     pub media_root_scan_interval_seconds: Option<i32>,
     pub metadata_providers_enabled: Option<bool>,
+    pub book_title_suggestions_enabled: Option<bool>,
     pub metadata_cache_days: Option<i32>,
     pub rewrite_kobo_urls: Option<bool>,
     pub wanted_default_provider: Option<String>,
@@ -744,6 +748,9 @@ impl RuntimeConfigManager {
         }
         if let Some(v) = updates.metadata_providers_enabled {
             config.metadata_providers_enabled = v;
+        }
+        if let Some(v) = updates.book_title_suggestions_enabled {
+            config.book_title_suggestions_enabled = v;
         }
         if let Some(v) = updates.metadata_cache_days {
             config.metadata_cache_days = v;

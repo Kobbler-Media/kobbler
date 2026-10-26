@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reading_states rs SET book_id = $2\n         WHERE rs.id = $1\n           AND rs.book_id <> $2\n           AND NOT EXISTS (\n               SELECT 1 FROM reading_states o\n               WHERE o.book_id = $2 AND o.user_id = rs.user_id AND o.device_id = rs.device_id\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0a8129d1205faf0be05fed3c36340914cdf255bd855b97b0faf63a77f94c468d"
+}

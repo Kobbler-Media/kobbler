@@ -24,6 +24,7 @@ pub mod for_you;
 pub mod google;
 pub mod gpu;
 pub mod gpu_defaults;
+pub mod hardcover_titles;
 pub mod http;
 pub mod images;
 pub mod iptv;
@@ -61,6 +62,7 @@ pub mod stremio_library;
 pub mod subtitle_providers;
 pub mod sync;
 pub mod sync_providers;
+pub mod tmdb_titles;
 pub mod tracking;
 pub mod tts;
 pub mod types;
@@ -514,6 +516,10 @@ pub fn create_router(state: AppState) -> Router {
             post(audiobook_routes::repair_ebooks),
         )
         .route(
+            "/api/v1/admin/books/repair-audiobook-chapters",
+            post(audiobook_routes::repair_audiobook_chapters),
+        )
+        .route(
             "/api/v1/admin/books/kepubify-synced",
             post(audiobook_routes::kepubify_synced),
         )
@@ -636,6 +642,7 @@ pub fn create_router(state: AppState) -> Router {
         )
         // Search (command palette)
         .route("/api/v1/admin/search", get(admin::search))
+        .route("/api/v1/admin/search/suggestions", get(admin::suggestions))
         .route("/api/v1/admin/search/status", get(admin::search_status))
         .route("/api/v1/admin/search/test", post(admin::test_connection))
         .route("/api/v1/admin/search/reindex", post(admin::trigger_reindex))

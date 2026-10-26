@@ -150,24 +150,14 @@ async function request<T>(path: string, options: FetchOptions = {}): Promise<T> 
     let message = `Request failed: ${response.status}`;
     let reason: string | undefined;
     let detail: string | undefined;
+    const text = await response.text().catch(() => '');
     try {
-      const error = await response.json();
+      const error = JSON.parse(text);
       message = optionalString(error?.message) ?? optionalString(error?.error) ?? message;
       reason = optionalString(error?.reason);
       detail = optionalString(error?.detail);
     } catch {
-      try {
-        const text = await response.text();
-        if (text.trim()) {
-          message = text.trim();
-        } else if (response.statusText) {
-          message = response.statusText;
-        }
-      } catch {
-        if (response.statusText) {
-          message = response.statusText;
-        }
-      }
+      message = optionalString(text) ?? optionalString(response.statusText) ?? message;
     }
     throw new ApiError(response.status, message, reason, detail);
   }
@@ -196,7 +186,7 @@ export async function login(email: string, password: string): Promise<{ token: s
 
 // Library Stats
 import type { LibraryStats } from '$lib/types';
-import type { MediaScope } from '$lib/types';
+import type { MediaScope, SearchSuggestion } from '$lib/types';
 
 export async function getLibraryStats(format?: string): Promise<LibraryStats> {
   const qs = format && format !== 'all' ? `?format=${format}` : '';
@@ -1261,6 +1251,7 @@ export interface SystemConfig {
   watcher_scan_interval_seconds: number;
   media_root_scan_interval_seconds: number;
   metadata_providers_enabled: boolean;
+  book_title_suggestions_enabled: boolean;
   metadata_cache_days: number;
   wanted_default_provider: string | null;
   wanted_min_score: number | null;
@@ -1347,6 +1338,7 @@ export interface SystemConfigUpdate {
   watcher_scan_interval_seconds?: number;
   media_root_scan_interval_seconds?: number;
   metadata_providers_enabled?: boolean;
+  book_title_suggestions_enabled?: boolean;
   metadata_cache_days?: number;
   wanted_default_provider?: string | null;
   wanted_min_score?: number | null;
@@ -3082,6 +3074,17 @@ export async function getEpisodeTracks(episodeId: string): Promise<TracksRespons
   return dedup(`episodeTracks:${episodeId}`, () =>
     request(`/api/v1/admin/tv/episodes/${episodeId}/tracks`)
   );
+}
+
+export async function getSearchSuggestions(
+  query: string,
+  media: string,
+  limit = 8
+): Promise<SearchSuggestion[]> {
+  const resp = await request<{ suggestions: SearchSuggestion[] }>(
+    `/api/v1/admin/search/suggestions${buildQueryString({ q: query, media, limit })}`
+  );
+  return resp.suggestions;
 }
 
 export async function searchMovies(
@@ -5198,6 +5201,14 @@ export async function bulkEbookExtract(): Promise<{ queued: number }> {
  */
 export async function repairEbooks(dryRun = false): Promise<{ job_id: string; dry_run: boolean }> {
   return await request(`/api/v1/admin/books/repair-ebooks?dry_run=${dryRun}`, {
+    method: 'POST'
+  });
+}
+
+export async function repairAudiobookChapters(
+  dryRun = false
+): Promise<{ job_id: string; dry_run: boolean }> {
+  return await request(`/api/v1/admin/books/repair-audiobook-chapters?dry_run=${dryRun}`, {
     method: 'POST'
   });
 }

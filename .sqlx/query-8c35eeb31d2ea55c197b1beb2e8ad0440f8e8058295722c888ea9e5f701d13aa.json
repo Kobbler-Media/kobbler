@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM hardcover_titles",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "8c35eeb31d2ea55c197b1beb2e8ad0440f8e8058295722c888ea9e5f701d13aa"
+}

@@ -1,6 +1,6 @@
 use api::search::{
-    BookDocument, BookSearchFilters, MeiliState, SearchBackend, SearchBackendChoice, SearchError,
-    SqlFallbackBackend,
+    BookDocument, BookSearchFilters, LivetvGuideDocument, LivetvGuideSearchFilters, MeiliState,
+    SearchBackend, SearchBackendChoice, SearchError, SqlFallbackBackend,
 };
 use uuid::Uuid;
 
@@ -150,4 +150,77 @@ async fn sql_fallback_status_is_reported_honestly() {
         status.error.is_none(),
         "SQL fallback is a supported mode, not an error state"
     );
+}
+
+fn guide_doc(
+    channel_id: &str,
+    title: &str,
+    episode_title: Option<&str>,
+    synopsis: &str,
+) -> LivetvGuideDocument {
+    LivetvGuideDocument {
+        id: Uuid::new_v4().to_string(),
+        channel_id: channel_id.to_string(),
+        channel_name: "Nine".to_string(),
+        title: title.to_string(),
+        episode_title: episode_title.map(str::to_string),
+        synopsis: Some(synopsis.to_string()),
+        genres: vec![],
+        start_time: 0,
+        end_time: 1,
+        start_time_iso: String::new(),
+        end_time_iso: String::new(),
+        series_id: None,
+        image_url: None,
+        is_live: false,
+    }
+}
+
+#[tokio::test]
+async fn meili_guide_search_matches_programme_titles_not_episodes_or_synopses() {
+    let url =
+        std::env::var("MEILI_URL_TEST").unwrap_or_else(|_| "http://localhost:7701".to_string());
+    let meili = MeiliState::new(&url, "test-master-key").unwrap();
+    meili.init_indexes().await.unwrap();
+    let channel = Uuid::new_v4().to_string();
+    meili
+        .index_livetv_guide(&[
+            guide_doc(&channel, "Breakin'", None, "Street dancers."),
+            guide_doc(
+                &channel,
+                "Frasier",
+                Some("Breaking the Ice"),
+                "Frasier and Martin go ice fishing.",
+            ),
+            guide_doc(
+                &channel,
+                "Below Deck",
+                Some("The Captain"),
+                "The crew are breaking down.",
+            ),
+        ])
+        .await
+        .unwrap();
+    let filters = LivetvGuideSearchFilters {
+        channel_id: Some(channel.clone()),
+        ..Default::default()
+    };
+
+    let mut titles = Vec::new();
+    for _ in 0..100 {
+        let found = meili
+            .search_livetv_guide("Frasier", &filters, 50, 0)
+            .await
+            .unwrap_or_default();
+        if !found.is_empty() {
+            let hits = meili
+                .search_livetv_guide("breakin", &filters, 50, 0)
+                .await
+                .unwrap();
+            titles = hits.into_iter().map(|d| d.title).collect();
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(titles, vec!["Breakin'".to_string()]);
 }

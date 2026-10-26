@@ -11,6 +11,7 @@
     bulkRedetectChapters,
     bulkEbookExtract,
     repairEbooks,
+    repairAudiobookChapters,
     kepubifySynced,
     getTtsStatus,
     synthesizeTts,
@@ -28,6 +29,7 @@
   let bulkRedetectingSilence = $state(false);
   let bulkExtracting = $state(false);
   let repairingEbooks = $state(false);
+  let repairingChapters = $state(false);
   let kepubifying = $state(false);
   // TTS voice picker state
   let ttsVoiceItems = $state<MultiSearchSelectItem[]>([]);
@@ -325,6 +327,18 @@
     }
   };
 
+  const handleRepairAudiobookChapters = async () => {
+    repairingChapters = true;
+    try {
+      await repairAudiobookChapters();
+      showMessage('Checking audiobook editions and chapters — see Jobs for what it finds');
+    } catch {
+      showMessage('Failed to queue the audiobook repair sweep');
+    } finally {
+      repairingChapters = false;
+    }
+  };
+
   const handleKepubifySynced = async () => {
     kepubifying = true;
     try {
@@ -477,6 +491,14 @@
               onclick={handleRepairEbooks}
             >
               {repairingEbooks ? 'Queuing...' : 'Repair Converted Ebooks'}
+            </button>
+            <button
+              type="button"
+              class="btn-action"
+              disabled={repairingChapters}
+              onclick={handleRepairAudiobookChapters}
+            >
+              {repairingChapters ? 'Queuing...' : 'Repair Audiobooks'}
             </button>
             <button
               type="button"

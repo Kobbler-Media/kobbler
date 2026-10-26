@@ -939,6 +939,90 @@ async fn a_guide_search_only_returns_channels_that_matched() {
     assert!(body["channels"].as_array().unwrap().is_empty());
 }
 
+async fn seed_airing(
+    pool: &sqlx::PgPool,
+    channel_id: Uuid,
+    start_mins: i64,
+    title: &str,
+    episode_title: Option<&str>,
+    synopsis: &str,
+) {
+    let now = OffsetDateTime::now_utc();
+    livetv_guide::upsert(
+        pool,
+        livetv_guide::UpsertGuideEntry {
+            channel_id,
+            start_time: now + time::Duration::minutes(start_mins),
+            end_time: now + time::Duration::minutes(start_mins + 30),
+            title: title.to_string(),
+            episode_number: None,
+            episode_title: episode_title.map(str::to_string),
+            synopsis: Some(synopsis.to_string()),
+            original_airdate: None,
+            series_id: None,
+            genres: vec![],
+            image_url: None,
+            poster_url: None,
+            is_first: false,
+            episode_key: None,
+            episode_key_kind: None,
+        },
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn a_guide_search_matches_programme_titles_not_episodes_or_synopses() {
+    let server = TestServer::start_api_only().await;
+    let client = server.admin_client();
+    let tuner_id = make_tuner(&server.pool, "GSEARCH2").await;
+    ingest_lineup(&server.pool, tuner_id).await;
+    let channel = enabled_channels(&server.pool, tuner_id, 1).await[0];
+
+    seed_airing(
+        &server.pool,
+        channel,
+        0,
+        "Breakin'",
+        None,
+        "Street dancers.",
+    )
+    .await;
+    seed_airing(
+        &server.pool,
+        channel,
+        30,
+        "Frasier",
+        Some("Breaking the Ice"),
+        "Frasier and Martin go ice fishing.",
+    )
+    .await;
+    seed_airing(
+        &server.pool,
+        channel,
+        60,
+        "Below Deck",
+        Some("The Captain"),
+        "The crew are breaking down.",
+    )
+    .await;
+
+    let resp = client
+        .get("/api/v1/admin/livetv/guide?search=breakin")
+        .await;
+    resp.assert_ok();
+    let body: Value = resp.json();
+    let titles: Vec<&str> = body["channels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|c| c["entries"].as_array().unwrap())
+        .map(|e| e["title"].as_str().unwrap())
+        .collect();
+    assert_eq!(titles, vec!["Breakin'"]);
+}
+
 #[tokio::test]
 async fn guide_rejects_a_bad_window() {
     let server = TestServer::start_api_only().await;

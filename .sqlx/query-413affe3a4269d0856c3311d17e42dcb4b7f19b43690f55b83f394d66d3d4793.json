@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO book_genres (book_id, genre_id)\n         SELECT $2, genre_id FROM book_genres WHERE book_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "413affe3a4269d0856c3311d17e42dcb4b7f19b43690f55b83f394d66d3d4793"
+}

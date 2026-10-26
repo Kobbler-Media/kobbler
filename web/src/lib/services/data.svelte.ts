@@ -83,6 +83,11 @@ export async function checkAuth(): Promise<boolean> {
   }
 }
 
+export async function login(email: string, password: string): Promise<void> {
+  await api.login(email, password);
+  if (!(await checkAuth())) throw new Error('Login failed');
+}
+
 /**
  * Log out the current user — revoke session and clear client state.
  */

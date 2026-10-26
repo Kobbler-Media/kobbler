@@ -534,58 +534,48 @@ pub struct UnifiedChapterResponse {
 
 /// Build the unified chapter list for a book: project per-file
 /// `start_seconds` onto a book-wide timeline, renumber `chapter_index`
-/// globally, and rewrite synthesized "Chapter N" titles so each file
-/// doesn't restart at "Chapter 1". Embedded titles (anything not matching
-/// the auto-pattern) are preserved.
+/// globally, and number the silence detector's per-file "Chapter N" titles
+/// book-wide. Every other source's titles are the book's own and are kept,
+/// even when they read "Chapter 7".
+///
+/// A file without chapters of its own continues the chapter before it, so
+/// that chapter's book-wide end runs on to wherever the next one starts.
 fn build_unified_chapters(
     chapters: &[crate::repositories::audiobook_chapters::ChapterWithFileInfo],
 ) -> Vec<UnifiedChapterResponse> {
-    let mut result: Vec<UnifiedChapterResponse> = Vec::with_capacity(chapters.len());
-    let mut current_file_path: Option<String> = None;
-    let mut global_offset: f64 = 0.0;
-    let mut last_file_duration: f64 = 0.0;
-
-    for ch in chapters {
-        if current_file_path.as_deref() != Some(&ch.file_path) {
-            global_offset += last_file_duration;
-            last_file_duration = ch.file_duration_seconds.unwrap_or(0.0);
-            current_file_path = Some(ch.file_path.clone());
-        }
-
-        result.push(UnifiedChapterResponse {
-            id: ch.id.to_string(),
-            chapter_index: ch.chapter_index,
-            title: ch.title.clone(),
-            start_seconds: ch.start_seconds,
-            end_seconds: ch.end_seconds,
-            file_id: ch.audiobook_file_id.to_string(),
-            file_path: ch.file_path.clone(),
-            global_start_seconds: global_offset + ch.start_seconds,
-            global_end_seconds: global_offset + ch.end_seconds,
-            source: ch.source.clone(),
-        });
-    }
+    let mut result: Vec<UnifiedChapterResponse> = chapters
+        .iter()
+        .enumerate()
+        .map(|(i, ch)| {
+            let global_end = ch.file_offset_seconds + ch.end_seconds;
+            let global_end_seconds = match chapters.get(i + 1) {
+                Some(next) if next.audiobook_file_id == ch.audiobook_file_id => global_end,
+                Some(next) => global_end.max(next.file_offset_seconds + next.start_seconds),
+                None => global_end.max(ch.book_duration_seconds),
+            };
+            UnifiedChapterResponse {
+                id: ch.id.to_string(),
+                chapter_index: ch.chapter_index,
+                title: ch.title.clone(),
+                start_seconds: ch.start_seconds,
+                end_seconds: ch.end_seconds,
+                file_id: ch.audiobook_file_id.to_string(),
+                file_path: ch.file_path.clone(),
+                global_start_seconds: ch.file_offset_seconds + ch.start_seconds,
+                global_end_seconds,
+                source: ch.source.clone(),
+            }
+        })
+        .collect();
 
     for (i, ch) in result.iter_mut().enumerate() {
         ch.chapter_index = i as i32;
-        if is_auto_chapter_title(ch.title.as_deref()) {
+        if ch.title.is_none() || ch.source == "detected" {
             ch.title = Some(format!("Chapter {}", i + 1));
         }
     }
 
     result
-}
-
-/// True for titles that are clearly auto-synthesized "Chapter N" strings,
-/// which the silence-detector / transcript / filename sources emit per-file.
-/// Embedded chapter titles ("Prologue", "The Discovery", etc.) return false.
-fn is_auto_chapter_title(title: Option<&str>) -> bool {
-    let Some(t) = title else { return true };
-    let trimmed = t.trim();
-    let Some(rest) = trimmed.strip_prefix("Chapter ") else {
-        return false;
-    };
-    !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Get all chapters for a book with global timestamps computed from file durations.
@@ -790,7 +780,7 @@ pub async fn generate_chapters(
     let mut total = 0usize;
 
     for (file_id, chapters) in &generated {
-        if let Err(e) = audiobook_chapters::insert_chapters(&state.pool, *file_id, chapters).await {
+        if let Err(e) = audiobook_chapters::store_chapters(&state.pool, *file_id, chapters).await {
             error!(error = %e, "failed to insert generated chapters");
             return (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response();
         }
@@ -1292,8 +1282,7 @@ pub async fn bulk_ebook_extract(
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct RepairEbooksQuery {
-    /// Report what is damaged without re-converting anything.
+pub struct RepairQuery {
     #[serde(default)]
     pub dry_run: bool,
 }
@@ -1307,30 +1296,63 @@ pub struct RepairEbooksQuery {
 pub async fn repair_ebooks(
     State(state): State<AppState>,
     _auth: AuthUser,
-    Query(query): Query<RepairEbooksQuery>,
+    Query(query): Query<RepairQuery>,
 ) -> impl IntoResponse {
-    let context = JobContext::new(if query.dry_run {
-        "Checking converted ebooks for damage".to_string()
-    } else {
-        "Repairing damaged converted ebooks".to_string()
-    });
+    enqueue_repair_sweep(
+        &state,
+        "ebook_repair",
+        query.dry_run,
+        if query.dry_run {
+            "Checking converted ebooks for damage"
+        } else {
+            "Repairing damaged converted ebooks"
+        },
+    )
+    .await
+}
 
+/// File away every audiobook's other editions, then re-settle its chapters and
+/// rewrite the ones that come out different. POST /api/v1/admin/books/repair-audiobook-chapters?dry_run=true
+pub async fn repair_audiobook_chapters(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Query(query): Query<RepairQuery>,
+) -> impl IntoResponse {
+    enqueue_repair_sweep(
+        &state,
+        "audiobook_chapter_repair",
+        query.dry_run,
+        if query.dry_run {
+            "Checking audiobook editions and chapters"
+        } else {
+            "Repairing audiobook editions and chapters"
+        },
+    )
+    .await
+}
+
+async fn enqueue_repair_sweep(
+    state: &AppState,
+    job_type: &str,
+    dry_run: bool,
+    description: &str,
+) -> axum::response::Response {
     match jobs::enqueue(
         &state.pool,
         state.nats.publisher(),
-        "ebook_repair",
-        json!({ "dry_run": query.dry_run }),
-        context,
+        job_type,
+        json!({ "dry_run": dry_run }),
+        JobContext::new(description.to_string()),
     )
     .await
     {
         Ok(job_id) => (
             StatusCode::ACCEPTED,
-            Json(json!({ "job_id": job_id, "dry_run": query.dry_run })),
+            Json(json!({ "job_id": job_id, "dry_run": dry_run })),
         )
             .into_response(),
         Err(e) => {
-            error!(error = %e, "Failed to enqueue ebook repair sweep");
+            error!(error = %e, job_type, "Failed to enqueue repair sweep");
             (StatusCode::INTERNAL_SERVER_ERROR, "failed to queue repair").into_response()
         }
     }

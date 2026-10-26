@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::jobs::handlers::{SearchReindexPayload, get_static_commands, get_static_pages};
+use crate::repositories::search_suggestions;
 use crate::routes::AuthUser;
 
 #[derive(Debug, Deserialize)]
@@ -62,6 +63,53 @@ pub async fn search(
                 Json(serde_json::json!({ "error": "Search failed" })),
             )
                 .into_response()
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SuggestionsQuery {
+    #[serde(default)]
+    pub q: String,
+    pub media: Option<String>,
+    #[serde(default = "default_suggestion_limit")]
+    pub limit: i64,
+}
+
+fn default_suggestion_limit() -> i64 {
+    8
+}
+
+/// GET /api/v1/admin/search/suggestions?q=...&media=movie,tv,book,livetv,iptv&limit=8
+pub async fn suggestions(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Query(query): Query<SuggestionsQuery>,
+) -> impl IntoResponse {
+    let media_types: Vec<String> = query
+        .media
+        .as_deref()
+        .unwrap_or("movie,tv")
+        .split(',')
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+        .collect();
+    let config = state.runtime_config.get().await;
+    let iptv_languages = Some(config.iptv_language_filter.as_slice()).filter(|l| !l.is_empty());
+    let request = search_suggestions::SuggestionRequest {
+        query: &query.q,
+        media_types: &media_types,
+        kids: auth.is_kids,
+        live_tv: auth.require_contributor().is_ok(),
+        iptv_languages,
+        book_titles: config.book_title_suggestions_enabled,
+        limit: query.limit.clamp(1, 20),
+    };
+    match search_suggestions::suggest(&state.pool, &request).await {
+        Ok(suggestions) => Json(serde_json::json!({ "suggestions": suggestions })).into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "Search suggestions failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
 }

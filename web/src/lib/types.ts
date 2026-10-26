@@ -78,6 +78,7 @@ export type UserSummary = {
   // IANA zone name; null means quiet hours fall back to the server's zone.
   timezone?: string | null;
   is_kids: boolean;
+  avatar_url?: string | null;
 };
 
 export type ChatIdentityStatus = 'disabled' | 'awaiting_first_message' | 'active';
@@ -1048,6 +1049,12 @@ export type VideoIdentifiers = {
   imdb_id?: string | null;
   tvmaze_id?: string | null;
   tvdb_id?: string | null;
+};
+
+export type SearchSuggestion = {
+  title: string;
+  media_type: 'movie' | 'tv' | 'book' | 'author' | 'livetv' | 'iptv';
+  source: 'library' | 'tmdb' | 'hardcover' | 'guide';
 };
 
 export type MovieSearchResult = {

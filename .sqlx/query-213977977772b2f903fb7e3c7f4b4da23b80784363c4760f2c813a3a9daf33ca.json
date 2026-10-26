@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_root_files SET match_status = 'ignored', updated_at = NOW()\n         WHERE file_path IN (\n             SELECT file_path FROM audiobook_files WHERE id = ANY($1)\n             UNION SELECT source_path FROM audiobook_files WHERE id = ANY($1) AND source_path IS NOT NULL\n         )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "213977977772b2f903fb7e3c7f4b4da23b80784363c4760f2c813a3a9daf33ca"
+}

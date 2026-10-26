@@ -1809,8 +1809,11 @@ impl SearchBackend for MeiliState {
         }
 
         let mut search = index.search();
+        // Episode titles and synopses are prose: a word in one ("Breaking the Ice")
+        // surfaces a programme nobody searched for.
         search
             .with_query(query)
+            .with_attributes_to_search_on(&["title"])
             .with_limit(limit)
             .with_offset(offset);
         let filter = parts.join(" AND ");

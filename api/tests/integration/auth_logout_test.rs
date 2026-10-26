@@ -242,3 +242,62 @@ async fn test_avatar_upload_invalid_content_type() {
         .await;
     resp.assert_status(StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn test_user_list_carries_each_users_avatar() {
+    let server = TestServer::start_api_only().await;
+    let admin = server.admin_client();
+    let kid = create_user_client(&server, "kid@test.local", "viewer").await;
+
+    kid.put_bytes(
+        "/api/v1/admin/me/avatar",
+        vec![0xFF, 0xD8, 0xFF, 0xE0],
+        "image/jpeg",
+    )
+    .await
+    .assert_status(StatusCode::NO_CONTENT);
+    let kid_me: Value = kid.get("/api/v1/admin/me").await.json();
+    let kid_avatar = kid_me["avatar_url"].as_str().unwrap();
+
+    let users: Vec<Value> = admin.get("/api/v1/admin/users").await.json();
+    let avatar_of = |email: &str| {
+        users
+            .iter()
+            .find(|u| u["email"] == email)
+            .map(|u| u["avatar_url"].clone())
+            .unwrap()
+    };
+    assert_eq!(avatar_of("kid@test.local"), kid_avatar);
+    assert!(avatar_of("admin@test.local").is_null());
+    admin.get(kid_avatar).await.assert_ok();
+
+    let own: Vec<Value> = kid.get("/api/v1/admin/users").await.json();
+    assert_eq!(own.len(), 1);
+    assert_eq!(own[0]["avatar_url"], kid_avatar);
+}
+
+#[tokio::test]
+async fn test_replacing_an_avatar_changes_its_url() {
+    let server = TestServer::start_api_only().await;
+    let admin = server.admin_client();
+    let upload = |bytes: Vec<u8>| {
+        let admin = &admin;
+        async move {
+            admin
+                .put_bytes("/api/v1/admin/me/avatar", bytes, "image/jpeg")
+                .await
+                .assert_status(StatusCode::NO_CONTENT);
+            let me: Value = admin.get("/api/v1/admin/me").await.json();
+            me["avatar_url"].as_str().unwrap().to_owned()
+        }
+    };
+
+    let first = upload(vec![0xFF, 0xD8, 0xFF, 0xE0]).await;
+    let second = upload(vec![0xFF, 0xD8, 0xFF, 0xE1]).await;
+    assert_ne!(first, second);
+    assert_eq!(upload(vec![0xFF, 0xD8, 0xFF, 0xE1]).await, second);
+
+    let users: Vec<Value> = admin.get("/api/v1/admin/users").await.json();
+    assert_eq!(users[0]["avatar_url"], second);
+    admin.get(&second).await.assert_ok();
+}

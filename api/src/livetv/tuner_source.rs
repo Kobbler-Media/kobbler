@@ -202,6 +202,7 @@ pub struct TuneHealth {
     failure: Mutex<Option<String>>,
     dead: AtomicBool,
     died: tokio::sync::Notify,
+    changed: tokio::sync::Notify,
 }
 
 impl TuneHealth {
@@ -214,11 +215,31 @@ impl TuneHealth {
         if let Ok(mut f) = self.failure.lock() {
             *f = None;
         }
+        self.changed.notify_waiters();
     }
 
     pub fn fail(&self, message: String) {
         if let Ok(mut f) = self.failure.lock() {
             *f = Some(message);
+        }
+        self.changed.notify_waiters();
+    }
+
+    /// Returns as the first byte arrives, or with why the tune has produced none. Running
+    /// out of `wait` is not a failure: the stream is handed over and may yet start.
+    pub async fn first_byte(&self, wait: Duration) -> Result<(), String> {
+        let deadline = tokio::time::Instant::now() + wait;
+        loop {
+            let changed = self.changed.notified();
+            if self.delivered() {
+                return Ok(());
+            }
+            if let Some(reason) = self.failure() {
+                return Err(reason);
+            }
+            if tokio::time::timeout_at(deadline, changed).await.is_err() {
+                return Ok(());
+            }
         }
     }
 
@@ -231,6 +252,7 @@ impl TuneHealth {
             *f = Some(reason);
         }
         self.died.notify_waiters();
+        self.changed.notify_waiters();
     }
 
     pub fn is_dead(&self) -> bool {

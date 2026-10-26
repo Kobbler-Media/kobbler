@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT\n                    b.title,\n                    (SELECT a.name FROM book_authors ba JOIN authors a ON a.id = ba.author_id\n                     WHERE ba.book_id = b.id ORDER BY ba.author_id LIMIT 1) AS author,\n                    s.name AS \"series_name?\",\n                    bs.series_index AS \"series_index?\"\n                FROM books b\n                LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n                LEFT JOIN series s ON s.id = bs.series_id\n                WHERE b.id = $1\n                ",
+  "query": "\n            SELECT\n                b.title,\n                (SELECT a.name FROM book_authors ba JOIN authors a ON a.id = ba.author_id\n                 WHERE ba.book_id = b.id ORDER BY ba.author_id LIMIT 1) AS author,\n                s.name AS \"series_name?\",\n                bs.series_index AS \"series_index?\"\n            FROM books b\n            LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n            LEFT JOIN series s ON s.id = bs.series_id\n            WHERE b.id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -55,5 +55,5 @@
       true
     ]
   },
-  "hash": "55fec4dc973833cea75c800cac33f6240f2c9b722723ec929dc2b50bef11f85e"
+  "hash": "d9ade024e6806e44dcb92f9c1e961f4344b65667ae236ba767fa71b990df57c4"
 }

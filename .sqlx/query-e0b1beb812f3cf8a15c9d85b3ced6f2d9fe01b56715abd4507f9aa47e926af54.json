@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO entitlements (id, book_id, scope_type, scope_id)\n         SELECT gen_random_uuid(), $2, scope_type, scope_id\n         FROM entitlements WHERE book_id = $1 AND NOT is_removed",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e0b1beb812f3cf8a15c9d85b3ced6f2d9fe01b56715abd4507f9aa47e926af54"
+}

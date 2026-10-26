@@ -112,9 +112,7 @@ pub async fn login(
 pub async fn me(State(state): State<AppState>, auth: crate::routes::AuthUser) -> impl IntoResponse {
     match repositories::users::get_by_id(&state.pool, auth.user_id).await {
         Ok(Some((id, email, role))) => {
-            let has_avatar = repositories::users::has_avatar(&state.pool, id)
-                .await
-                .unwrap_or(false);
+            let avatar_url = avatar_url(&state.pool, id).await;
             let display_name = repositories::users::get_display_name(&state.pool, id)
                 .await
                 .unwrap_or(None);
@@ -124,11 +122,6 @@ pub async fn me(State(state): State<AppState>, auth: crate::routes::AuthUser) ->
             let has_pin = repositories::users::has_profile_pin(&state.pool, id)
                 .await
                 .unwrap_or(false);
-            let avatar_url = if has_avatar {
-                Some(format!("/api/v1/admin/users/{}/avatar", id))
-            } else {
-                None
-            };
             let cast_receiver_app_id = state
                 .runtime_config
                 .get()
@@ -150,6 +143,14 @@ pub async fn me(State(state): State<AppState>, auth: crate::routes::AuthUser) ->
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "failed to fetch user").into_response(),
     }
+}
+
+pub(super) async fn avatar_url(pool: &sqlx::PgPool, user_id: Uuid) -> Option<String> {
+    repositories::users::avatar_version(pool, user_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|v| format!("/api/v1/admin/users/{user_id}/avatar?v={v}"))
 }
 
 /// Log out by revoking the current session token.

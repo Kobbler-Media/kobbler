@@ -105,6 +105,10 @@ watcher_scan_interval_seconds = 60
 # (OpenLibrary, Google Books, Hardcover)
 metadata_providers_enabled = true
 
+# Suggest the 100,000 most-read Hardcover books while typing a search.
+# Needs a Hardcover API key; fetched weekly, off-peak, in ~100 requests.
+book_title_suggestions_enabled = false
+
 # Number of days to cache metadata lookup results
 metadata_cache_days = 30
 rewrite_kobo_urls = false

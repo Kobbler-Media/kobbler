@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO books\n        SELECT (jsonb_populate_record(NULL::books, to_jsonb(b) || jsonb_build_object(\n            'id', $2::uuid,\n            'narrator', COALESCE($3::text, b.narrator),\n            'is_abridged', COALESCE($4::boolean, b.is_abridged),\n            'identifiers', COALESCE(b.identifiers, '{}'::jsonb) - 'asin' - 'audible_asin',\n            'created_at', NOW(),\n            'updated_at', NOW(),\n            'first_seen_at', NOW()\n        ))).*\n        FROM books b\n        WHERE b.id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e4532454f56d5207dee67c43f88673db6a378f3f42f0ca5134556b6ebd98b952"
+}

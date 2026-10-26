@@ -9,11 +9,11 @@
 //! `(frequency, program_number)` joins the two.
 
 use super::hdhomerun::HdhrError;
+use super::ts::{self, PacketAligner, TS_PACKET};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::time::Duration;
 
-const TS_PACKET: usize = 188;
 const SDT_PID: u16 = 0x0011;
 const TABLE_ID_SDT_ACTUAL: u8 = 0x42;
 const SERVICE_DESCRIPTOR: u8 = 0x48;
@@ -116,8 +116,7 @@ fn parse_section(section: &[u8]) -> Vec<SdtService> {
 pub struct SdtReader {
     partial: Option<Vec<u8>>,
     services: HashMap<u16, SdtService>,
-    carry: Vec<u8>,
-    synced: bool,
+    packets: PacketAligner,
 }
 
 impl SdtReader {
@@ -138,65 +137,28 @@ impl SdtReader {
     /// Feed the next slice of the stream. Chunk boundaries are arbitrary, so
     /// whatever does not make up a whole packet is carried into the next call.
     pub fn push(&mut self, chunk: &[u8]) {
-        self.carry.extend_from_slice(chunk);
-
-        // The device's first bytes are not necessarily packet-aligned, so the
-        // offset is somewhere in the first packet's worth. Confirm it with a run
-        // of sync bytes — a lone 0x47 is a common payload value.
-        if !self.synced {
-            let runs = (self.carry.len() / TS_PACKET).clamp(1, 4);
-            let span = TS_PACKET * (runs - 1) + 1;
-            let Some(offset) = (0..TS_PACKET.min(self.carry.len()))
-                .filter(|&i| i + span <= self.carry.len())
-                .find(|&i| (0..runs).all(|k| self.carry[i + k * TS_PACKET] == 0x47))
-            else {
-                // Not a transport stream at all, or still too short to tell.
-                if self.carry.len() > TS_PACKET * 64 {
-                    self.carry.drain(..TS_PACKET * 32);
-                }
-                return;
-            };
-            self.carry.drain(..offset);
-            self.synced = true;
-        }
-
-        let whole = self.carry.len() / TS_PACKET * TS_PACKET;
-        let packets: Vec<u8> = self.carry.drain(..whole).collect();
+        let packets = self.packets.push(chunk);
         for packet in packets.as_chunks::<TS_PACKET>().0 {
             self.packet(packet);
         }
     }
 
     fn packet(&mut self, p: &[u8]) {
-        if p[0] != 0x47 {
-            self.synced = false;
+        if ts::pid(p) != SDT_PID {
             return;
         }
-        let pid = (((p[1] & 0x1f) as u16) << 8) | p[2] as u16;
-        if pid != SDT_PID {
+        let Some(payload) = ts::payload(p) else {
             return;
-        }
-        let adaptation = (p[3] >> 4) & 0x3;
-        let mut i = 4;
-        if adaptation == 2 {
-            return;
-        }
-        if adaptation == 3 {
-            i += 1 + p[4] as usize;
-        }
-        if i >= TS_PACKET {
-            return;
-        }
+        };
 
-        if p[1] & 0x40 != 0 {
-            let pointer = p[i] as usize;
-            i += 1 + pointer;
-            if i > TS_PACKET {
+        if ts::unit_start(p) {
+            let pointer = payload[0] as usize;
+            let Some(section) = payload.get(1 + pointer..) else {
                 return;
-            }
-            self.partial = Some(p[i..].to_vec());
+            };
+            self.partial = Some(section.to_vec());
         } else if let Some(buf) = self.partial.as_mut() {
-            buf.extend_from_slice(&p[i..]);
+            buf.extend_from_slice(payload);
         }
 
         let Some(buf) = self.partial.as_ref() else {

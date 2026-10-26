@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reading_bookmark\n         SET location_value = $2,\n             progress_percent = COALESCE($3, progress_percent),\n             last_modified_at = NOW()\n         WHERE reading_state_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "37fc0f78d694ab9d5a285b21b9b027a66f327e43acb999e1f007abd3e2d20316"
+}

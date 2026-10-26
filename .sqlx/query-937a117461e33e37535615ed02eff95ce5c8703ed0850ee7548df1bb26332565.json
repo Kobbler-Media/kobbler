@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT attempted_at, synced_at FROM hardcover_title_syncs",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attempted_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "hardcover_title_syncs",
+            "name": "attempted_at"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "synced_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "hardcover_title_syncs",
+            "name": "synced_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "937a117461e33e37535615ed02eff95ce5c8703ed0850ee7548df1bb26332565"
+}

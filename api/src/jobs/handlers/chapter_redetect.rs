@@ -86,17 +86,19 @@ impl JobHandler for ChapterRedetectHandler {
             }
 
             let count = detected.len() as u64;
-            if let Err(e) =
-                audiobook_chapters::insert_chapters(&self.pool, file.id, &detected).await
-            {
-                warn!(error = %e, file_id = %file.id, "Failed to store detected chapters");
-            } else {
-                total_detected += count;
-                info!(
-                    file_id = %file.id,
-                    chapters = count,
-                    "Re-detected chapters via silence analysis"
-                );
+            match audiobook_chapters::store_chapters(&self.pool, file.id, &detected).await {
+                Ok(true) => {
+                    total_detected += count;
+                    info!(
+                        file_id = %file.id,
+                        chapters = count,
+                        "Re-detected chapters via silence analysis"
+                    );
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    warn!(error = %e, file_id = %file.id, "Failed to store detected chapters");
+                }
             }
         }
 

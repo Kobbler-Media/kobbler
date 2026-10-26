@@ -1,14 +1,16 @@
 //! Audiobook probe job handler.
 //!
-//! Probes all audio files for a book to extract duration, codec info, and
-//! chapters. If all files lack chapters and the book has multiple files,
-//! auto-generates one chapter per file.
+//! Probes all audio files for a book to extract duration and codec info, files
+//! away recordings of other editions (`audio::book_editions`), then settles
+//! each remaining file's chapters (`audio::book_chapters`).
 
 use crate::RuntimeConfigManager;
-use crate::audio::{auto_chapters, chapters, probe, repair};
+use crate::audio::book_chapters::{self, Silence};
+use crate::audio::book_editions;
+use crate::audio::{probe, repair};
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
-use crate::repositories::{audiobook_chapters, audiobook_files, books};
+use crate::repositories::{audiobook_files, books};
 use async_trait::async_trait;
 use nats_jobs::Publisher;
 use serde::{Deserialize, Serialize};
@@ -82,12 +84,7 @@ impl JobHandler for AudiobookProbeHandler {
         }
 
         let mut probed = 0u64;
-        let mut chapters_found = 0u64;
-        let mut total_duration: f64 = 0.0;
-        let mut all_files_lack_chapters = true;
-
-        // Collect file info for auto-chapter generation
-        let mut file_infos: Vec<(Uuid, String, Option<f64>)> = Vec::new();
+        let mut probes = book_editions::Probes::new();
 
         for file in &files {
             let file_path =
@@ -99,7 +96,6 @@ impl JobHandler for AudiobookProbeHandler {
                     path = %file_path.display(),
                     "Audio file not found on disk, skipping probe"
                 );
-                file_infos.push((file.id, file.file_path.clone(), file.duration_seconds));
                 continue;
             }
 
@@ -121,11 +117,9 @@ impl JobHandler for AudiobookProbeHandler {
                         .ok()
                         .map(|m| m.len() as i64);
 
-                    // Update audiobook_files with probe data. AudioProbeResult only
-                    // exposes duration today — bitrate/codec/channels/sample_rate are
-                    // left untouched on existing rows.
                     let update = audiobook_files::ProbeUpdate {
                         duration_seconds: duration,
+                        bitrate: result.bit_rate.and_then(|b| i32::try_from(b).ok()),
                         file_size,
                         ..Default::default()
                     };
@@ -135,67 +129,7 @@ impl JobHandler for AudiobookProbeHandler {
                         warn!(error = %e, file_id = %file.id, "Failed to update probe data");
                     }
 
-                    if let Some(dur) = duration {
-                        total_duration += dur;
-                    }
-
-                    // Resolve and store chapters
-                    let chapters = chapters::resolve_chapters(&file_path, None, None).await;
-                    if !chapters.is_empty() {
-                        all_files_lack_chapters = false;
-                        chapters_found += chapters.len() as u64;
-                        if let Err(e) =
-                            audiobook_chapters::insert_chapters(&self.pool, file.id, &chapters)
-                                .await
-                        {
-                            warn!(error = %e, file_id = %file.id, "Failed to store chapters");
-                        }
-                    }
-
-                    // Detect intro/outro from chapter names
-                    if !chapters.is_empty() {
-                        let intro_patterns = [
-                            "intro",
-                            "opening",
-                            "foreword",
-                            "produced by",
-                            "introduction",
-                        ];
-                        let credits_patterns =
-                            ["credits", "about the author", "copyright", "afterword"];
-
-                        let mut intro_end: Option<f64> = None;
-                        let mut outro_start: Option<f64> = None;
-
-                        for ch in &chapters {
-                            if let Some(title) = &ch.title {
-                                let lower = title.to_lowercase();
-                                if intro_patterns.iter().any(|p| lower.contains(p)) {
-                                    intro_end = Some(ch.end_seconds);
-                                }
-                                if credits_patterns.iter().any(|p| lower.contains(p))
-                                    && (outro_start.is_none()
-                                        || ch.start_seconds > outro_start.unwrap())
-                                {
-                                    outro_start = Some(ch.start_seconds);
-                                }
-                            }
-                        }
-
-                        if intro_end.is_some() || outro_start.is_some() {
-                            let _ = sqlx::query(
-                                "UPDATE audiobook_files SET intro_end_seconds = COALESCE($2, intro_end_seconds), outro_start_seconds = COALESCE($3, outro_start_seconds), intro_outro_source = COALESCE($4, intro_outro_source) WHERE id = $1 AND (intro_outro_source IS NULL OR intro_outro_source != 'manual')"
-                            )
-                            .bind(file.id)
-                            .bind(intro_end)
-                            .bind(outro_start)
-                            .bind(Some("chapter"))
-                            .execute(&self.pool)
-                            .await;
-                        }
-                    }
-
-                    file_infos.push((file.id, file.file_path.clone(), duration));
+                    probes.insert(file.id, result);
                     probed += 1;
                 }
                 Err(e) => {
@@ -205,29 +139,69 @@ impl JobHandler for AudiobookProbeHandler {
                         path = %file_path.display(),
                         "Failed to probe audio file"
                     );
-                    file_infos.push((file.id, file.file_path.clone(), file.duration_seconds));
                 }
             }
         }
 
-        // Auto-generate file-per-chapter if all files lack chapters and book has >1 file
-        let mut auto_generated = false;
-        if all_files_lack_chapters && file_infos.len() > 1 {
-            let generated = auto_chapters::generate_file_per_chapter(&file_infos);
-            for (file_id, chapters) in &generated {
-                if let Err(e) =
-                    audiobook_chapters::insert_chapters(&self.pool, *file_id, chapters).await
-                {
-                    warn!(error = %e, file_id = %file_id, "Failed to store auto-generated chapters");
+        let editions =
+            book_editions::settle(&self.pool, &self.storage_root, book_id, Some(&probes)).await?;
+        if editions.changed() {
+            info!(book_id = %book_id, editions = ?editions.report, "filed other audiobook editions");
+            book_editions::follow_up(
+                &self.pool,
+                &self.nats_publisher,
+                book_id,
+                &editions,
+                "audiobook_probe",
+            )
+            .await;
+        }
+        let files = audiobook_files::list_by_book(&self.pool, book_id).await?;
+        let total_duration: f64 = files.iter().filter_map(|f| f.duration_seconds).sum();
+
+        let plan =
+            book_chapters::plan(&self.pool, &self.storage_root, book_id, Silence::Detect).await?;
+        let chapters_found: usize = plan.own.values().map(Vec::len).sum();
+        let chapter_files_changed = book_chapters::apply(&self.pool, &plan).await?;
+
+        for (file_id, chapters) in &plan.own {
+            let intro_patterns = [
+                "intro",
+                "opening",
+                "foreword",
+                "produced by",
+                "introduction",
+            ];
+            let credits_patterns = ["credits", "about the author", "copyright", "afterword"];
+
+            let mut intro_end: Option<f64> = None;
+            let mut outro_start: Option<f64> = None;
+
+            for ch in chapters {
+                if let Some(title) = &ch.title {
+                    let lower = title.to_lowercase();
+                    if intro_patterns.iter().any(|p| lower.contains(p)) {
+                        intro_end = Some(ch.end_seconds);
+                    }
+                    if credits_patterns.iter().any(|p| lower.contains(p))
+                        && outro_start.is_none_or(|s| ch.start_seconds > s)
+                    {
+                        outro_start = Some(ch.start_seconds);
+                    }
                 }
             }
-            auto_generated = true;
-            chapters_found = generated.len() as u64;
-            info!(
-                book_id = %book_id,
-                file_count = file_infos.len(),
-                "Auto-generated file-per-chapter for multi-file audiobook"
-            );
+
+            if intro_end.is_some() || outro_start.is_some() {
+                let _ = sqlx::query(
+                    "UPDATE audiobook_files SET intro_end_seconds = COALESCE($2, intro_end_seconds), outro_start_seconds = COALESCE($3, outro_start_seconds), intro_outro_source = COALESCE($4, intro_outro_source) WHERE id = $1 AND (intro_outro_source IS NULL OR intro_outro_source != 'manual')"
+                )
+                .bind(file_id)
+                .bind(intro_end)
+                .bind(outro_start)
+                .bind(Some("chapter"))
+                .execute(&self.pool)
+                .await;
+            }
         }
 
         // Reindex file order now that track_number/disc_number are populated
@@ -273,8 +247,8 @@ impl JobHandler for AudiobookProbeHandler {
             book_id = %book_id,
             probed,
             chapters_found,
+            chapter_files_changed,
             total_duration,
-            auto_generated,
             "Audiobook probe complete"
         );
 
@@ -297,8 +271,9 @@ impl JobHandler for AudiobookProbeHandler {
         Ok(json!({
             "probed": probed,
             "chapters_found": chapters_found,
+            "chapter_files_changed": chapter_files_changed,
             "total_duration_seconds": total_duration,
-            "auto_generated": auto_generated,
+            "editions": editions.report,
         }))
     }
 }

@@ -77,6 +77,8 @@ pub struct LeaseRequest {
 pub struct LeaseFlags {
     evicted: AtomicBool,
     preempted_by: Mutex<Option<Uuid>>,
+    ended: AtomicBool,
+    ending: tokio::sync::Notify,
 }
 
 impl LeaseFlags {
@@ -91,6 +93,27 @@ impl LeaseFlags {
     fn evict(&self, by: Option<Uuid>) {
         *self.preempted_by.lock().expect("lease flags not poisoned") = by;
         self.evicted.store(true, Ordering::Release);
+        self.end();
+    }
+
+    /// The slot has left the registry: whatever was tuned on it no longer holds a tuner.
+    pub fn is_ended(&self) -> bool {
+        self.ended.load(Ordering::Acquire)
+    }
+
+    pub async fn ended(&self) {
+        loop {
+            let notified = self.ending.notified();
+            if self.is_ended() {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    fn end(&self) {
+        self.ended.store(true, Ordering::Release);
+        self.ending.notify_waiters();
     }
 }
 
@@ -105,6 +128,7 @@ pub struct LeaseToken {
     /// key needs it to already be there.
     pub fresh: bool,
     registry: Arc<TunerLeases>,
+    dormant_since: Option<Instant>,
 }
 
 impl LeaseToken {
@@ -114,6 +138,34 @@ impl LeaseToken {
 
     pub fn is_evicted(&self) -> bool {
         self.flags.is_evicted()
+    }
+
+    /// Lets go of the slot the way a drop does — it lingers, and gives way to anything
+    /// waiting for it — while what holds the token stays up for as long as it lingers.
+    pub fn linger(&mut self) -> Instant {
+        if let Some(since) = self.dormant_since {
+            return since;
+        }
+        let since = Instant::now();
+        self.dormant_since = Some(since);
+        self.registry.release(self.info.id);
+        since
+    }
+
+    /// Takes the slot back from a [linger]; false once it has been given away.
+    pub fn revive(&mut self) -> bool {
+        if self.dormant_since.is_none() {
+            return true;
+        }
+        let revived = self.registry.revive(self.info.id);
+        if revived {
+            self.dormant_since = None;
+        }
+        revived
+    }
+
+    pub fn dormant_since(&self) -> Option<Instant> {
+        self.dormant_since
     }
 }
 
@@ -127,7 +179,9 @@ impl std::fmt::Debug for LeaseToken {
 
 impl Drop for LeaseToken {
     fn drop(&mut self) {
-        self.registry.release(self.info.id);
+        if self.dormant_since.is_none() {
+            self.registry.release(self.info.id);
+        }
     }
 }
 
@@ -222,6 +276,7 @@ impl TunerLeases {
             inner.leases.retain(|id, l| {
                 let expired = l.holders == 0 && l.linger_until.is_some_and(|t| t <= now);
                 if expired {
+                    l.flags.end();
                     released.push(*id);
                 }
                 !expired
@@ -271,7 +326,9 @@ impl TunerLeases {
                         .map(|l| l.info.id)
                         .collect();
                     for id in lingering {
-                        inner.leases.remove(&id);
+                        if let Some(l) = inner.leases.remove(&id) {
+                            l.flags.end();
+                        }
                         released.push(id);
                     }
                 }
@@ -340,7 +397,19 @@ impl TunerLeases {
             flags,
             fresh,
             registry: self.clone(),
+            dormant_since: None,
         })
+    }
+
+    fn revive(&self, id: Uuid) -> bool {
+        let mut inner = self.inner.lock().expect("lease registry not poisoned");
+        let Some(lease) = inner.leases.get_mut(&id) else {
+            return false;
+        };
+        lease.holders += 1;
+        lease.linger_until = None;
+        lease.info.expires_at = None;
+        true
     }
 
     fn release(&self, id: Uuid) {
@@ -354,7 +423,9 @@ impl TunerLeases {
         }
         // A recording's slot is never held speculatively — it is done with it.
         if lease.info.holder_kind == HolderKind::Recording {
-            inner.leases.remove(&id);
+            if let Some(l) = inner.leases.remove(&id) {
+                l.flags.end();
+            }
             drop(inner);
             let _ = self.persist.send(Persist::Released(id));
             return;
@@ -373,6 +444,7 @@ impl TunerLeases {
             inner.leases.retain(|id, l| {
                 let expired = l.holders == 0 && l.linger_until.is_some_and(|t| t <= now);
                 if expired {
+                    l.flags.end();
                     released.push(*id);
                 }
                 !expired

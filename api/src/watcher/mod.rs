@@ -4,9 +4,11 @@
 //! for processing. Supports both real-time filesystem events (via notify crate) and
 //! fallback polling for network filesystems.
 
+mod ingest;
 mod service;
 
-pub use service::{WatcherConfig, WatcherService, process_queue_item};
+pub use ingest::{IngestEntitlements, IngestOptions, process_queue_item};
+pub use service::{WatcherConfig, WatcherService};
 
 use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;

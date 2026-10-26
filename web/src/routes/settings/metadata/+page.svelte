@@ -76,6 +76,7 @@
     try {
       const updates: SystemConfigUpdate = {
         metadata_providers_enabled: systemConfig.metadata_providers_enabled,
+        book_title_suggestions_enabled: systemConfig.book_title_suggestions_enabled,
         metadata_cache_days: systemConfig.metadata_cache_days
       };
       systemConfig = await updateSystemConfig(updates);
@@ -317,6 +318,24 @@
                 />
                 Enable automatic metadata lookups
               </label>
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  data-field="book_title_suggestions_enabled"
+                  checked={systemConfig.book_title_suggestions_enabled}
+                  onchange={(e) => {
+                    if (systemConfig)
+                      systemConfig.book_title_suggestions_enabled = (
+                        e.target as HTMLInputElement
+                      ).checked;
+                  }}
+                />
+                Suggest popular book titles while searching
+              </label>
+              <span class="field-hint">
+                Fetches Hardcover's 100,000 most-read books weekly, overnight, in about 100
+                requests. Needs a Hardcover API key.
+              </span>
               <label>
                 Cache Duration (days)
                 <input

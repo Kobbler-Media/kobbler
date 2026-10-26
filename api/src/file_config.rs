@@ -50,6 +50,8 @@ pub struct FileConfig {
     pub media_root_scan_interval_seconds: i32,
     #[serde(default = "default_true")]
     pub metadata_providers_enabled: bool,
+    #[serde(default)]
+    pub book_title_suggestions_enabled: bool,
     #[serde(default = "default_metadata_cache_days")]
     pub metadata_cache_days: i32,
     #[serde(default)]
@@ -347,6 +349,7 @@ impl Default for FileConfig {
             watcher_scan_interval_seconds: default_watcher_scan_interval(),
             media_root_scan_interval_seconds: default_media_root_scan_interval(),
             metadata_providers_enabled: true,
+            book_title_suggestions_enabled: false,
             metadata_cache_days: default_metadata_cache_days(),
             rewrite_kobo_urls: false,
             wanted_default_provider: None,
@@ -498,6 +501,8 @@ impl FileConfig {
                         toml_edit::value(self.media_root_scan_interval_seconds as i64);
                     doc["metadata_providers_enabled"] =
                         toml_edit::value(self.metadata_providers_enabled);
+                    doc["book_title_suggestions_enabled"] =
+                        toml_edit::value(self.book_title_suggestions_enabled);
                     doc["metadata_cache_days"] = toml_edit::value(self.metadata_cache_days as i64);
                     doc["rewrite_kobo_urls"] = toml_edit::value(self.rewrite_kobo_urls);
                     doc["wanted_default_provider"] =
@@ -892,6 +897,13 @@ impl FileConfig {
             "metadata_providers_enabled = {}\n\n",
             self.metadata_providers_enabled
         ));
+        output.push_str("# Suggest the 100,000 most-read Hardcover books while typing a search.\n");
+        output
+            .push_str("# Needs a Hardcover API key; fetched weekly, off-peak, in ~100 requests.\n");
+        output.push_str(&format!(
+            "book_title_suggestions_enabled = {}\n\n",
+            self.book_title_suggestions_enabled
+        ));
         output.push_str("# Number of days to cache metadata lookup results\n");
         output.push_str(&format!(
             "metadata_cache_days = {}\n\n",
@@ -1240,6 +1252,7 @@ impl FileConfig {
             watcher_scan_interval_seconds: self.watcher_scan_interval_seconds,
             media_root_scan_interval_seconds: self.media_root_scan_interval_seconds,
             metadata_providers_enabled: self.metadata_providers_enabled,
+            book_title_suggestions_enabled: self.book_title_suggestions_enabled,
             metadata_cache_days: self.metadata_cache_days,
             rewrite_kobo_urls: self.rewrite_kobo_urls,
             wanted_default_provider,
@@ -1462,6 +1475,7 @@ impl FileConfig {
             watcher_scan_interval_seconds: config.watcher_scan_interval_seconds,
             media_root_scan_interval_seconds: config.media_root_scan_interval_seconds,
             metadata_providers_enabled: config.metadata_providers_enabled,
+            book_title_suggestions_enabled: config.book_title_suggestions_enabled,
             metadata_cache_days: config.metadata_cache_days,
             rewrite_kobo_urls: config.rewrite_kobo_urls,
             wanted_default_provider: config.wanted_default_provider.clone(),

@@ -734,18 +734,7 @@ pub async fn resolve_book(
         .await;
 
         // Enqueue probe job to extract duration, codec info, and chapters
-        let display = crate::jobs::fetch_job_display(ctx.pool, "book", book_id).await;
-        let probe_context =
-            JobContext::for_entity("book", book_id, format!("Probing audiobook '{}'", title))
-                .with_display_opt(display);
-        let _ = crate::jobs::enqueue(
-            ctx.pool,
-            ctx.nats,
-            "audiobook_probe",
-            json!({"book_id": book_id}),
-            probe_context,
-        )
-        .await;
+        crate::jobs::enqueue_audiobook_probe(ctx.pool, ctx.nats, book_id, &title).await;
     } else {
         let file_input = book_files::BookFileInput {
             book_id,
@@ -1691,18 +1680,7 @@ pub async fn resolve_book_group(
         tracing::warn!(book_id = %book_id, error = %e, "Failed to reindex audiobook file order");
     }
     if has_audio {
-        let display = crate::jobs::fetch_job_display(ctx.pool, "book", book_id).await;
-        let probe_context =
-            JobContext::for_entity("book", book_id, format!("Probing audiobook '{}'", title))
-                .with_display_opt(display);
-        let _ = crate::jobs::enqueue(
-            ctx.pool,
-            ctx.nats,
-            "audiobook_probe",
-            json!({"book_id": book_id}),
-            probe_context,
-        )
-        .await;
+        crate::jobs::enqueue_audiobook_probe(ctx.pool, ctx.nats, book_id, &title).await;
     }
 
     // 5. Auto-sync entitlements ONCE
@@ -1795,18 +1773,7 @@ async fn link_to_book(
         )
         .await;
 
-        let display = crate::jobs::fetch_job_display(ctx.pool, "book", book_id).await;
-        let probe_context =
-            JobContext::for_entity("book", book_id, format!("Probing audiobook '{}'", title))
-                .with_display_opt(display);
-        let _ = crate::jobs::enqueue(
-            ctx.pool,
-            ctx.nats,
-            "audiobook_probe",
-            json!({"book_id": book_id}),
-            probe_context,
-        )
-        .await;
+        crate::jobs::enqueue_audiobook_probe(ctx.pool, ctx.nats, book_id, &title).await;
     } else {
         let file_input = book_files::BookFileInput {
             book_id,

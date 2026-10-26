@@ -10,7 +10,9 @@ use crate::repositories::{
     tv_shows, wanted_attempts,
 };
 use crate::runtime_config::RuntimeConfig;
-use crate::watcher::{FileMode, IngestMode, compute_content_hash, process_queue_item};
+use crate::watcher::{
+    FileMode, IngestMode, IngestOptions, compute_content_hash, process_queue_item,
+};
 use axum::{
     Json,
     extract::{Path, State},
@@ -1643,7 +1645,7 @@ async fn ingest_single_book(
                 &nats_publisher,
                 &runtime_config,
                 first_id,
-                file_mode,
+                IngestOptions::auto(file_mode),
             )
             .await
             {
@@ -1657,7 +1659,7 @@ async fn ingest_single_book(
                             &nats_publisher,
                             &runtime_config,
                             extra_id,
-                            file_mode,
+                            IngestOptions::auto(file_mode),
                         )
                         .await
                         {
@@ -1736,6 +1738,18 @@ async fn ingest_single_book(
                     }
 
                     if !extra_audio.is_empty() {
+                        let title = crate::repositories::books::get_title(&pool, created_book_id)
+                            .await
+                            .ok()
+                            .flatten()
+                            .unwrap_or_default();
+                        crate::jobs::enqueue_audiobook_probe(
+                            &pool,
+                            &nats_publisher,
+                            created_book_id,
+                            &title,
+                        )
+                        .await;
                         let _ = library_events.send(crate::events::LibraryEvent::library_updated(
                             Some(created_book_id),
                         ));

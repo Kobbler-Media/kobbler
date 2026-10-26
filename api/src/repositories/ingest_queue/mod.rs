@@ -10,8 +10,8 @@ mod queries;
 // Re-export all CRUD operations
 pub use crud::{
     UploadInput, approve, batch_reject, create, create_for_upload, delete, exists_by_path,
-    get_by_id, get_cover, hash_exists, reject, restore, set_approved, set_converting, set_error,
-    update, update_cover, update_cover_and_set_pending, update_status, update_status_if_pending,
+    get_by_id, get_cover, hash_exists, reject, restore, set_converting, set_error, update,
+    update_cover, update_cover_and_set_pending, update_status, update_status_if_pending,
 };
 
 // Re-export query operations

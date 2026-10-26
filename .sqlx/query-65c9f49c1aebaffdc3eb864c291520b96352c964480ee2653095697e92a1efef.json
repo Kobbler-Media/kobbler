@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE audiobook_bookmarks SET book_id = $2, audiobook_file_id = $3, position_seconds = $4 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "65c9f49c1aebaffdc3eb864c291520b96352c964480ee2653095697e92a1efef"
+}

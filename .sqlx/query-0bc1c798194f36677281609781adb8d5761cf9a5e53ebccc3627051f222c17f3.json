@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO hardcover_title_syncs (synced_at) VALUES (NOW())\n         ON CONFLICT (singleton) DO UPDATE SET synced_at = EXCLUDED.synced_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "0bc1c798194f36677281609781adb8d5761cf9a5e53ebccc3627051f222c17f3"
+}

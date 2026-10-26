@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            c.id,\n            c.audiobook_file_id,\n            af.file_path,\n            af.duration_seconds AS file_duration_seconds,\n            c.chapter_index,\n            c.title,\n            c.start_seconds,\n            c.end_seconds,\n            c.source\n        FROM audiobook_chapters c\n        JOIN audiobook_files af ON af.id = c.audiobook_file_id\n        WHERE af.book_id = $1\n        ORDER BY af.file_index, af.file_path, c.chapter_index\n        ",
+  "query": "\n        WITH af AS (\n            SELECT id, file_index, file_path, duration_seconds,\n                   COALESCE(SUM(COALESCE(duration_seconds, 0)) OVER (\n                       ORDER BY file_index, file_path\n                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING\n                   ), 0) AS file_offset_seconds,\n                   SUM(COALESCE(duration_seconds, 0)) OVER () AS book_duration_seconds\n            FROM audiobook_files\n            WHERE book_id = $1\n        )\n        SELECT\n            c.id,\n            c.audiobook_file_id,\n            af.file_path,\n            c.chapter_index,\n            c.title,\n            c.start_seconds,\n            c.end_seconds,\n            c.source,\n            af.file_offset_seconds AS \"file_offset_seconds!\",\n            af.book_duration_seconds AS \"book_duration_seconds!\"\n        FROM audiobook_chapters c\n        JOIN af ON af.id = c.audiobook_file_id\n        ORDER BY af.file_index, af.file_path, c.start_seconds, c.chapter_index\n        ",
   "describe": {
     "columns": [
       {
@@ -38,17 +38,6 @@
       },
       {
         "ordinal": 3,
-        "name": "file_duration_seconds",
-        "type_info": "Float8",
-        "origin": {
-          "Table": {
-            "table": "audiobook_files",
-            "name": "duration_seconds"
-          }
-        }
-      },
-      {
-        "ordinal": 4,
         "name": "chapter_index",
         "type_info": "Int4",
         "origin": {
@@ -59,7 +48,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "title",
         "type_info": "Text",
         "origin": {
@@ -70,7 +59,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "start_seconds",
         "type_info": "Float8",
         "origin": {
@@ -81,7 +70,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "end_seconds",
         "type_info": "Float8",
         "origin": {
@@ -92,7 +81,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "source",
         "type_info": "Text",
         "origin": {
@@ -101,6 +90,18 @@
             "name": "source"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "file_offset_seconds!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "book_duration_seconds!",
+        "type_info": "Float8",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -112,13 +113,14 @@
       false,
       false,
       false,
-      true,
       false,
       true,
       false,
       false,
-      false
+      false,
+      null,
+      null
     ]
   },
-  "hash": "e0565b2999a9e60296f65b2fbe89782a00bdb46bcd65bce4151859002847c38e"
+  "hash": "a72e39ada54aab347cafc7ff311db19b601ef040826a722e7f87f0ca73e172c5"
 }

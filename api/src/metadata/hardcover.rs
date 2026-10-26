@@ -494,6 +494,44 @@ impl HardcoverProvider {
         Ok(self.parse_popular_books_response(result))
     }
 
+    /// One page of the most-read books. Hardcover answers at most 1,000 rows a request.
+    pub async fn most_read_titles(
+        &self,
+        offset: u32,
+        limit: u32,
+    ) -> Result<Vec<MostReadTitle>, ProviderError> {
+        let api_key = self.require_api_key()?;
+        let request = self
+            .client
+            .post(format!("{}/v1/graphql", self.base_url))
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&json!({
+                "query": MOST_READ_TITLES_QUERY,
+                "variables": { "offset": offset, "limit": limit },
+            }));
+        let response = crate::http::ProviderClient::new(self.client.clone(), INFO.id)
+            .execute(request)
+            .await?;
+        if !response.status().is_success() {
+            return Err(ProviderError::from_http_status(
+                response.status(),
+                "Hardcover most-read titles",
+            ));
+        }
+        let body: MostReadResponse = response.json().await?;
+        match body.data {
+            Some(data) => Ok(data
+                .books
+                .into_iter()
+                .filter_map(MostReadTitle::from_book)
+                .collect()),
+            None => Err(ProviderError::Other(format!(
+                "Hardcover most-read titles: {:?}",
+                body.errors.unwrap_or_default()
+            ))),
+        }
+    }
+
     fn parse_popular_books_response(&self, response: PopularBooksResponse) -> Vec<MetadataResult> {
         let books = match response.data {
             Some(data) => data.books,
@@ -1253,6 +1291,92 @@ struct SearchOutput {
     ids: Option<Vec<String>>,
     /// The results field is JSONB containing `hits[].document` with book data
     results: Option<serde_json::Value>,
+}
+
+// -- Most-read titles types --
+
+/// Duplicates point at their canonical book, which carries the readers, so only canonical
+/// books are listed. `id` breaks `users_count` ties so offset pages never overlap.
+const MOST_READ_TITLES_QUERY: &str = r#"
+query MostReadTitles($offset: Int!, $limit: Int!) {
+  books(
+    where: {canonical_id: {_is_null: true}}
+    order_by: [{users_count: desc}, {id: asc}]
+    offset: $offset
+    limit: $limit
+  ) {
+    id
+    title
+    users_count
+    contributions { contribution author { name } }
+  }
+}
+"#;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MostReadTitle {
+    pub id: i32,
+    pub title: String,
+    pub author: Option<String>,
+    pub users_count: i32,
+}
+
+impl MostReadTitle {
+    /// A null contribution is how Hardcover marks the plain author on most books.
+    fn from_book(book: MostReadBook) -> Option<Self> {
+        let title = book.title?.trim().to_string();
+        if title.is_empty() {
+            return None;
+        }
+        let author = book
+            .contributions
+            .into_iter()
+            .find(|c| {
+                c.contribution
+                    .as_deref()
+                    .is_none_or(|role| role == "Author")
+            })
+            .and_then(|c| c.author)
+            .map(|a| a.name.trim().to_string())
+            .filter(|name| !name.is_empty());
+        Some(Self {
+            id: book.id,
+            title,
+            author,
+            users_count: book.users_count.unwrap_or(0),
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct MostReadResponse {
+    data: Option<MostReadData>,
+    errors: Option<Vec<GraphQLError>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MostReadData {
+    books: Vec<MostReadBook>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MostReadBook {
+    id: i32,
+    title: Option<String>,
+    users_count: Option<i32>,
+    #[serde(default)]
+    contributions: Vec<MostReadContribution>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MostReadContribution {
+    contribution: Option<String>,
+    author: Option<MostReadAuthor>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MostReadAuthor {
+    name: String,
 }
 
 // -- Popular books types --

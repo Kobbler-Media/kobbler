@@ -211,9 +211,7 @@ where
         FROM livetv_guide
         WHERE end_time > $1 AND start_time < $2
           AND ($3::uuid[] IS NULL OR channel_id = ANY($3))
-          AND ($4::text IS NULL OR title ILIKE $4
-               OR COALESCE(episode_title, '') ILIKE $4
-               OR COALESCE(synopsis, '') ILIKE $4)
+          AND ($4::text IS NULL OR title ILIKE $4)
           AND ($5::text IS NULL OR $5 = ANY(genres))
         ORDER BY channel_id, start_time
         "#,

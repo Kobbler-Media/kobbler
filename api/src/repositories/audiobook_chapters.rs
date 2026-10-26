@@ -31,52 +31,45 @@ pub struct AudiobookChapter {
     pub created_at: OffsetDateTime,
 }
 
-/// Insert multiple chapters for a book file, replacing any existing ones.
-pub async fn insert_chapters<'e, E>(
-    exec: E,
-    audiobook_file_id: Uuid,
-    chapters: &[ChapterInput],
-) -> Result<()>
-where
-    E: Executor<'e, Database = Postgres>,
-{
-    // Use a single INSERT with UNNEST for efficiency
-    let ids: Vec<Uuid> = chapters.iter().map(|_| Uuid::now_v7()).collect();
-    let indices: Vec<i32> = chapters.iter().map(|c| c.chapter_index).collect();
-    let titles: Vec<Option<String>> = chapters.iter().map(|c| c.title.clone()).collect();
-    let starts: Vec<f64> = chapters.iter().map(|c| c.start_seconds).collect();
-    let ends: Vec<f64> = chapters.iter().map(|c| c.end_seconds).collect();
-    let paths: Vec<Option<String>> = chapters.iter().map(|c| c.file_path.clone()).collect();
-    let file_ids: Vec<Uuid> = chapters.iter().map(|_| audiobook_file_id).collect();
-    let sources: Vec<String> = chapters.iter().map(|c| c.source.clone()).collect();
-
-    sqlx::query!(
-        r#"
-        INSERT INTO audiobook_chapters (id, audiobook_file_id, chapter_index, title, start_seconds, end_seconds, file_path, source)
-        SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::int[], $4::text[], $5::float8[], $6::float8[], $7::text[], $8::text[])
-        ON CONFLICT (audiobook_file_id, chapter_index) DO UPDATE SET
-            title = EXCLUDED.title,
-            start_seconds = EXCLUDED.start_seconds,
-            end_seconds = EXCLUDED.end_seconds,
-            file_path = EXCLUDED.file_path,
-            source = EXCLUDED.source
-        "#,
-        &ids,
-        &file_ids,
-        &indices,
-        &titles as &[Option<String>],
-        &starts,
-        &ends,
-        &paths as &[Option<String>],
-        &sources,
-    )
-    .execute(exec)
-    .await?;
-
-    Ok(())
+fn source_rank(source: &str) -> u8 {
+    match source {
+        "detected" => 0,
+        "filename" => 1,
+        "transcript" => 2,
+        "provider" => 3,
+        _ => 4,
+    }
 }
 
-/// Get all chapters for a book file, ordered by chapter index.
+/// Replace a file's chapters with `chapters`, unless the file already holds chapters from a
+/// stronger source. Returns whether anything was written.
+///
+/// A file only ever holds one source's chapters: merging two sets by `chapter_index` leaves
+/// both half-overwritten, which is how embedded chapters went missing under transcript ones.
+pub async fn store_chapters(
+    pool: &sqlx::PgPool,
+    audiobook_file_id: Uuid,
+    chapters: &[ChapterInput],
+) -> Result<bool> {
+    let Some(incoming) = chapters.iter().map(|c| source_rank(&c.source)).max() else {
+        return Ok(false);
+    };
+    let mut tx = pool.begin().await?;
+    let existing: Vec<String> = sqlx::query_scalar!(
+        "SELECT source FROM audiobook_chapters WHERE audiobook_file_id = $1 FOR UPDATE",
+        audiobook_file_id,
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    if existing.iter().any(|s| source_rank(s) > incoming) {
+        return Ok(false);
+    }
+    write_chapters(&mut tx, audiobook_file_id, chapters).await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+/// Get all chapters for a book file, in playback order.
 pub async fn get_chapters<'e, E>(exec: E, audiobook_file_id: Uuid) -> Result<Vec<AudiobookChapter>>
 where
     E: Executor<'e, Database = Postgres>,
@@ -87,7 +80,7 @@ where
         SELECT id, audiobook_file_id, chapter_index, title, start_seconds, end_seconds, file_path, source, created_at
         FROM audiobook_chapters
         WHERE audiobook_file_id = $1
-        ORDER BY chapter_index
+        ORDER BY start_seconds, chapter_index
         "#,
         audiobook_file_id,
     )
@@ -150,50 +143,67 @@ where
     Ok(result.rows_affected() > 0)
 }
 
-/// Atomically replace all chapters for a file (delete + insert).
+/// Atomically replace all chapters for a file (delete + insert), whatever their source.
 pub async fn replace_chapters(
     pool: &sqlx::PgPool,
     audiobook_file_id: Uuid,
     chapters: &[ChapterInput],
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
+    write_chapters(&mut tx, audiobook_file_id, chapters).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn write_chapters(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    audiobook_file_id: Uuid,
+    chapters: &[ChapterInput],
+) -> Result<()> {
     sqlx::query!(
         "DELETE FROM audiobook_chapters WHERE audiobook_file_id = $1",
         audiobook_file_id,
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
-    if !chapters.is_empty() {
-        let ids: Vec<Uuid> = chapters.iter().map(|_| Uuid::now_v7()).collect();
-        let indices: Vec<i32> = chapters.iter().map(|c| c.chapter_index).collect();
-        let titles: Vec<Option<String>> = chapters.iter().map(|c| c.title.clone()).collect();
-        let starts: Vec<f64> = chapters.iter().map(|c| c.start_seconds).collect();
-        let ends: Vec<f64> = chapters.iter().map(|c| c.end_seconds).collect();
-        let paths: Vec<Option<String>> = chapters.iter().map(|c| c.file_path.clone()).collect();
-        let file_ids: Vec<Uuid> = chapters.iter().map(|_| audiobook_file_id).collect();
-        let sources: Vec<String> = chapters.iter().map(|c| c.source.clone()).collect();
-
-        sqlx::query!(
-            r#"
-            INSERT INTO audiobook_chapters (id, audiobook_file_id, chapter_index, title, start_seconds, end_seconds, file_path, source)
-            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::int[], $4::text[], $5::float8[], $6::float8[], $7::text[], $8::text[])
-            "#,
-            &ids,
-            &file_ids,
-            &indices,
-            &titles as &[Option<String>],
-            &starts,
-            &ends,
-            &paths as &[Option<String>],
-            &sources,
-        )
-        .execute(&mut *tx)
-        .await?;
+    let chapters = usable(chapters);
+    if chapters.is_empty() {
+        return Ok(());
     }
+    let ids: Vec<Uuid> = chapters.iter().map(|_| Uuid::now_v7()).collect();
+    let indices: Vec<i32> = chapters.iter().map(|c| c.chapter_index).collect();
+    let titles: Vec<Option<String>> = chapters.iter().map(|c| c.title.clone()).collect();
+    let starts: Vec<f64> = chapters.iter().map(|c| c.start_seconds).collect();
+    let ends: Vec<f64> = chapters.iter().map(|c| c.end_seconds).collect();
+    let paths: Vec<Option<String>> = chapters.iter().map(|c| c.file_path.clone()).collect();
+    let file_ids: Vec<Uuid> = chapters.iter().map(|_| audiobook_file_id).collect();
+    let sources: Vec<String> = chapters.iter().map(|c| c.source.clone()).collect();
 
-    tx.commit().await?;
+    sqlx::query!(
+        r#"
+        INSERT INTO audiobook_chapters (id, audiobook_file_id, chapter_index, title, start_seconds, end_seconds, file_path, source)
+        SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::int[], $4::text[], $5::float8[], $6::float8[], $7::text[], $8::text[])
+        "#,
+        &ids,
+        &file_ids,
+        &indices,
+        &titles as &[Option<String>],
+        &starts,
+        &ends,
+        &paths as &[Option<String>],
+        &sources,
+    )
+    .execute(&mut **tx)
+    .await?;
     Ok(())
+}
+
+pub fn usable(chapters: &[ChapterInput]) -> Vec<&ChapterInput> {
+    chapters
+        .iter()
+        .filter(|c| c.end_seconds > c.start_seconds)
+        .collect()
 }
 
 /// Chapter with associated file info, for unified timeline queries.
@@ -201,12 +211,13 @@ pub struct ChapterWithFileInfo {
     pub id: Uuid,
     pub audiobook_file_id: Uuid,
     pub file_path: String,
-    pub file_duration_seconds: Option<f64>,
     pub chapter_index: i32,
     pub title: Option<String>,
     pub start_seconds: f64,
     pub end_seconds: f64,
     pub source: String,
+    pub file_offset_seconds: f64,
+    pub book_duration_seconds: f64,
 }
 
 /// Get all chapters for a book, joined with file info, ordered for unified timeline.
@@ -217,20 +228,30 @@ where
     let rows = sqlx::query_as!(
         ChapterWithFileInfo,
         r#"
+        WITH af AS (
+            SELECT id, file_index, file_path, duration_seconds,
+                   COALESCE(SUM(COALESCE(duration_seconds, 0)) OVER (
+                       ORDER BY file_index, file_path
+                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                   ), 0) AS file_offset_seconds,
+                   SUM(COALESCE(duration_seconds, 0)) OVER () AS book_duration_seconds
+            FROM audiobook_files
+            WHERE book_id = $1
+        )
         SELECT
             c.id,
             c.audiobook_file_id,
             af.file_path,
-            af.duration_seconds AS file_duration_seconds,
             c.chapter_index,
             c.title,
             c.start_seconds,
             c.end_seconds,
-            c.source
+            c.source,
+            af.file_offset_seconds AS "file_offset_seconds!",
+            af.book_duration_seconds AS "book_duration_seconds!"
         FROM audiobook_chapters c
-        JOIN audiobook_files af ON af.id = c.audiobook_file_id
-        WHERE af.book_id = $1
-        ORDER BY af.file_index, af.file_path, c.chapter_index
+        JOIN af ON af.id = c.audiobook_file_id
+        ORDER BY af.file_index, af.file_path, c.start_seconds, c.chapter_index
         "#,
         book_id,
     )

@@ -1328,6 +1328,15 @@ pub fn get_static_settings() -> Vec<SettingDocument> {
             &["metadata enabled", "provider toggle", "auto metadata"],
         ),
         s(
+            "book_title_suggestions_enabled",
+            "book_title_suggestions_enabled",
+            "Book Title Suggestions",
+            "Suggest Hardcover's most-read books while typing a search",
+            "/settings/metadata",
+            "Metadata",
+            &["autocomplete", "search suggestions", "hardcover titles"],
+        ),
+        s(
             "metadata_cache_days",
             "metadata_cache_days",
             "Metadata Cache Duration",

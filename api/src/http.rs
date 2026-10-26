@@ -47,7 +47,7 @@ type DirectLimiter = RateLimiter<
 static PROVIDER_COOLDOWN: LazyLock<ProviderCooldown> = LazyLock::new(ProviderCooldown::new);
 
 /// Get the shared provider cooldown instance.
-pub(crate) fn provider_cooldown() -> &'static ProviderCooldown {
+pub fn provider_cooldown() -> &'static ProviderCooldown {
     &PROVIDER_COOLDOWN
 }
 
@@ -209,6 +209,12 @@ impl ProviderCooldown {
                 consecutive_429s: consecutive,
             },
         );
+    }
+
+    pub fn is_cooling_down(&self, provider: &str) -> bool {
+        self.cooldowns
+            .get(provider)
+            .is_some_and(|state| state.until > Instant::now())
     }
 
     /// Reset the consecutive 429 counter after a successful request.

@@ -10,6 +10,7 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct AudioProbeResult {
     pub duration_seconds: Option<f64>,
+    pub bit_rate: Option<i64>,
     /// Narrator, extracted from artist / album_artist / composer / narrator tags.
     pub narrator: Option<String>,
     pub title: Option<String>,
@@ -97,7 +98,10 @@ fn probe_audio_sync(path: &Path) -> Result<AudioProbeResult, AudioProbeError> {
         })
         .collect();
 
-    Ok(parse_audio_tags(tags, duration_seconds, chapters))
+    Ok(AudioProbeResult {
+        bit_rate: ctx.bit_rate(),
+        ..parse_audio_tags(tags, duration_seconds, chapters)
+    })
 }
 
 fn parse_audio_tags(
@@ -183,6 +187,7 @@ fn parse_audio_tags(
 
     AudioProbeResult {
         duration_seconds,
+        bit_rate: None,
         narrator,
         title,
         album,

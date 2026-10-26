@@ -26,6 +26,8 @@
   import { recordAccess, getRecentResults } from './recency';
   import { commands as commandRegistry } from './registry';
   import CommandResults from './CommandResults.svelte';
+  import { useSearchSuggestions } from '$lib/composables/useSearchSuggestions.svelte';
+  import { ghostText } from '$lib/actions/ghostText';
   import ChatResults from './ChatResults.svelte';
   import {
     getChatState,
@@ -38,6 +40,7 @@
 
   const ui = getUIState();
   const chat = getChatState();
+  const suggestions = useSearchSuggestions({ onPick: acceptSuggestion });
 
   let chatStatusInit = false;
   $effect(() => {
@@ -78,6 +81,7 @@
     } else {
       chatMode = false;
       clearChat();
+      suggestions.close();
     }
   });
 
@@ -246,6 +250,16 @@
     }
   }
 
+  function suggest(value: string) {
+    if (chatMode || parseQuery(value).mode !== 'all') suggestions.close();
+    else suggestions.input(value, ['movies', 'tv', 'books']);
+  }
+
+  function acceptSuggestion(value: string) {
+    setCommandPaletteQuery(value);
+    suggest(value);
+  }
+
   function selectResult(result: SearchResult) {
     // Handle external search — navigate to Discover page
     if (result.type === 'external_search') {
@@ -391,6 +405,7 @@
     }
 
     setCommandPaletteQuery(val);
+    suggest(val);
 
     // Manage inactivity timer: pause while typing, restart when input cleared
     if (chatMode) {
@@ -465,6 +480,10 @@
           value={ui.commandPaletteQuery}
           oninput={handleInput}
           onkeydown={handleKeydown}
+          use:ghostText={{
+            suggestion: suggestions.open ? suggestions.items[0]?.title : undefined,
+            onaccept: acceptSuggestion
+          }}
           autocomplete="off"
           spellcheck="false"
         />

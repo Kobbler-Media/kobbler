@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO hardcover_titles (hardcover_id, title, author, users_count)\n        SELECT * FROM UNNEST($1::int[], $2::text[], $3::text[], $4::int[])\n        ON CONFLICT (hardcover_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "TextArray",
+        "TextArray",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1917bc5a5a8dc9d6efbd1e610392b467afc5fab2faa0e2034553baa3dadfa015"
+}

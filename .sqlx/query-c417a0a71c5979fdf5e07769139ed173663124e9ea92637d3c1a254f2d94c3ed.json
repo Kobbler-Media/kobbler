@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO tmdb_titles (media_type, tmdb_id, original_title, popularity)\n        SELECT $1, t.id, t.original_title, t.popularity\n        FROM UNNEST($2::int[], $3::text[], $4::real[]) AS t(id, original_title, popularity)\n        ON CONFLICT (media_type, tmdb_id) DO UPDATE\n        SET original_title = EXCLUDED.original_title,\n            title = NULLIF(tmdb_titles.title, EXCLUDED.original_title),\n            popularity = EXCLUDED.popularity\n        WHERE (tmdb_titles.original_title, tmdb_titles.popularity)\n              IS DISTINCT FROM (EXCLUDED.original_title, EXCLUDED.popularity)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4Array",
+        "TextArray",
+        "Float4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c417a0a71c5979fdf5e07769139ed173663124e9ea92637d3c1a254f2d94c3ed"
+}

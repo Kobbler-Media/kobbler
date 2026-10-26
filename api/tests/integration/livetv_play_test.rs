@@ -585,12 +585,10 @@ async fn switch(client: &TestClient, sid: &str, channel_id: Uuid) -> Value {
     resp.json()
 }
 
-/// A flick back to the channel just left revives that channel's lingering lease, and the
-/// buffer directory is named after the lease — so the returning tune landed on the very
-/// directory the outgoing tune's discard was still deleting in the background, and the
-/// segmenter being killed could drop a stray segment into it.
+/// The channel just left stays tuned for the linger, so flicking back is the tune that is
+/// still running — buffer and all — rather than a fresh one paying the device's tune time.
 #[tokio::test]
-async fn a_flick_back_does_not_land_on_the_buffer_being_discarded() {
+async fn a_flick_back_rejoins_the_tune_still_lingering() {
     let server = TestServer::start_api_only().await;
     let client = server.admin_client();
     let tuner_id = make_tuner(&server.pool, "FLICKBAK", 2).await;
@@ -602,13 +600,37 @@ async fn a_flick_back_does_not_land_on_the_buffer_being_discarded() {
     let first = live_session::buffer_dir_of(&server.app_state, sid).expect("a buffer directory");
 
     switch(&client, sid, b).await;
-    switch(&client, sid, a).await;
+    let back = switch(&client, sid, a).await;
 
-    let back = live_session::buffer_dir_of(&server.app_state, sid).expect("a buffer directory");
-    assert_ne!(
-        first, back,
-        "the flick back reused the buffer directory being discarded"
-    );
+    assert_eq!(back["lease"]["id"], s["lease"]["id"]);
+    let rejoined = live_session::buffer_dir_of(&server.app_state, sid).expect("a buffer directory");
+    assert_eq!(first, rejoined, "the flick back tuned the channel afresh");
+    assert!(rejoined.exists(), "the rejoined buffer was discarded");
+}
+
+/// Every channel left behind lingers, so flicking through more channels than there are
+/// tuners has to take the lingering ones back rather than run out.
+#[tokio::test]
+async fn flicking_through_more_channels_than_tuners_never_runs_out() {
+    let server = TestServer::start_api_only().await;
+    let client = server.admin_client();
+    let tuner_id = make_tuner(&server.pool, "FLICKRUN", 2).await;
+    let mut channels = Vec::new();
+    for lcn in [7, 9, 10, 11, 12] {
+        channels.push(make_channel(&server.pool, tuner_id, lcn, true).await);
+    }
+
+    let s = open_session(&client, channels[0], browser_caps()).await;
+    let sid = s["session_id"].as_str().unwrap();
+    for &next in &channels[1..] {
+        let switched = switch(&client, sid, next).await;
+        assert_eq!(switched["channel_id"], next.to_string());
+        assert!(
+            server.app_state.livetv.tunes.len() <= 2,
+            "{} tunes on a two-tuner device",
+            server.app_state.livetv.tunes.len()
+        );
+    }
 }
 
 /// The switch tunes the new channel before letting the old one go, so the tuner behind

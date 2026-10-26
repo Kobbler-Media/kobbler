@@ -329,15 +329,15 @@ where
 }
 
 /// Check if user has an avatar.
-pub async fn has_avatar<'e, E>(exec: E, id: Uuid) -> Result<bool>
+pub async fn avatar_version<'e, E>(exec: E, id: Uuid) -> Result<Option<String>>
 where
     E: Executor<'e, Database = Postgres>,
 {
     let row = sqlx::query_scalar!(
-        r#"SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND avatar IS NOT NULL) as "exists!""#,
+        r#"SELECT left(md5(avatar), 12) as "version!" FROM users WHERE id = $1 AND avatar IS NOT NULL"#,
         id,
     )
-    .fetch_one(exec)
+    .fetch_optional(exec)
     .await?;
     Ok(row)
 }

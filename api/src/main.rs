@@ -702,8 +702,6 @@ async fn main() {
         let mut watcher_service = WatcherService::new(
             pool.clone(),
             WatcherConfig::default(),
-            config.storage_root.clone(),
-            state.library_events.clone(),
             state.nats.publisher().clone(),
         );
         tokio::spawn(async move {

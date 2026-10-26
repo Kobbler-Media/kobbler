@@ -1,12 +1,13 @@
 //! Ingest queue CRUD and approve/reject operations.
 
 use crate::AppState;
-use crate::events::LibraryEvent;
-use crate::repositories::{book_files, books, entitlements, genres, ingest_queue};
+use crate::repositories::ingest_queue;
 use crate::routes::AuthUser;
 use crate::routes::library::types::AuthorRef;
-use crate::types::EntitlementScope;
-use crate::watcher::{FileMode, IngestQueueItem, IngestQueueStatus};
+use crate::watcher::{
+    FileMode, IngestEntitlements, IngestOptions, IngestQueueItem, IngestQueueStatus,
+    process_queue_item,
+};
 use axum::{
     Json as AxumJson,
     extract::{Json, Path, State},
@@ -279,11 +280,6 @@ fn compute_group_status(items: &[IngestBookResponse]) -> String {
         .unwrap_or_else(|| "pending".to_string())
 }
 
-/// Helper to mark a queue item with an error status.
-async fn mark_queue_error(state: &AppState, id: Uuid, error: &str) {
-    let _ = ingest_queue::set_error(&state.pool, id, error).await;
-}
-
 // ============================================================================
 // Handlers
 // ============================================================================
@@ -437,352 +433,39 @@ pub async fn approve_ingest_item(
         }
     };
 
-    // Check status
     if item.status() != IngestQueueStatus::Pending {
         return (StatusCode::BAD_REQUEST, "item not in pending status").into_response();
     }
 
-    let file_mode = FileMode::Copy;
-
-    // With unified model: ingest item IS the book (id == book_id)
-    // If update_target_book_id is set, we're updating an existing library book's file
-    let is_update = item.update_target_book_id.is_some();
-    let book_id = item.update_target_book_id.unwrap_or(id);
-
-    let source_path = StdPath::new(&item.file_path);
-    let output_dir = PathBuf::from(&state.config.storage_root)
-        .join("books")
-        .join(book_id.to_string());
-
-    // Create output directory
-    if let Err(e) = fs::create_dir_all(&output_dir).await {
-        let error_msg = format!("Failed to create output directory: {}", e);
-        tracing::error!("{}", error_msg);
-        mark_queue_error(&state, id, &error_msg).await;
-        return (StatusCode::INTERNAL_SERVER_ERROR, error_msg).into_response();
-    }
-
-    // Store the source file as its native format (copy to storage, or link)
-    let stored_path = if file_mode == FileMode::Link {
-        source_path.to_path_buf()
-    } else {
-        let dest = output_dir.join(source_path.file_name().unwrap_or_default());
-        if let Err(e) = fs::copy(source_path, &dest).await {
-            let error_msg = format!("Failed to copy source file: {}", e);
-            tracing::error!("{}", error_msg);
-            mark_queue_error(&state, id, &error_msg).await;
-            return (StatusCode::INTERNAL_SERVER_ERROR, error_msg).into_response();
-        }
-        dest
+    let options = IngestOptions {
+        file_mode: FileMode::Copy,
+        entitlements: match request.device_ids {
+            Some(device_ids) => IngestEntitlements::Devices(device_ids),
+            None => IngestEntitlements::AutoSync,
+        },
     };
-
-    // With unified model, the book already exists (ingest item IS the book).
-    // Authors and series are already linked from metadata extraction.
-    // For update_target_book_id case, we're adding a new file to an existing book.
-    if is_update {
-        tracing::info!(book_id = %book_id, "Updating existing book file");
-    } else {
-        // For new books, ensure metadata from source_metadata is applied
-        // (authors/series already linked during extraction, but identifiers may need updating)
-        if let Some(ref metadata) = item.source_metadata {
-            let mut identifiers = serde_json::Map::new();
-
-            // ISBN-13 from provider (preferred modern format)
-            if let Some(isbn13) = metadata.get("isbn13").and_then(|v| v.as_str()) {
-                identifiers.insert("isbn13".to_string(), serde_json::json!(isbn13));
-            }
-            // ISBN-10 from provider (legacy format, still useful for lookups)
-            if let Some(isbn10) = metadata.get("isbn10").and_then(|v| v.as_str()) {
-                identifiers.insert("isbn10".to_string(), serde_json::json!(isbn10));
-            }
-            // Provider external ID
-            if let Some(external_id) = metadata.get("external_id").and_then(|v| v.as_str())
-                && let Some(provider) = metadata.get("provider").and_then(|v| v.as_str())
-            {
-                identifiers.insert(provider.to_string(), serde_json::json!(external_id));
-            }
-
-            // Update book identifiers if we have any
-            if !identifiers.is_empty() {
-                let _ = books::update_identifiers(
-                    &state.pool,
-                    book_id,
-                    serde_json::Value::Object(identifiers),
-                )
-                .await;
-            }
-
-            // Set genres from subjects
-            if let Some(subjects) = metadata.get("subjects").and_then(|v| {
-                v.as_array().map(|arr| {
-                    arr.iter()
-                        .filter_map(|s| s.as_str().map(String::from))
-                        .collect::<Vec<_>>()
-                })
-            }) && let Err(e) = genres::set_book_genres(&state.pool, book_id, &subjects).await
-            {
-                tracing::warn!(error = %e, "Failed to set book genres");
-            }
-        }
-
-        // Create authors from pending_authors (if not already linked)
-        use crate::repositories::authors;
-        if let Some(ref pending) = item.pending_authors
-            && let Some(arr) = pending.as_array()
-        {
-            for author_obj in arr {
-                if let Some(name) = author_obj.get("name").and_then(|n| n.as_str()) {
-                    let name = name.trim();
-                    if name.is_empty() {
-                        continue;
-                    }
-                    let hardcover_id = author_obj.get("hardcover_id").and_then(|v| v.as_str());
-                    // Try to find or create the author (with hardcover ID if available)
-                    match authors::get_or_create(&state.pool, name, hardcover_id).await {
-                        Ok(author_id) => {
-                            // Link to book
-                            let _ = books::link_author(&state.pool, book_id, author_id).await;
-                        }
-                        Err(e) => {
-                            tracing::warn!(author = %name, error = %e, "Failed to create author from pending");
-                        }
-                    }
-                }
-            }
-        }
-
-        // Create series from pending_series (if book not already linked to a series)
-        use crate::repositories::series;
-        // Check if book already has a series
-        let has_series: bool = sqlx::query_scalar!(
-            r#"SELECT EXISTS(SELECT 1 FROM book_series WHERE book_id = $1) as "has_series!""#,
-            book_id,
-        )
-        .fetch_one(&state.pool)
-        .await
-        .unwrap_or(false);
-
-        if !has_series
-            && let Some(ref pending) = item.pending_series
-            && let Some(name) = pending.get("name").and_then(|n| n.as_str())
-        {
-            let name = name.trim();
-            if !name.is_empty() {
-                // Build identifiers from hardcover_id if present
-                let series_identifiers = pending
-                    .get("hardcover_id")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty())
-                    .map(|hc_id| serde_json::json!({"hardcover": hc_id}));
-
-                // Get author IDs for overlap matching
-                let author_ids = authors::get_book_author_ids(&state.pool, book_id)
-                    .await
-                    .unwrap_or_default();
-
-                // Create or find the series (with hardcover ID and author overlap)
-                match series::get_or_create_with_author_overlap(
-                    &state.pool,
-                    name,
-                    &author_ids,
-                    series_identifiers,
-                )
-                .await
-                {
-                    Ok(Some(series_id)) => {
-                        // Link book to series
-                        let _ = books::set_series(
-                            &state.pool,
-                            book_id,
-                            Some(series_id),
-                            item.pending_series_index,
-                        )
-                        .await;
-                    }
-                    Ok(None) => {
-                        tracing::warn!(series = %name, "Series creation returned None");
-                    }
-                    Err(e) => {
-                        tracing::warn!(series = %name, error = %e, "Failed to create series from pending");
-                    }
-                }
-            }
-        }
-    }
-
-    // Store the file record with source metadata for deduplication
-    let file_size = match fs::metadata(&stored_path).await {
-        Ok(meta) => meta.len() as i64,
-        Err(_) => item.file_size,
-    };
-
-    // Extract source provenance from source_metadata (set by Kobload ingest)
-    let (source_type, source_provenance): (String, serde_json::Value) = item
-        .source_metadata
-        .as_ref()
-        .map(|meta| {
-            let st = meta
-                .get("source_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("watch_directory")
-                .to_string();
-            let sm = meta
-                .get("source_provenance")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({}));
-            (st, sm)
-        })
-        .unwrap_or_else(|| {
-            // Default for watch directory scans
-            ("watch_directory".to_string(), serde_json::json!({}))
-        });
-
-    // Store as the source format (e.g., EPUB, MOBI, etc.)
-    let stored_format = item.source_format.to_uppercase();
-    let book_file_input = book_files::BookFileFullInput {
-        book_id,
-        format: stored_format,
-        size_bytes: file_size,
-        file_path: stored_path.to_string_lossy().to_string(),
-        source_path: Some(item.file_path.clone()),
-        source_mtime: item.source_mtime,
-        file_hash: item.file_hash.clone(),
-        source_type: Some(source_type),
-        source_metadata: Some(source_provenance),
-    };
-    if let Err(e) = book_files::upsert_full(&state.pool, book_file_input).await {
-        tracing::error!("Failed to create book file record: {}", e);
-        // Continue anyway - the book exists, just file record failed
-    }
-
-    // Enqueue format conversion jobs based on active device types
+    let book_id = match process_queue_item(
+        &state.pool,
+        &state.config.storage_root,
+        &state.library_events,
+        state.nats.publisher(),
+        &state.runtime_config,
+        id,
+        options,
+    )
+    .await
     {
-        use crate::repositories::devices;
-        let active_types = devices::active_device_types(&state.pool)
-            .await
-            .unwrap_or_default();
-        let title = item.title.as_deref().unwrap_or(&item.file_name);
-        for dt in active_types {
-            if dt.needs_conversion() {
-                let target_format = dt.preferred_format().to_string();
-                let payload = serde_json::json!({
-                    "book_id": book_id,
-                    "target_format": target_format,
-                });
-                let display = crate::jobs::fetch_job_display(&state.pool, "book", book_id).await;
-                let context = crate::jobs::JobContext::for_entity(
-                    "book",
-                    book_id,
-                    format!("Converting {} to {}", title, dt.preferred_format()),
-                )
-                .with_display_opt(display);
-                if let Err(e) = crate::jobs::enqueue(
-                    &state.pool,
-                    state.nats.publisher(),
-                    "format_conversion",
-                    payload,
-                    context,
-                )
-                .await
-                {
-                    tracing::warn!(error = %e, book_id = %book_id, "Failed to enqueue format conversion");
-                }
-            }
+        Ok(book_id) => book_id,
+        Err(e) => {
+            tracing::error!(queue_id = %id, error = %e, "Failed to approve queue item");
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
         }
-    }
+    };
 
-    // Enqueue metadata_write to embed DB metadata into the file
-    {
-        let title = item.title.as_deref().unwrap_or(&item.file_name).to_string();
-        crate::jobs::enqueue_metadata_write(&state.pool, state.nats.publisher(), book_id, &title)
-            .await;
-    }
-
-    // Store cover if we have one
-    let cover_data = ingest_queue::get_cover(&state.pool, id)
-        .await
-        .ok()
-        .flatten();
-
-    if let Some(cover_bytes) = cover_data {
-        let covers_dir = PathBuf::from(&state.config.storage_root).join("covers");
-        if fs::create_dir_all(&covers_dir).await.is_ok() {
-            let cover_path = covers_dir.join(format!("{}.jpg", book_id));
-            if let Err(e) = fs::write(&cover_path, &cover_bytes).await {
-                tracing::warn!("Failed to write cover: {}", e);
-            }
-        }
-    }
-
-    // Create entitlements based on request
-    // If device_ids provided, create DEVICE entitlements for each device
-    // Otherwise, use scope_type (or watch directory default) for a single entitlement
-    if let Some(device_ids) = request.device_ids {
-        if !device_ids.is_empty() {
-            // Per-device entitlements
-            for device_id in &device_ids {
-                if let Err(e) = entitlements::create_or_restore(
-                    &state.pool,
-                    book_id,
-                    EntitlementScope::Device,
-                    Some(*device_id),
-                )
-                .await
-                {
-                    tracing::warn!(device_id = %device_id, "Failed to create device entitlement: {}", e);
-                }
-                // Trigger kindle delivery if device has kindle targets
-                crate::routes::admin::trigger_kindle_delivery_if_needed(
-                    &state.pool,
-                    state.nats.publisher(),
-                    book_id,
-                    *device_id,
-                )
-                .await;
-            }
-            tracing::info!(
-                book_id = %book_id,
-                device_count = device_ids.len(),
-                "Created device entitlements"
-            );
-        }
-        // If device_ids was provided but empty, don't create any entitlements
-    } else {
-        // Auto-sync: create DEVICE entitlements for opted-in devices
-        crate::auto_sync::create_auto_sync_entitlements(
-            &state.pool,
-            state.nats.publisher(),
-            book_id,
-        )
-        .await;
-    }
-
-    // Update queue item as approved
-    if let Err(e) = ingest_queue::set_approved(&state.pool, id, book_id).await {
-        tracing::error!("Failed to mark queue item as approved: {}", e);
-    }
-
-    // Notify ingest queue listeners
     let _ = state.ingest_queue_events.send(crate::IngestQueueEvent {
         item_id: id,
         status: "approved".to_string(),
     });
-
-    // Notify library update
-    let _ = state
-        .library_events
-        .send(LibraryEvent::library_updated(Some(book_id)));
-
-    // Clean up Kobload watch pattern if this book was wanted
-    crate::wanted::on_book_acquired(&state.runtime_config, &state.library_events, book_id).await;
-
-    let action = if is_update { "updated" } else { "created" };
-    tracing::info!(
-        "Approved queue item {} -> book {} ({})",
-        id,
-        book_id,
-        action
-    );
 
     AxumJson(ApproveResponse { book_id }).into_response()
 }

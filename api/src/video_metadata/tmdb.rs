@@ -346,6 +346,33 @@ impl TmdbProvider {
             .await
     }
 
+    /// One page of `/discover/{media}` in English, most popular first, optionally narrowed to
+    /// titles whose original language is one of `original_languages` (`|`-separated).
+    pub async fn discover_titles(
+        &self,
+        media: &str,
+        page: u32,
+        original_languages: Option<&str>,
+    ) -> Result<TmdbTitlePage, VideoProviderError> {
+        let key = self.require_key()?;
+        let mut url = format!(
+            "{}/discover/{media}?sort_by=popularity.desc&language=en-US&include_adult=false&page={page}",
+            self.base_url
+        );
+        if let Some(languages) = original_languages {
+            url.push_str(&format!("&with_original_language={languages}"));
+        }
+        let client =
+            crate::http::ProviderClient::new(self.client.clone(), crate::http::provider_ids::TMDB);
+        Ok(client
+            .execute(self.get(&url, key))
+            .await?
+            .error_for_status()
+            .map_err(VideoProviderError::Http)?
+            .json()
+            .await?)
+    }
+
     // ========================================================================
     // Discover by streaming service (not on the trait — TMDB-specific)
     // ========================================================================
@@ -1357,6 +1384,24 @@ fn filter_en_images(images: &[TmdbImage]) -> impl Iterator<Item = &TmdbImage> {
 // ============================================================================
 // TMDB API Response Types
 // ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct TmdbTitlePage {
+    #[serde(default)]
+    pub total_pages: u32,
+    pub results: Vec<TmdbTitle>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TmdbTitle {
+    pub id: i32,
+    #[serde(alias = "name")]
+    pub title: String,
+    #[serde(alias = "original_name")]
+    pub original_title: String,
+    #[serde(default)]
+    pub popularity: f32,
+}
 
 #[derive(Deserialize)]
 struct TmdbSearchResponse {

@@ -176,9 +176,6 @@
 
   async function handleAvatarSaved() {
     await checkAuth();
-    if (authState.avatarUrl) {
-      setAvatarUrl(`${authState.avatarUrl.split('?')[0]}?t=${Date.now()}`);
-    }
   }
 
   async function handleDeleteAvatar() {

@@ -205,6 +205,29 @@ where
     Ok(row)
 }
 
+pub struct AudiobookTitle {
+    pub book_id: Uuid,
+    pub title: String,
+}
+
+pub async fn list_audiobooks<'e, E>(exec: E) -> Result<Vec<AudiobookTitle>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let rows = sqlx::query_as!(
+        AudiobookTitle,
+        r#"
+        SELECT b.id AS book_id, b.title
+        FROM books b
+        WHERE EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)
+        ORDER BY b.title, b.id
+        "#,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows)
+}
+
 /// Count audio files for a book.
 pub async fn count_by_book<'e, E>(exec: E, book_id: Uuid) -> Result<i64>
 where

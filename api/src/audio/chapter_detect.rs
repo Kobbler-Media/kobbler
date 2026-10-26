@@ -21,18 +21,55 @@ pub struct DetectedChapter {
     pub start_seconds: f64,
 }
 
-// Text patterns that signal chapter boundaries.
-//
-// Number-word alternations are ordered LONGER-FIRST so the regex engine
-// (greedy-leftmost) matches "fourteen" before falling back to "four". A
-// trailing `\b` would also work but explicit ordering makes the intent
-// obvious and avoids subtle word-boundary surprises with punctuation.
-static CHAPTER_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)^\s*(chapter|part|section|book)\s+(\d+|[IVXLC]+|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|eleven|twelve|ten|one|two|three|four|five|six|seven|eight|nine)\b",
+const UNITS: [&str; 9] = [
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+];
+const TEENS: [&str; 10] = [
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+];
+const TENS: [&str; 8] = [
+    "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+];
+
+// Whisper spells chapter numbers out ("Chapter twenty four"), so the whole
+// spoken number has to be read, or every chapter from 20 to 29 comes out as
+// "Chapter twenty". Alternations put longer words first because the regex
+// engine takes the first alternative that matches: "fourteen" before "four".
+// Roman numerals are matched case-sensitively, which keeps "Part I think"
+// and "book I knew" from reading as numerals.
+static NUMBER: LazyLock<String> = LazyLock::new(|| {
+    let mut teens = TEENS.to_vec();
+    teens.sort_by_key(|w| std::cmp::Reverse(w.len()));
+    let units = UNITS.join("|");
+    let below_hundred = format!(
+        r"(?:(?:{tens})(?:[\s-]+(?:{units}))?|{teens}|{units})",
+        tens = TENS.join("|"),
+        teens = teens.join("|"),
+    );
+    format!(
+        r"(?:\d+|(?-i:[IVXLC]+)|(?:(?:one|a)[\s-]+)?hundred(?:[\s-]+(?:and[\s-]+)?{below_hundred})?|{below_hundred})"
     )
+});
+
+static CHAPTER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"(?i)^\s*(chapter|part|section|book|act)\s+({})\b",
+        *NUMBER
+    ))
     .unwrap()
 });
+
+static NUMBER_START_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"(?i)^\s*({})\b", *NUMBER)).unwrap());
 
 static NAMED_SECTION_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -40,9 +77,6 @@ static NAMED_SECTION_RE: LazyLock<Regex> = LazyLock::new(|| {
     )
     .unwrap()
 });
-
-static ACT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^\s*act\s+(\d+|[IVXLC]+)\b").unwrap());
 
 /// Chapters closer together than this get merged.
 const MIN_CHAPTER_DURATION: f64 = 60.0;
@@ -91,20 +125,12 @@ pub fn detect_chapters(segments: &[DetectionSegment]) -> Vec<DetectedChapter> {
 /// frequently spoken-mark the start of each file as a continuation of the
 /// previous file's chapter, and those should not create a new chapter.
 pub fn extract_chapter_title(text: &str) -> Option<String> {
-    let raw_match = CHAPTER_RE
-        .find(text)
-        .or_else(|| NAMED_SECTION_RE.find(text))
-        .or_else(|| ACT_RE.find(text))?;
-    let title = raw_match.as_str().trim().to_string();
-
-    // Skip continuation markers ("Chapter four continued", etc.)
-    let after = text[raw_match.end()..]
-        .trim_start_matches(|c: char| c.is_whitespace() || c == '.' || c == ',');
-    if after.to_ascii_lowercase().starts_with("continued") {
-        return None;
+    if let Some(caps) = CHAPTER_RE.captures(text) {
+        let number = caps.get(2)?;
+        return numbered_title(&caps[1], number.as_str(), &text[number.end()..]);
     }
-
-    Some(title)
+    let named = NAMED_SECTION_RE.captures(text)?;
+    Some(capitalized(&named[1]))
 }
 
 /// Catch chapter announcements split across segment boundaries.
@@ -114,36 +140,89 @@ pub fn extract_chapter_title(text: &str) -> Option<String> {
 /// start of the next. `extract_chapter_title` is anchored at the segment
 /// start and would miss both halves. This helper checks for that specific
 /// shape: the previous segment ends with a chapter-marker word AND the
-/// current segment starts with a number word.
+/// current segment starts with a number word. A marker that closes a
+/// sentence ("…in the book.") is narration, not an announcement.
 pub fn extract_split_chapter_title(prev_text: &str, curr_text: &str) -> Option<String> {
-    static CHAPTER_NUMBER_START_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(
-            r"(?i)^\s*(\d+|[IVXLC]+|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|eleven|twelve|ten|one|two|three|four|five|six|seven|eight|nine)\b",
-        )
-        .unwrap()
-    });
-
-    let prev_trimmed =
-        prev_text.trim_end_matches(|c: char| c.is_whitespace() || c.is_ascii_punctuation());
+    let prev_trimmed = prev_text.trim_end();
+    if !prev_trimmed.ends_with(char::is_alphabetic) {
+        return None;
+    }
     let last_word = prev_trimmed
         .rsplit_once(char::is_whitespace)
         .map(|(_, w)| w)
         .unwrap_or(prev_trimmed);
-    let marker = matches!(
+    if !matches!(
         last_word.to_ascii_lowercase().as_str(),
         "chapter" | "part" | "section" | "book" | "act"
-    );
-    if !marker {
+    ) {
         return None;
     }
 
-    let m = CHAPTER_NUMBER_START_RE.find(curr_text)?;
-    let after = curr_text[m.end()..]
-        .trim_start_matches(|c: char| c.is_whitespace() || c == '.' || c == ',');
+    let number = NUMBER_START_RE.captures(curr_text)?.get(1)?;
+    numbered_title(last_word, number.as_str(), &curr_text[number.end()..])
+}
+
+fn numbered_title(marker: &str, number: &str, after: &str) -> Option<String> {
+    let after = after.trim_start_matches(|c: char| c.is_whitespace() || c == '.' || c == ',');
     if after.to_ascii_lowercase().starts_with("continued") {
         return None;
     }
-    Some(format!("{} {}", last_word, m.as_str().trim()))
+    if number == "I" && after.starts_with(char::is_lowercase) {
+        return None;
+    }
+    Some(format!("{} {}", capitalized(marker), number_value(number)?))
+}
+
+fn capitalized(word: &str) -> String {
+    let lower = word.to_lowercase();
+    let mut chars = lower.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
+fn number_value(number: &str) -> Option<u32> {
+    if let Ok(n) = number.parse() {
+        return Some(n);
+    }
+    if number.chars().all(|c| "IVXLC".contains(c)) {
+        return roman_value(number);
+    }
+    let mut total = 0;
+    for word in number.split(|c: char| c.is_whitespace() || c == '-') {
+        let word = word.to_lowercase();
+        let position = |list: &[&str]| list.iter().position(|w| *w == word).map(|i| i as u32);
+        if let Some(i) = position(&UNITS) {
+            total += i + 1;
+        } else if let Some(i) = position(&TEENS) {
+            total += i + 10;
+        } else if let Some(i) = position(&TENS) {
+            total += (i + 2) * 10;
+        } else if word == "hundred" {
+            total = total.max(1) * 100;
+        }
+    }
+    (total > 0).then_some(total)
+}
+
+fn roman_value(numeral: &str) -> Option<u32> {
+    let digit = |c| match c {
+        'I' => 1,
+        'V' => 5,
+        'X' => 10,
+        'L' => 50,
+        _ => 100,
+    };
+    let digits: Vec<u32> = numeral.chars().map(digit).collect();
+    let total = digits.iter().enumerate().fold(0i64, |acc, (i, d)| {
+        if digits.get(i + 1).is_some_and(|next| next > d) {
+            acc - *d as i64
+        } else {
+            acc + *d as i64
+        }
+    });
+    u32::try_from(total).ok().filter(|n| *n > 0)
 }
 
 /// Merge chapters that are too close together and ensure first chapter starts at 0.
@@ -267,7 +346,7 @@ mod tests {
         let result = detect_chapters(&segments);
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].title, "Chapter 1");
-        assert_eq!(result[1].title, "Chapter Fourteen");
+        assert_eq!(result[1].title, "Chapter 14");
         // start_seconds for the split chapter should be the *current*
         // segment's start (where the number-word is), not the previous one.
         assert_eq!(result[1].start_seconds, 305.0);
@@ -307,7 +386,7 @@ mod tests {
         // Sanity: the same titles without "continued" still match.
         assert_eq!(
             extract_chapter_title("CHAPTER four At Flourish and Blots"),
-            Some("CHAPTER four".to_string())
+            Some("Chapter 4".to_string())
         );
     }
 
@@ -316,15 +395,15 @@ mod tests {
         // Regression: greedy alternation used to match "fourteen" as "four",
         // "sixteen" as "six", etc. The longer numbers must take precedence.
         for (input, expected) in [
-            ("Chapter fourteen Cornelius Fudge", "Chapter fourteen"),
-            ("Chapter Sixteen The Chamber", "Chapter Sixteen"),
-            ("CHAPTER seventeen The Heir", "CHAPTER seventeen"),
-            ("Chapter eighteen Dobby's Reward", "Chapter eighteen"),
-            ("CHAPTER nineteen End of term", "CHAPTER nineteen"),
-            ("Chapter four At Flourish", "Chapter four"),
-            ("Chapter six Gilderoy Lockhart", "Chapter six"),
-            ("Chapter eight The Deathday", "Chapter eight"),
-            ("Chapter nine The Writing", "Chapter nine"),
+            ("Chapter fourteen Cornelius Fudge", "Chapter 14"),
+            ("Chapter Sixteen The Chamber", "Chapter 16"),
+            ("CHAPTER seventeen The Heir", "Chapter 17"),
+            ("Chapter eighteen Dobby's Reward", "Chapter 18"),
+            ("CHAPTER nineteen End of term", "Chapter 19"),
+            ("Chapter four At Flourish", "Chapter 4"),
+            ("Chapter six Gilderoy Lockhart", "Chapter 6"),
+            ("Chapter eight The Deathday", "Chapter 8"),
+            ("Chapter nine The Writing", "Chapter 9"),
         ] {
             let got = extract_chapter_title(input).unwrap_or_default();
             assert_eq!(got, expected, "input was {input:?}");

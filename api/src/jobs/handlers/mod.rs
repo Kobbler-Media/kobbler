@@ -1,6 +1,7 @@
 //! Job handlers for different job types.
 
 mod art_warm;
+mod audiobook_chapter_repair;
 mod audiobook_convert;
 mod audiobook_probe;
 mod audiobook_transcribe;
@@ -31,6 +32,7 @@ pub mod file_availability;
 mod forced_subtitle_check;
 mod format_conversion;
 mod hardcover_reconcile;
+mod hardcover_titles_sync;
 mod job_cleanup;
 mod kepub_check;
 mod keyframe_backfill;
@@ -79,6 +81,7 @@ mod subtitle_search;
 mod sync_provider;
 mod sync_pull;
 mod temp_file_cleanup;
+mod tmdb_titles_sync;
 mod trakt_bulk_sync_watch_state;
 mod trakt_import_history;
 mod trakt_sync_watch_state;
@@ -106,6 +109,7 @@ mod livetv_scan;
 
 // Handler exports
 pub use art_warm::ArtWarmHandler;
+pub use audiobook_chapter_repair::AudiobookChapterRepairHandler;
 pub use audiobook_convert::AudiobookConvertHandler;
 pub use audiobook_probe::AudiobookProbeHandler;
 pub use audiobook_transcribe::AudiobookTranscribeHandler;
@@ -135,6 +139,7 @@ pub use file_availability::FileAvailabilityHandler;
 pub use forced_subtitle_check::ForcedSubtitleCheckHandler;
 pub use format_conversion::FormatConversionHandler;
 pub use hardcover_reconcile::HardcoverReconcileHandler;
+pub use hardcover_titles_sync::HardcoverTitlesSyncHandler;
 pub use job_cleanup::JobCleanupHandler;
 pub use kepub_check::KepubCheckHandler;
 pub use keyframe_backfill::KeyframeBackfillHandler;
@@ -185,6 +190,7 @@ pub use subtitle_search::SubtitleSearchHandler;
 pub use sync_provider::{SyncProviderHandler, queue_sync_job, queue_sync_job_for_user};
 pub use sync_pull::SyncPullHandler;
 pub use temp_file_cleanup::TempFileCleanupHandler;
+pub use tmdb_titles_sync::TmdbTitlesSyncHandler;
 pub use trakt_bulk_sync_watch_state::TraktBulkSyncWatchStateHandler;
 pub use trakt_import_history::TraktImportHistoryHandler;
 pub use trakt_sync_watch_state::TraktSyncWatchStateHandler;

@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, audiobook_file_id AS \"audiobook_file_id!\", position_seconds\n        FROM audiobook_bookmarks\n        WHERE audiobook_file_id = ANY($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_bookmarks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "audiobook_file_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audiobook_bookmarks",
+            "name": "audiobook_file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "position_seconds",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "audiobook_bookmarks",
+            "name": "position_seconds"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "aedffe39253c3946b8a478872f19c0deb99bea4e25c9af525f0b86173e4ce891"
+}

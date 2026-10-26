@@ -113,7 +113,9 @@ pub use proxy_logs::{
 pub use recents::{clear_recents, list_recents, record_recent};
 
 // Search
-pub use search::{search, search_status, sync_static, test_connection, trigger_reindex};
+pub use search::{
+    search, search_status, suggestions, sync_static, test_connection, trigger_reindex,
+};
 
 // Tokens
 pub use tokens::{

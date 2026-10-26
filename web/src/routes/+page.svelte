@@ -31,6 +31,9 @@
   import type { MovieSearchResult, TvSearchResult, WatchNextItem, RecentItem } from '$lib/types';
   import DiscoverRow from '$lib/components/discover/DiscoverRow.svelte';
   import DiscoverCard from '$lib/components/discover/DiscoverCard.svelte';
+  import SearchSuggestions from '$lib/components/discover/SearchSuggestions.svelte';
+  import { useSearchSuggestions } from '$lib/composables/useSearchSuggestions.svelte';
+  import { ghostText } from '$lib/actions/ghostText';
   import { watchStateVersion } from '$lib/stores/watchState.svelte';
 
   type TypeFilter = 'all' | 'movies' | 'tv' | 'books';
@@ -63,9 +66,23 @@
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let inputRef: HTMLInputElement | undefined = $state();
 
+  const suggestions = useSearchSuggestions({
+    onPick: (title) => {
+      searchInput = title;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      updateUrlParams({ q: title });
+      doSearch(title);
+    }
+  });
+
   // Provider state
   let providers = $state<DiscoverProvider[]>([ALL_PROVIDERS]);
   let selectedProvider = $state<DiscoverProvider>(ALL_PROVIDERS);
+  const searchTypes = $derived(
+    (typeFilter === 'all' ? selectedProvider.supportedTypes : [typeFilter]).filter(
+      (t): t is Exclude<TypeFilter, 'all'> => t !== 'all'
+    )
+  );
   let defaultProvider = $state<DiscoverProvider>(ALL_PROVIDERS);
   let providersLoaded = $state(false);
 
@@ -240,6 +257,7 @@
 
   function setTypeFilter(f: TypeFilter) {
     typeFilter = f;
+    suggestions.close();
     updateUrlParams({ type: f === 'all' ? null : f });
     if (searchInput.trim()) doSearch(searchInput);
   }
@@ -303,7 +321,6 @@
       const isAll = selectedProvider.id === '__all__';
       const providerParam = isAll ? undefined : selectedProvider.id;
       const domain = selectedProvider.domain;
-      const searchTypes = typeFilter === 'all' ? selectedProvider.supportedTypes : [typeFilter];
 
       // Kick off all three in parallel, then deterministically merge in the
       // order TV → movies → books so TV ties surface first (TMDB search is
@@ -341,8 +358,12 @@
   }
 
   function handleInput(e: Event) {
-    const value = (e.target as HTMLInputElement).value;
+    applyInput((e.target as HTMLInputElement).value);
+  }
+
+  function applyInput(value: string) {
     searchInput = value;
+    suggestions.input(value, searchTypes);
 
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
@@ -352,7 +373,9 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (suggestions.keydown(e)) return;
     if (e.key === 'Enter') {
+      suggestions.close();
       if (debounceTimer) clearTimeout(debounceTimer);
       updateUrlParams({ q: searchInput || null });
       doSearch(searchInput);
@@ -618,9 +641,29 @@
         value={searchInput}
         oninput={handleInput}
         onkeydown={handleKeydown}
+        onblur={() => suggestions.close()}
+        use:ghostText={{
+          suggestion: suggestions.open ? suggestions.items[0]?.title : undefined,
+          onaccept: applyInput
+        }}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-controls="home-search-suggestions"
+        aria-expanded={suggestions.open}
+        aria-activedescendant={suggestions.highlighted >= 0
+          ? `home-search-suggestions-${suggestions.highlighted}`
+          : undefined}
         autocomplete="off"
         spellcheck="false"
       />
+      {#if suggestions.open}
+        <SearchSuggestions
+          id="home-search-suggestions"
+          items={suggestions.items}
+          highlighted={suggestions.highlighted}
+          onpick={suggestions.pick}
+        />
+      {/if}
       <div class="type-filters">
         {#each filterOptions as f (f.value)}
           <button
@@ -873,6 +916,7 @@
   }
 
   .search-bar {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 12px;

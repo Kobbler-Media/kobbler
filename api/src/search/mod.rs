@@ -86,7 +86,8 @@ use sqlx::PgPool;
 ///   pages. Landed alongside 36 rather than after it, so a server that already
 ///   reindexed for sort_title still needs one for the tuner documents.
 /// - 39: Added the Stremio History static page.
-pub const SEARCH_SCHEMA_VERSION: i32 = 39;
+/// - 40: Added the Book Title Suggestions setting.
+pub const SEARCH_SCHEMA_VERSION: i32 = 40;
 
 /// Result of checking if search reindex is needed on startup.
 #[derive(Debug)]

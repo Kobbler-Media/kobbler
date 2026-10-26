@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE media_root_files SET entity_id = $2, updated_at = NOW()\n         WHERE entity_type = 'book'\n           AND file_path IN (\n               SELECT file_path FROM audiobook_files WHERE id = ANY($1)\n               UNION SELECT source_path FROM audiobook_files WHERE id = ANY($1) AND source_path IS NOT NULL\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bf3c90ecc5578f718d8977cae272a77f5f536cfe291d64140f712aab29b9641c"
+}

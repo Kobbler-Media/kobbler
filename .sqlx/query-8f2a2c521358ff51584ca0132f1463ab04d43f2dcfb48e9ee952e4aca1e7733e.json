@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tmdb_title_syncs (media_type, localized_at) VALUES ($1, NOW())\n             ON CONFLICT (media_type) DO UPDATE SET localized_at = EXCLUDED.localized_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8f2a2c521358ff51584ca0132f1463ab04d43f2dcfb48e9ee952e4aca1e7733e"
+}

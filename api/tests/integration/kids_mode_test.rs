@@ -7,7 +7,7 @@ use uuid::Uuid;
 // A Kids profile sees only titles rated teen-and-under, or ones an admin has allowed by
 // hand. Unrated titles stay out until someone decides about them.
 
-async fn kids_client(server: &TestServer, email: &str) -> TestClient {
+pub(crate) async fn kids_client(server: &TestServer, email: &str) -> TestClient {
     let user_id = create_user_with_role(server, email, "viewer").await;
     server
         .admin_client()
@@ -33,7 +33,7 @@ async fn login(server: &TestServer, email: &str) -> TestClient {
     client.with_auth(&token)
 }
 
-async fn seed_movie(
+pub(crate) async fn seed_movie(
     server: &TestServer,
     title: &str,
     rating: Option<&str>,
@@ -57,7 +57,7 @@ async fn seed_movie(
     id
 }
 
-async fn seed_show(
+pub(crate) async fn seed_show(
     server: &TestServer,
     title: &str,
     rating: Option<&str>,

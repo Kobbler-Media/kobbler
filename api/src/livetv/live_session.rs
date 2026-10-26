@@ -25,9 +25,12 @@ use crate::streaming::decision::{
     self, AudioTrackMeta, ClientCapabilities, FileMeta, PlaybackMethod, ViewerPrefs,
 };
 
+use super::fanout::Fanout;
 use super::stacking::StackCache;
 use super::trickplay;
-use super::tuner_lease::{HolderKind, LeaseError, LeaseRequest, LeaseToken, TunerLeases};
+use super::tuner_lease::{
+    HolderKind, LEASE_LINGER, LeaseError, LeaseRequest, LeaseToken, TunerLeases,
+};
 use super::tuner_source::{self, FIRST_BYTE_DEADLINE, SourceCandidate, TuneHealth};
 
 /// One GOP. The tuner's GOP is ~0.96 s, so this is the smallest segment that
@@ -37,9 +40,6 @@ const TUNER_STREAM_PORT: u16 = 5004;
 /// A LAN device either has a lock or it does not; a long backoff is latency
 /// spent guarding a risk that does not exist.
 const RECONNECT_DELAYS_MS: [u64; 5] = [250, 500, 1000, 2000, 4000];
-/// ~10 MB of 8 KB chunks. A direct client that falls this far behind is resynced
-/// to the live edge rather than allowed to stall the tune.
-const BYTES_FANOUT_CAPACITY: usize = 1024;
 /// Both players heartbeat every 15 s while a session is open, paused or not.
 const SESSION_IDLE: Duration = Duration::from_secs(300);
 const EMPTY_TUNE_GRACE: time::Duration = time::Duration::seconds(30);
@@ -76,7 +76,7 @@ pub struct LiveTune {
     /// Raw TS fan-out. One tuner connection feeds both the segment buffer and
     /// every DirectPlay client, so a direct viewer costs no extra tuner and the
     /// buffer exists from the moment we tune whichever way the client plays it.
-    pub bytes: tokio::sync::broadcast::Sender<Bytes>,
+    pub fanout: Arc<Fanout>,
     pub health: Arc<TuneHealth>,
 }
 
@@ -383,8 +383,12 @@ pub async fn create_session(
     tune(state, &session_id, channel_id, user_id, capabilities, false).await
 }
 
-/// Inline channel switch. The old tune's lease lingers so flicking back is
+/// Inline channel switch. The old tune lingers, still tuned, so flicking back is
 /// instant; a waiting acquire reaps it early.
+///
+/// Lingering is also what lets the player stop the old channel cleanly: it does so only
+/// once this has answered, and a stream that ended in that same moment hung libVLC's
+/// stop for as long as fifteen seconds.
 ///
 /// The new channel is tuned before the old one is let go. Letting it go first left the
 /// channel the viewer is still watching with no tuner behind it for the length of a tune,
@@ -414,7 +418,7 @@ pub async fn switch_channel(
     match tune(state, session_id, channel_id, user_id, capabilities, true).await {
         Ok(result) => {
             if let Some(key) = leaving {
-                detach_from_tune(state, session_id, key);
+                leave_lingering(state, session_id, key);
             }
             Ok(result)
         }
@@ -465,6 +469,7 @@ async fn tune(
     if let Some(id) = stale {
         retire_tune(state, &key, id);
     }
+    end_reclaimed_lingerers(state);
     let existing = state.livetv.tunes.contains_key(&key);
     if !existing {
         let lease = state.livetv.leases.acquire(LeaseRequest {
@@ -477,6 +482,9 @@ async fn tune(
             recording_id: None,
             user_id: Some(user_id),
         })?;
+        // An acquire that needed a lingering tune's slot has just reclaimed it, and the
+        // device only frees that tuner once its connection closes.
+        end_reclaimed_lingerers(state);
         if lease.fresh {
             TunerLeases::persist_new(&state.pool, &lease.info).await?;
         }
@@ -496,7 +504,7 @@ async fn tune(
         // Decision 12.4: the segmenter starts on tune, so the player attaches to a
         // buffer that is already filling — and it runs for DirectPlay too, which
         // is what makes pause, Restart and a retroactive Record work there.
-        let (bytes, _) = tokio::sync::broadcast::channel(BYTES_FANOUT_CAPACITY);
+        let fanout = Arc::new(Fanout::default());
         let transcode = start_segmenter(
             state,
             &buffer_dir,
@@ -504,7 +512,7 @@ async fn tune(
             &facts,
             &runtime,
             cancel.clone(),
-            bytes.clone(),
+            fanout.clone(),
             health.clone(),
         )
         .await?;
@@ -547,7 +555,7 @@ async fn tune(
                 recording_id: None,
                 transcode: Some(transcode),
                 cancel,
-                bytes,
+                fanout,
                 health,
             },
         );
@@ -581,6 +589,9 @@ async fn tune(
                 None => SessionError::Other(anyhow!("tune vanished")),
             });
         };
+        if !tune.lease.revive() {
+            warn!(key = %key, "a lingering tune's slot was reclaimed as it was rejoined");
+        }
         tune.attached.insert(session_id.to_string());
         state
             .livetv
@@ -684,7 +695,7 @@ async fn start_segmenter(
     facts: &StreamFacts,
     runtime: &crate::runtime_config::RuntimeConfig,
     cancel: CancellationToken,
-    bytes: tokio::sync::broadcast::Sender<Bytes>,
+    fanout: Arc<Fanout>,
     health: Arc<TuneHealth>,
 ) -> Result<TranscodeProcess> {
     let playlist_path = buffer_dir.join("stream.m3u8");
@@ -753,7 +764,7 @@ async fn start_segmenter(
     let sink: SegmenterSink = Arc::new(std::sync::Mutex::new(Some(tx)));
     spawn_feeder(
         sink.clone(),
-        bytes,
+        fanout,
         candidates,
         cancel.clone(),
         std::time::Instant::now(),
@@ -813,14 +824,14 @@ async fn start_segmenter(
 /// codec and the segmenter has already analysed this one.
 fn spawn_feeder(
     sink: SegmenterSink,
-    bytes: tokio::sync::broadcast::Sender<Bytes>,
+    fanout: Arc<Fanout>,
     candidates: Vec<SourceCandidate>,
     cancel: CancellationToken,
     t0: std::time::Instant,
     health: Arc<TuneHealth>,
 ) {
     tokio::spawn(async move {
-        let death = feed(&sink, &bytes, &candidates, &cancel, t0, &health).await;
+        let death = feed(&sink, &fanout, &candidates, &cancel, t0, &health).await;
         if let Some(reason) = death {
             health.die(reason);
         }
@@ -833,7 +844,7 @@ fn spawn_feeder(
 /// `None` when cancelled, otherwise why the feed stopped for good.
 async fn feed(
     sink: &SegmenterSink,
-    bytes: &tokio::sync::broadcast::Sender<Bytes>,
+    fanout: &Fanout,
     candidates: &[SourceCandidate],
     cancel: &CancellationToken,
     t0: std::time::Instant,
@@ -875,11 +886,13 @@ async fn feed(
                 let mut body = opened.body;
                 loop {
                     if let Some(chunk) = chunk.take() {
-                        let _ = bytes.send(chunk.clone());
-                        if let Ok(mut current) = sink.lock() {
+                        let packets = fanout.send(&chunk);
+                        if !packets.is_empty()
+                            && let Ok(mut current) = sink.lock()
+                        {
                             let gone = current
                                 .as_ref()
-                                .is_some_and(|tx| tx.send(chunk.to_vec()).is_err());
+                                .is_some_and(|tx| tx.send(packets.to_vec()).is_err());
                             if gone {
                                 *current = None;
                             }
@@ -957,17 +970,16 @@ pub async fn take_direct_stream(
                 .livetv
                 .tunes
                 .get(&key)
-                .map(|t| (t.bytes.subscribe(), t.health.clone()))
+                .map(|t| (t.fanout.clone(), t.health.clone()))
         });
-    if let Some((rx, health)) = riding {
-        let deadline = std::time::Instant::now() + DIRECT_FIRST_BYTE_WAIT;
-        while !health.delivered() && std::time::Instant::now() < deadline {
-            if let Some(reason) = health.failure() {
-                return Err(reason);
-            }
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
-        let stream = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|item| async {
+    if let Some((fanout, health)) = riding {
+        // From the latest keyframe rather than the live edge: the decoder can show
+        // nothing until one arrives, and a join lands anywhere in a GOP. Joined before
+        // the wait, so a tune still opening is had from its first byte.
+        let (keyframe, rx) = fanout.join();
+        health.first_byte(DIRECT_FIRST_BYTE_WAIT).await?;
+        let catch_up = futures_util::stream::iter((!keyframe.is_empty()).then_some(Ok(keyframe)));
+        let live = tokio_stream::wrappers::BroadcastStream::new(rx).filter_map(|item| async {
             match item {
                 Ok(chunk) => Some(Ok(chunk)),
                 // A client that fell behind resyncs at the live edge rather than
@@ -978,7 +990,10 @@ pub async fn take_direct_stream(
                 }
             }
         });
-        return Ok((Box::pin(stream) as ByteStream, "video/mp2t".to_string()));
+        return Ok((
+            Box::pin(catch_up.chain(live)) as ByteStream,
+            "video/mp2t".to_string(),
+        ));
     }
 
     let requested = candidates
@@ -1034,9 +1049,63 @@ fn detach_from_tune(state: &crate::AppState, session_id: &str, tune_key: &str) {
             teardown = state.livetv.tunes.remove(tune_key).map(|(_, t)| t);
         }
     }
-    let Some(mut tune) = teardown else {
-        return;
+    if let Some(tune) = teardown {
+        dispose(tune, false);
+    }
+}
+
+/// [detach_from_tune] for a channel change: a tune left with nobody on it stays up for
+/// the lease's linger rather than coming down under the player still reading it.
+fn leave_lingering(state: &crate::AppState, session_id: &str, tune_key: &str) {
+    let lingering = {
+        let Some(mut tune) = state.livetv.tunes.get_mut(tune_key) else {
+            return;
+        };
+        tune.attached.remove(session_id);
+        if !tune.attached.is_empty() || tune.recording_id.is_some() {
+            return;
+        }
+        let since = tune.lease.linger();
+        (tune.id, since, tune.lease.flags.clone())
     };
+    let (id, since, flags) = lingering;
+    let state = state.clone();
+    let key = tune_key.to_string();
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = flags.ended() => {}
+            _ = tokio::time::sleep(LEASE_LINGER) => {}
+        }
+        end_linger(&state, &key, id, since);
+    });
+}
+
+fn end_linger(state: &crate::AppState, key: &str, id: Uuid, since: std::time::Instant) {
+    let ended = state.livetv.tunes.remove_if(key, |_, t| {
+        t.id == id && t.attached.is_empty() && t.lease.dormant_since() == Some(since)
+    });
+    if let Some((_, tune)) = ended {
+        dispose(tune, false);
+    }
+}
+
+/// Lingering tunes whose slot an acquire has taken back. Ended here rather than left to
+/// their own timers, so the tuner is free before the acquirer dials the device.
+fn end_reclaimed_lingerers(state: &crate::AppState) {
+    let reclaimed: Vec<(String, Uuid, std::time::Instant)> = state
+        .livetv
+        .tunes
+        .iter()
+        .filter(|t| t.lease.flags.is_ended())
+        .filter_map(|t| Some((t.key.clone(), t.id, t.lease.dormant_since()?)))
+        .collect();
+    for (key, id, since) in reclaimed {
+        end_linger(state, &key, id, since);
+    }
+}
+
+/// Stop a tune already taken out of the map, keeping its segments only for a recording.
+fn dispose(mut tune: LiveTune, keep_buffer: bool) {
     tune.cancel.cancel();
     let transcode = tune.transcode.take();
     let dir = tune.buffer_dir.clone();
@@ -1048,14 +1117,16 @@ fn detach_from_tune(state: &crate::AppState, session_id: &str, tune_key: &str) {
         if let Some(mut t) = transcode {
             t.kill().await;
         }
-        discard_buffer(dir, key).await;
+        if !keep_buffer {
+            discard_buffer(dir, key).await;
+        }
     });
 }
 
 /// Take a dead tune out of service: nothing may join it, its tuner is released, and
 /// every session on it is told why.
 fn retire_tune(state: &crate::AppState, key: &str, id: Uuid) {
-    let Some((_, mut tune)) = state.livetv.tunes.remove_if(key, |_, t| t.id == id) else {
+    let Some((_, tune)) = state.livetv.tunes.remove_if(key, |_, t| t.id == id) else {
         return;
     };
     let reason = tune
@@ -1070,20 +1141,8 @@ fn retire_tune(state: &crate::AppState, key: &str, id: Uuid) {
         }
     }
     warn!(key = %key, reason = %reason, "live TV tune died, tuner released");
-    tune.cancel.cancel();
-    let transcode = tune.transcode.take();
     let keep = tune.recording_id.is_some();
-    let dir = tune.buffer_dir.clone();
-    let key = key.to_string();
-    drop(tune);
-    tokio::spawn(async move {
-        if let Some(mut t) = transcode {
-            t.kill().await;
-        }
-        if !keep {
-            discard_buffer(dir, key).await;
-        }
-    });
+    dispose(tune, keep);
 }
 
 /// Ends sessions nobody has heartbeated for `idle`, then lets go of every tune left
@@ -1107,6 +1166,8 @@ pub async fn sweep_sessions(state: &crate::AppState, idle: Duration) {
         .tunes
         .iter()
         .filter(|t| t.recording_id.is_none())
+        // A lingering tune's own timer, or the acquire that needs its slot, ends it.
+        .filter(|t| t.lease.dormant_since().is_none())
         // A tune is inserted a moment before its first session attaches.
         .filter(|t| !t.attached.is_empty() || t.started_at < now_pg() - EMPTY_TUNE_GRACE)
         .map(|t| {

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT rs.id AS state_id, rb.location_value AS \"location_value!\"\n        FROM reading_states rs\n        JOIN reading_bookmark rb ON rb.reading_state_id = rs.id\n        WHERE rs.book_id = $1\n          AND rb.location_type = 'audiobook'\n          AND rb.location_value IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "state_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "reading_states",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "location_value!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "location_value"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "062b0d5734c5985cbac6c8a047bf130ae0755b74eb161f173532d0f08e04edd5"
+}

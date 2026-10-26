@@ -1,4 +1,5 @@
 pub mod assertions;
+pub mod audiobooks;
 pub mod client;
 pub mod debrid_rig;
 pub mod debrid_upstream;

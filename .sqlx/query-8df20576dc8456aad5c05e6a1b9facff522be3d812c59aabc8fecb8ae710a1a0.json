@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, audiobook_file_id, chapter_index, title, start_seconds, end_seconds, file_path, source, created_at\n        FROM audiobook_chapters\n        WHERE audiobook_file_id = $1\n        ORDER BY chapter_index\n        ",
+  "query": "\n        SELECT id, audiobook_file_id, chapter_index, title, start_seconds, end_seconds, file_path, source, created_at\n        FROM audiobook_chapters\n        WHERE audiobook_file_id = $1\n        ORDER BY start_seconds, chapter_index\n        ",
   "describe": {
     "columns": [
       {
@@ -120,5 +120,5 @@
       false
     ]
   },
-  "hash": "fc2e84f4590388913914ef5d7499149e91ecccf94a155e0e93af07111b85efa7"
+  "hash": "8df20576dc8456aad5c05e6a1b9facff522be3d812c59aabc8fecb8ae710a1a0"
 }

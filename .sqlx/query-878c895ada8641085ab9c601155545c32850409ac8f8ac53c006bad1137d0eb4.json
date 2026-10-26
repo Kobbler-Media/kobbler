@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO book_series (book_id, series_id, series_index, is_primary)\n         SELECT $2, series_id, series_index, is_primary FROM book_series WHERE book_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "878c895ada8641085ab9c601155545c32850409ac8f8ac53c006bad1137d0eb4"
+}

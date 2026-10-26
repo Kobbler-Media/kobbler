@@ -18,7 +18,7 @@ use super::probe;
 
 /// Chapters shorter than this (seconds) get merged into a neighbor.
 /// Matches the constant in `chapter_detect.rs`.
-const MIN_CHAPTER_DURATION: f64 = 60.0;
+pub const MIN_CHAPTER_DURATION: f64 = 60.0;
 
 /// Maximum number of chapters silence detection should produce.
 const MAX_SILENCE_CHAPTERS: usize = 100;
@@ -46,7 +46,35 @@ pub async fn resolve_chapters(
     sidecar_chapters: Option<Vec<ChapterInput>>,
     provider_chapters: Option<Vec<ChapterInput>>,
 ) -> Vec<ChapterInput> {
-    // 1. Try embedded chapters via ffprobe
+    let found =
+        resolve_chapters_without_silence(file_path, sidecar_chapters, provider_chapters).await;
+    if !found.is_empty() {
+        return found;
+    }
+
+    let detected = detect_silence_chapters(file_path).await;
+    if !detected.is_empty() {
+        info!(
+            path = %file_path.display(),
+            count = detected.len(),
+            "resolved chapters from silence detection"
+        );
+        return detected;
+    }
+
+    info!(
+        path = %file_path.display(),
+        "no chapters found from any source"
+    );
+    Vec::new()
+}
+
+pub async fn resolve_chapters_without_silence(
+    file_path: &Path,
+    sidecar_chapters: Option<Vec<ChapterInput>>,
+    provider_chapters: Option<Vec<ChapterInput>>,
+) -> Vec<ChapterInput> {
+    let mut duration = None;
     match probe::probe_audio(file_path).await {
         Ok(result) if !result.chapters.is_empty() => {
             info!(
@@ -67,7 +95,8 @@ pub async fn resolve_chapters(
                 })
                 .collect();
         }
-        Ok(_) => {
+        Ok(result) => {
+            duration = result.duration_seconds;
             debug!(
                 path = %file_path.display(),
                 "no embedded chapters found, trying sidecar"
@@ -110,7 +139,13 @@ pub async fn resolve_chapters(
     if let Some(cue_path) = find_cue_file(file_path) {
         match tokio::fs::read_to_string(&cue_path).await {
             Ok(contents) => {
-                let parsed = parse_cue_chapters(&contents);
+                let mut parsed = parse_cue_chapters(&contents);
+                if let Some(last) = parsed.last_mut()
+                    && let Some(end) = duration
+                    && end > last.start_seconds
+                {
+                    last.end_seconds = end;
+                }
                 if !parsed.is_empty() {
                     info!(
                         path = %file_path.display(),
@@ -131,21 +166,6 @@ pub async fn resolve_chapters(
         }
     }
 
-    // 5. Try silence detection
-    let detected = detect_silence_chapters(file_path).await;
-    if !detected.is_empty() {
-        info!(
-            path = %file_path.display(),
-            count = detected.len(),
-            "resolved chapters from silence detection"
-        );
-        return detected;
-    }
-
-    info!(
-        path = %file_path.display(),
-        "no chapters found from any source"
-    );
     Vec::new()
 }
 

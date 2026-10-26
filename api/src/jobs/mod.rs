@@ -324,6 +324,8 @@ const ROUTINE_JOB_TYPES: &[&str] = &[
     "movie_want_check",
     "book_want_check",
     "discover_sync",
+    "tmdb_titles_sync",
+    "hardcover_titles_sync",
     "stremio_sync",
     "sports_monitor",
     "iptv_sync",
@@ -443,6 +445,25 @@ pub async fn enqueue_audiobook_transcribe(
     .await
     {
         tracing::warn!(error = %e, book_id = %book_id, "Failed to enqueue audiobook_transcribe job");
+    }
+}
+
+/// Probe a book's audio files, which also files away other editions and
+/// settles chapters — every path that adds audio to a book ends here.
+pub async fn enqueue_audiobook_probe(pool: &PgPool, nats: &Publisher, book_id: Uuid, title: &str) {
+    let display = fetch_job_display(pool, "book", book_id).await;
+    let context = JobContext::for_entity("book", book_id, format!("Probing audiobook '{}'", title))
+        .with_display_opt(display);
+    if let Err(e) = enqueue(
+        pool,
+        nats,
+        "audiobook_probe",
+        serde_json::json!({"book_id": book_id}),
+        context,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, book_id = %book_id, "Failed to enqueue audiobook_probe job");
     }
 }
 

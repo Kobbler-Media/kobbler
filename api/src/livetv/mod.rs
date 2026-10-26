@@ -1,8 +1,10 @@
 pub mod ad_detect;
 pub mod affinity;
 pub mod classify;
+pub mod fanout;
 pub mod guide_sync;
 pub mod hdhomerun;
+pub mod keyframe_cache;
 pub mod library;
 pub mod live_session;
 pub mod matching;
@@ -12,5 +14,6 @@ pub mod sdt;
 pub mod series_rules;
 pub mod stacking;
 pub mod trickplay;
+pub mod ts;
 pub mod tuner_lease;
 pub mod tuner_source;

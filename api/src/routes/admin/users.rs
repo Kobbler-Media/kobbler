@@ -51,6 +51,7 @@ pub struct UserSummary {
     pub display_name: Option<String>,
     pub timezone: Option<String>,
     pub is_kids: bool,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -96,19 +97,23 @@ pub async fn list_users(State(state): State<AppState>, auth: AuthUser) -> impl I
     let self_only = auth.require_contributor().is_err();
     match repositories::users::list_all(&state.pool).await {
         Ok(users) => {
-            let users = users
+            let mut summaries = Vec::with_capacity(users.len());
+            for u in users
                 .into_iter()
                 .filter(|u| !self_only || u.id == auth.user_id)
-                .map(|u| UserSummary {
+            {
+                let avatar_url = super::auth::avatar_url(&state.pool, u.id).await;
+                summaries.push(UserSummary {
                     id: u.id,
                     email: u.email,
                     role: u.role,
                     display_name: u.display_name,
                     timezone: u.timezone,
                     is_kids: u.is_kids,
-                })
-                .collect::<Vec<_>>();
-            AxumJson(users).into_response()
+                    avatar_url,
+                });
+            }
+            AxumJson(summaries).into_response()
         }
         Err(e) => {
             tracing::error!(error = %e, "failed to list users");

@@ -452,22 +452,3 @@ where
         .await?;
     Ok(())
 }
-
-/// Set status to 'approved' (clear ingest_status) and clear conversion_error.
-/// Note: The book_id parameter is no longer needed since the book already exists.
-pub async fn set_approved(pool: &sqlx::PgPool, id: Uuid, _book_id: Uuid) -> Result<()> {
-    sqlx::query(
-        r#"
-        UPDATE books
-        SET ingest_status = NULL, want_status = 'none', updated_at = NOW()
-        WHERE id = $1
-        "#,
-    )
-    .bind(id)
-    .execute(pool)
-    .await?;
-
-    book_ingest_source::clear_conversion_error(pool, id).await?;
-
-    Ok(())
-}

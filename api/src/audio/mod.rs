@@ -4,10 +4,13 @@
 //! fallback chain, and M4B-to-MP3Z conversion for Kobo devices.
 
 pub mod auto_chapters;
+pub mod book_chapters;
+pub mod book_editions;
 pub mod chapter_detect;
 pub mod chapters;
 pub mod clip;
 pub mod convert;
+pub mod editions;
 pub mod path;
 pub mod peaks;
 pub mod peaky;

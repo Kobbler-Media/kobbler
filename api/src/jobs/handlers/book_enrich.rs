@@ -281,6 +281,20 @@ impl BookEnrichHandler {
             })
             .collect();
 
+        let provider_end = all_chapters.iter().map(|c| c.2).fold(0.0_f64, f64::max);
+        let book_duration: Option<f64> = audio_files.iter().map(|f| f.duration_seconds).sum();
+        if let Some(duration) = book_duration
+            && !provider_chapters_fit(provider_end, duration)
+        {
+            debug!(
+                book_id = %book_id,
+                provider_end,
+                duration,
+                "Skipping provider chapters made for a different recording"
+            );
+            return;
+        }
+
         if audio_files.len() == 1 {
             // Single file: store all chapters on it
             let file = &audio_files[0];
@@ -307,8 +321,7 @@ impl BookEnrichHandler {
                     },
                 )
                 .collect();
-            if let Err(e) = audiobook_chapters::insert_chapters(&self.pool, file.id, &inputs).await
-            {
+            if let Err(e) = audiobook_chapters::store_chapters(&self.pool, file.id, &inputs).await {
                 warn!(book_id = %book_id, error = %e, "Failed to store provider chapters");
             }
             return;
@@ -362,7 +375,7 @@ impl BookEnrichHandler {
 
             if !file_chapters.is_empty() {
                 if let Err(e) =
-                    audiobook_chapters::insert_chapters(&self.pool, file.id, &file_chapters).await
+                    audiobook_chapters::store_chapters(&self.pool, file.id, &file_chapters).await
                 {
                     warn!(book_id = %book_id, file_id = %file.id, error = %e, "Failed to store split provider chapters");
                 } else {
@@ -841,4 +854,32 @@ pub async fn primary_author_name(
     .bind(book_id)
     .fetch_optional(pool)
     .await
+}
+
+fn provider_chapters_fit(provider_end: f64, duration: f64) -> bool {
+    (provider_end - duration).abs() <= (duration * 0.02).max(30.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::provider_chapters_fit;
+
+    #[test]
+    fn provider_chapters_must_match_the_recording_they_label() {
+        for (provider_end, duration, fits) in [
+            (8131.0, 8131.0, true),
+            (8100.0, 8131.0, true),
+            (8290.0, 8131.0, true),
+            (9562.0, 8131.0, false),
+            (4000.0, 8131.0, false),
+            (620.0, 600.0, true),
+            (700.0, 600.0, false),
+        ] {
+            assert_eq!(
+                provider_chapters_fit(provider_end, duration),
+                fits,
+                "{provider_end} vs {duration}"
+            );
+        }
+    }
 }
