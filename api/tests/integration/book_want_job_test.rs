@@ -168,14 +168,7 @@ async fn test_book_want_nonexistent_book() {
             CancellationToken::new(),
         )
         .await;
-    assert!(result.is_err(), "handler should fail for nonexistent book");
-
-    let err = result.unwrap_err();
-    let err_msg = err.to_string();
-    assert!(
-        err_msg.contains("not found") || err_msg.contains("Book not found"),
-        "Error should mention book not found, got: {err_msg}"
-    );
+    assert_eq!(result.unwrap()["reason"], "not_wanted");
 }
 
 #[tokio::test]

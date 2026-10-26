@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT b.id, b.title, b.identifiers, b.want_status, b.want_format, b.narrator,\n               b.pubdate,\n               s.name as \"series_name?\", bs.series_index AS \"series_index?\",\n               (SELECT STRING_AGG(a.name, ', ')\n                FROM book_authors ba\n                JOIN authors a ON a.id = ba.author_id\n                WHERE ba.book_id = b.id) as author\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        WHERE NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n          AND b.want_status IN ('pending', 'wanted', 'searching', 'downloading', 'watching', 'search_failed')\n        ORDER BY b.created_at DESC\n        ",
+  "query": "\n        SELECT b.id, b.title, b.identifiers, b.want_status, b.want_format, b.narrator,\n               b.pubdate,\n               s.name as \"series_name?\", bs.series_index AS \"series_index?\",\n               (SELECT STRING_AGG(a.name, ', ')\n                FROM book_authors ba\n                JOIN authors a ON a.id = ba.author_id\n                WHERE ba.book_id = b.id) as author\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        WHERE b.id = $1\n          AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n          AND b.want_status IN ('wanted', 'searching', 'downloading', 'watching', 'search_failed')\n        ",
   "describe": {
     "columns": [
       {
@@ -110,7 +110,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Uuid"
+      ]
     },
     "nullable": [
       false,
@@ -120,10 +122,10 @@
       false,
       true,
       true,
-      false,
+      true,
       true,
       null
     ]
   },
-  "hash": "016dc76dfd1468580cbf7adf8eb8dae09012c30ada9cbb6996e27864218dfbb8"
+  "hash": "163bcbd5cab3bb4b690cfba65af56c0d788b5363b79c2c45743ac466ef7353d1"
 }

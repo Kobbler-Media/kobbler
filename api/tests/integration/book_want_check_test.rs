@@ -251,3 +251,33 @@ async fn an_acquired_book_confirms_each_of_its_keys() {
         );
     }
 }
+
+#[tokio::test]
+async fn undecided_and_unwanted_books_are_never_sent() {
+    let (server, _kobload) = rig(Vec::new()).await;
+    let wanted = book(&server.pool, "The Final Empire", "ebook", "wanted").await;
+    let undecided = [
+        book(&server.pool, "Discovered Novel", "ebook", "pending").await,
+        book(&server.pool, "Skipped Novel", "ebook", "skipped").await,
+        book(&server.pool, "Unwanted Novel", "ebook", "none").await,
+    ];
+
+    process(&server, &check(&server)).await;
+    assert_eq!(pending_book_wants(&server).await, vec![wanted]);
+
+    let tip = stream_tip(&server).await;
+    for id in undecided {
+        enqueue_book_want(&server, id).await;
+    }
+    process(&server, &book_want(&server)).await;
+    for id in undecided {
+        assert!(sent_since(&server, tip, id).await.is_empty());
+    }
+    let statuses: Vec<String> =
+        sqlx::query_scalar("SELECT want_status FROM books WHERE id = ANY($1) ORDER BY title")
+            .bind(undecided.to_vec())
+            .fetch_all(&server.pool)
+            .await
+            .unwrap();
+    assert_eq!(statuses, vec!["pending", "skipped", "none"]);
+}

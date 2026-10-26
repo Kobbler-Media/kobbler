@@ -1104,7 +1104,7 @@ where
         LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE
         LEFT JOIN series s ON s.id = bs.series_id
         WHERE NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))
-          AND b.want_status IN ('pending', 'wanted', 'searching', 'downloading', 'watching', 'search_failed')
+          AND b.want_status IN ('wanted', 'searching', 'downloading', 'watching', 'search_failed')
         ORDER BY b.created_at DESC
         "#,
     )
@@ -1148,6 +1148,7 @@ where
         LEFT JOIN series s ON s.id = bs.series_id
         WHERE b.id = $1
           AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))
+          AND b.want_status IN ('wanted', 'searching', 'downloading', 'watching', 'search_failed')
         "#,
         id,
     )

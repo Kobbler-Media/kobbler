@@ -96,10 +96,17 @@ impl JobHandler for BookWantHandler {
         let min_score = runtime.wanted_min_score.unwrap_or(0.65);
 
         // Fetch book data for pattern generation
-        let book_data = books::get_wanted_for_sync(&self.pool, payload.book_id)
+        let Some(book_data) = books::get_wanted_for_sync(&self.pool, payload.book_id)
             .await
             .map_err(|e| JobError::ExecutionFailed(format!("Failed to fetch book: {}", e)))?
-            .ok_or_else(|| JobError::ExecutionFailed("Book not found".to_string()))?;
+        else {
+            info!(book_id = %payload.book_id, "Book is not wanted or already owned, skipping book_want");
+            return Ok(json!({
+                "book_id": payload.book_id,
+                "status": "skipped",
+                "reason": "not_wanted"
+            }));
+        };
 
         let identifiers = nats_jobs::BookIdentifiers {
             isbn10: book_data
