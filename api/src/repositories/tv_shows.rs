@@ -1,7 +1,7 @@
 //! TV show repository operations.
 
 use super::tv_episodes::EpisodeRow;
-use super::{PaginationDirection, Result, normalize_rating, normalize_show_status};
+use super::{PaginationDirection, Result, normalize_show_status, normalize_video_rating};
 use crate::images::ImageMap;
 use serde_json::Value;
 use sqlx::{Executor, PgPool, Postgres, Row};
@@ -269,7 +269,7 @@ where
     let is_monitored = input.is_monitored.unwrap_or(false);
     let auto_want_mode = input.auto_want_mode.as_deref().unwrap_or("none");
     let images = serde_json::to_value(input.images.unwrap_or_default()).unwrap_or_default();
-    let rating = input.rating.map(normalize_rating);
+    let rating = input.rating.map(normalize_video_rating);
 
     let content_category = input.content_category.as_deref().unwrap_or("tv");
     let sport_metadata = input.sport_metadata.as_ref();
@@ -816,7 +816,7 @@ where
     let pl_update = input.preferred_languages.is_some();
     let pl_flattened = input.preferred_languages.flatten();
     let mr_update = input.media_root_id;
-    let rating = input.rating.map(normalize_rating);
+    let rating = input.rating.map(normalize_video_rating);
     let status = normalize_show_status(input.status);
 
     let result = sqlx::query!(
@@ -1069,7 +1069,7 @@ pub async fn upsert_by_provider(
     let is_monitored = input.is_monitored.unwrap_or(false);
     let auto_want_mode = input.auto_want_mode.as_deref().unwrap_or("none");
     let images = serde_json::to_value(input.images.unwrap_or_default()).unwrap_or_default();
-    let rating = input.rating.map(normalize_rating);
+    let rating = input.rating.map(normalize_video_rating);
     let content_category = input.content_category.as_deref().unwrap_or("tv");
     let sport_metadata = input.sport_metadata.as_ref();
     let status = normalize_show_status(input.status);

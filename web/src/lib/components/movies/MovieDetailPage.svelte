@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { VIDEO_RATING_SCALE } from '$lib/utils/rating';
   import { onMount } from 'svelte';
   import type {
     Movie,
@@ -339,6 +340,7 @@
     {#snippet ratingContent()}
       <DualRatingStars
         communityRating={movie.rating}
+        communityScale={VIDEO_RATING_SCALE}
         communityRatingCount={movie.rating_count ?? null}
         userRating={watchState?.rating ?? null}
         size="small"

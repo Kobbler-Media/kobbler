@@ -1,12 +1,14 @@
 <script lang="ts">
+  import { BOOK_RATING_SCALE, formatRating, starFill } from '$lib/utils/rating';
+
   /**
    * DualRatingStars - Shows community rating (gold fill) + user rating (accent outline)
    * Click to change user's rating.
    */
 
   interface Props {
-    /** Community average rating (0-5, float) */
     communityRating: number | null | undefined;
+    communityScale?: number;
     /** Community rating count */
     communityRatingCount: number | null;
     /** User's rating (1-5 or null) */
@@ -21,6 +23,7 @@
 
   let {
     communityRating,
+    communityScale = BOOK_RATING_SCALE,
     communityRatingCount,
     userRating,
     size = 'medium',
@@ -59,8 +62,7 @@
 <div class="dual-rating" class:small={size === 'small'} class:editable>
   <div class="stars" role="presentation" onmouseleave={handleMouseLeave}>
     {#each [1, 2, 3, 4, 5] as star (star)}
-      {@const communityFill =
-        communityRating != null ? Math.min(1, Math.max(0, communityRating - star + 1)) : 0}
+      {@const communityFill = starFill(communityRating, communityScale, star)}
       {@const showUserOutline =
         hoverRating != null ? star <= hoverRating : userRating != null && star <= userRating}
       <button
@@ -112,7 +114,7 @@
   {#if communityRating != null || communityRatingCount}
     <span class="rating-text">
       {#if communityRating != null}
-        {communityRating.toFixed(1)}
+        {formatRating(communityRating, communityScale)}
       {/if}
       {#if communityRatingCount}
         <span class="count">({formatCount(communityRatingCount)})</span>

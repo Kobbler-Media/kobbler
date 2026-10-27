@@ -1,6 +1,6 @@
 //! Movie repository operations.
 
-use super::{PaginationDirection, Result, normalize_rating};
+use super::{PaginationDirection, Result, normalize_video_rating};
 use crate::images::ImageMap;
 use crate::video_metadata::release_dates::ReleaseDatesByRegion;
 use serde_json::Value;
@@ -207,7 +207,7 @@ where
     let identifiers = input.identifiers.unwrap_or_else(|| serde_json::json!({}));
     let is_released = input.is_released.unwrap_or(true);
     let images = serde_json::to_value(input.images.unwrap_or_default()).unwrap_or_default();
-    let rating = input.rating.map(normalize_rating);
+    let rating = input.rating.map(normalize_video_rating);
 
     let row = sqlx::query!(
         r#"
@@ -480,7 +480,7 @@ where
     let qp_update = input.quality_profile_id;
     let pl_update = input.preferred_languages.flatten();
     let mr_update = input.media_root_id;
-    let rating = input.rating.map(normalize_rating);
+    let rating = input.rating.map(normalize_video_rating);
     let release_dates = input
         .release_dates
         .map(|d| serde_json::to_value(d).unwrap_or_default());
@@ -636,7 +636,7 @@ pub async fn upsert_by_provider(
     }
     let is_released = input.is_released.unwrap_or(true);
     let images = serde_json::to_value(input.images.unwrap_or_default()).unwrap_or_default();
-    let rating = input.rating.map(normalize_rating);
+    let rating = input.rating.map(normalize_video_rating);
 
     // Try atomic ON CONFLICT first
     let id = Uuid::now_v7();

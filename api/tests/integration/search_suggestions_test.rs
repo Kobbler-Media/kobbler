@@ -171,7 +171,7 @@ async fn seed_tmdb_titles(server: &TestServer) {
 }
 
 #[tokio::test]
-async fn export_titles_follow_the_library_and_shelves_by_popularity() {
+async fn export_titles_rank_with_the_library_and_shelves_by_popularity() {
     let server = TestServer::start_api_only().await;
     seed_catalogue(&server).await;
     seed_tmdb_titles(&server).await;
@@ -181,11 +181,11 @@ async fn export_titles_follow_the_library_and_shelves_by_popularity() {
     assert_eq!(
         suggestions(&client.get(&format!("{path}?q=break")).await),
         vec![
-            s("Breakin'", "movie", "library"),
             s("Breaking Bad", "tv", "library"),
+            s("Breaking Away", "movie", "tmdb"),
+            s("Breakin'", "movie", "library"),
             s("Breakfast at Tiffany's", "movie", "tmdb"),
             s("Prison Break", "tv", "tmdb"),
-            s("Breaking Away", "movie", "tmdb"),
         ],
     );
     assert_eq!(
@@ -228,10 +228,10 @@ async fn kids_suggestions_include_export_titles_but_not_library_titles_hidden_fr
     assert_eq!(
         suggestions(&kids.get("/api/v1/admin/search/suggestions?q=break").await),
         vec![
+            s("Breaking Away", "movie", "tmdb"),
             s("Breakin'", "movie", "library"),
             s("Break Point Kids", "tv", "tmdb"),
             s("Prison Break", "tv", "tmdb"),
-            s("Breaking Away", "movie", "tmdb"),
         ],
     );
     assert_eq!(
@@ -294,9 +294,9 @@ async fn book_suggestions_put_library_books_and_authors_before_hardcover_titles(
         assert_eq!(
             suggestions(&client.get(&format!("{path}?q=sand&media=book")).await),
             vec![
+                s("Sand Dunes", "book", "hardcover"),
                 s("Brandon Sanderson", "author", "library"),
                 s("The Sandman", "book", "hardcover"),
-                s("Sand Dunes", "book", "hardcover"),
             ],
         );
         assert_eq!(
@@ -335,8 +335,8 @@ async fn all_media_suggestions_interleave_tmdb_and_hardcover_by_rank() {
         ),
         vec![
             s("Dune Messiah", "book", "library"),
-            s("Dune", "book", "hardcover"),
             s("Dune: Part Two", "movie", "tmdb"),
+            s("Dune", "book", "hardcover"),
             s("Sand Dunes", "book", "hardcover"),
         ],
     );
@@ -462,4 +462,87 @@ async fn iptv_suggestions_list_enabled_channels_in_the_configured_languages() {
     }
     let kids = kids_client(&server, "kid@test.com").await;
     assert!(suggestions(&kids.get(path).await).is_empty());
+}
+
+async fn seed_library_movie_with_tmdb(
+    server: &TestServer,
+    title: &str,
+    tmdb_id: i32,
+    popularity: f32,
+) {
+    let id = seed_movie(server, title, Some("PG"), &[], None).await;
+    sqlx::query(
+        "UPDATE movies SET identifiers = jsonb_build_object('tmdb_id', $2::text) WHERE id = $1",
+    )
+    .bind(id)
+    .bind(tmdb_id.to_string())
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO tmdb_titles (media_type, tmdb_id, original_title, popularity)
+         VALUES ('movie', $1, $2, $3)",
+    )
+    .bind(tmdb_id)
+    .bind(title)
+    .bind(popularity)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn titles_the_query_starts_rank_first_and_by_popularity() {
+    let server = TestServer::start_api_only().await;
+    seed_library_movie_with_tmdb(&server, "Breakin'", 9001, 3.0).await;
+    seed_library_movie_with_tmdb(&server, "Breakin' 2: Electric Boogaloo", 9002, 1.5).await;
+    seed_movie(&server, "Bread and Tulips", Some("PG"), &[], None).await;
+    seed_show(&server, "The Brew Crew", Some("TV-PG"), &[], None).await;
+    seed_shelf(
+        &server,
+        "popular_movies",
+        0,
+        false,
+        &[("movie", "Brest Fortress")],
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO tmdb_titles (media_type, tmdb_id, original_title, title, popularity) VALUES
+           ('tv', 1396, 'Breaking Bad', NULL, 450.0),
+           ('movie', 50, 'Breaking Dawn', NULL, 60.0),
+           ('tv', 60, 'Prison Break', NULL, 300.0)",
+    )
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    let client = server.admin_client();
+    let path = "/api/v1/admin/search/suggestions";
+    let breakin = vec![
+        s("Breaking Bad", "tv", "tmdb"),
+        s("Breaking Dawn", "movie", "tmdb"),
+        s("Breakin'", "movie", "library"),
+        s("Breakin' 2: Electric Boogaloo", "movie", "library"),
+    ];
+
+    assert_eq!(
+        suggestions(&client.get(&format!("{path}?q=breakin")).await),
+        breakin,
+    );
+    assert_eq!(
+        suggestions(&client.get(&format!("{path}?q=break")).await),
+        [breakin.clone(), vec![s("Prison Break", "tv", "tmdb")]].concat(),
+    );
+    assert_eq!(
+        suggestions(&client.get(&format!("{path}?q=bre")).await),
+        [
+            breakin,
+            vec![
+                s("Bread and Tulips", "movie", "library"),
+                s("Brest Fortress", "movie", "tmdb"),
+                s("Prison Break", "tv", "tmdb"),
+                s("The Brew Crew", "tv", "library"),
+            ],
+        ]
+        .concat(),
+    );
 }

@@ -479,8 +479,14 @@ pub fn language_matches(track_lang: Option<&str>, preferred: &str) -> bool {
         return true;
     }
 
-    // Look up all codes/aliases for the preferred language
-    let codes: &[&str] = match pref.as_str() {
+    match language_codes(&pref) {
+        Some(codes) => codes.contains(&lang.as_str()),
+        None => lang.starts_with(&pref) || pref.starts_with(&lang),
+    }
+}
+
+fn language_codes(pref: &str) -> Option<&'static [&'static str]> {
+    Some(match pref {
         "english" | "en" | "eng" => &["en", "eng", "english"],
         "french" | "fr" | "fra" | "fre" => &["fr", "fra", "fre", "french"],
         "german" | "de" | "deu" | "ger" => &["de", "deu", "ger", "german"],
@@ -510,10 +516,56 @@ pub fn language_matches(track_lang: Option<&str>, preferred: &str) -> bool {
         "romanian" | "ro" | "ron" | "rum" => &["ro", "ron", "rum", "romanian"],
         "ukrainian" | "uk" | "ukr" => &["uk", "ukr", "ukrainian"],
         "hebrew" | "he" | "heb" => &["he", "heb", "hebrew"],
-        _ => return lang.starts_with(&pref) || pref.starts_with(&lang),
-    };
+        _ => return None,
+    })
+}
 
-    codes.contains(&lang.as_str())
+fn is_untagged(language: Option<&str>) -> bool {
+    language.is_none_or(|l| {
+        l.trim().is_empty()
+            || matches!(
+                l.trim().to_lowercase().as_str(),
+                "und" | "unk" | "mis" | "zxx"
+            )
+    })
+}
+
+/// Muxers often leave the language tag empty and name the language only in the title
+/// ("AC3 [English]"), so an untagged track is matched by the words of its title.
+fn title_names_language(title: Option<&str>, preferred: &str) -> bool {
+    let Some(title) = title else {
+        return false;
+    };
+    let pref = preferred.to_lowercase();
+    let codes = language_codes(&pref).unwrap_or(&[]);
+    title
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| word == pref || (word.len() > 2 && codes.contains(&word)))
+}
+
+fn is_commentary(title: Option<&str>) -> bool {
+    let Some(title) = title else {
+        return false;
+    };
+    let title = title.to_lowercase();
+    [
+        "commentary",
+        "commentaries",
+        "audio description",
+        "descriptive",
+        "described video",
+    ]
+    .iter()
+    .any(|marker| title.contains(marker))
+}
+
+fn speaks(track: &AudioTrackMeta, preferred: &str) -> bool {
+    if is_untagged(track.language.as_deref()) {
+        title_names_language(track.title.as_deref(), preferred)
+    } else {
+        language_matches(track.language.as_deref(), preferred)
+    }
 }
 
 /// Find the first audio track matching a preferred language.
@@ -524,7 +576,7 @@ pub fn find_preferred_audio(tracks: &[AudioTrackMeta], preferred_language: &str)
     }
     tracks
         .iter()
-        .find(|t| language_matches(t.language.as_deref(), preferred_language))
+        .find(|t| !is_commentary(t.title.as_deref()) && speaks(t, preferred_language))
         .map(|t| t.stream_index)
 }
 
@@ -1679,5 +1731,61 @@ mod tests {
         assert_eq!(find_preferred_audio(&tracks, "japanese"), None);
         // Empty preferred returns None
         assert_eq!(find_preferred_audio(&tracks, ""), None);
+    }
+
+    fn audio(
+        stream_index: i32,
+        language: Option<&str>,
+        title: Option<&str>,
+        is_default: bool,
+    ) -> AudioTrackMeta {
+        AudioTrackMeta {
+            stream_index,
+            codec: "ac3".to_string(),
+            channels: 6,
+            language: language.map(str::to_string),
+            title: title.map(str::to_string),
+            is_default,
+        }
+    }
+
+    #[test]
+    fn find_preferred_audio_reads_language_from_untagged_title() {
+        let tracks = vec![
+            audio(1, Some("ita"), Some("AC3 [Italiano]"), true),
+            audio(2, None, Some("AC3 [English]"), false),
+        ];
+        assert_eq!(find_preferred_audio(&tracks, "english"), Some(2));
+
+        let undetermined = vec![
+            audio(1, Some("ita"), None, true),
+            audio(2, Some("und"), Some("English 5.1"), false),
+        ];
+        assert_eq!(find_preferred_audio(&undetermined, "eng"), Some(2));
+    }
+
+    #[test]
+    fn find_preferred_audio_trusts_a_real_tag_over_the_title() {
+        let tracks = vec![
+            audio(1, Some("ita"), Some("English dub removed"), true),
+            audio(2, Some("eng"), None, false),
+        ];
+        assert_eq!(find_preferred_audio(&tracks, "english"), Some(2));
+    }
+
+    #[test]
+    fn find_preferred_audio_skips_commentary_and_description() {
+        let tracks = vec![
+            audio(1, Some("eng"), Some("Director's Commentary"), false),
+            audio(2, Some("eng"), Some("Audio Description"), false),
+            audio(3, Some("eng"), Some("English DTS-HD MA 5.1"), false),
+        ];
+        assert_eq!(find_preferred_audio(&tracks, "english"), Some(3));
+
+        let only_commentary = vec![
+            audio(1, Some("ita"), None, true),
+            audio(2, Some("eng"), Some("Commentary with the cast"), false),
+        ];
+        assert_eq!(find_preferred_audio(&only_commentary, "english"), None);
     }
 }

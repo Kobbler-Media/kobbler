@@ -439,6 +439,11 @@ async fn test_movie_scan_with_nfo_imdb_crosslookup() {
         movie.description.is_some(),
         "Movie should have description after enrichment"
     );
+    assert_eq!(
+        movie.rating,
+        Some(7.5),
+        "TMDB's 0-10 vote_average is stored as-is"
+    );
 }
 
 // =============================================================================
@@ -549,6 +554,11 @@ async fn test_tv_scan_search_match_enrich() {
         show.description.is_some(),
         "Show should have description after enrichment"
     );
+    assert_eq!(
+        show.rating,
+        Some(8.5),
+        "TMDB's 0-10 vote_average is stored as-is"
+    );
 }
 
 // =============================================================================
@@ -629,6 +639,10 @@ async fn test_movie_sidecar_writing_after_enrichment() {
     assert!(
         nfo_content.contains("tt0137523") || nfo_content.contains("550"),
         "NFO should contain IMDB or TMDB ID"
+    );
+    assert!(
+        nfo_content.contains("<rating>7.5</rating>"),
+        "Kodi reads NFO ratings on the 0-10 scale: {nfo_content}"
     );
 }
 

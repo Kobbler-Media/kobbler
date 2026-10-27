@@ -152,6 +152,8 @@ pub(super) async fn run(ctx: Prepare) {
                     codec: a.codec.clone(),
                     channels: a.channels,
                     language: a.language.clone(),
+                    title: a.title.clone(),
+                    is_default: a.is_default,
                 })
                 .collect(),
         };
@@ -186,8 +188,8 @@ pub(super) async fn run(ctx: Prepare) {
             codec: a.codec.clone(),
             channels: a.channels,
             language: a.language.clone(),
-            title: None,
-            is_default: false,
+            title: a.title.clone(),
+            is_default: a.is_default,
         })
         .collect();
     // Resolve preferred audio from language settings

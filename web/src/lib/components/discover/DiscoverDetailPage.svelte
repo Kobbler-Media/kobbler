@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ratingScale } from '$lib/utils/rating';
   import { goto } from '$app/navigation';
   import { onMount, untrack } from 'svelte';
   import { getDiscoverDetail, type DiscoverDetailResponse } from '$lib/api/client';
@@ -209,6 +210,7 @@
       logoUrl={item.logoUrl}
       description={item.description}
       rating={item.rating}
+      ratingScale={ratingScale(mediaType)}
       ratingCount={item.ratingCount}
       subtitle={mediaType === 'book' && item.authors.length > 0
         ? item.authors.join(', ')

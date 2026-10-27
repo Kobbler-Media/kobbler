@@ -583,7 +583,7 @@ impl TmdbProvider {
                 description: m.overview,
                 poster_url: Self::poster_url(m.poster_path.as_deref()),
                 backdrop_url: Self::backdrop_url(m.backdrop_path.as_deref()),
-                rating: m.vote_average.map(|r| r / 2.0),
+                rating: m.vote_average,
                 rating_count: m.vote_count,
                 identifiers: VideoIdentifiers {
                     tmdb_id: Some(m.id.to_string()),
@@ -653,7 +653,7 @@ impl TmdbProvider {
                 poster_url: Self::poster_url(s.poster_path.as_deref()),
                 backdrop_url: Self::backdrop_url(s.backdrop_path.as_deref()),
                 network: None,
-                rating: s.vote_average.map(|r| r / 2.0),
+                rating: s.vote_average,
                 rating_count: s.vote_count,
                 identifiers: VideoIdentifiers {
                     tmdb_id: Some(s.id.to_string()),
@@ -970,7 +970,7 @@ impl VideoMetadataProvider for TmdbProvider {
                 ..Default::default()
             },
             genres: m.genres.iter().map(|g| g.name.clone()).collect(),
-            rating: m.vote_average.map(|r| r / 2.0),
+            rating: m.vote_average,
             rating_count: m.vote_count,
             content_rating,
             release_date: m.release_date.clone(),
@@ -1165,7 +1165,7 @@ impl VideoMetadataProvider for TmdbProvider {
                 ..Default::default()
             },
             genres: s.genres.iter().map(|g| g.name.clone()).collect(),
-            rating: s.vote_average.map(|r| r / 2.0),
+            rating: s.vote_average,
             rating_count: s.vote_count,
             network,
             content_rating,
@@ -1840,6 +1840,24 @@ mod tests {
             TmdbProvider::tv_from_search(shows)[0].backdrop_url,
             expected
         );
+    }
+
+    #[test]
+    fn list_results_keep_vote_average_on_its_ten_point_scale() {
+        let movies: TmdbSearchResponse = serde_json::from_value(serde_json::json!({
+            "results": [{"id": 1, "title": "M", "vote_average": 7.3}]
+        }))
+        .unwrap();
+        let shows: TmdbTvSearchResponse = serde_json::from_value(serde_json::json!({
+            "results": [{"id": 2, "name": "S", "vote_average": 8.1}]
+        }))
+        .unwrap();
+
+        assert_eq!(
+            TmdbProvider::movies_from_search(movies)[0].rating,
+            Some(7.3)
+        );
+        assert_eq!(TmdbProvider::tv_from_search(shows)[0].rating, Some(8.1));
     }
 
     #[test]

@@ -87,7 +87,8 @@ use sqlx::PgPool;
 ///   reindexed for sort_title still needs one for the tuner documents.
 /// - 39: Added the Stremio History static page.
 /// - 40: Added the Book Title Suggestions setting.
-pub const SEARCH_SCHEMA_VERSION: i32 = 40;
+/// - 41: Movie and TV show `rating` on its providers' 0-10 scale instead of halved to 0-5.
+pub const SEARCH_SCHEMA_VERSION: i32 = 41;
 
 /// Result of checking if search reindex is needed on startup.
 #[derive(Debug)]

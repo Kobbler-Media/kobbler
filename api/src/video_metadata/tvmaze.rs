@@ -170,7 +170,7 @@ impl VideoMetadataProvider for TvMazeProvider {
                     poster_url: s.image.and_then(|img| img.medium.or(img.original)),
                     backdrop_url: None,
                     network: s.network.map(|n| n.name),
-                    rating: s.rating.and_then(|r| r.average).map(|r| r / 2.0),
+                    rating: score(s.rating),
                     rating_count: None,
                     identifiers: VideoIdentifiers {
                         tvmaze_id: Some(s.id.to_string()),
@@ -250,7 +250,7 @@ impl VideoMetadataProvider for TvMazeProvider {
             logo_url: None,
             identifiers,
             genres: s.genres,
-            rating: s.rating.and_then(|r| r.average).map(|r| r / 2.0),
+            rating: score(s.rating),
             rating_count: None,
             network,
             content_rating: None,
@@ -414,6 +414,10 @@ struct TvMazeRating {
     average: Option<f64>,
 }
 
+fn score(rating: Option<TvMazeRating>) -> Option<f64> {
+    rating.and_then(|r| r.average)
+}
+
 #[derive(Deserialize)]
 struct TvMazeExternals {
     imdb: Option<String>,
@@ -454,6 +458,16 @@ mod tests {
 
     fn episode(json: serde_json::Value) -> TvMazeEpisode {
         serde_json::from_value(json).expect("TvMazeEpisode should deserialize")
+    }
+
+    #[test]
+    fn rating_keeps_tvmaze_ten_point_scale() {
+        let show: TvMazeShowDetail = serde_json::from_value(serde_json::json!({
+            "id": 1, "rating": {"average": 7.9}
+        }))
+        .unwrap();
+        assert_eq!(score(show.rating), Some(7.9));
+        assert_eq!(score(None), None);
     }
 
     #[test]

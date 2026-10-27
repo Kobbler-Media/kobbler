@@ -20,10 +20,13 @@ pub struct SuggestionRequest<'a> {
     pub limit: i64,
 }
 
-/// Titles completing `query` at the start of any word, in tiers: the library's own titles
-/// and authors and the live channel lineups first; then the TMDB shelves the discover sync
-/// caches, and the live guide by soonest airing; then the most popular TMDB export titles
-/// and, when enabled, Hardcover's most-read books and authors, interleaved rank by rank. A blank
+/// Titles completing `query` at the start of any word, those it starts outright first. Movies
+/// and TV — the library's, the TMDB shelves the discover sync caches, and the TMDB export —
+/// rank by TMDB popularity, so a popular show the query is half of beats an obscure library
+/// film it spells out. Everything without a popularity, and books, which have no comparable
+/// one, keep source order: the library's own titles, authors and channel lineups; then the
+/// shelves and the live guide by soonest airing; then the export and, when enabled,
+/// Hardcover's most-read books and authors. The two pools interleave rank by rank. A blank
 /// query seeds from the shelves alone.
 ///
 /// Kids: the kids rule on the library and only kids shelves. Exports carry no rating, so a
@@ -49,20 +52,28 @@ where
     let rows = sqlx::query_as::<_, Suggestion>(
         r#"
         WITH candidates AS (
-            SELECT m.title, 'movie' AS media_type, 'library' AS source, 0 AS shelf, 0::bigint AS pos
+            SELECT m.title, 'movie' AS media_type, 'library' AS source, 0 AS shelf, 0::bigint AS pos,
+                   (SELECT t.popularity FROM tmdb_titles t
+                    WHERE t.media_type = 'movie' AND t.tmdb_id = CASE
+                        WHEN m.identifiers->>'tmdb_id' ~ '^[0-9]{1,9}$' THEN (m.identifiers->>'tmdb_id')::int
+                    END) AS popularity
             FROM movies m
             WHERE $1 <> '' AND 'movie' = ANY($2)
               AND (m.title ILIKE $3 OR m.title ILIKE $4)
               AND (NOT $5 OR kids_allowed(m.kids_override, m.content_rating))
             UNION ALL
-            SELECT s.title, 'tv', 'library', 0, 0
+            SELECT s.title, 'tv', 'library', 0, 0,
+                   (SELECT t.popularity FROM tmdb_titles t
+                    WHERE t.media_type = 'tv' AND t.tmdb_id = CASE
+                        WHEN s.identifiers->>'tmdb_id' ~ '^[0-9]{1,9}$' THEN (s.identifiers->>'tmdb_id')::int
+                    END)
             FROM tv_shows s
             WHERE $1 <> '' AND 'tv' = ANY($2)
               AND (s.title ILIKE $3 OR s.title ILIKE $4)
               AND (NOT $5 OR kids_allowed(s.kids_override, s.content_rating))
             UNION ALL
             SELECT * FROM (
-                SELECT b.title, 'book', 'library', 0, 0::bigint
+                SELECT b.title, 'book', 'library', 0, 0::bigint, NULL::real
                 FROM books b
                 WHERE $1 <> '' AND 'book' = ANY($2) AND b.ingest_status IS NULL
                   AND (b.title ILIKE $3 OR b.title ILIKE $4)
@@ -71,7 +82,7 @@ where
             ) library_books
             UNION ALL
             SELECT * FROM (
-                SELECT a.name, 'author', 'library', 0, 0::bigint
+                SELECT a.name, 'author', 'library', 0, 0::bigint, NULL::real
                 FROM authors a
                 WHERE $1 <> '' AND 'book' = ANY($2)
                   AND (a.name ILIKE $3 OR a.name ILIKE $4)
@@ -83,7 +94,7 @@ where
                 LIMIT $6::bigint * 4
             ) library_authors
             UNION ALL
-            SELECT c.name, 'livetv', 'library', 0, COALESCE(c.lcn, 0)::bigint
+            SELECT c.name, 'livetv', 'library', 0, COALESCE(c.lcn, 0)::bigint, NULL::real
             FROM (
                 SELECT lcn, COALESCE(NULLIF(trim(display_name), ''), NULLIF(trim(scan_name), ''),
                                      NULLIF(trim(callsign), '')) AS name
@@ -93,7 +104,7 @@ where
             WHERE c.name ILIKE $3 OR c.name ILIKE $4
             UNION ALL
             SELECT * FROM (
-                SELECT c.name, 'iptv', 'library', 0, c.display_order::bigint
+                SELECT c.name, 'iptv', 'library', 0, c.display_order::bigint, NULL::real
                 FROM iptv_channels c
                 WHERE $1 <> '' AND 'iptv' = ANY($2) AND NOT $5 AND c.enabled
                   AND ($8::text[] IS NULL OR c.language IS NULL OR c.language = ANY($8))
@@ -103,7 +114,7 @@ where
             ) iptv
             UNION ALL
             SELECT i.item->>'title', i.item->>'media_type', 'tmdb',
-                   1 + COALESCE((mc.response->>'sort_order')::int, 0), i.pos
+                   1 + COALESCE((mc.response->>'sort_order')::int, 0), i.pos, NULL::real
             FROM metadata_cache mc,
                  jsonb_array_elements(mc.response->'items') WITH ORDINALITY AS i(item, pos)
             WHERE mc.provider_type = 'discover' AND mc.expires_at > NOW()
@@ -112,7 +123,8 @@ where
               AND i.item->>'title' IS NOT NULL
               AND ($1 = '' OR i.item->>'title' ILIKE $3 OR i.item->>'title' ILIKE $4)
             UNION ALL
-            SELECT g.title, 'livetv', 'guide', 1, extract(epoch FROM min(g.start_time))::bigint
+            SELECT g.title, 'livetv', 'guide', 1, extract(epoch FROM min(g.start_time))::bigint,
+                   NULL::real
             FROM livetv_guide g
             JOIN livetv_channels c ON c.id = g.channel_id AND c.enabled
             WHERE $1 <> '' AND 'livetv' = ANY($2) AND $7
@@ -122,7 +134,7 @@ where
             UNION ALL
             SELECT * FROM (
                 SELECT COALESCE(t.title, t.original_title), t.media_type, 'tmdb', 1000,
-                       row_number() OVER (ORDER BY t.popularity DESC)
+                       row_number() OVER (ORDER BY t.popularity DESC), t.popularity
                 FROM tmdb_titles t
                 WHERE $1 <> '' AND t.media_type = ANY($2)
                   AND (lower(COALESCE(t.title || ' ', '') || t.original_title) LIKE lower($3)
@@ -141,7 +153,7 @@ where
             ) popular
             UNION ALL
             SELECT title, media_type, 'hardcover', 1000,
-                   row_number() OVER (ORDER BY users DESC)
+                   row_number() OVER (ORDER BY users DESC), NULL::real
             FROM (
                 SELECT * FROM (
                     SELECT h.title, 'book' AS media_type, h.users_count AS users
@@ -163,14 +175,29 @@ where
                 ) authors
             ) most_read
         ),
-        deduped AS (
-            SELECT DISTINCT ON (lower(title)) title, media_type, source, shelf, pos
+        scored AS (
+            SELECT title, media_type, source, shelf, pos,
+                   max(popularity) OVER (PARTITION BY lower(title), media_type) AS popularity
             FROM candidates
+        ),
+        deduped AS (
+            SELECT DISTINCT ON (lower(title)) title, media_type, source, shelf, pos, popularity,
+                   CASE WHEN $1 = '' OR title ILIKE $3 THEN 0 ELSE 1 END AS tier,
+                   media_type IN ('movie', 'tv') AS video
+            FROM scored
             ORDER BY lower(title), shelf, pos
+        ),
+        ranked AS (
+            SELECT title, media_type, source, shelf, pos, tier,
+                   row_number() OVER (
+                       PARTITION BY tier, video
+                       ORDER BY popularity DESC NULLS LAST, shelf, pos, lower(title)
+                   ) AS place
+            FROM deduped
         )
         SELECT title, media_type, source
-        FROM deduped
-        ORDER BY shelf, pos, lower(title)
+        FROM ranked
+        ORDER BY tier, place, shelf, pos, lower(title)
         LIMIT $6
         "#,
     )

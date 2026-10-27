@@ -115,11 +115,7 @@ impl VideoMetadataProvider for OmdbProvider {
             return Ok(Vec::new());
         }
 
-        let rating = resp
-            .imdb_rating
-            .as_deref()
-            .and_then(|r| r.parse::<f64>().ok())
-            .map(|r| r / 2.0);
+        let rating = resp.rating();
 
         let rating_count = resp
             .imdb_votes
@@ -170,11 +166,7 @@ impl VideoMetadataProvider for OmdbProvider {
             return Err(VideoProviderError::NotFound);
         }
 
-        let rating = resp
-            .imdb_rating
-            .as_deref()
-            .and_then(|r| r.parse::<f64>().ok())
-            .map(|r| r / 2.0);
+        let rating = resp.rating();
 
         let rating_count = resp
             .imdb_votes
@@ -279,4 +271,24 @@ struct OmdbResponse {
     imdb_votes: Option<String>,
     #[serde(rename = "imdbID")]
     imdb_id: Option<String>,
+}
+
+impl OmdbResponse {
+    fn rating(&self) -> Option<f64> {
+        self.imdb_rating.as_deref()?.parse().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn imdb_rating_keeps_its_ten_point_scale() {
+        let resp = |rating: &str| -> OmdbResponse {
+            serde_json::from_value(serde_json::json!({ "imdbRating": rating })).unwrap()
+        };
+        assert_eq!(resp("8.8").rating(), Some(8.8));
+        assert_eq!(resp("N/A").rating(), None);
+    }
 }

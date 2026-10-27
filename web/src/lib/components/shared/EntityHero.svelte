@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import { statusChip } from '$lib/utils/chip-mappings';
   import IconChip from '$lib/components/shared/IconChip.svelte';
+  import { BOOK_RATING_SCALE, formatRating } from '$lib/utils/rating';
 
   interface Props {
     title: string;
@@ -14,6 +15,7 @@
     landscape?: boolean; // If true, render cover in 16:9 (for episode stills)
     statusBadge?: { label: string; class: string } | null;
     rating?: number | null;
+    ratingScale?: number;
     ratingCount?: number | null;
     ratingContent?: Snippet; // When provided, replaces the static rating display
     meta?: Snippet;
@@ -35,6 +37,7 @@
     landscape = false,
     statusBadge,
     rating,
+    ratingScale = BOOK_RATING_SCALE,
     ratingCount,
     ratingContent,
     meta,
@@ -115,7 +118,7 @@
             {:else if rating && !hideRating}
               <div class="hero-rating">
                 <span class="material-icons-outlined star-icon">star</span>
-                <span class="rating-value">{rating.toFixed(1)}</span>
+                <span class="rating-value">{formatRating(rating, ratingScale)}</span>
                 {#if ratingCount}
                   <span class="rating-count">({ratingCount})</span>
                 {/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { VIDEO_RATING_SCALE } from '$lib/utils/rating';
   import { untrack } from 'svelte';
   import type { TvShow, TvSeason } from '$lib/types';
   import ContentPageView from '$lib/components/ContentPageView.svelte';
@@ -167,6 +168,7 @@
     logoUrl={league.logo_url}
     description={league.description}
     rating={league.rating}
+    ratingScale={VIDEO_RATING_SCALE}
     ratingCount={league.rating_count}
   >
     {#snippet meta()}

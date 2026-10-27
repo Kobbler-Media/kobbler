@@ -169,19 +169,10 @@ pub async fn cleanup_thumbnail_dir(storage_root: &str, file_id: uuid::Uuid) {
     }
 }
 
-/// Normalize a rating to the 0–5 star scale.
-/// Providers should already normalize, but this is a safety net for raw API
-/// input or data imported before normalization was added.
-pub fn normalize_rating(r: f64) -> f64 {
-    if r > 10.0 {
-        // Assume 0–100 percentage scale (e.g. 80% → 4.0 stars)
-        (r / 20.0).clamp(0.0, 5.0)
-    } else if r > 5.0 {
-        // Assume 0–10 scale (e.g. 9.3 → 4.65 stars)
-        (r / 2.0).clamp(0.0, 5.0)
-    } else {
-        r.clamp(0.0, 5.0)
-    }
+/// Video ratings keep their providers' 0–10 scale. Anything above 10 can only be a
+/// 0–100 percentage (Rotten Tomatoes, Metacritic) and is brought onto that scale.
+pub fn normalize_video_rating(r: f64) -> f64 {
+    if r > 10.0 { r / 10.0 } else { r }.clamp(0.0, 10.0)
 }
 
 /// Normalize a provider-supplied TV show status to the canonical vocabulary

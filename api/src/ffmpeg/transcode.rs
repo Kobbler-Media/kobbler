@@ -136,6 +136,11 @@ pub struct HybridAudioTrack {
     pub codec: String,
     pub channels: i32,
     pub language: Option<String>,
+    // Probe sidecars cached before titles were kept still have to load.
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 impl HybridProbeInfo {
@@ -179,7 +184,11 @@ impl HybridProbeInfo {
                             .into_owned();
                         (n, (*params).ch_layout.nb_channels)
                     };
-                    let language = stream.metadata().get("language").map(|s| s.to_owned());
+                    let metadata = stream.metadata();
+                    let language = metadata.get("language").map(|s| s.to_owned());
+                    let title = metadata.get("title").map(|s| s.to_owned());
+                    let is_default =
+                        stream.disposition() & kob_ffmpeg::ffi::AV_DISPOSITION_DEFAULT as i32 != 0;
                     if first_audio {
                         audio_codec = codec_name.clone();
                         audio_stream_index = i as i32;
@@ -190,6 +199,8 @@ impl HybridProbeInfo {
                         codec: codec_name,
                         channels,
                         language,
+                        title,
+                        is_default,
                     });
                 }
                 _ => {}

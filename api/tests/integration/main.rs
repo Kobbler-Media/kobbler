@@ -163,6 +163,7 @@ mod tv_status_normalization_test;
 mod user_scoping_test;
 mod video_ingest_test;
 mod video_jobs_test;
+mod video_ratings_test;
 mod video_routes_test;
 mod voice_audiobook_clip_test;
 mod voice_status_test;
