@@ -966,6 +966,11 @@ async fn test_stream_play_reresolve_keeps_session_file_id() {
         assert_eq!(requests.len(), case.expected_requests, "{requests:?}");
         for req in requests {
             assert_eq!(req["file_id"], 7, "re-resolve dropped the file: {req}");
+            assert_eq!(
+                req["release_title"], "Release.packhash.1080p-GRP",
+                "kobload logs a pack's play under the pack's title without it: {req}"
+            );
+            assert_eq!(req["file_name"], "movie.mp4", "{req}");
         }
     }
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Modal } from '@koblibs/ui';
   import type { StreamOption } from '$lib/api/client';
+  import { streamSections } from '$lib/utils/streamSections';
 
   interface Props {
     options: StreamOption[];
@@ -100,63 +101,68 @@
         </div>
       {/if}
       <div class="results-list">
-        {#each options as option (option.id)}
-          {@const resolution = getResolution(option.quality)}
-          {@const codec = getCodec(option.quality)}
-          {@const hdr = getHdr(option.quality)}
-          {@const audio = getAudio(option.quality)}
-          {@const sourceLabel = getSourceLabel(option.indexer)}
-          <button type="button" class="stream-item" onclick={() => onPlay(option)}>
-            <div class="stream-info">
-              <div class="stream-title-row">
-                <span class="stream-title">{option.release_title}</span>
-                <span class="score-pill {scoreClass(option.total_score)}"
-                  >{formatScore(option.total_score)}</span
-                >
-              </div>
-              <div class="stream-badges">
-                {#if sourceLabel}
-                  <span class="badge badge-source">{sourceLabel}</span>
-                {/if}
-                <!-- Only claim either end when the backend actually knows it:
+        {#each streamSections(options) as section, i (section.title ?? i)}
+          {#if section.title}
+            <div class="section-title">{section.title}</div>
+          {/if}
+          {#each section.options as option (option.id)}
+            {@const resolution = getResolution(option.quality)}
+            {@const codec = getCodec(option.quality)}
+            {@const hdr = getHdr(option.quality)}
+            {@const audio = getAudio(option.quality)}
+            {@const sourceLabel = getSourceLabel(option.indexer)}
+            <button type="button" class="stream-item" onclick={() => onPlay(option)}>
+              <div class="stream-info">
+                <div class="stream-title-row">
+                  <span class="stream-title">{option.release_title}</span>
+                  <span class="score-pill {scoreClass(option.total_score)}"
+                    >{formatScore(option.total_score)}</span
+                  >
+                </div>
+                <div class="stream-badges">
+                  {#if sourceLabel}
+                    <span class="badge badge-source">{sourceLabel}</span>
+                  {/if}
+                  <!-- Only claim either end when the backend actually knows it:
                      "likely" and "unknown" stay unlabelled rather than guessed. -->
-                {#if option.cached || option.availability === 'ready'}
-                  <span class="badge badge-instant">
-                    <span class="material-icons-outlined badge-icon">bolt</span>
-                    Instant
-                  </span>
-                {:else if option.availability === 'uncached'}
-                  <span class="badge badge-uncached">Needs download</span>
-                {/if}
-                {#if option.playback === 'worked'}
-                  <span class="badge badge-worked">Played before</span>
-                {:else if option.playback === 'failed'}
-                  <span class="badge badge-failed">Failed before</span>
-                {/if}
-                {#if resolution}
-                  <span class="badge badge-quality">{resolution}</span>
-                {/if}
-                {#if codec}
-                  <span class="badge badge-codec">{codec}</span>
-                {/if}
-                {#if hdr}
-                  <span class="badge badge-hdr">{hdr}</span>
-                {/if}
-                {#if audio}
-                  <span class="badge badge-audio">{audio}</span>
-                {/if}
+                  {#if option.cached || option.availability === 'ready'}
+                    <span class="badge badge-instant">
+                      <span class="material-icons-outlined badge-icon">bolt</span>
+                      Instant
+                    </span>
+                  {:else if option.availability === 'uncached'}
+                    <span class="badge badge-uncached">Needs download</span>
+                  {/if}
+                  {#if option.playback === 'worked'}
+                    <span class="badge badge-worked">Played before</span>
+                  {:else if option.playback === 'failed'}
+                    <span class="badge badge-failed">Failed before</span>
+                  {/if}
+                  {#if resolution}
+                    <span class="badge badge-quality">{resolution}</span>
+                  {/if}
+                  {#if codec}
+                    <span class="badge badge-codec">{codec}</span>
+                  {/if}
+                  {#if hdr}
+                    <span class="badge badge-hdr">{hdr}</span>
+                  {/if}
+                  {#if audio}
+                    <span class="badge badge-audio">{audio}</span>
+                  {/if}
+                </div>
+                <div class="stream-meta">
+                  <span class="meta-size">{formatSize(option.size)}</span>
+                  <span class="meta-indexer">{option.indexer}</span>
+                  <span class="meta-debrid">{option.debrid_provider}</span>
+                  {#if option.source_type === 'usenet'}
+                    <span class="meta-source">Usenet</span>
+                  {/if}
+                </div>
               </div>
-              <div class="stream-meta">
-                <span class="meta-size">{formatSize(option.size)}</span>
-                <span class="meta-indexer">{option.indexer}</span>
-                <span class="meta-debrid">{option.debrid_provider}</span>
-                {#if option.source_type === 'usenet'}
-                  <span class="meta-source">Usenet</span>
-                {/if}
-              </div>
-            </div>
-            <span class="material-icons-outlined play-icon">play_circle</span>
-          </button>
+              <span class="material-icons-outlined play-icon">play_circle</span>
+            </button>
+          {/each}
         {/each}
       </div>
     {/if}
@@ -208,6 +214,15 @@
     gap: 8px;
     max-height: 400px;
     overflow-y: auto;
+  }
+
+  .section-title {
+    margin-top: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
   }
 
   .stream-item {

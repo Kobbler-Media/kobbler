@@ -348,3 +348,16 @@ async fn thumbnails_for_a_session_that_is_gone_say_so() {
         .await
         .assert_status(StatusCode::NOT_FOUND);
 }
+
+/// Kobload only knows a pack's hash-level title, so a play it cannot name logs under the
+/// wrong episode.
+#[tokio::test]
+async fn test_opening_a_stream_tells_kobload_which_release_it_is() {
+    let rig = Rig::start(UpstreamPlan::new(noise(64 * 1024)), "Feed.Movie.2025.mkv").await;
+    rig.resolve(&"a".repeat(40)).await;
+    let requests = rig.kobload_requests("/stream/resolve").await;
+    assert!(!requests.is_empty());
+    for req in requests {
+        assert_eq!(req["release_title"], "Feed.Movie.2025", "{req}");
+    }
+}

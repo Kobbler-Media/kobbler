@@ -32,17 +32,19 @@ impl ArtWarmHandler {
     }
 }
 
-// Per kind, per run: two images a title at the download pace is a few minutes of work.
+// Per kind, per run: three images a title at the download pace is a few minutes of work.
 const UNCACHED_MOVIES: &str = "SELECT id FROM movies m
     WHERE EXISTS (SELECT 1 FROM movie_files mf WHERE mf.movie_id = m.id)
       AND ((m.images->'backdrop'->>'source_url' IS NOT NULL AND m.images->'backdrop'->>'cached_at' IS NULL)
-        OR (m.images->'poster'->>'source_url' IS NOT NULL AND m.images->'poster'->>'cached_at' IS NULL))
+        OR (m.images->'poster'->>'source_url' IS NOT NULL AND m.images->'poster'->>'cached_at' IS NULL)
+        OR (m.images->'logo'->>'source_url' IS NOT NULL AND m.images->'logo'->>'cached_at' IS NULL))
     ORDER BY m.created_at DESC
     LIMIT 150";
 
 const UNCACHED_SHOWS: &str = "SELECT id FROM tv_shows s
     WHERE (s.images->'backdrop'->>'source_url' IS NOT NULL AND s.images->'backdrop'->>'cached_at' IS NULL)
        OR (s.images->'poster'->>'source_url' IS NOT NULL AND s.images->'poster'->>'cached_at' IS NULL)
+       OR (s.images->'logo'->>'source_url' IS NOT NULL AND s.images->'logo'->>'cached_at' IS NULL)
     ORDER BY s.created_at DESC
     LIMIT 150";
 

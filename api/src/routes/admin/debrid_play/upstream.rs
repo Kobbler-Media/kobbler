@@ -66,6 +66,8 @@ pub(crate) async fn playable_url(
         nzb_url: None,
         file_id: session.file_id,
         priority: None,
+        release_title: Some(session.release_title.clone()).filter(|t| !t.is_empty()),
+        file_name: Some(session.filename.clone()).filter(|f| !f.is_empty()),
     };
 
     let resolved = match client.stream_resolve(&resolve_req).await {

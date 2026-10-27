@@ -47,6 +47,8 @@ pub(super) async fn open(
         nzb_url: body.nzb_url.clone(),
         file_id: body.file_id,
         priority: Some(priority),
+        release_title: Some(body.release_title.clone()).filter(|t| !t.is_empty()),
+        file_name: None,
     };
     let resolved = client.stream_resolve(&resolve_req).await.map_err(|e| {
         error!(error = %e, "stream resolve failed");

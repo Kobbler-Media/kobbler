@@ -416,14 +416,17 @@ pub async fn try_cache_image(
 /// look like a household browsing rather than a scraper.
 pub const ART_DOWNLOAD_PACE: std::time::Duration = std::time::Duration::from_millis(250);
 
-/// The art a browse page's backdrop and grid use, in the order a viewer sees it.
+/// The art a browse page's backdrop and grid use, in the order a viewer sees it, then the
+/// logo the player opens on.
 pub const MOVIE_ART: &[(&str, ImageType)] = &[
     ("backdrop", ImageType::MovieBackdrop),
     ("poster", ImageType::MoviePoster),
+    ("logo", ImageType::MovieLogo),
 ];
 pub const SHOW_ART: &[(&str, ImageType)] = &[
     ("backdrop", ImageType::TvShowBackdrop),
     ("poster", ImageType::TvShowPoster),
+    ("logo", ImageType::TvShowLogo),
 ];
 
 /// Puts an entity's images on disk now rather than on first view: the backdrop behind a

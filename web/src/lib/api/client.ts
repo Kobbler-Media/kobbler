@@ -6623,10 +6623,13 @@ export interface StreamOption {
   /** Outcome history for this release file; absent when it has none. */
   playback?: 'worked' | 'failed';
   availability?: StreamAvailability;
+  group?: StreamGroup;
   audio_languages?: string[];
 }
 
 export type StreamAvailability = 'ready' | 'likely' | 'unknown' | 'uncached';
+
+export type StreamGroup = 'played' | 'account' | 'available' | 'uncached' | 'failed';
 
 export interface StreamSearchResponse {
   options: StreamOption[];

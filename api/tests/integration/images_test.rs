@@ -420,3 +420,52 @@ async fn the_art_sweep_warms_what_is_not_on_disk_yet() {
         movie
     ));
 }
+
+/// The player shows the logo the moment it opens; fetched from TMDB on that first request,
+/// it was the slowest thing on screen.
+#[tokio::test]
+async fn the_art_sweep_puts_logos_on_disk_too() {
+    use api::images::{ImageType, cached_image_exists};
+    use api::jobs::handlers::ArtWarmHandler;
+    use api::jobs::worker::JobHandler;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = TestServer::start_api_only().await;
+    let mock = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/l.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(minimal_jpeg()))
+        .mount(&mock)
+        .await;
+    let images = json!({ "logo": { "source_url": format!("{}/l.png", mock.uri()) } });
+    let movie = uuid::Uuid::parse_str(&create_movie(&server, "Logo Movie").await).unwrap();
+    create_stub_movie_file(&server.pool, movie).await;
+    let show = uuid::Uuid::parse_str(&create_show(&server, "Logo Show").await).unwrap();
+    for (table, id) in [("movies", movie), ("tv_shows", show)] {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {table} SET images = $1 WHERE id = $2"
+        )))
+        .bind(&images)
+        .bind(id)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+    }
+
+    ArtWarmHandler::new(server.pool.clone(), server.storage_root())
+        .execute(
+            uuid::Uuid::now_v7(),
+            json!({}),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+    for (kind, id) in [(ImageType::MovieLogo, movie), (ImageType::TvShowLogo, show)] {
+        assert!(
+            cached_image_exists(&server.storage_root(), kind, id),
+            "{kind:?}"
+        );
+    }
+}
