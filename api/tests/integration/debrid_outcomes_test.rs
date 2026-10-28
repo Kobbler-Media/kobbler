@@ -415,6 +415,48 @@ async fn test_search_passes_kobload_ranking_through_unchanged() {
     assert_eq!(body["errors"], json!(["one indexer timed out"]));
 }
 
+/// Two releases played and both still cached: the one played last is what the viewer
+/// chose most recently, often a manual pick to replace a bad first stream.
+#[tokio::test]
+async fn test_search_prefers_the_latest_of_two_cached_plays() {
+    let (server, mock) = kobload_server().await;
+    mount_search(
+        &mock,
+        vec![
+            option("oldhash", None, Some("worked")),
+            option("newhash", None, Some("worked")),
+        ],
+    )
+    .await;
+    let user = admin_id(&server).await;
+    let movie = insert_movie(&server, "tt9000013").await;
+    let dir = tempfile::tempdir().unwrap();
+    let paths: Vec<String> = ["old.mkv", "new.mkv"]
+        .iter()
+        .map(|name| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"x").unwrap();
+            path.to_string_lossy().into_owned()
+        })
+        .collect();
+    for (hash, minutes_ago, path) in [("oldhash", 120, &paths[0]), ("newhash", 10, &paths[1])] {
+        let mut seed = SessionSeed::new(movie, hash);
+        seed.created_minutes_ago = minutes_ago;
+        seed.played = true;
+        seed.cache_path = Some(path);
+        insert_session(&server, user, seed).await;
+    }
+
+    let body = search(&server, json!({ "movie_id": movie })).await;
+    assert_eq!(body["preferred_info_hash"], "newhash", "{body}");
+    let prefers: Vec<Value> = requests_to(&mock, "/stream/search")
+        .await
+        .into_iter()
+        .map(|r| r["prefer"]["info_hash"].clone())
+        .collect();
+    assert_eq!(prefers, [json!("newhash")]);
+}
+
 #[tokio::test]
 async fn test_search_prefers_only_streams_that_played() {
     let (server, mock) = kobload_server().await;
