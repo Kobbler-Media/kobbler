@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM books WHERE id = $1 AND want_status IN ('wanted', 'searching', 'downloading', 'watching', 'search_failed') AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = books.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = books.id))) AS \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "b84428912bb26ceb5291a1fdb7e383204e0843b42e3d3e83cd046810aa2fb6ed"
+}

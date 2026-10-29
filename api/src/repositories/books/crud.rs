@@ -407,6 +407,23 @@ where
     Ok(result.rows_affected() > 0)
 }
 
+/// Put a book whose download failed back to `wanted` so the next want check
+/// searches again, but only if someone wanted it. A discovered or skipped book
+/// that Kobload fetched anyway stays as it is.
+pub async fn rearm_want<'e, E>(exec: E, id: Uuid) -> Result<bool>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let result = sqlx::query!(
+        "UPDATE books SET want_status = 'wanted', updated_at = NOW() WHERE id = $1 AND want_status IN ('wanted', 'searching', 'downloading', 'watching', 'search_failed')",
+        id,
+    )
+    .execute(exec)
+    .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
 /// Set want status only for books not in library.
 pub async fn set_want_status_if_not_in_library<'e, E>(
     exec: E,

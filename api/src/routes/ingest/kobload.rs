@@ -986,8 +986,9 @@ async fn process_kobload_ingest_impl(
         && effective_status != "complete"
         && effective_status != "downloaded"
     {
-        if let Some(book_id) = book_id {
-            let _ = books::set_want_status(&state.pool, book_id, "wanted").await;
+        if let Some(book_id) = book_id
+            && let Ok(true) = books::rearm_want(&state.pool, book_id).await
+        {
             let _ = state
                 .library_events
                 .send(LibraryEvent::library_updated(Some(book_id)));

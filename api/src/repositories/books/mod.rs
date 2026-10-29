@@ -15,7 +15,7 @@ pub use crud::{
     clear_auto_wanted_for_series, clear_rejected_releases, create_discovered_book,
     create_ingest_book, delete, delete_by_media_root, delete_orphaned_books,
     delete_stale_discovered, exists, find_by_identifier, get_cover_url, get_identifiers,
-    get_identifiers_and_metadata, get_rejected_releases, get_title, mark_user_edited,
+    get_identifiers_and_metadata, get_rejected_releases, get_title, mark_user_edited, rearm_want,
     set_identifiers, set_ingest_status, set_media_root_id, set_want_status, set_want_status_if,
     set_want_status_if_not_in_library, touch, touch_many, unwant_all_for_author,
     unwant_all_for_series, update, update_identifiers, upsert_library_book,

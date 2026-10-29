@@ -25,6 +25,7 @@ mod book_moves_test;
 mod book_series_test;
 mod book_want_check_test;
 mod book_want_job_test;
+mod book_want_rearm_test;
 mod calendar_test;
 mod cast_crew_test;
 mod chat_credits_test;

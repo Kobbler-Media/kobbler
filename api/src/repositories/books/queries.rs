@@ -704,13 +704,17 @@ where
     }))
 }
 
-/// Check if a book exists and is a wanted book (not in library).
+/// Check if a book is one someone wanted and is not yet in the library.
+///
+/// A discovered (`pending`), skipped or unwanted book is not, even while Kobload
+/// still holds a want for it: Kobload's events must not promote it into the
+/// want flow.
 pub async fn is_wanted_book<'e, E>(exec: E, id: Uuid) -> Result<bool>
 where
     E: Executor<'e, Database = Postgres>,
 {
     let exists: bool = sqlx::query_scalar!(
-        r#"SELECT EXISTS(SELECT 1 FROM books WHERE id = $1 AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = books.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = books.id))) AS "exists!""#,
+        r#"SELECT EXISTS(SELECT 1 FROM books WHERE id = $1 AND want_status IN ('wanted', 'searching', 'downloading', 'watching', 'search_failed') AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = books.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = books.id))) AS "exists!""#,
         id,
     )
     .fetch_one(exec)
