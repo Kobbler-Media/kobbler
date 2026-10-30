@@ -4211,6 +4211,10 @@ pub(crate) async fn load_playable_file(
                     video_width: probed_width,
                     video_height: probed_height,
                     interlaced: Some(probe.video_streams.first().is_some_and(|v| v.is_interlaced)),
+                    overall_bitrate_kbps: probe
+                        .format
+                        .bit_rate_kbps
+                        .and_then(|k| u32::try_from(k).ok()),
                 }
             }
             Err(e) => {
@@ -4236,6 +4240,7 @@ pub(crate) struct StoredFileMeta {
     pub(crate) video_height: u32,
     /// `None` where nothing has recorded it, so a probe has to say.
     pub(crate) interlaced: Option<bool>,
+    pub(crate) overall_bitrate_kbps: Option<u32>,
 }
 
 /// The file a create-session request names, directly or by media id.
@@ -4370,6 +4375,9 @@ async fn load_movie_file_meta(
         video_width: file.video_width.unwrap_or(0) as u32,
         video_height: file.video_height.unwrap_or(0) as u32,
         interlaced: Some(file.is_interlaced),
+        overall_bitrate_kbps: file
+            .overall_bitrate_kbps
+            .and_then(|k| u32::try_from(k).ok()),
     })
 }
 
@@ -4429,6 +4437,9 @@ async fn load_episode_file_meta(
         video_width: file.video_width.unwrap_or(0) as u32,
         video_height: file.video_height.unwrap_or(0) as u32,
         interlaced: Some(file.is_interlaced),
+        overall_bitrate_kbps: file
+            .overall_bitrate_kbps
+            .and_then(|k| u32::try_from(k).ok()),
     })
 }
 
@@ -4465,6 +4476,7 @@ async fn load_recording_file_meta(
         video_width: 0,
         video_height: 0,
         interlaced: None,
+        overall_bitrate_kbps: None,
     })
 }
 

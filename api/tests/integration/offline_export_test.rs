@@ -319,17 +319,17 @@ async fn the_same_file_quality_and_audio_reuse_one_export_and_a_failure_is_reque
     let server = TestServer::start_api_only().await;
     let seeded = seed_movie(&server).await;
 
-    let first = create_export(&server, seeded.movie_id, "720p", "fre").await;
-    let again = create_export(&server, seeded.movie_id, "720p", "fra").await;
+    let first = create_export(&server, seeded.movie_id, "480p", "fre").await;
+    let again = create_export(&server, seeded.movie_id, "480p", "fra").await;
     let id = first["export_id"].as_str().unwrap().to_string();
     assert_eq!(again["export_id"], first["export_id"]);
     assert_eq!(export_job_payloads(&server, &id).await.len(), 1);
 
-    let english = create_export(&server, seeded.movie_id, "720p", "eng").await;
+    let english = create_export(&server, seeded.movie_id, "480p", "eng").await;
     assert_ne!(english["export_id"], first["export_id"]);
     let english_jobs = export_job_payloads(&server, english["export_id"].as_str().unwrap()).await;
     assert_eq!(english_jobs[0]["audio_stream_index"], ENG_STREAM);
-    let other_quality = create_export(&server, seeded.movie_id, "480p", "fre").await;
+    let other_quality = create_export(&server, seeded.movie_id, "original", "fre").await;
     assert_ne!(other_quality["export_id"], first["export_id"]);
 
     std::fs::remove_file(&seeded.source).unwrap();
@@ -340,7 +340,7 @@ async fn the_same_file_quality_and_audio_reuse_one_export_and_a_failure_is_reque
     assert_eq!(failed["size_bytes"], Value::Null);
 
     std::fs::write(&seeded.source, source_mkv()).unwrap();
-    let requeued = create_export(&server, seeded.movie_id, "720p", "fre").await;
+    let requeued = create_export(&server, seeded.movie_id, "480p", "fre").await;
     // A rebuilt export is a different file, so it must not answer to the id a client may
     // already hold half a download of.
     assert_ne!(requeued["export_id"], first["export_id"]);
@@ -358,6 +358,27 @@ async fn the_same_file_quality_and_audio_reuse_one_export_and_a_failure_is_reque
         .assert_status(StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn a_quality_no_smaller_than_the_source_sends_the_original_instead_of_a_copy() {
+    let server = TestServer::start_api_only().await;
+    let seeded = seed_movie(&server).await;
+    for quality in ["1080p", "720p"] {
+        let answer = create_export(&server, seeded.movie_id, quality, "eng").await;
+        assert_eq!(answer, json!({ "state": "original" }), "{quality}");
+    }
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM offline_exports")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+    let jobs: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM job_status WHERE job_type = 'offline_export'")
+            .fetch_one(&server.pool)
+            .await
+            .unwrap();
+    assert_eq!(jobs, 0);
+}
+
 async fn get_status(server: &TestServer, id: &str) -> TestResponse {
     server.admin_client().get(&format!("{EXPORTS}/{id}")).await
 }
@@ -366,7 +387,7 @@ async fn get_status(server: &TestServer, id: &str) -> TestResponse {
 async fn an_export_whose_job_went_quiet_is_queued_again() {
     let server = TestServer::start_api_only().await;
     let seeded = seed_movie(&server).await;
-    let first = create_export(&server, seeded.movie_id, "720p", "eng").await;
+    let first = create_export(&server, seeded.movie_id, "480p", "eng").await;
     let id = first["export_id"].as_str().unwrap().to_string();
     sqlx::query("UPDATE offline_exports SET updated_at = NOW() - INTERVAL '2 hours' WHERE id = $1")
         .bind(Uuid::parse_str(&id).unwrap())
@@ -374,10 +395,10 @@ async fn an_export_whose_job_went_quiet_is_queued_again() {
         .await
         .unwrap();
 
-    let again = create_export(&server, seeded.movie_id, "720p", "eng").await;
+    let again = create_export(&server, seeded.movie_id, "480p", "eng").await;
     assert_eq!(again["export_id"], first["export_id"]);
     assert_eq!(export_job_payloads(&server, &id).await.len(), 2);
-    create_export(&server, seeded.movie_id, "720p", "eng").await;
+    create_export(&server, seeded.movie_id, "480p", "eng").await;
     assert_eq!(export_job_payloads(&server, &id).await.len(), 2);
 }
 
@@ -449,7 +470,7 @@ async fn unknown_media_bad_input_and_unready_exports_are_rejected() {
         assert_eq!(resp.status, status, "{body}: {}", resp.text());
     }
 
-    let created = create_export(&server, seeded.movie_id, "1080p", "").await;
+    let created = create_export(&server, seeded.movie_id, "480p", "").await;
     assert_eq!(created["state"], "queued");
 
     for path in [
@@ -469,13 +490,13 @@ async fn unknown_media_bad_input_and_unready_exports_are_rejected() {
 async fn offline_export_routes_require_auth() {
     let server = TestServer::start_api_only().await;
     let seeded = seed_movie(&server).await;
-    let created = create_export(&server, seeded.movie_id, "720p", "eng").await;
+    let created = create_export(&server, seeded.movie_id, "480p", "eng").await;
     let id = created["export_id"].as_str().unwrap();
     let anon = server.api_client();
 
     anon.post_json(
         EXPORTS,
-        &json!({"media_type": "movie", "media_id": seeded.movie_id.to_string(), "quality": "720p", "preferred_audio_language": null}),
+        &json!({"media_type": "movie", "media_id": seeded.movie_id.to_string(), "quality": "480p", "preferred_audio_language": null}),
     )
     .await
     .assert_status(StatusCode::UNAUTHORIZED);

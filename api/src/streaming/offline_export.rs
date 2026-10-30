@@ -67,6 +67,25 @@ impl Quality {
         let scale = (src_w > 0 && src_h > height).then(|| scale_to_height(src_w, src_h, height));
         (scale, Some(kbps))
     }
+
+    /// Whether a copy at this quality comes out meaningfully smaller than the source, whose
+    /// average bitrate is `source_kbps`. "original" is asked for only when the device cannot
+    /// play the file as is, so it is always made.
+    pub fn worth_making(
+        self,
+        src_w: u32,
+        src_h: u32,
+        source_kbps: Option<u32>,
+        audio_kbps: u32,
+    ) -> bool {
+        let (scale, video_kbps) = self.scale_and_bitrate(src_w, src_h);
+        match (scale, video_kbps, source_kbps) {
+            (_, None, _) | (Some(_), _, _) | (None, _, None) => true,
+            (None, Some(video), Some(source)) => {
+                u64::from(source) * 4 > u64::from(video + audio_kbps) * 5
+            }
+        }
+    }
 }
 
 pub fn exports_root(storage_root: &str) -> PathBuf {
@@ -224,6 +243,26 @@ mod tests {
                 quality.scale_and_bitrate(w, h),
                 (scale, kbps),
                 "{quality:?} {w}x{h}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_copy_is_made_only_when_it_comes_out_smaller() {
+        let cases = [
+            (Quality::Original, 1280, 720, Some(1000), 128, true),
+            (Quality::P720, 1920, 1080, Some(3000), 128, true),
+            (Quality::P720, 1280, 720, Some(3236), 256, false),
+            (Quality::P720, 1280, 720, Some(9000), 256, true),
+            (Quality::P1080, 1920, 1080, Some(9000), 256, false),
+            (Quality::P1080, 1920, 1080, Some(20000), 256, true),
+            (Quality::P480, 640, 360, None, 128, true),
+        ];
+        for (quality, w, h, kbps, audio, worth) in cases {
+            assert_eq!(
+                quality.worth_making(w, h, kbps, audio),
+                worth,
+                "{quality:?} {w}x{h} {kbps:?}"
             );
         }
     }

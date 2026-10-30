@@ -5,6 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tracing::{error, warn};
 use uuid::Uuid;
 
@@ -70,7 +71,7 @@ pub async fn create_export(
     State(state): State<AppState>,
     auth: AuthUser,
     body: Result<Json<CreateExportRequest>, JsonRejection>,
-) -> Result<Json<ExportResponse>, Response> {
+) -> Result<Response, Response> {
     let Json(req) = body.map_err(|e| bad_request(&e.body_text()))?;
     let media_type = match req.media_type.as_str() {
         "movie" => MediaType::Movie,
@@ -124,6 +125,15 @@ pub async fn create_export(
         .audio_metas
         .iter()
         .find(|a| a.stream_index == playable.audio_stream_index);
+    let audio_bitrate_kbps = decision::suggest_audio_bitrate(audio_track);
+    if !quality.worth_making(
+        meta.video_width,
+        meta.video_height,
+        meta.overall_bitrate_kbps,
+        audio_bitrate_kbps.max(0) as u32,
+    ) {
+        return Ok(Json(json!({ "state": "original" })).into_response());
+    }
 
     let (mut export, inserted) = offline_exports::find_or_create(
         &state.pool,
@@ -162,13 +172,13 @@ pub async fn create_export(
             source_width: meta.video_width,
             source_height: meta.video_height,
             audio_stream_index: playable.audio_stream_index,
-            audio_bitrate_kbps: decision::suggest_audio_bitrate(audio_track),
+            audio_bitrate_kbps,
             deinterlace: playable.deinterlace,
         };
         enqueue(&state, media_type, media_id, &plan).await?;
     }
 
-    Ok(Json(export.into()))
+    Ok(Json(ExportResponse::from(export)).into_response())
 }
 
 async fn enqueue(
