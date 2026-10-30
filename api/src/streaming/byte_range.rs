@@ -1,3 +1,10 @@
+use axum::body::Body;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio_util::io::ReaderStream;
+use tracing::error;
+
 /// An inclusive byte range already clamped to the file it addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ByteRange {
@@ -59,6 +66,43 @@ pub fn content_range_start(value: &str) -> Option<u64> {
         .trim()
         .parse()
         .ok()
+}
+
+/// A whole-file response, or the single range a `Range` header asks for. An unsatisfiable
+/// or malformed range gets the whole file.
+pub async fn file_response(
+    mut file: tokio::fs::File,
+    file_size: u64,
+    content_type: &str,
+    headers: &HeaderMap,
+) -> Response {
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| parse_byte_range(v, file_size));
+    let Some(range) = range else {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, content_type)
+            .header(header::CONTENT_LENGTH, file_size.to_string())
+            .header(header::ACCEPT_RANGES, "bytes")
+            .body(Body::from_stream(ReaderStream::new(file)))
+            .unwrap();
+    };
+    if let Err(e) = file.seek(std::io::SeekFrom::Start(range.start)).await {
+        error!(error = %e, "failed to seek in file");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "seek error").into_response();
+    }
+    Response::builder()
+        .status(StatusCode::PARTIAL_CONTENT)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_LENGTH, range.length().to_string())
+        .header(header::CONTENT_RANGE, range.content_range(file_size))
+        .header(header::ACCEPT_RANGES, "bytes")
+        .body(Body::from_stream(ReaderStream::new(
+            file.take(range.length()),
+        )))
+        .unwrap()
 }
 
 #[cfg(test)]

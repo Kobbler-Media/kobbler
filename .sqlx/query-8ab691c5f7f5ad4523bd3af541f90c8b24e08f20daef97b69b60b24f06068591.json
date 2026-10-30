@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE offline_exports SET progress = $2, updated_at = NOW() WHERE id = $1 AND state = 'running'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8ab691c5f7f5ad4523bd3af541f90c8b24e08f20daef97b69b60b24f06068591"
+}

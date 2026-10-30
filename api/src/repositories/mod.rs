@@ -91,6 +91,7 @@ pub mod movie_skip_segments;
 pub mod movie_watch_states;
 pub mod movies;
 pub mod notification_agents;
+pub mod offline_exports;
 pub mod people;
 pub mod playback_sessions;
 pub mod playback_tokens;

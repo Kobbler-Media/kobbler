@@ -40,6 +40,7 @@ pub mod migration;
 pub mod movies;
 pub mod notification_prefs;
 pub mod notifications;
+pub mod offline_exports;
 pub mod people;
 mod pin_login;
 mod proxy_logs;

@@ -113,6 +113,7 @@ mod movie_release_dates_test;
 mod nats_queue_test;
 mod newest_file_selection_test;
 mod notification_types_test;
+mod offline_export_test;
 mod orphan_cleanup_test;
 mod pending_sync_test;
 mod people_test;

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE offline_exports SET state = 'failed', size_bytes = NULL, error = $2, updated_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6e49774742cfaafaf1475e1594a05118cd561b55d6b6a180af8d111b18227c5b"
+}

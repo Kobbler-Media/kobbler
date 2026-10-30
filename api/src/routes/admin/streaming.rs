@@ -439,141 +439,35 @@ pub(crate) async fn open_file_session(
 ) -> Result<SessionResponse, Response<Body>> {
     let config = state.runtime_config.get().await;
 
-    let stored = match req.media_type {
-        MediaType::Movie => load_movie_file_meta(state, file_id).await?,
-        MediaType::Episode => load_episode_file_meta(state, file_id).await?,
-        MediaType::Recording => load_recording_file_meta(state, file_id).await?,
-    };
-
-    let full_path =
-        crate::audio::path::resolve_file_path(&state.config.storage_root, &stored.file_path);
-    if !full_path.exists() {
-        return Err((StatusCode::NOT_FOUND, "file not found on disk").into_response());
-    }
-
-    // If the file hasn't been probed yet (no video_codec in DB), or its cached
-    // duration is missing/zero (e.g. just content-replaced at the same path, so
-    // create_or_update reset duration → reprobe pending), probe it now so the
-    // decision engine + SegmentCache have real data instead of a 0-length
-    // session (which would map every seek to segment 0 and instant-ENDLIST).
-    // An unrecorded field order only matters to a client that has said it cannot show fields.
-    let interlace_unknown =
-        stored.interlaced.is_none() && req.capabilities.supports_interlaced == Some(false);
-    let StoredFileMeta {
-        container,
-        video_codec,
-        duration,
-        audio_metas,
-        sub_metas,
-        keyframes,
-        video_width,
-        video_height,
-        interlaced,
-        ..
-    } = if stored.video_codec.is_empty()
-        || stored.container.is_empty()
-        || stored.duration <= 0.0
-        || interlace_unknown
-    {
-        match crate::ffmpeg::probe::probe(&full_path).await {
-            Ok(probe) => {
-                let probed_container = probe.format.format_name.clone();
-                let probed_video_codec = probe
-                    .video_streams
-                    .first()
-                    .map(|v| v.codec.clone())
-                    .unwrap_or_default();
-                let probed_duration = probe.format.duration_seconds.unwrap_or(stored.duration);
-                let probed_audio: Vec<AudioTrackMeta> = probe
-                    .audio_streams
-                    .iter()
-                    .map(|a| AudioTrackMeta {
-                        stream_index: a.index,
-                        codec: a.codec.clone(),
-                        channels: a.channels,
-                        language: a.language.clone(),
-                        title: a.title.clone(),
-                        is_default: a.is_default,
-                    })
-                    .collect();
-                let probed_subs: Vec<SubtitleTrackMeta> = probe
-                    .subtitle_streams
-                    .iter()
-                    .map(|s| SubtitleTrackMeta {
-                        stream_index: s.index,
-                        codec: s.codec.clone(),
-                        language: s.language.clone(),
-                        title: s.title.clone(),
-                        is_default: s.is_default,
-                        is_forced: s.is_forced,
-                    })
-                    .collect();
-                info!(
-                    video_codec = %probed_video_codec,
-                    container = %probed_container,
-                    audio_tracks = probed_audio.len(),
-                    duration = probed_duration,
-                    "Inline probe for unprobed file"
-                );
-
-                // Save probe results back to DB (video metadata + audio/subtitle tracks)
-                // so future sessions skip the probe and have correct track data.
-                // Persist probe results for movie/episode (recordings store
-                // metadata via update_media_metadata in the record job).
-                if matches!(req.media_type, MediaType::Movie | MediaType::Episode) {
-                    let media_type_str = match req.media_type {
-                        MediaType::Movie => "movie",
-                        MediaType::Episode => "episode",
-                        MediaType::Recording => unreachable!(),
-                    };
-                    if let Err(e) = crate::ffmpeg::persist::persist_probe_result(
-                        &state.pool,
-                        file_id,
-                        media_type_str,
-                        &probe,
-                    )
-                    .await
-                    {
-                        warn!(error = %e, "Failed to save inline probe results to DB");
-                    }
-                }
-
-                let (probed_width, probed_height) = probe
-                    .video_streams
-                    .first()
-                    .map(|v| (v.width as u32, v.height as u32))
-                    .unwrap_or((0, 0));
-
-                StoredFileMeta {
-                    file_path: stored.file_path,
-                    container: probed_container,
-                    video_codec: probed_video_codec,
-                    duration: probed_duration,
-                    audio_metas: probed_audio,
-                    sub_metas: probed_subs,
-                    keyframes: None,
-                    video_width: probed_width,
-                    video_height: probed_height,
-                    interlaced: Some(probe.video_streams.first().is_some_and(|v| v.is_interlaced)),
-                }
-            }
-            Err(e) => {
-                warn!(error = %e, "Inline probe failed, using DB metadata");
-                stored
-            }
-        }
-    } else {
-        stored
-    };
+    let (
+        full_path,
+        StoredFileMeta {
+            container,
+            video_codec,
+            duration,
+            audio_metas,
+            sub_metas,
+            keyframes,
+            video_width,
+            video_height,
+            interlaced,
+            ..
+        },
+    ) = load_playable_file(
+        state,
+        req.media_type,
+        file_id,
+        req.capabilities.supports_interlaced == Some(false),
+    )
+    .await?;
 
     // Resolve preferred audio/subtitle from language settings when the client
     // didn't explicitly request a track. Per-profile prefs (sent by the client)
     // override the server-wide config default.
-    let audio_lang_pref = req
-        .preferred_audio_language
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&config.preferred_audio_language);
+    let audio_lang_pref = decision::audio_language_pref(
+        req.preferred_audio_language.as_deref(),
+        &config.preferred_audio_language,
+    );
     let preferred_audio = if req.audio_track_index.is_some() {
         req.audio_track_index
     } else {
@@ -4208,18 +4102,140 @@ async fn enqueue_session_cleanup(state: &AppState, dir: &std::path::Path) {
     }
 }
 
-struct StoredFileMeta {
-    file_path: String,
-    container: String,
-    video_codec: String,
-    duration: f64,
-    audio_metas: Vec<AudioTrackMeta>,
-    sub_metas: Vec<SubtitleTrackMeta>,
-    keyframes: Option<Vec<f64>>,
-    video_width: u32,
-    video_height: u32,
+/// The file behind [file_id] as a transcode needs it: its path on disk and its stream
+/// metadata, probed inline when nothing has recorded it yet.
+///
+/// [field_order_needed] probes a file whose field order is unrecorded, for a viewer that
+/// cannot show interlaced video.
+pub(crate) async fn load_playable_file(
+    state: &AppState,
+    media_type: MediaType,
+    file_id: Uuid,
+    field_order_needed: bool,
+) -> Result<(PathBuf, StoredFileMeta), Response<Body>> {
+    let stored = match media_type {
+        MediaType::Movie => load_movie_file_meta(state, file_id).await?,
+        MediaType::Episode => load_episode_file_meta(state, file_id).await?,
+        MediaType::Recording => load_recording_file_meta(state, file_id).await?,
+    };
+
+    let full_path =
+        crate::audio::path::resolve_file_path(&state.config.storage_root, &stored.file_path);
+    if !full_path.exists() {
+        return Err((StatusCode::NOT_FOUND, "file not found on disk").into_response());
+    }
+
+    // If the file hasn't been probed yet (no video_codec in DB), or its cached
+    // duration is missing/zero (e.g. just content-replaced at the same path, so
+    // create_or_update reset duration → reprobe pending), probe it now so the
+    // decision engine + SegmentCache have real data instead of a 0-length
+    // session (which would map every seek to segment 0 and instant-ENDLIST).
+    // An unrecorded field order only matters to a client that has said it cannot show fields.
+    let interlace_unknown = stored.interlaced.is_none() && field_order_needed;
+    let meta = if stored.video_codec.is_empty()
+        || stored.container.is_empty()
+        || stored.duration <= 0.0
+        || interlace_unknown
+    {
+        match crate::ffmpeg::probe::probe(&full_path).await {
+            Ok(probe) => {
+                let probed_container = probe.format.format_name.clone();
+                let probed_video_codec = probe
+                    .video_streams
+                    .first()
+                    .map(|v| v.codec.clone())
+                    .unwrap_or_default();
+                let probed_duration = probe.format.duration_seconds.unwrap_or(stored.duration);
+                let probed_audio: Vec<AudioTrackMeta> = probe
+                    .audio_streams
+                    .iter()
+                    .map(|a| AudioTrackMeta {
+                        stream_index: a.index,
+                        codec: a.codec.clone(),
+                        channels: a.channels,
+                        language: a.language.clone(),
+                        title: a.title.clone(),
+                        is_default: a.is_default,
+                    })
+                    .collect();
+                let probed_subs: Vec<SubtitleTrackMeta> = probe
+                    .subtitle_streams
+                    .iter()
+                    .map(|s| SubtitleTrackMeta {
+                        stream_index: s.index,
+                        codec: s.codec.clone(),
+                        language: s.language.clone(),
+                        title: s.title.clone(),
+                        is_default: s.is_default,
+                        is_forced: s.is_forced,
+                    })
+                    .collect();
+                info!(
+                    video_codec = %probed_video_codec,
+                    container = %probed_container,
+                    audio_tracks = probed_audio.len(),
+                    duration = probed_duration,
+                    "Inline probe for unprobed file"
+                );
+
+                // Save probe results back to DB (video metadata + audio/subtitle tracks)
+                // so future sessions skip the probe and have correct track data.
+                // Persist probe results for movie/episode (recordings store
+                // metadata via update_media_metadata in the record job).
+                if matches!(media_type, MediaType::Movie | MediaType::Episode)
+                    && let Err(e) = crate::ffmpeg::persist::persist_probe_result(
+                        &state.pool,
+                        file_id,
+                        media_type.as_str(),
+                        &probe,
+                    )
+                    .await
+                {
+                    warn!(error = %e, "Failed to save inline probe results to DB");
+                }
+
+                let (probed_width, probed_height) = probe
+                    .video_streams
+                    .first()
+                    .map(|v| (v.width as u32, v.height as u32))
+                    .unwrap_or((0, 0));
+
+                StoredFileMeta {
+                    file_path: stored.file_path,
+                    container: probed_container,
+                    video_codec: probed_video_codec,
+                    duration: probed_duration,
+                    audio_metas: probed_audio,
+                    sub_metas: probed_subs,
+                    keyframes: None,
+                    video_width: probed_width,
+                    video_height: probed_height,
+                    interlaced: Some(probe.video_streams.first().is_some_and(|v| v.is_interlaced)),
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, "Inline probe failed, using DB metadata");
+                stored
+            }
+        }
+    } else {
+        stored
+    };
+    Ok((full_path, meta))
+}
+
+pub(crate) struct StoredFileMeta {
+    pub(crate) file_path: String,
+    pub(crate) container: String,
+    pub(crate) video_codec: String,
+    pub(crate) duration: f64,
+    pub(crate) audio_metas: Vec<AudioTrackMeta>,
+    pub(crate) sub_metas: Vec<SubtitleTrackMeta>,
+    pub(crate) keyframes: Option<Vec<f64>>,
+    pub(crate) video_width: u32,
+    pub(crate) video_height: u32,
     /// `None` where nothing has recorded it, so a probe has to say.
-    interlaced: Option<bool>,
+    pub(crate) interlaced: Option<bool>,
 }
 
 /// The file a create-session request names, directly or by media id.
@@ -4266,8 +4282,16 @@ async fn resolve_session_file_id(
     })?;
     let media_uuid = Uuid::parse_str(media_id)
         .map_err(|_| (StatusCode::BAD_REQUEST, "invalid media_id").into_response())?;
+    preferred_file_id(state, req.media_type, media_uuid).await
+}
 
-    let file_id = match req.media_type {
+/// The newest available file of a movie or episode — the one playback picks.
+pub(crate) async fn preferred_file_id(
+    state: &AppState,
+    media_type: MediaType,
+    media_uuid: Uuid,
+) -> Result<Uuid, axum::response::Response> {
+    let file_id = match media_type {
         MediaType::Movie => movie_files::get_preferred_available(&state.pool, media_uuid)
             .await
             .map_err(|e| {

@@ -26,6 +26,16 @@ pub enum MediaType {
     Recording,
 }
 
+impl MediaType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MediaType::Movie => "movie",
+            MediaType::Episode => "episode",
+            MediaType::Recording => "recording",
+        }
+    }
+}
+
 /// A terminal playback error surfaced to the client. The `code` is a stable
 /// snake_case identifier the frontend switches on; `message` is human-readable
 /// detail for the error UI / debugging.

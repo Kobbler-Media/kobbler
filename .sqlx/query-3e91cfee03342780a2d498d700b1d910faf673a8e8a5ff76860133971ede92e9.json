@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM offline_exports WHERE state <> 'running' AND (last_accessed_at < NOW() - make_interval(days => $1) OR (state = 'failed' AND updated_at < NOW() - make_interval(days => $2))) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "3e91cfee03342780a2d498d700b1d910faf673a8e8a5ff76860133971ede92e9"
+}

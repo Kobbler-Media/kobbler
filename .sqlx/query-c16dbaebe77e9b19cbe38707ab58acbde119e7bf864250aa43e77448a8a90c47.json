@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE offline_exports SET state = 'running', progress = 0, error = NULL, updated_at = NOW() WHERE id = $1 AND state IN ('queued', 'running') RETURNING id, media_type, file_id, quality, audio_stream_index, state, progress, size_bytes, error",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "file_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "quality",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "quality"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "audio_stream_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "audio_stream_index"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "state"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "progress",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "progress"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "size_bytes",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "size_bytes"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "error"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "c16dbaebe77e9b19cbe38707ab58acbde119e7bf864250aa43e77448a8a90c47"
+}

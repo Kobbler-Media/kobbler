@@ -1902,6 +1902,18 @@ pub fn create_router(state: AppState) -> Router {
         )
         .merge(playback_session_routes(&state))
         .route(
+            "/api/v1/admin/offline/exports",
+            post(routes::admin::offline_exports::create_export),
+        )
+        .route(
+            "/api/v1/admin/offline/exports/{id}",
+            get(routes::admin::offline_exports::get_export),
+        )
+        .route(
+            "/api/v1/admin/offline/exports/{id}/file",
+            get(routes::admin::offline_exports::download_export),
+        )
+        .route(
             "/api/v1/admin/playback/enrich-backfill",
             post(streaming_routes::trigger_enrichment_backfill),
         )

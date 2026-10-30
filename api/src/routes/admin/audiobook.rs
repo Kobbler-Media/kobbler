@@ -6,15 +6,12 @@
 //! - Getting and saving audiobook playback positions
 
 use axum::{
-    body::Body,
     extract::{Json, Path, Query, State},
-    http::{HeaderMap, Response, StatusCode, header},
+    http::{HeaderMap, StatusCode, header},
     response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio_util::io::ReaderStream;
 use tracing::{error, warn};
 use uuid::Uuid;
 
@@ -90,24 +87,7 @@ pub async fn stream_audio(
 
     let content_type = audio_content_type(&file_info.format);
 
-    // Parse Range header for seeking support
-    if let Some(range_header) = headers.get(header::RANGE)
-        && let Ok(range_str) = range_header.to_str()
-        && let Some(range) = parse_range(range_str, file_size)
-    {
-        return serve_range(file, file_size, content_type, range).await;
-    }
-
-    // No range -- serve full file
-    let stream = ReaderStream::new(file);
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, content_type)
-        .header(header::CONTENT_LENGTH, file_size.to_string())
-        .header(header::ACCEPT_RANGES, "bytes")
-        .body(Body::from_stream(stream))
-        .unwrap()
-        .into_response()
+    crate::streaming::byte_range::file_response(file, file_size, content_type, &headers).await
 }
 
 /// Map book file format to audio MIME type.
@@ -119,77 +99,6 @@ fn audio_content_type(format: &str) -> &'static str {
         "OGG" | "OPUS" => "audio/ogg",
         _ => "application/octet-stream",
     }
-}
-
-// =============================================================================
-// Range Request Support
-// =============================================================================
-
-struct ByteRange {
-    start: u64,
-    end: u64,
-}
-
-fn parse_range(header: &str, file_size: u64) -> Option<ByteRange> {
-    let range = header.strip_prefix("bytes=")?;
-    let (start_str, end_str) = range.split_once('-')?;
-
-    if start_str.is_empty() {
-        let suffix: u64 = end_str.parse().ok()?;
-        if suffix == 0 {
-            return None;
-        }
-        let start = file_size.saturating_sub(suffix);
-        Some(ByteRange {
-            start,
-            end: file_size - 1,
-        })
-    } else {
-        let start: u64 = start_str.parse().ok()?;
-        let end = if end_str.is_empty() {
-            file_size - 1
-        } else {
-            end_str.parse().ok()?
-        };
-        if start <= end && start < file_size {
-            Some(ByteRange {
-                start,
-                end: end.min(file_size - 1),
-            })
-        } else {
-            None
-        }
-    }
-}
-
-async fn serve_range(
-    mut file: tokio::fs::File,
-    file_size: u64,
-    content_type: &str,
-    range: ByteRange,
-) -> axum::response::Response {
-    let length = range.end - range.start + 1;
-
-    if let Err(e) = file.seek(std::io::SeekFrom::Start(range.start)).await {
-        error!(error = %e, "failed to seek in audio file");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "seek error").into_response();
-    }
-
-    let limited = file.take(length);
-    let stream = ReaderStream::new(limited);
-
-    Response::builder()
-        .status(StatusCode::PARTIAL_CONTENT)
-        .header(header::CONTENT_TYPE, content_type)
-        .header(header::CONTENT_LENGTH, length.to_string())
-        .header(
-            header::CONTENT_RANGE,
-            format!("bytes {}-{}/{}", range.start, range.end, file_size),
-        )
-        .header(header::ACCEPT_RANGES, "bytes")
-        .body(Body::from_stream(stream))
-        .unwrap()
-        .into_response()
 }
 
 // =============================================================================

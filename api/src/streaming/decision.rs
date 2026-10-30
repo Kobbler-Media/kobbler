@@ -16,6 +16,16 @@ use serde::{Deserialize, Serialize};
 /// the encoder identity changes. Browsers see standard AAC.
 pub const AAC_ENCODER: &str = "libfdk_aac";
 
+/// The image ships with `--enable-libfdk-aac`; a plain distro ffmpeg does not,
+/// and asking for a missing encoder produces output with no segments in it.
+pub fn aac_encoder() -> &'static str {
+    if kob_ffmpeg::detect::encoder_available(AAC_ENCODER) {
+        AAC_ENCODER
+    } else {
+        "aac"
+    }
+}
+
 /// How the server will deliver content to the client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -570,6 +580,13 @@ fn speaks(track: &AudioTrackMeta, preferred: &str) -> bool {
 
 /// Find the first audio track matching a preferred language.
 /// Returns the stream index if found.
+/// The viewer's own audio language when they sent one, else the server default.
+pub fn audio_language_pref<'a>(requested: Option<&'a str>, server_default: &'a str) -> &'a str {
+    requested
+        .filter(|s| !s.is_empty())
+        .unwrap_or(server_default)
+}
+
 pub fn find_preferred_audio(tracks: &[AudioTrackMeta], preferred_language: &str) -> Option<i32> {
     if preferred_language.is_empty() {
         return None;

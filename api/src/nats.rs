@@ -91,6 +91,8 @@ use crate::jobs::handlers::{
     MovieWantCheckHandler,
     MovieWantHandler,
     NotificationSendHandler,
+    OfflineExportGcHandler,
+    OfflineExportHandler,
     OrphanCleanupHandler,
     PersonEnrichHandler,
     PersonSyncCheckHandler,
@@ -511,6 +513,13 @@ pub async fn start_nats_worker(
         storage_root.clone(),
     )));
     worker.register_handler(HandlerAdapter::new(EpisodeCacheGcHandler::new(
+        pool.clone(),
+        storage_root.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(OfflineExportHandler::new(
+        app_state.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(OfflineExportGcHandler::new(
         pool.clone(),
         storage_root.clone(),
     )));
@@ -1052,6 +1061,13 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
         "kobbler",
         "episode_cache_gc",
         std::time::Duration::from_secs(7 * 24 * 3600), // weekly
+    ));
+
+    scheduler.register(ScheduledJob::new(
+        "offline-export-gc",
+        "kobbler",
+        "offline_export_gc",
+        std::time::Duration::from_secs(6 * 3600),
     ));
 
     // One-shot migration that moves content sidecars (vhash, chromaprint, …)

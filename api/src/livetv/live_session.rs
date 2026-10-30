@@ -260,16 +260,6 @@ pub async fn source_candidates(
 /// Cap the ladder rather than running open-ended CRF: measured 720p50 bwdif
 /// output at crf 23 was ~6 Mbit/s, four times the storage the buffer budget
 /// assumed.
-/// The image ships with `--enable-libfdk-aac`; a plain distro ffmpeg does not,
-/// and asking for a missing encoder produces a buffer with no segments in it.
-fn aac_encoder() -> &'static str {
-    if kob_ffmpeg::detect::encoder_available(crate::streaming::decision::AAC_ENCODER) {
-        crate::streaming::decision::AAC_ENCODER
-    } else {
-        "aac"
-    }
-}
-
 fn video_bitrate_for(height: u32) -> i64 {
     match height {
         0..=480 => 1_500_000,
@@ -718,7 +708,7 @@ async fn start_segmenter(
                 .segment_duration(SEGMENT_SECONDS)
                 .video_encoder(&encoder)
                 .video_bitrate(video_bitrate_for(height))
-                .audio_encoder(aac_encoder())
+                .audio_encoder(crate::streaming::decision::aac_encoder())
                 .audio_bitrate(128_000)
                 .hls_window(kob_ffmpeg::transcode::HlsWindow::Dvr);
             // x264's default `medium` spends rc_lookahead=40 frames — 0.8 s at 50 fps —

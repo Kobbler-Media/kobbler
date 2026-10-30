@@ -79,7 +79,7 @@ pub fn primary_variant_spec(src_w: u32, src_h: u32) -> VariantSpec {
 
 /// Scale to a target height while maintaining aspect ratio.
 /// Both dimensions are rounded to even (required by x264/VAAPI encoders).
-fn scale_to_height(src_w: u32, src_h: u32, target_h: u32) -> (u32, u32) {
+pub fn scale_to_height(src_w: u32, src_h: u32, target_h: u32) -> (u32, u32) {
     let ratio = src_w as f64 / src_h as f64;
     let w = (ratio * target_h as f64).round() as u32;
     // Round both to even

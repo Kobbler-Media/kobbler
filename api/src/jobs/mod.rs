@@ -372,6 +372,7 @@ const ROUTINE_JOB_TYPES: &[&str] = &[
     "chat_watch_cleanup",
     "temp_file_cleanup",
     "debrid_cache_cleanup",
+    "offline_export_gc",
     // Background processing
     "notification_send",
     "trakt_sync_watch_state",

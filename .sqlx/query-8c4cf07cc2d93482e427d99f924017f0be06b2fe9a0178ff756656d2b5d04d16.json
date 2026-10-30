@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE offline_exports SET updated_at = NOW() WHERE id = $1 AND state IN ('queued', 'running') AND updated_at < NOW() - make_interval(mins => $2) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "offline_exports",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8c4cf07cc2d93482e427d99f924017f0be06b2fe9a0178ff756656d2b5d04d16"
+}
