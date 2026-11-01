@@ -52,7 +52,11 @@ async fn a_failed_download_rearms_only_a_book_someone_wanted() {
     for status in ["searching", "downloading", "watching", "search_failed"] {
         let id = book(&server.pool, status).await;
         fail_download(&server, id).await;
-        assert_eq!(want_status(&server.pool, id).await, "wanted", "from {status}");
+        assert_eq!(
+            want_status(&server.pool, id).await,
+            "wanted",
+            "from {status}"
+        );
     }
     for status in ["pending", "skipped", "none", "acquired"] {
         let id = book(&server.pool, status).await;
@@ -64,12 +68,24 @@ async fn a_failed_download_rearms_only_a_book_someone_wanted() {
 #[tokio::test]
 async fn kobload_events_are_ignored_for_a_book_nobody_wanted() {
     let server = TestServer::start_api_only().await;
-    for status in ["wanted", "searching", "downloading", "watching", "search_failed"] {
+    for status in [
+        "wanted",
+        "searching",
+        "downloading",
+        "watching",
+        "search_failed",
+    ] {
         let id = book(&server.pool, status).await;
-        assert!(books::is_wanted_book(&server.pool, id).await.unwrap(), "{status}");
+        assert!(
+            books::is_wanted_book(&server.pool, id).await.unwrap(),
+            "{status}"
+        );
     }
     for status in ["pending", "skipped", "none", "acquired"] {
         let id = book(&server.pool, status).await;
-        assert!(!books::is_wanted_book(&server.pool, id).await.unwrap(), "{status}");
+        assert!(
+            !books::is_wanted_book(&server.pool, id).await.unwrap(),
+            "{status}"
+        );
     }
 }
