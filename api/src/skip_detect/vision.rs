@@ -2,9 +2,7 @@
 
 use reqwest::multipart;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
-
-use super::primitives::credit_scoring::{CREDIT_PROMPTS, NON_CREDIT_PROMPTS, score_credit_text};
+use tracing::debug;
 
 pub use super::primitives::cluster::find_cluster_break;
 pub use super::primitives::cosine::{cluster_consistency, cosine_similarity};
@@ -269,54 +267,6 @@ impl VisionClient {
 
         Ok(result.into_embeddings())
     }
-}
-
-/// Gap-tolerant credit text detection.
-///
-/// Takes pre-extracted frames (timestamp, jpeg bytes) from the last portion
-/// of an episode and uses SigLIP2 zero-shot classification to identify frames
-/// with text/credits overlay. Returns `(credits_start, credits_end, confidence)`.
-///
-/// `credits_end` is the timestamp of the last detected credit text frame in the
-/// best region. Callers should check whether a post-credits scene follows
-/// (if `credits_end` is well before the episode end).
-///
-/// Algorithm:
-/// 1. Score each frame: credit_avg - non_credit_avg
-/// 2. Collect all frames above threshold
-/// 3. Group frames within gap_tolerance of each other into regions
-/// 4. Pick the region with the most hits (most evidence of text)
-/// 5. Credits start = first frame, credits end = last frame in that region
-pub async fn detect_credit_text(
-    client: &VisionClient,
-    frames: &[(f64, Vec<u8>)],
-) -> Option<(f64, f64, f64)> {
-    if frames.len() < 5 {
-        return None;
-    }
-
-    let images: Vec<Vec<u8>> = frames.iter().map(|(_, data)| data.clone()).collect();
-
-    let all_prompts: Vec<&str> = CREDIT_PROMPTS
-        .iter()
-        .chain(NON_CREDIT_PROMPTS.iter())
-        .copied()
-        .collect();
-
-    let scores = match client.classify_images(&images, &all_prompts).await {
-        Ok(s) => s,
-        Err(e) => {
-            warn!(error = %e, "Vision classify failed — credit text detection skipped");
-            return None;
-        }
-    };
-
-    if scores.len() != frames.len() {
-        return None;
-    }
-
-    let frame_times: Vec<f64> = frames.iter().map(|(t, _)| *t).collect();
-    score_credit_text(&scores, &frame_times)
 }
 
 #[cfg(test)]

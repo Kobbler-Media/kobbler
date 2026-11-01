@@ -10,7 +10,7 @@
 use super::{
     AudioProfile, Candidate, CandidateSignals, DetectedSegment, MAX_CREDITS_DURATION_ABS,
     MAX_CREDITS_DURATION_PCT, MAX_INTRO_DURATION, MAX_POST_CREDITS_DURATION, MIN_CREDITS_START_PCT,
-    MIN_EFFECTIVE_CONFIDENCE, MIN_INTRO_DURATION, SegmentType,
+    MIN_EFFECTIVE_CONFIDENCE, MIN_INTRO_DURATION, SegmentType, max_credits_duration,
 };
 
 /// Fusion output including both surviving segments and rejected candidates
@@ -135,7 +135,7 @@ fn gate_by_bounds(c: &Candidate) -> Option<String> {
                 && file_dur > 0.0
             {
                 let start_pct = c.start_seconds / file_dur;
-                let max_dur = (file_dur * MAX_CREDITS_DURATION_PCT).min(MAX_CREDITS_DURATION_ABS);
+                let max_dur = max_credits_duration(file_dur);
                 if start_pct < MIN_CREDITS_START_PCT {
                     Some(format!(
                         "credits start_pct {:.2} < MIN_CREDITS_START_PCT {:.2}",

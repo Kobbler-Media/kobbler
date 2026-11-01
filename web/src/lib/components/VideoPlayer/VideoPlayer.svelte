@@ -39,7 +39,7 @@
   } from '$lib/services/eventstream.svelte';
   import { playbackClientId } from '$lib/utils/playback-client';
   import PlayerControls from './PlayerControls.svelte';
-  import { SEGMENT_LABELS } from './segments';
+  import { SEGMENT_LABELS, creditsSkipTarget } from './segments';
   import { showMessage } from '$lib/context/app.svelte';
   import UpNextOverlay from './UpNextOverlay.svelte';
   import HandoffPrompt from './HandoffPrompt.svelte';
@@ -458,6 +458,12 @@
   let skipDismissed = $state(false);
   let postCreditsScene = $derived(
     session.skip_segments?.find((s) => s.segment_type === 'post_credits_scene') ?? null
+  );
+  let skipLandsOnPostCredits = $derived(
+    activeSkipSegment?.segment_type === 'credits' &&
+      postCreditsScene !== null &&
+      creditsSkipTarget(activeSkipSegment, session.skip_segments ?? [], duration) ===
+        postCreditsScene.start_seconds
   );
   let editingSkipSegment = $state(false);
   let editSegment = $state<SkipSegment | null>(null);
@@ -978,19 +984,11 @@
 
   function handleSkipSegment() {
     if (!activeSkipSegment) return;
-    if (activeSkipSegment.segment_type === 'credits' && postCreditsScene) {
-      handleSeek(postCreditsScene.start_seconds);
-    } else if (activeSkipSegment.segment_type === 'credits') {
-      const creditsEnd = activeSkipSegment.end_seconds;
+    if (activeSkipSegment.segment_type === 'credits') {
+      const target = creditsSkipTarget(activeSkipSegment, session.skip_segments ?? [], duration);
       activeSkipSegment = null;
-      // Credits that end before the file does have content after them (a
-      // post-credits scene that wasn't tagged as its own segment). Seek past
-      // the credits so it plays instead of closing the player over it. Only
-      // treat as ended when the credits run to the end of the file — seeking
-      // to the very end produces an empty HLS playlist and a transcoder retry.
-      const END_EPSILON_SECONDS = 5;
-      if (duration > 0 && creditsEnd < duration - END_EPSILON_SECONDS) {
-        handleSeek(creditsEnd);
+      if (target !== 'end') {
+        handleSeek(target);
       } else if (nextEpisode) {
         handlePlayNextEpisode();
       } else {
@@ -3055,7 +3053,7 @@
               ? 'Skip Recap'
               : activeSkipSegment.segment_type === 'ad_break'
                 ? 'Skip Ads'
-                : postCreditsScene
+                : skipLandsOnPostCredits
                   ? 'Skip to Post-Credits Scene'
                   : 'Skip Credits'}
         </button>

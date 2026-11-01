@@ -21,7 +21,9 @@ use super::post_credits::detect_post_credits_from_cache;
 use super::primitives::boundary as boundary_primitive;
 use super::primitives::boundary::BoundarySearchDirection;
 use super::primitives::cosine::cluster_consistency;
-use super::primitives::credit_scoring::{CREDIT_PROMPTS, NON_CREDIT_PROMPTS, score_credit_text};
+use super::primitives::credit_scoring::{
+    CREDIT_PROMPTS, CreditText, NON_CREDIT_PROMPTS, score_credit_text,
+};
 use super::tv::{
     EpisodeFile, chapter_override_position, find_per_episode_positions, find_per_episode_vhash,
 };
@@ -30,7 +32,7 @@ use super::vision::VisionClient;
 use super::{
     BoundaryMatch, Candidate, CandidateSignals, DetectedSegment, INTRO_MAX_BER,
     MIN_CREDITS_DURATION, MIN_MATCH_DURATION, MIN_SKIP_DURATION, SegmentType,
-    extract_duration_secs, extraction_windows,
+    earliest_credits_start, extract_duration_secs, extraction_windows,
 };
 use crate::media_cache::readers::{self, BlackGap, EmbeddingsView, SilenceGap};
 use crate::repositories::video_chapters;
@@ -126,13 +128,13 @@ pub struct EpisodeDiagnostics {
     pub rejected_candidates: Vec<RejectedCandidate>,
     /// Human-readable narrative of passes that produced nothing or contradicted.
     pub notes: Vec<String>,
-    /// Raw `(text_start, text_end, confidence)` returned by
-    /// `classify_credit_text` BEFORE `apply_vision_credit_text` merged it
-    /// into an existing Credits candidate. Useful for spotting cases where
+    /// Raw credit blocks returned by `classify_credit_text` BEFORE
+    /// `apply_vision_credit_text` merged the roll into an existing Credits
+    /// candidate. Useful for spotting cases where
     /// the merge conflates a vision-detected region with a chromaprint/vhash
     /// candidate at a wildly different timestamp (observed on Leftovers 2x01).
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub vision_credit_text_raw: Option<(f64, f64, f64)>,
+    pub vision_credit_text_raw: Option<CreditText>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -636,26 +638,26 @@ pub async fn detect_season_from_cache_with_chapters(
             let scan_start = view.start_time_secs.max(0.0);
             let window = view.window(scan_start, cache.duration);
             if window.len() >= 5
-                && let Some((text_start, text_end, confidence)) =
-                    classify_credit_text(client, &window, view.fps, scan_start).await
+                && let Some(text) =
+                    classify_credit_text(client, &window, view.fps, scan_start, cache.duration)
+                        .await
             {
-                diag.vision_credit_text_raw = Some((text_start, text_end, confidence));
+                let (roll_start, roll_end) = text.roll();
                 apply_vision_credit_text(
                     &mut candidates,
-                    text_start,
-                    text_end,
-                    confidence,
+                    roll_start,
+                    roll_end,
+                    text.confidence,
                     cache.duration,
                     cache.embeddings.as_ref(),
                 );
+                push_lead_credit_blocks(&mut candidates, &text, cache);
+                diag.vision_credit_text_raw = Some(text);
             }
         }
 
         // Post-credits via cached peaks.
-        if let Some(credits) = candidates
-            .iter()
-            .find(|c| matches!(c.segment_type, SegmentType::Credits))
-        {
+        if let Some(credits) = roll_candidate(&candidates) {
             let credits_start = credits.start_seconds;
             let embeddings = cache.embeddings.as_ref();
             let post = detect_post_credits_from_cache(
@@ -771,7 +773,7 @@ async fn detect_single_file_with_diag(
     // entire baked-in embed window. Producer (`media_cache::analyze`) sized
     // the window via `credits_window_secs(media_type)`; we read it back from
     // `view.start_time_secs` so the two stay in sync.
-    let mut visual_credits: Option<(f64, f64, f64)> = None;
+    let mut visual_credits: Option<CreditText> = None;
     // Where vision was allowed to look. Needed downstream to tell "the roll
     // starts here" from "the roll was already running when my window opened".
     let mut vision_scan_start: Option<f64> = None;
@@ -783,8 +785,9 @@ async fn detect_single_file_with_diag(
         let window = view.window(scan_start, cache.duration);
         if window.len() >= 5 {
             vision_scan_start = Some(scan_start);
-            visual_credits = classify_credit_text(client, &window, view.fps, scan_start).await;
-            diag.vision_credit_text_raw = visual_credits;
+            visual_credits =
+                classify_credit_text(client, &window, view.fps, scan_start, cache.duration).await;
+            diag.vision_credit_text_raw = visual_credits.clone();
         }
     }
 
@@ -797,15 +800,16 @@ async fn detect_single_file_with_diag(
 
     let credits_start = pick_credits_start(
         boundary_credits,
-        visual_credits.map(|(v, _, _)| v),
+        visual_credits.as_ref().map(|t| t.roll().0),
         vision_scan_start,
         &mut diag,
     );
 
     if let Some(start) = credits_start {
-        let credit_text_conf = visual_credits.map(|(_, _, c)| c);
+        let credit_text_conf = visual_credits.as_ref().map(|t| t.confidence);
         let credit_text_end = visual_credits
-            .map(|(_, e, _)| e)
+            .as_ref()
+            .map(|t| t.roll().1)
             .filter(|&e| e < cache.duration - 30.0);
         let end = credit_text_end.unwrap_or(cache.duration);
         let refined = boundary_primitive::refine_boundary(
@@ -852,6 +856,9 @@ async fn detect_single_file_with_diag(
             "credits: boundary scan + vision both empty (no usable signal in last 12 min)".into(),
         );
     }
+    if let Some(text) = &visual_credits {
+        push_lead_credit_blocks(&mut candidates, text, cache);
+    }
 
     // Hard-reject before post-credits/chapter/fusion — see the season path
     // for the full rationale.
@@ -859,10 +866,7 @@ async fn detect_single_file_with_diag(
     merge_overlapping_same_type(&mut candidates, cache.embeddings.as_ref());
 
     // Post-credits if we found a credits start.
-    if let Some(credits) = candidates
-        .iter()
-        .find(|c| matches!(c.segment_type, SegmentType::Credits))
-    {
+    if let Some(credits) = roll_candidate(&candidates) {
         let credits_start = credits.start_seconds;
         let post = detect_post_credits_from_cache(
             &cache.audio_peaks,
@@ -1670,7 +1674,8 @@ async fn classify_credit_text(
     window: &[Vec<f32>],
     fps: f64,
     window_start_time: f64,
-) -> Option<(f64, f64, f64)> {
+    file_duration: f64,
+) -> Option<CreditText> {
     let prompts: Vec<&str> = CREDIT_PROMPTS
         .iter()
         .chain(NON_CREDIT_PROMPTS.iter())
@@ -1689,7 +1694,11 @@ async fn classify_credit_text(
     let frame_times: Vec<f64> = (0..window.len())
         .map(|i| window_start_time + i as f64 / fps)
         .collect();
-    score_credit_text(&classify.scores, &frame_times)
+    score_credit_text(
+        &classify.scores,
+        &frame_times,
+        earliest_credits_start(file_duration),
+    )
 }
 
 fn apply_vision_credit_text(
@@ -1734,18 +1743,13 @@ fn apply_vision_credit_text(
             } else {
                 duration
             };
-            let visual_score = visual_consistency_for_window(embeddings, text_start, credits_end);
-            candidates.push(Candidate {
-                segment_type: SegmentType::Credits,
-                start_seconds: text_start,
-                end_seconds: credits_end,
-                signals: CandidateSignals {
-                    credit_text_score: Some(confidence),
-                    visual_score,
-                    ..Default::default()
-                },
-                file_duration: Some(duration),
-            });
+            candidates.push(vision_credits_candidate(
+                text_start,
+                credits_end,
+                confidence,
+                duration,
+                embeddings,
+            ));
             if credits_end < duration - 30.0 {
                 candidates.push(Candidate {
                     segment_type: SegmentType::PostCreditsScene,
@@ -1757,6 +1761,54 @@ fn apply_vision_credit_text(
             }
         }
     }
+}
+
+fn vision_credits_candidate(
+    start: f64,
+    end: f64,
+    confidence: f64,
+    duration: f64,
+    embeddings: Option<&EmbeddingsView>,
+) -> Candidate {
+    Candidate {
+        segment_type: SegmentType::Credits,
+        start_seconds: start,
+        end_seconds: end,
+        signals: CandidateSignals {
+            credit_text_score: Some(confidence),
+            visual_score: visual_consistency_for_window(embeddings, start, end),
+            ..Default::default()
+        },
+        file_duration: Some(duration),
+    }
+}
+
+/// Credit blocks ahead of the roll with footage between — a mid-credits scene
+/// or a preview — become credits of their own, so skipping one lands on the
+/// footage rather than past it.
+fn push_lead_credit_blocks(
+    candidates: &mut Vec<Candidate>,
+    text: &CreditText,
+    cache: &EpisodeCache,
+) {
+    for &(start, end) in text.lead_blocks() {
+        candidates.push(vision_credits_candidate(
+            start,
+            end,
+            text.confidence,
+            cache.duration,
+            cache.embeddings.as_ref(),
+        ));
+    }
+}
+
+/// The roll: post-credits scenes follow it, not a credit block ahead of a
+/// mid-credits scene.
+fn roll_candidate(candidates: &[Candidate]) -> Option<&Candidate> {
+    candidates
+        .iter()
+        .filter(|c| matches!(c.segment_type, SegmentType::Credits))
+        .max_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds))
 }
 
 /// Two time windows "touch" when they share at least one second of overlap.
@@ -2463,5 +2515,66 @@ mod resolver_tests {
         };
         let cache = load_cache_for_movie(&storage, &movie).expect("cache loads");
         assert_eq!(cache.chromaprint.first(), Some(&0xCCu32));
+    }
+}
+
+#[cfg(test)]
+mod lead_credit_block_tests {
+    use super::*;
+
+    /// Carrie 1x01: the audio match and vision agree on the crawl, vision also
+    /// sees the name cards two minutes earlier, and the file's chapter marks only
+    /// the crawl. Both are credits; the preview between them is not.
+    #[test]
+    fn name_cards_ahead_of_a_preview_survive_as_their_own_credits() {
+        let duration = 3311.167;
+        let mut candidates = vec![Candidate {
+            segment_type: SegmentType::Credits,
+            start_seconds: 3134.6,
+            end_seconds: 3305.6,
+            signals: CandidateSignals {
+                chromaprint_score: Some(1.0),
+                dhash_score: Some(0.95),
+                ..Default::default()
+            },
+            file_duration: Some(duration),
+        }];
+        let text = CreditText {
+            blocks: vec![(2922.0, 3006.0), (3135.0, 3311.0)],
+            confidence: 0.95,
+        };
+        let (roll_start, roll_end) = text.roll();
+        apply_vision_credit_text(
+            &mut candidates,
+            roll_start,
+            roll_end,
+            text.confidence,
+            duration,
+            None,
+        );
+        for &(start, end) in text.lead_blocks() {
+            candidates.push(vision_credits_candidate(
+                start,
+                end,
+                text.confidence,
+                duration,
+                None,
+            ));
+        }
+        assert_eq!(roll_candidate(&candidates).unwrap().start_seconds, 3134.6);
+
+        let chapters = vec![
+            (0.0, Some("Main".into())),
+            (3131.0, Some("End Credits".into())),
+        ];
+        score_chapter_agreement(&chapters, &mut candidates);
+        let mut credits: Vec<(f64, f64)> = score_candidates_with_rejections(candidates)
+            .segments
+            .iter()
+            .filter(|s| s.segment_type == SegmentType::Credits)
+            .map(|s| (s.start_seconds, s.end_seconds))
+            .collect();
+        credits.sort_by(|a, b| a.0.total_cmp(&b.0));
+        assert_eq!(credits, vec![(2922.0, 3006.0), (3134.6, 3305.6)]);
     }
 }

@@ -31,3 +31,26 @@ export function segmentTitle(seg: SkipSegment): string {
       : '';
   return `${base} (${tag}${conf})`;
 }
+
+/** Seeking onto the very end yields an empty HLS playlist and a transcoder retry. */
+const END_EPSILON_SECONDS = 5;
+
+/**
+ * Where skipping a credits segment lands. Credits ahead of later credits have
+ * footage between them — a mid-credits scene — which is the point of stopping
+ * there. Otherwise a post-credits scene, then whatever follows credits that stop
+ * short of the end, and only credits that run out the file finish the title.
+ */
+export function creditsSkipTarget(
+  active: SkipSegment,
+  segments: SkipSegment[],
+  duration: number
+): number | 'end' {
+  const after = (s: SkipSegment) => s.start_seconds >= active.end_seconds;
+  if (segments.some((s) => s.segment_type === 'credits' && after(s))) return active.end_seconds;
+  const postCredits = segments.find((s) => s.segment_type === 'post_credits_scene' && after(s));
+  if (postCredits) return postCredits.start_seconds;
+  if (duration > 0 && active.end_seconds < duration - END_EPSILON_SECONDS)
+    return active.end_seconds;
+  return 'end';
+}

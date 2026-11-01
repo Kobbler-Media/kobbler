@@ -1,9 +1,8 @@
 //! Pure scoring for SigLIP2 zero-shot credit text detection.
 //!
 //! The vision client handles the network call to the classifier; this module
-//! turns the raw per-frame / per-prompt score matrix into a `(start, end,
-//! confidence)` region by collapsing prompt scores, thresholding, and grouping
-//! gap-tolerant regions.
+//! turns the raw per-frame / per-prompt score matrix into [`CreditText`] by
+//! collapsing prompt scores, thresholding, and grouping gap-tolerant regions.
 
 /// Per-frame credit-score threshold below which a frame is ignored.
 pub const CREDIT_TEXT_THRESHOLD: f64 = 0.10;
@@ -13,6 +12,38 @@ pub const GAP_TOLERANCE: f64 = 10.0;
 
 /// Minimum number of hits required for a region to count as credits.
 pub const MIN_HITS: usize = 5;
+
+/// Name cards on black often precede the crawl, split from it by logo cards or
+/// a season preview vision doesn't score as text. The crawl is usually denser,
+/// but the episode ended where the cards began.
+const MAX_CREDITS_INTERLUDE_SECS: f64 = 150.0;
+/// Sustained enough to be a credit block rather than on-screen text in a scene.
+const MIN_CHAINED_REGION_HITS: usize = 30;
+/// Longer than logo cards ever run between two credit blocks, so what fills the
+/// gap is footage — a mid-credits scene or a preview — and must stay watchable.
+const MAX_SAME_BLOCK_GAP_SECS: f64 = 30.0;
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct CreditText {
+    /// Earliest first. The last is the roll itself; any before it are credit
+    /// blocks with footage between them and the roll.
+    pub blocks: Vec<(f64, f64)>,
+    pub confidence: f64,
+}
+
+impl CreditText {
+    pub fn start(&self) -> f64 {
+        self.blocks[0].0
+    }
+
+    pub fn roll(&self) -> (f64, f64) {
+        self.blocks[self.blocks.len() - 1]
+    }
+
+    pub fn lead_blocks(&self) -> &[(f64, f64)] {
+        &self.blocks[..self.blocks.len() - 1]
+    }
+}
 
 /// Text prompts for credit detection via zero-shot classification.
 /// Tuned against Invincible (white-on-black credits) and Scrubs 2026
@@ -40,8 +71,13 @@ pub const NON_CREDIT_PROMPTS: &[&str] = &[
 /// timestamp (seconds into the file) of frame `i`.
 ///
 /// Returns `(credits_start, credits_end, confidence)` for the densest detected
-/// region, or `None` if too few frames cleared the threshold.
-pub fn score_credit_text(scores: &[Vec<f32>], frame_times: &[f64]) -> Option<(f64, f64, f64)> {
+/// region — extended back over preceding credit blocks, never before
+/// `earliest_start` — or `None` if too few frames cleared the threshold.
+pub fn score_credit_text(
+    scores: &[Vec<f32>],
+    frame_times: &[f64],
+    earliest_start: f64,
+) -> Option<CreditText> {
     if scores.len() != frame_times.len() {
         return None;
     }
@@ -68,12 +104,14 @@ pub fn score_credit_text(scores: &[Vec<f32>], frame_times: &[f64]) -> Option<(f6
         frame_scores.push((frame_times[i], credit_score));
     }
 
-    detect_credit_regions(&frame_scores)
+    detect_credit_regions(&frame_scores, earliest_start)
 }
 
 /// Pure region grouping — public so tests can exercise it directly.
-/// Returns `(credits_start, credits_end, confidence)` from per-frame scores.
-pub fn detect_credit_regions(frame_scores: &[(f64, f64)]) -> Option<(f64, f64, f64)> {
+pub fn detect_credit_regions(
+    frame_scores: &[(f64, f64)],
+    earliest_start: f64,
+) -> Option<CreditText> {
     let hits: Vec<(f64, f64)> = frame_scores
         .iter()
         .filter(|(_, score)| *score >= CREDIT_TEXT_THRESHOLD)
@@ -103,17 +141,125 @@ pub fn detect_credit_regions(frame_scores: &[(f64, f64)]) -> Option<(f64, f64, f
     }
     regions.push((region_start, region_end, region_scores));
 
-    // Pick the region with the most hits — most evidence of sustained credits
-    let best = regions.iter().max_by_key(|r| r.2.len())?;
-    let avg_score = best.2.iter().sum::<f64>() / best.2.len() as f64;
+    let best_idx = regions
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, r)| r.2.len())
+        .map(|(i, _)| i)?;
+    let scores = &regions[best_idx].2;
+    let avg_score = scores.iter().sum::<f64>() / scores.len() as f64;
     let confidence = (avg_score / 0.5).clamp(0.3, 0.95);
+    let substantial = |i: usize| i == best_idx || regions[i].2.len() >= MIN_CHAINED_REGION_HITS;
 
-    Some((best.0, best.1, confidence))
+    let mut first = best_idx;
+    // A short run of logo cards does not start the credits, but it does not
+    // break the chain to name cards before it either.
+    let mut edge = regions[best_idx].0;
+    for i in (0..best_idx).rev() {
+        if edge - regions[i].1 > MAX_CREDITS_INTERLUDE_SECS || regions[i].0 < earliest_start {
+            break;
+        }
+        edge = regions[i].0;
+        if substantial(i) {
+            first = i;
+        }
+    }
+
+    let mut blocks: Vec<(f64, f64, bool)> = Vec::new();
+    for (i, region) in regions.iter().enumerate().take(best_idx + 1).skip(first) {
+        let (start, end) = (region.0, region.1);
+        match blocks.last_mut() {
+            Some(block) if start - block.1 <= MAX_SAME_BLOCK_GAP_SECS => {
+                block.1 = end;
+                block.2 |= substantial(i);
+            }
+            _ => blocks.push((start, end, substantial(i))),
+        }
+    }
+
+    Some(CreditText {
+        blocks: blocks
+            .into_iter()
+            .filter(|b| b.2)
+            .map(|(start, end, _)| (start, end))
+            .collect(),
+        confidence,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const NO_FLOOR: f64 = f64::NEG_INFINITY;
+
+    fn block(scores: &mut Vec<(f64, f64)>, from: u32, to: u32, score: f64) {
+        scores.extend((from..to).map(|t| (t as f64, score)));
+    }
+
+    fn flat(text: Option<CreditText>) -> Option<(f64, f64, f64)> {
+        text.map(|t| (t.start(), t.roll().1, t.confidence))
+    }
+
+    /// Carrie 1x01: name cards on black, a two-minute season preview of real
+    /// footage, a few seconds of title and studio logos, then the crawl. The
+    /// episode ended where the name cards began, but the preview between them is
+    /// footage — the slot a mid-credits scene takes — so it is left out of both.
+    #[test]
+    fn name_cards_and_the_crawl_are_separate_blocks_around_footage() {
+        let mut scores = Vec::new();
+        block(&mut scores, 2800, 2922, 0.0);
+        block(&mut scores, 2922, 3007, 0.3);
+        block(&mut scores, 3007, 3135, 0.0);
+        block(&mut scores, 3135, 3153, 0.3);
+        block(&mut scores, 3153, 3172, 0.0);
+        block(&mut scores, 3172, 3311, 0.3);
+        let text = detect_credit_regions(&scores, NO_FLOOR).unwrap();
+        assert_eq!(text.blocks, vec![(2922.0, 3006.0), (3135.0, 3310.0)]);
+    }
+
+    /// Carrie 1x06: name cards, a 20 s run of logo cards vision scores low, then
+    /// the crawl — one unbroken roll.
+    #[test]
+    fn name_cards_split_from_the_crawl_by_logo_cards_are_one_block() {
+        let mut scores = Vec::new();
+        block(&mut scores, 3200, 3283, 0.0);
+        block(&mut scores, 3283, 3404, 0.3);
+        block(&mut scores, 3404, 3424, 0.0);
+        block(&mut scores, 3424, 3558, 0.3);
+        let text = detect_credit_regions(&scores, NO_FLOOR).unwrap();
+        assert_eq!(text.blocks, vec![(3283.0, 3557.0)]);
+    }
+
+    /// Logo cards stranded between a mid-credits scene and the crawl bridge the
+    /// chain back to the name cards but are not credits worth a skip of their own.
+    #[test]
+    fn a_short_block_bridges_but_is_never_a_block_of_its_own() {
+        let mut scores = Vec::new();
+        block(&mut scores, 2900, 2990, 0.3);
+        block(&mut scores, 2990, 3100, 0.0);
+        block(&mut scores, 3100, 3115, 0.3);
+        block(&mut scores, 3115, 3160, 0.0);
+        block(&mut scores, 3160, 3300, 0.3);
+        let text = detect_credit_regions(&scores, NO_FLOOR).unwrap();
+        assert_eq!(text.blocks, vec![(2900.0, 2989.0), (3160.0, 3299.0)]);
+    }
+
+    #[test]
+    fn an_earlier_region_is_not_chained_when_it_is_brief_far_or_overlong() {
+        let cases: [(&str, u32, u32, f64); 3] = [
+            ("brief on-screen text", 2850, 2865, NO_FLOOR),
+            ("a block long before the roll", 2500, 2600, NO_FLOOR),
+            ("chaining would start before the floor", 2780, 2860, 2800.0),
+        ];
+        for (name, from, to, floor) in cases {
+            let mut scores = Vec::new();
+            block(&mut scores, from, to, 0.3);
+            block(&mut scores, 2900, 3100, 0.3);
+            let (start, _, _) = flat(detect_credit_regions(&scores, floor)).unwrap();
+            assert_eq!(start, 2900.0, "{name}");
+        }
+    }
 
     #[test]
     fn test_detect_credit_regions_basic() {
@@ -136,7 +282,7 @@ mod tests {
             scores.push((t, 0.30));
         }
 
-        let result = detect_credit_regions(&scores);
+        let result = flat(detect_credit_regions(&scores, NO_FLOOR));
         assert!(result.is_some());
         let (start, end, confidence) = result.unwrap();
         assert!(
@@ -170,7 +316,7 @@ mod tests {
             scores.push((t, 0.30));
         }
 
-        let result = detect_credit_regions(&scores);
+        let result = flat(detect_credit_regions(&scores, NO_FLOOR));
         assert!(result.is_some());
         let (start, end, _) = result.unwrap();
         assert!(
@@ -190,14 +336,14 @@ mod tests {
             (2883.0, 0.01),
             (2884.0, 0.01),
         ];
-        assert!(detect_credit_regions(&scores).is_none());
+        assert!(flat(detect_credit_regions(&scores, NO_FLOOR)).is_none());
     }
 
     #[test]
     fn test_detect_credit_regions_no_hits() {
         // All scores below threshold — no credits
         let scores: Vec<(f64, f64)> = (0..100).map(|t| (t as f64, 0.05)).collect();
-        assert!(detect_credit_regions(&scores).is_none());
+        assert!(flat(detect_credit_regions(&scores, NO_FLOOR)).is_none());
     }
 
     #[test]
@@ -211,7 +357,7 @@ mod tests {
         for t in (114..120).map(|t| t as f64) {
             scores.push((t, 0.20));
         }
-        let result = detect_credit_regions(&scores);
+        let result = flat(detect_credit_regions(&scores, NO_FLOOR));
         assert!(result.is_some());
         let (start, end, _) = result.unwrap();
         assert!(

@@ -216,6 +216,15 @@ pub const MIN_CREDITS_START_PCT: f64 = 0.85; // Credits can't start before 85% o
 pub const MAX_CREDITS_DURATION_PCT: f64 = 0.15; // Max 15% of episode length
 pub const MAX_CREDITS_DURATION_ABS: f64 = 720.0; // Hard cap: 12 minutes (matches CREDITS_SCAN_WINDOW; accommodates long Pixar/Marvel + streaming multi-language credit rolls)
 
+pub fn max_credits_duration(file_duration: f64) -> f64 {
+    (file_duration * MAX_CREDITS_DURATION_PCT).min(MAX_CREDITS_DURATION_ABS)
+}
+
+/// The earliest credits start fusion's hard gates will accept for this file.
+pub fn earliest_credits_start(file_duration: f64) -> f64 {
+    (file_duration * MIN_CREDITS_START_PCT).max(file_duration - max_credits_duration(file_duration))
+}
+
 // Thresholds — post-credits
 pub const MIN_POST_CREDITS_DURATION: f64 = 5.0;
 pub const MAX_POST_CREDITS_DURATION: f64 = 120.0; // 2 minutes

@@ -1021,21 +1021,24 @@ fn fmt_opt(v: Option<f64>) -> String {
     v.map(|x| format!("{x:.2}")).unwrap_or_else(|| "-".into())
 }
 
-/// Print the raw `(text_start, text_end, confidence)` returned by
-/// `classify_credit_text` and compare it against the Credits candidate that
+/// Print the raw credit blocks returned by `classify_credit_text` and compare
+/// the roll against the Credits candidate that
 /// `apply_vision_credit_text` ended up attaching the score to. When those
 /// differ by more than 60s the merge is almost certainly bogus (the 2x01
 /// pattern: a weak 2-pair chromaprint false-positive mid-episode gets
 /// decorated with vision's real end-credits score).
 fn print_vision_raw(diag: &EpisodeDiagnostics) {
-    let Some((ts, te, conf)) = diag.vision_credit_text_raw else {
+    let Some(text) = &diag.vision_credit_text_raw else {
         println!("      vision credit-text  : — not called (no embeddings or vision off)");
         return;
     };
-    println!(
-        "      vision credit-text  : {:7.1}..{:7.1}s  confidence={:.3}",
-        ts, te, conf
-    );
+    for &(start, end) in &text.blocks {
+        println!(
+            "      vision credit-text  : {:7.1}..{:7.1}s  confidence={:.3}",
+            start, end, text.confidence
+        );
+    }
+    let ts = text.roll().0;
     let credits_cand = diag
         .candidates_pre_fusion
         .iter()
