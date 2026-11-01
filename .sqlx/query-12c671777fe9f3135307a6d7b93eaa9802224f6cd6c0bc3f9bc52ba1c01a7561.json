@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.duration_seconds AS \"duration!\",\n               (SELECT MIN(s.start_seconds) FROM movie_skip_segments s\n                WHERE s.movie_file_id = f.id AND s.segment_type = 'credits'\n                  AND NOT (s.start_seconds = 0 AND s.end_seconds = 0)) AS credits_start\n        FROM movie_files f\n        WHERE f.movie_id = $1 AND f.available = true AND f.duration_seconds IS NOT NULL\n        ORDER BY f.duration_seconds DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "duration!",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "duration_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "credits_start",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "12c671777fe9f3135307a6d7b93eaa9802224f6cd6c0bc3f9bc52ba1c01a7561"
+}

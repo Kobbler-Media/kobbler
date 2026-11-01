@@ -2186,20 +2186,10 @@ pub async fn update_episode_position(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to update position: {e}")))?;
 
-    // Auto-complete: mark as watched when position reaches 90% of duration
-    let duration: Option<f64> = sqlx::query_scalar::<_, Option<f64>>(
-        "SELECT MAX(tef.duration_seconds) FROM tv_episode_files tef \
-         JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id \
-         WHERE tefe.episode_id = $1 AND tef.available = true",
-    )
-    .bind(id)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(None);
+    let extent = crate::watch_completion::for_episode(&state.pool, id).await;
 
-    if let Some(dur) = duration
-        && dur > 0.0
-        && f64::from(body.position_seconds) >= dur * 0.9
+    if let Some(extent) = extent
+        && extent.is_finished_at(body.position_seconds)
     {
         let input = tv_watch_states::TvWatchStateInput {
             episode_id: id,
@@ -2237,11 +2227,8 @@ pub async fn update_episode_position(
             crate::jobs::JobContext::new("Syncing episode watch state to Trakt"),
         )
         .await;
-    } else if let Some(dur) = duration
-        && dur > 0.0
-        && f64::from(body.position_seconds) < dur * 0.9
-    {
-        // Seeking back below 90%: if auto-watched, reset to unwatched so it
+    } else if extent.is_some() {
+        // Seeking back out of the ending: if auto-watched, reset to unwatched so it
         // re-appears in dashboard "in progress".
         if let Ok(Some(ws)) = tv_watch_states::get(&state.pool, id, user_id).await
             && ws.watched
@@ -2278,12 +2265,15 @@ pub async fn update_episode_position(
         user_id,
         id,
         body.position_seconds,
-        duration,
+        extent,
         &body.client,
     )
     .await;
 
-    Ok(Json(json!({ "id": ws_id })))
+    Ok(Json(json!({
+        "id": ws_id,
+        "watched": extent.map(|e| e.is_finished_at(body.position_seconds)),
+    })))
 }
 
 // =============================================================================

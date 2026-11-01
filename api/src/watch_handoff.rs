@@ -16,6 +16,7 @@
 
 use crate::AppState;
 use crate::events::LibraryEvent;
+use crate::watch_completion::PlaybackExtent;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -98,7 +99,7 @@ pub async fn episode_saved(
     user_id: Uuid,
     episode_id: Uuid,
     position_seconds: i32,
-    duration_seconds: Option<f64>,
+    extent: Option<PlaybackExtent>,
     client: &PlaybackClient,
 ) {
     let Some(client_id) = client.id() else {
@@ -143,8 +144,8 @@ pub async fn episode_saved(
             media_id: episode_id,
             scope_id: row.show_id,
             position_seconds,
-            duration_seconds,
-            watched: is_watched(position_seconds, duration_seconds),
+            duration_seconds: extent.map(|e| e.duration_seconds),
+            watched: extent.is_some_and(|e| e.is_finished_at(position_seconds)),
             client_id,
             client_label: client.label(),
             saved_at: OffsetDateTime::now_utc(),
@@ -167,7 +168,7 @@ pub async fn movie_saved(
     user_id: Uuid,
     movie_id: Uuid,
     position_seconds: i32,
-    duration_seconds: Option<f64>,
+    extent: Option<PlaybackExtent>,
     client: &PlaybackClient,
 ) {
     let Some(client_id) = client.id() else {
@@ -186,8 +187,8 @@ pub async fn movie_saved(
             media_id: movie_id,
             scope_id: movie_id,
             position_seconds,
-            duration_seconds,
-            watched: is_watched(position_seconds, duration_seconds),
+            duration_seconds: extent.map(|e| e.duration_seconds),
+            watched: extent.is_some_and(|e| e.is_finished_at(position_seconds)),
             client_id,
             client_label: client.label(),
             saved_at: OffsetDateTime::now_utc(),
@@ -236,11 +237,6 @@ pub async fn latest_for(
     HandoffResponse { scope_id, latest }
 }
 
-/// Same 90% rule the position endpoints use to auto-mark a title watched.
-fn is_watched(position_seconds: i32, duration_seconds: Option<f64>) -> bool {
-    duration_seconds.is_some_and(|d| d > 0.0 && f64::from(position_seconds) >= d * 0.9)
-}
-
 fn publish(state: &AppState, user_id: Uuid, progress: WatchProgress) {
     state
         .watch_handoffs
@@ -276,12 +272,5 @@ mod tests {
             client_label: Some("é".repeat(100)),
         };
         assert_eq!(c.label().unwrap().chars().count(), MAX_LABEL_LEN);
-    }
-
-    #[test]
-    fn watched_follows_the_ninety_percent_rule() {
-        assert!(is_watched(90, Some(100.0)));
-        assert!(!is_watched(89, Some(100.0)));
-        assert!(!is_watched(90, None));
     }
 }

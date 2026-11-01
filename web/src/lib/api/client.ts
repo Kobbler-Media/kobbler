@@ -3273,7 +3273,7 @@ export async function updateMovieWatchState(
 export async function updateMoviePosition(
   id: string,
   positionSeconds: number
-): Promise<{ id: string }> {
+): Promise<{ id: string; watched: boolean | null }> {
   return request(`/api/v1/admin/movies/${id}/watch-state/position`, {
     method: 'PATCH',
     body: JSON.stringify({ position_seconds: positionSeconds, ...playbackClient() })
@@ -3694,7 +3694,7 @@ export async function bulkUpdateSeasonWatchState(
 export async function updateEpisodePosition(
   episodeId: string,
   positionSeconds: number
-): Promise<{ id: string }> {
+): Promise<{ id: string; watched: boolean | null }> {
   return request(`/api/v1/admin/tv/episodes/${episodeId}/watch-state/position`, {
     method: 'PATCH',
     body: JSON.stringify({ position_seconds: positionSeconds, ...playbackClient() })

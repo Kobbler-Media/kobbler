@@ -69,11 +69,15 @@ async fn create_episode(
     id.to_string()
 }
 
-async fn insert_movie_file_with_duration(server: &TestServer, movie_id: &str, duration: f64) {
+async fn insert_movie_file_with_duration(
+    server: &TestServer,
+    movie_id: &str,
+    duration: f64,
+) -> Uuid {
     let file_id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO movie_files (id, movie_id, file_path, format, available, duration_seconds) \
-         VALUES ($1, $2::uuid, '/test/movie.mkv', 'MKV', true, $3)",
+         VALUES ($1, $2::uuid, '/test/movie-' || $1::text || '.mkv', 'MKV', true, $3)",
     )
     .bind(file_id)
     .bind(Uuid::parse_str(movie_id).unwrap())
@@ -81,14 +85,19 @@ async fn insert_movie_file_with_duration(server: &TestServer, movie_id: &str, du
     .execute(&server.pool)
     .await
     .unwrap();
+    file_id
 }
 
-async fn insert_episode_file_with_duration(server: &TestServer, episode_id: &str, duration: f64) {
+async fn insert_episode_file_with_duration(
+    server: &TestServer,
+    episode_id: &str,
+    duration: f64,
+) -> Uuid {
     let file_id = Uuid::now_v7();
     let ep_uuid = Uuid::parse_str(episode_id).unwrap();
     sqlx::query(
         "INSERT INTO tv_episode_files (id, file_path, format, available, duration_seconds) \
-         VALUES ($1, '/test/episode.mkv', 'MKV', true, $2)",
+         VALUES ($1, '/test/episode-' || $1::text || '.mkv', 'MKV', true, $2)",
     )
     .bind(file_id)
     .bind(duration)
@@ -104,6 +113,28 @@ async fn insert_episode_file_with_duration(server: &TestServer, episode_id: &str
     .execute(&server.pool)
     .await
     .unwrap();
+    file_id
+}
+
+const EPISODE_CREDITS: &str = "INSERT INTO episode_skip_segments \
+     (episode_file_id, segment_type, start_seconds, end_seconds) VALUES ($1, 'credits', $2, $3)";
+const MOVIE_CREDITS: &str = "INSERT INTO movie_skip_segments \
+     (movie_file_id, segment_type, start_seconds, end_seconds) VALUES ($1, 'credits', $2, $3)";
+
+async fn insert_credits(
+    server: &TestServer,
+    sql: &'static str,
+    file_id: Uuid,
+    start: f64,
+    end: f64,
+) {
+    sqlx::query(sql)
+        .bind(file_id)
+        .bind(start)
+        .bind(end)
+        .execute(&server.pool)
+        .await
+        .unwrap();
 }
 
 // =============================================================================
@@ -226,6 +257,214 @@ async fn test_episode_no_auto_complete_below_90_percent() {
         ws["watched"], false,
         "episode should NOT be auto-marked at 89%"
     );
+}
+
+// =============================================================================
+// Credits-Aware Completion
+// =============================================================================
+
+struct CreditsCase {
+    name: &'static str,
+    credits_start: Option<f64>,
+    position: i32,
+    watched: bool,
+}
+
+/// A 3311 s file whose 90% mark (2980 s) falls after the credits start, the way
+/// Carrie 1x01's does: name cards at 2918 s, the crawl not until 3131 s.
+const CREDITS_CASES: &[CreditsCase] = &[
+    CreditsCase {
+        name: "inside the credits, short of 90%",
+        credits_start: Some(2918.0),
+        position: 2948,
+        watched: true,
+    },
+    CreditsCase {
+        name: "just before the credits",
+        credits_start: Some(2918.0),
+        position: 2900,
+        watched: false,
+    },
+    CreditsCase {
+        name: "credits after the 90% mark",
+        credits_start: Some(3131.0),
+        position: 2990,
+        watched: true,
+    },
+    CreditsCase {
+        name: "no credits detected",
+        credits_start: None,
+        position: 2948,
+        watched: false,
+    },
+    CreditsCase {
+        name: "implausibly early credits",
+        credits_start: Some(600.0),
+        position: 700,
+        watched: false,
+    },
+];
+const CREDITS_CASE_DURATION: f64 = 3311.0;
+
+#[tokio::test]
+async fn test_episode_completes_at_credits_start() {
+    let server = TestServer::start_api_only().await;
+    let show_id = create_show(&server, "Credits Show").await;
+    let season_id = create_season(&server, &show_id, 1).await;
+    for (n, case) in CREDITS_CASES.iter().enumerate() {
+        let ep_id = create_episode(&server, &season_id, n as i32 + 1, case.name).await;
+        let file_id =
+            insert_episode_file_with_duration(&server, &ep_id, CREDITS_CASE_DURATION).await;
+        if let Some(start) = case.credits_start {
+            insert_credits(
+                &server,
+                EPISODE_CREDITS,
+                file_id,
+                start,
+                CREDITS_CASE_DURATION,
+            )
+            .await;
+        }
+        let saved: Value = server
+            .admin_client()
+            .patch_json(
+                &format!("/api/v1/admin/tv/episodes/{ep_id}/watch-state/position"),
+                &json!({ "position_seconds": case.position, "client_id": "phone" }),
+            )
+            .await
+            .json();
+        assert_eq!(
+            saved["watched"], case.watched,
+            "episode save response: {}",
+            case.name
+        );
+
+        let ws: Value = server
+            .admin_client()
+            .get(&format!("/api/v1/admin/tv/episodes/{ep_id}/watch-state"))
+            .await
+            .json();
+        assert_eq!(ws["watched"], case.watched, "episode: {}", case.name);
+
+        let handoff: Value = server
+            .admin_client()
+            .get(&format!(
+                "/api/v1/admin/playback/handoff?media_type=episode&media_id={ep_id}"
+            ))
+            .await
+            .json();
+        assert_eq!(
+            handoff["latest"]["watched"], case.watched,
+            "episode handoff: {}",
+            case.name
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_movie_completes_at_credits_start() {
+    let server = TestServer::start_api_only().await;
+    for case in CREDITS_CASES {
+        let id = create_movie(&server, case.name).await;
+        let file_id = insert_movie_file_with_duration(&server, &id, CREDITS_CASE_DURATION).await;
+        if let Some(start) = case.credits_start {
+            insert_credits(
+                &server,
+                MOVIE_CREDITS,
+                file_id,
+                start,
+                CREDITS_CASE_DURATION,
+            )
+            .await;
+        }
+        let saved: Value = server
+            .admin_client()
+            .patch_json(
+                &format!("/api/v1/admin/movies/{id}/watch-state/position"),
+                &json!({ "position_seconds": case.position, "client_id": "phone" }),
+            )
+            .await
+            .json();
+        assert_eq!(
+            saved["watched"], case.watched,
+            "movie save response: {}",
+            case.name
+        );
+
+        let ws: Value = server
+            .admin_client()
+            .get(&format!("/api/v1/admin/movies/{id}/watch-state"))
+            .await
+            .json();
+        assert_eq!(ws["watched"], case.watched, "movie: {}", case.name);
+
+        let handoff: Value = server
+            .admin_client()
+            .get(&format!(
+                "/api/v1/admin/playback/handoff?media_type=movie&media_id={id}"
+            ))
+            .await
+            .json();
+        assert_eq!(
+            handoff["latest"]["watched"], case.watched,
+            "movie handoff: {}",
+            case.name
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_save_without_a_file_has_no_watched_verdict() {
+    let server = TestServer::start_api_only().await;
+    let show_id = create_show(&server, "Streamed Show").await;
+    let season_id = create_season(&server, &show_id, 1).await;
+    let ep_id = create_episode(&server, &season_id, 1, "Pilot").await;
+    let movie_id = create_movie(&server, "Streamed Movie").await;
+    for path in [
+        format!("/api/v1/admin/tv/episodes/{ep_id}/watch-state/position"),
+        format!("/api/v1/admin/movies/{movie_id}/watch-state/position"),
+    ] {
+        let saved: Value = server
+            .admin_client()
+            .patch_json(&path, &json!({ "position_seconds": 3000 }))
+            .await
+            .json();
+        assert!(saved["watched"].is_null(), "{path}: {saved}");
+    }
+}
+
+#[tokio::test]
+async fn test_episode_seeking_back_before_credits_unwatches() {
+    let server = TestServer::start_api_only().await;
+    let show_id = create_show(&server, "Rewind Show").await;
+    let season_id = create_season(&server, &show_id, 1).await;
+    let ep_id = create_episode(&server, &season_id, 1, "Pilot").await;
+    let file_id = insert_episode_file_with_duration(&server, &ep_id, CREDITS_CASE_DURATION).await;
+    insert_credits(
+        &server,
+        EPISODE_CREDITS,
+        file_id,
+        2918.0,
+        CREDITS_CASE_DURATION,
+    )
+    .await;
+
+    for (position, watched) in [(2948, true), (2948 - 100, false)] {
+        server
+            .admin_client()
+            .patch_json(
+                &format!("/api/v1/admin/tv/episodes/{ep_id}/watch-state/position"),
+                &json!({ "position_seconds": position }),
+            )
+            .await
+            .assert_ok();
+        let ws: Value = server
+            .admin_client()
+            .get(&format!("/api/v1/admin/tv/episodes/{ep_id}/watch-state"))
+            .await
+            .json();
+        assert_eq!(ws["watched"], watched, "at {position}s");
+    }
 }
 
 // =============================================================================

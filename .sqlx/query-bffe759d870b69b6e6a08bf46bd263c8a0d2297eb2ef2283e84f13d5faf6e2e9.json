@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT f.duration_seconds AS \"duration!\",\n               (SELECT MIN(s.start_seconds) FROM episode_skip_segments s\n                WHERE s.episode_file_id = f.id AND s.segment_type = 'credits'\n                  AND NOT (s.start_seconds = 0 AND s.end_seconds = 0)) AS credits_start\n        FROM tv_episode_files f\n        JOIN tv_episode_file_episodes fe ON fe.episode_file_id = f.id\n        WHERE fe.episode_id = $1 AND f.available = true AND f.duration_seconds IS NOT NULL\n        ORDER BY f.duration_seconds DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "duration!",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "duration_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "credits_start",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "bffe759d870b69b6e6a08bf46bd263c8a0d2297eb2ef2283e84f13d5faf6e2e9"
+}
