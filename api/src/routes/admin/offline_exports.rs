@@ -118,6 +118,7 @@ pub async fn create_export(
             preferred_audio_index: decision::find_preferred_audio(&meta.audio_metas, language),
             preferred_subtitle_index: None,
             understood_language: language,
+            subtitle_language: "",
         },
         &["h264"],
     );

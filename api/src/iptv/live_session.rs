@@ -216,6 +216,7 @@ pub async fn create_live_session(
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: &config.preferred_audio_language,
+                subtitle_language: "",
             },
             &preferred_codecs,
         );

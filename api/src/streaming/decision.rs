@@ -170,6 +170,7 @@ pub struct ViewerPrefs<'a> {
     pub preferred_audio_index: Option<i32>,
     pub preferred_subtitle_index: Option<i32>,
     pub understood_language: &'a str,
+    pub subtitle_language: &'a str,
 }
 
 /// Determine the optimal playback method.
@@ -224,6 +225,7 @@ pub fn decide(
         subtitle_tracks,
         prefs.preferred_subtitle_index,
         audio_understood,
+        prefs.subtitle_language,
     );
 
     // Audio stream index (fallback to 0 if no tracks)
@@ -355,21 +357,22 @@ fn decide_subtitles(
     tracks: &[SubtitleTrackMeta],
     preferred_index: Option<i32>,
     audio_understood: bool,
+    subtitle_language: &str,
 ) -> SubtitleHandling {
     let track = if let Some(idx) = preferred_index {
         tracks.iter().find(|t| t.stream_index == idx)
     } else {
-        // Auto-select: forced track first, then a default track only when the
-        // audio itself is a language the viewer does not read.
-        // Skip bitmap subs for auto-selection — they force an expensive video
-        // transcode, so only activate on explicit user request.
+        // Bitmap subs force an expensive video transcode, so they auto-select
+        // only as the viewer's subtitle language under foreign audio.
         let is_text = |t: &SubtitleTrackMeta| !is_bitmap_codec(&t.codec);
         if let Some(forced) = tracks.iter().find(|t| t.is_forced && is_text(t)) {
             Some(forced)
         } else if audio_understood {
             None
         } else {
-            tracks.iter().find(|t| t.is_default && is_text(t))
+            find_preferred_subtitle(tracks, subtitle_language)
+                .and_then(|idx| tracks.iter().find(|t| t.stream_index == idx))
+                .or_else(|| tracks.iter().find(|t| t.is_default && is_text(t)))
         }
     };
 
@@ -848,6 +851,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -868,6 +872,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -888,6 +893,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -908,6 +914,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -928,6 +935,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -948,6 +956,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -993,6 +1002,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1038,6 +1048,7 @@ mod tests {
                 preferred_audio_index: Some(1),
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1065,6 +1076,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1095,6 +1107,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1124,6 +1137,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1154,6 +1168,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1183,6 +1198,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: Some(3),
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1214,6 +1230,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: Some(4),
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1243,6 +1260,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1272,6 +1290,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1301,6 +1320,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1332,6 +1352,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1364,6 +1385,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             H264_ONLY,
         );
@@ -1384,6 +1406,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             HEVC_H264,
         );
@@ -1419,6 +1442,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             HEVC_H264,
         );
@@ -1458,6 +1482,7 @@ mod tests {
                 preferred_audio_index: None,
                 preferred_subtitle_index: None,
                 understood_language: "english",
+                subtitle_language: "",
             },
             HEVC_H264,
         );

@@ -205,6 +205,7 @@ pub(super) async fn run(ctx: Prepare) {
             preferred_audio_index: preferred_audio,
             preferred_subtitle_index: None,
             understood_language: &audio_language,
+            subtitle_language: "",
         },
         &bg_state.encoder_caps.preferred_codecs(),
     );

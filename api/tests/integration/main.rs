@@ -156,6 +156,7 @@ mod stream_keep_test;
 mod stream_prewarm_test;
 mod stremio_continue_test;
 mod stremio_history_test;
+mod subtitle_autoselect_test;
 mod title_alternates_test;
 mod tmdb_titles_sync_test;
 mod trakt_test;

@@ -479,16 +479,7 @@ pub(crate) async fn open_file_session(
         .as_deref()
         .filter(|s| !s.is_empty())
         .unwrap_or(&config.preferred_subtitle_language);
-    let preferred_subtitle = if !subtitles_enabled {
-        None
-    } else if req.subtitle_track_index.is_some() {
-        req.subtitle_track_index
-    } else if preferred_audio.is_none() {
-        // No matching audio → fall back to preferred subtitle language
-        decision::find_preferred_subtitle(&sub_metas, subtitle_lang_pref)
-    } else {
-        None
-    };
+    let preferred_subtitle = req.subtitle_track_index.filter(|_| subtitles_enabled);
 
     // Run decision engine
     let file_meta = FileMeta {
@@ -508,6 +499,11 @@ pub(crate) async fn open_file_session(
             preferred_audio_index: preferred_audio,
             preferred_subtitle_index: preferred_subtitle,
             understood_language: audio_lang_pref,
+            subtitle_language: if subtitles_enabled {
+                subtitle_lang_pref
+            } else {
+                ""
+            },
         },
         &preferred_codecs,
     );
