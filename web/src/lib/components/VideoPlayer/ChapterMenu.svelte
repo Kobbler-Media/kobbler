@@ -72,7 +72,7 @@
       aria-label="Chapters"
       title="Chapters"
     >
-      <span class="material-icons-outlined">list</span>
+      <span class="material-icons-outlined">toc</span>
     </button>
 
     {#if open}
