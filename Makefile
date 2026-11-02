@@ -126,8 +126,10 @@ docker-push:
 	docker image prune -f --filter "dangling=true"
 
 # Skipped when cargo-sweep isn't installed so a fresh clone can still run `make`.
+# Above what one full `make` leaves (~15 GB): a lower cap deletes artifacts the next run
+# only builds again.
 sweep:
-	@command -v cargo-sweep >/dev/null 2>&1 && cargo sweep --maxsize 10GB . || \
+	@command -v cargo-sweep >/dev/null 2>&1 && cargo sweep --maxsize 25GB . || \
 		echo "sweep: cargo-sweep not installed, skipping (cargo install cargo-sweep)"
 
 tools:
