@@ -759,6 +759,14 @@ pub async fn create_book(server: &TestServer, title: &str) -> uuid::Uuid {
     create_book_with_author(server, title, "Test Author").await
 }
 
+/// The seeded admin user, whose session `admin_client` uses.
+pub async fn get_admin_user_id(server: &TestServer) -> uuid::Uuid {
+    sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM users WHERE email = 'admin@test.local'")
+        .fetch_one(&server.pool)
+        .await
+        .expect("admin user must exist")
+}
+
 /// Create a book with a specific author via the ingest API.
 pub async fn create_book_with_author(server: &TestServer, title: &str, author: &str) -> uuid::Uuid {
     let book_id = uuid::Uuid::new_v4();

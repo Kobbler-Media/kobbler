@@ -174,16 +174,40 @@ pub fn build_reading_state_response(row: ReadingStateRow) -> ReadingStateRespons
             last_modified: format_rfc3339(row.bookmark_last_modified),
             progress_percent: row.progress_percent,
             content_source_progress_percent: row.content_source_progress_percent,
-            location: row
-                .location_value
-                .filter(|_| row.location_source.as_deref() != Some("web-reader"))
-                .map(|value| LocationResponse {
-                    value,
-                    location_type: row.location_type.unwrap_or_else(|| "Location".to_string()),
-                    source: row.location_source.unwrap_or_else(|| "Kobo".to_string()),
-                }),
+            location: kobo_location(
+                row.location_value,
+                row.location_type,
+                row.location_source,
+                row.kobo_location_value,
+                row.kobo_location_source,
+            ),
         },
     }
+}
+
+/// A web-reader/app row stores its position as epubcfi, which a Kobo cannot
+/// read; it carries the KoboSpan translation made when it was saved instead.
+fn kobo_location(
+    value: Option<String>,
+    location_type: Option<String>,
+    source: Option<String>,
+    kobo_value: Option<String>,
+    kobo_source: Option<String>,
+) -> Option<LocationResponse> {
+    if source.as_deref() == Some("web-reader") {
+        return kobo_value
+            .zip(kobo_source)
+            .map(|(value, source)| LocationResponse {
+                value,
+                location_type: "KoboSpan".to_string(),
+                source,
+            });
+    }
+    value.map(|value| LocationResponse {
+        value,
+        location_type: location_type.unwrap_or_else(|| "Location".to_string()),
+        source: source.unwrap_or_else(|| "Kobo".to_string()),
+    })
 }
 
 /// Update reading state and return results.

@@ -730,6 +730,24 @@ pub async fn enqueue_ebook_extract(pool: &PgPool, nats: &Publisher, book_id: Uui
     }
 }
 
+/// Enqueue building the app reader pack for a book.
+pub async fn enqueue_reader_pack(pool: &PgPool, nats: &Publisher, book_id: Uuid) {
+    let display = fetch_job_display(pool, "book", book_id).await;
+    let context = JobContext::for_entity("book", book_id, "Preparing book for reading".to_string())
+        .with_display_opt(display);
+    if let Err(e) = enqueue(
+        pool,
+        nats,
+        "reader_pack",
+        serde_json::json!({"book_id": book_id}),
+        context,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, book_id = %book_id, "Failed to enqueue reader_pack job");
+    }
+}
+
 // =============================================================================
 // Cross-Format Sync Helpers
 // =============================================================================

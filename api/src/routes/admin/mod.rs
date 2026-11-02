@@ -45,6 +45,7 @@ pub mod people;
 mod pin_login;
 mod proxy_logs;
 mod reader;
+mod reader_pack;
 mod reading;
 mod recents;
 mod search;
@@ -142,6 +143,7 @@ pub use filesystem::{browse_directories, detect_media_type};
 
 // Reader (web EPUB reader)
 pub use reader::{download_book_file, get_reader_progress, save_reader_progress};
+pub use reader_pack::{get_reader_pack_asset, get_reader_pack_chapter, get_reader_pack_manifest};
 
 // Reading (reading status, progress, rating)
 pub use reading::{get_reading_data, log_reading_time, update_reading_data};

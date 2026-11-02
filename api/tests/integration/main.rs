@@ -125,6 +125,8 @@ mod profile_pin_test;
 mod provider_id_ambiguity_test;
 mod proxy_logs_test;
 mod query_correctness_test;
+mod read_along_positions_test;
+mod reader_pack_test;
 mod reader_sync_test;
 mod reader_test;
 mod reading_state_sync_test;

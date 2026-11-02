@@ -78,12 +78,14 @@ where
     Ok(())
 }
 
-/// Find the closest ebook position for a given audiobook timestamp.
-/// Returns the sync point with the nearest audio_seconds <= the given value.
+/// The sync point with the nearest `audio_seconds` at or before the given
+/// value, in `audio_file_id` when given — timestamps restart at zero in every
+/// file of a multi-file audiobook.
 pub async fn find_ebook_position<'e, E>(
     exec: E,
     book_id: Uuid,
     audio_seconds: f64,
+    audio_file_id: Option<Uuid>,
 ) -> Result<Option<SyncPoint>>
 where
     E: Executor<'e, Database = Postgres>,
@@ -93,40 +95,13 @@ where
         r#"
         SELECT id, book_id, audio_file_id, audio_seconds, ebook_file_id, ebook_cfi, confidence, created_at
         FROM cross_format_sync
-        WHERE book_id = $1 AND audio_seconds <= $2
+        WHERE book_id = $1 AND audio_seconds <= $2 AND ($3::uuid IS NULL OR audio_file_id = $3)
         ORDER BY audio_seconds DESC
         LIMIT 1
         "#,
         book_id,
         audio_seconds,
-    )
-    .fetch_optional(exec)
-    .await?;
-    Ok(row)
-}
-
-/// Find the closest audio position for a given ebook CFI.
-/// This does a text comparison on CFI strings — looks for exact match or nearest by segment index.
-pub async fn find_audio_position<'e, E>(
-    exec: E,
-    book_id: Uuid,
-    ebook_cfi: &str,
-) -> Result<Option<SyncPoint>>
-where
-    E: Executor<'e, Database = Postgres>,
-{
-    // Find exact CFI match, or nearest CFI that sorts before the target
-    let row = sqlx::query_as!(
-        SyncPoint,
-        r#"
-        SELECT id, book_id, audio_file_id, audio_seconds, ebook_file_id, ebook_cfi, confidence, created_at
-        FROM cross_format_sync
-        WHERE book_id = $1 AND ebook_cfi <= $2
-        ORDER BY ebook_cfi DESC
-        LIMIT 1
-        "#,
-        book_id,
-        ebook_cfi,
+        audio_file_id,
     )
     .fetch_optional(exec)
     .await?;

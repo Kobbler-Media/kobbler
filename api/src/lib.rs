@@ -45,6 +45,7 @@ pub mod nas_health;
 pub mod nats;
 pub mod notifications;
 pub mod rate_limit;
+pub mod reader_pack;
 pub mod repositories;
 pub mod routes;
 pub mod runtime_config;
@@ -422,6 +423,18 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/admin/books/{book_id}/file",
             get(admin::download_book_file),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/reader-pack",
+            get(admin::get_reader_pack_manifest),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/reader-pack/chapters/{chapter}",
+            get(admin::get_reader_pack_chapter),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/reader-pack/assets/{*asset}",
+            get(admin::get_reader_pack_asset),
         )
         .route(
             "/api/v1/admin/books/{book_id}/reader-progress",

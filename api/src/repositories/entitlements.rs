@@ -322,6 +322,8 @@ where
                    'content_source_progress_percent', bm.content_source_progress_percent,
                    'location_value', bm.location_value, 'location_type', bm.location_type,
                    'location_source', bm.location_source,
+                   'kobo_location_value', bm.kobo_location_value,
+                   'kobo_location_source', bm.kobo_location_source,
                    'bookmark_last_modified', bm.last_modified_at
                )
                FROM reading_states rs

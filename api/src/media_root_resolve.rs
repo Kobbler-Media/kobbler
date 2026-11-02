@@ -772,6 +772,7 @@ pub async fn resolve_book(
         )
         .await;
         crate::jobs::enqueue_book_index(ctx.pool, ctx.nats, book_id).await;
+        crate::jobs::enqueue_reader_pack(ctx.pool, ctx.nats, book_id).await;
     }
 
     Ok(ResolveOutcome {
@@ -1699,6 +1700,7 @@ pub async fn resolve_book_group(
     )
     .await;
     crate::jobs::enqueue_book_index(ctx.pool, ctx.nats, book_id).await;
+    crate::jobs::enqueue_reader_pack(ctx.pool, ctx.nats, book_id).await;
 
     results
 }
@@ -1794,6 +1796,7 @@ async fn link_to_book(
     // Sidecars written by enrichment job after full metadata is available
     let _ = search::index_media_root_file(ctx.search, ctx.pool, file_id).await;
     crate::jobs::enqueue_book_index(ctx.pool, ctx.nats, book_id).await;
+    crate::jobs::enqueue_reader_pack(ctx.pool, ctx.nats, book_id).await;
 
     Ok(ResolveOutcome {
         entity_type: "book".to_string(),

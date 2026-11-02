@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reading_bookmark SET kobo_location_value = $2, kobo_location_source = $3 WHERE reading_state_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0cef19ce17259149f73e88a334b005f1044293c0fdff18694284942151d0dcab"
+}

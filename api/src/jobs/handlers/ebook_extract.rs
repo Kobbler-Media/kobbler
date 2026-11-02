@@ -1,13 +1,13 @@
 //! Ebook text extraction job handler.
 //!
-//! Extracts plain text segments from EPUB files for search indexing
-//! and text-based features. Segments are stored in the `ebook_segments`
-//! table keyed by `book_file_id`.
+//! Extracts the book's text segments for search indexing and read-along.
+//! Segments are stored in the `ebook_segments` table keyed by the reader
+//! file's `book_file_id`.
 
-use crate::ebook::extract;
 use crate::jobs::JobResult;
 use crate::jobs::worker::JobHandler;
-use crate::repositories::{audiobook_transcripts, book_files, ebook_segments};
+use crate::reader_pack;
+use crate::repositories::{audiobook_transcripts, ebook_segments};
 use crate::search::SearchBackend;
 use async_trait::async_trait;
 use nats_jobs::Publisher;
@@ -75,54 +75,42 @@ impl JobHandler for EbookExtractHandler {
         let payload: EbookExtractPayload = serde_json::from_value(payload)?;
         let book_id = payload.book_id;
 
-        // Find the EPUB file for this book
-        let epub_path = book_files::get_path_by_format(&self.pool, book_id, "EPUB").await?;
-        let epub_path = match epub_path {
-            Some(p) => p,
-            None => {
-                info!(book_id = %book_id, "No EPUB file found, skipping extraction");
-                return Ok(json!({"status": "no_epub"}));
-            }
+        let Some(file) = reader_pack::file::find(
+            &self.pool,
+            &self.storage_root,
+            book_id,
+            reader_pack::file::PACK_FORMATS,
+        )
+        .await
+        else {
+            info!(book_id = %book_id, "No EPUB or KEPUB file found, skipping extraction");
+            return Ok(json!({"status": "no_epub"}));
         };
+        let file_id = file.id;
 
-        // We need the file ID for ebook_segments — get preferred EPUB file
-        let (file_id, _) = match book_files::get_preferred_file(&self.pool, book_id).await? {
-            Some(f) => f,
-            None => {
-                info!(book_id = %book_id, "No available book file found");
-                return Ok(json!({"status": "no_file"}));
-            }
-        };
-
-        // Resolve file path
-        let file_path = crate::audio::path::resolve_file_path(&self.storage_root, &epub_path);
-        if !file_path.is_file() {
-            warn!(
-                book_id = %book_id,
-                path = %file_path.display(),
-                "EPUB file not found on disk"
-            );
-            return Ok(json!({"status": "file_not_found"}));
-        }
-
-        // Extract text from EPUB (CPU-bound, run in blocking thread)
-        let segments = tokio::task::spawn_blocking(move || extract::extract_epub_text(&file_path))
+        // Built from the reader pack so each segment carries the epubcfi the
+        // readers resume from, in the same document they open.
+        let pack = reader_pack::ensure(&self.storage_root, &file)
             .await
-            .map_err(|e| crate::jobs::JobError::ExecutionFailed(format!("Join error: {e}")))?
             .map_err(|e| {
                 crate::jobs::JobError::ExecutionFailed(format!("EPUB extraction failed: {e}"))
             })?;
+        let segments =
+            tokio::task::spawn_blocking(move || reader_pack::segments::text_segments(&pack))
+                .await
+                .map_err(|e| crate::jobs::JobError::ExecutionFailed(format!("Join error: {e}")))?
+                .map_err(|e| {
+                    crate::jobs::JobError::ExecutionFailed(format!("EPUB extraction failed: {e}"))
+                })?;
 
         let segment_count = segments.len();
 
-        // Delete existing segments for this file
-        ebook_segments::delete_for_file(&self.pool, file_id).await?;
+        ebook_segments::delete_for_book(&self.pool, book_id).await?;
 
-        // Convert to repository input type and insert
         let inputs: Vec<ebook_segments::EbookSegmentInput> = segments
             .into_iter()
             .map(|s| ebook_segments::EbookSegmentInput {
-                segment_index: s.segment_index,
+                segment_index: s.index,
                 cfi: s.cfi,
                 text: s.text,
                 chapter_title: s.chapter_title,

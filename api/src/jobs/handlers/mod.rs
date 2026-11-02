@@ -69,6 +69,7 @@ pub mod person_enrich;
 mod person_sync;
 mod playback_session_expiry;
 mod proxy_log_cleanup;
+mod reader_pack;
 mod search_index;
 mod series_enrich;
 mod session_cleanup;
@@ -180,6 +181,7 @@ pub use person_enrich::PersonEnrichHandler;
 pub use person_sync::PersonSyncCheckHandler;
 pub use playback_session_expiry::PlaybackSessionExpiryHandler;
 pub use proxy_log_cleanup::ProxyLogCleanupHandler;
+pub use reader_pack::ReaderPackHandler;
 pub use search_index::{SearchIndexHandler, SearchReindexHandler};
 pub use series_enrich::{SeriesEnrichHandler, SeriesSyncCheckHandler};
 pub use session_cleanup::SessionCleanupHandler;
@@ -243,6 +245,7 @@ pub use metadata_write::MetadataWritePayload;
 pub use movie_enrich::MovieEnrichPayload;
 pub use movie_want::MovieWantPayload;
 pub use notification_send::NotificationSendPayload;
+pub use reader_pack::ReaderPackPayload;
 pub use search_index::{
     SearchIndexPayload, SearchReindexPayload, get_static_commands, get_static_pages,
 };

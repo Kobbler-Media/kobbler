@@ -79,6 +79,10 @@ pub struct ReadingStateRow {
     pub location_value: Option<String>,
     pub location_type: Option<String>,
     pub location_source: Option<String>,
+    #[serde(default)]
+    pub kobo_location_value: Option<String>,
+    #[serde(default)]
+    pub kobo_location_source: Option<String>,
     #[serde(deserialize_with = "crate::serde_pg::timestamp")]
     pub bookmark_last_modified: OffsetDateTime,
     #[serde(default)]
@@ -99,7 +103,7 @@ where
         SELECT rs.id, rs.device_id, rs.created_at, rs.updated_at, rs.priority_timestamp, rs.client_payload,
                st.status, st.last_modified_at as status_last_modified, st.times_started_reading, st.last_time_started_reading,
                stats.spent_reading_minutes, stats.remaining_time_minutes, stats.last_modified_at as stats_last_modified,
-               bm.progress_percent, bm.content_source_progress_percent, bm.location_value, bm.location_type, bm.location_source,
+               bm.progress_percent, bm.content_source_progress_percent, bm.location_value, bm.location_type, bm.location_source, bm.kobo_location_value, bm.kobo_location_source,
                bm.last_modified_at as bookmark_last_modified
         FROM reading_states rs
         JOIN reading_status st ON st.reading_state_id = rs.id
@@ -131,6 +135,8 @@ where
         location_value: r.location_value,
         location_type: r.location_type,
         location_source: r.location_source,
+        kobo_location_value: r.kobo_location_value,
+        kobo_location_source: r.kobo_location_source,
         bookmark_last_modified: r.bookmark_last_modified,
         client_payload: r.client_payload,
     }))
@@ -152,7 +158,7 @@ where
         SELECT rs.id, rs.device_id, rs.created_at, rs.updated_at, rs.priority_timestamp, rs.client_payload,
                st.status, st.last_modified_at as status_last_modified, st.times_started_reading, st.last_time_started_reading,
                stats.spent_reading_minutes, stats.remaining_time_minutes, stats.last_modified_at as stats_last_modified,
-               bm.progress_percent, bm.content_source_progress_percent, bm.location_value, bm.location_type, bm.location_source,
+               bm.progress_percent, bm.content_source_progress_percent, bm.location_value, bm.location_type, bm.location_source, bm.kobo_location_value, bm.kobo_location_source,
                bm.last_modified_at as bookmark_last_modified
         FROM reading_states rs
         JOIN reading_status st ON st.reading_state_id = rs.id
@@ -194,6 +200,8 @@ where
         location_value: r.location_value,
         location_type: r.location_type,
         location_source: r.location_source,
+        kobo_location_value: r.kobo_location_value,
+        kobo_location_source: r.kobo_location_source,
         bookmark_last_modified: r.bookmark_last_modified,
         client_payload: r.client_payload,
     }))
@@ -215,7 +223,7 @@ where
         SELECT rs.id, rs.device_id, rs.created_at, rs.updated_at, rs.priority_timestamp, rs.client_payload,
                st.status, st.last_modified_at as status_last_modified, st.times_started_reading, st.last_time_started_reading,
                stats.spent_reading_minutes, stats.remaining_time_minutes, stats.last_modified_at as stats_last_modified,
-               bm.progress_percent, bm.content_source_progress_percent, bm.location_value, bm.location_type, bm.location_source,
+               bm.progress_percent, bm.content_source_progress_percent, bm.location_value, bm.location_type, bm.location_source, bm.kobo_location_value, bm.kobo_location_source,
                bm.last_modified_at as bookmark_last_modified
         FROM reading_states rs
         JOIN reading_status st ON st.reading_state_id = rs.id
@@ -258,6 +266,8 @@ where
             location_value: r.location_value,
             location_type: r.location_type,
             location_source: r.location_source,
+            kobo_location_value: r.kobo_location_value,
+            kobo_location_source: r.kobo_location_source,
             bookmark_last_modified: r.bookmark_last_modified,
             client_payload: r.client_payload,
         })
@@ -420,6 +430,28 @@ where
     Ok(())
 }
 
+/// The KoboSpan form of a web-reader/app position, or `None` to clear it
+/// when the position could not be translated.
+pub async fn set_kobo_location<'e, E>(
+    exec: E,
+    state_id: Uuid,
+    location: Option<(&str, &str)>,
+) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let (value, source) = location.unzip();
+    sqlx::query!(
+        "UPDATE reading_bookmark SET kobo_location_value = $2, kobo_location_source = $3 WHERE reading_state_id = $1",
+        state_id,
+        value,
+        source,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
 /// Touch the updated_at timestamp for a reading state.
 pub async fn touch<'e, E>(exec: E, state_id: Uuid) -> Result<()>
 where
@@ -453,7 +485,7 @@ pub async fn list_changed_since(
                stats.spent_reading_minutes, stats.remaining_time_minutes,
                stats.last_modified_at as stats_last_modified,
                bm.progress_percent, bm.content_source_progress_percent,
-               bm.location_value, bm.location_type, bm.location_source,
+               bm.location_value, bm.location_type, bm.location_source, bm.kobo_location_value, bm.kobo_location_source,
                bm.last_modified_at as bookmark_last_modified
         FROM reading_states rs
         JOIN reading_status st ON st.reading_state_id = rs.id
@@ -506,6 +538,8 @@ pub async fn list_changed_since(
             location_value: r.location_value,
             location_type: r.location_type,
             location_source: r.location_source,
+            kobo_location_value: r.kobo_location_value,
+            kobo_location_source: r.kobo_location_source,
             bookmark_last_modified: r.bookmark_last_modified,
             client_payload: r.client_payload,
         })

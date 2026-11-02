@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT book_id FROM book_files WHERE format = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_files",
+            "name": "book_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "90c2647794e6274eb7d097b9611c995a70981bebec74a7edc40c7fa7b7e79fad"
+}

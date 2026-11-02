@@ -20,6 +20,7 @@ use crate::audio::auto_chapters;
 use crate::enrichment_config::stt_config_tag;
 use crate::jobs::{self, JobContext};
 use crate::metadata::audnexus;
+use crate::reader_pack;
 use crate::repositories::audiobook_chapters::ChapterInput;
 use crate::repositories::{
     audiobook_bookmarks, audiobook_chapters, audiobook_files, audiobook_transcripts, books,
@@ -1390,6 +1391,8 @@ pub struct SyncPositionQuery {
     pub seconds: Option<f64>,
     /// Ebook CFI (when from=ebook)
     pub cfi: Option<String>,
+    /// The audio file `seconds` is in (when from=audio)
+    pub file_id: Option<Uuid>,
 }
 
 /// Get cross-format sync position.
@@ -1418,7 +1421,14 @@ pub async fn get_sync_position(
                         .into_response();
                 }
             };
-            match cross_format_sync::find_ebook_position(&state.pool, book_id, seconds).await {
+            match cross_format_sync::find_ebook_position(
+                &state.pool,
+                book_id,
+                seconds,
+                query.file_id,
+            )
+            .await
+            {
                 Ok(Some(sp)) => Json(json!({
                     "cfi": sp.ebook_cfi,
                     "file_id": sp.ebook_file_id.to_string(),
@@ -1448,7 +1458,7 @@ pub async fn get_sync_position(
                         .into_response();
                 }
             };
-            match cross_format_sync::find_audio_position(&state.pool, book_id, cfi).await {
+            match nearest_sync_point_before(&state, book_id, cfi).await {
                 Ok(Some(sp)) => Json(json!({
                     "seconds": sp.audio_seconds,
                     "file_id": sp.audio_file_id.to_string(),
@@ -1473,6 +1483,35 @@ pub async fn get_sync_position(
         )
             .into_response(),
     }
+}
+
+/// The last sync point at or before `cfi` in reading order. CFIs do not sort
+/// as strings (`/6/10` is after `/6/2`), so both sides are placed in the
+/// book's reader pack and compared there.
+async fn nearest_sync_point_before(
+    state: &AppState,
+    book_id: Uuid,
+    cfi: &str,
+) -> crate::repositories::Result<Option<cross_format_sync::SyncPoint>> {
+    let points = cross_format_sync::get_for_book(&state.pool, book_id).await?;
+    let Some(pack) = reader_pack::for_book(state, book_id).await else {
+        return Ok(None);
+    };
+    let Some(target) = reader_pack::position::from_cfi(&pack, cfi) else {
+        return Ok(None);
+    };
+    let target = reader_pack::position::order(&target);
+    Ok(points
+        .into_iter()
+        .filter_map(|sp| {
+            let at = reader_pack::position::order(&reader_pack::position::from_cfi(
+                &pack,
+                &sp.ebook_cfi,
+            )?);
+            (at <= target).then_some((at, sp))
+        })
+        .max_by_key(|(at, _)| *at)
+        .map(|(_, sp)| sp))
 }
 
 // =============================================================================
@@ -1560,12 +1599,19 @@ pub async fn get_read_along_data(
         .await
         .unwrap_or_default();
 
+    let pack = if sync_points.is_empty() {
+        None
+    } else {
+        reader_pack::for_book(&state, book_id).await
+    };
+
     Json(json!({
         "sync_points": sync_points.iter().map(|sp| json!({
             "audio_file_id": sp.audio_file_id,
             "audio_seconds": sp.audio_seconds,
             "ebook_file_id": sp.ebook_file_id,
             "ebook_cfi": sp.ebook_cfi,
+            "position": pack.as_deref().and_then(|p| reader_pack::position::from_cfi(p, &sp.ebook_cfi)),
             "confidence": sp.confidence,
         })).collect::<Vec<_>>(),
         "transcript_segments": transcript_segments.iter().map(|s| json!({

@@ -98,6 +98,7 @@ use crate::jobs::handlers::{
     PersonSyncCheckHandler,
     PlaybackSessionExpiryHandler,
     ProxyLogCleanupHandler,
+    ReaderPackHandler,
     SearchIndexHandler,
     SearchReindexHandler,
     SeriesEnrichHandler,
@@ -345,6 +346,13 @@ pub async fn start_nats_worker(
         storage_root.clone(),
         nats_publisher.clone(),
         search.clone(),
+        fs_semaphore.clone(),
+    )));
+
+    worker.register_handler(HandlerAdapter::new(ReaderPackHandler::new(
+        pool.clone(),
+        storage_root.clone(),
+        nats_publisher.clone(),
         fs_semaphore.clone(),
     )));
 

@@ -609,6 +609,7 @@ impl Ingest<'_> {
                 }
             }
             MediaKind::Ebook => {
+                crate::jobs::enqueue_reader_pack(self.pool, self.nats, self.book_id).await;
                 if transcribe {
                     crate::jobs::enqueue_ebook_extract(self.pool, self.nats, self.book_id, &title)
                         .await;

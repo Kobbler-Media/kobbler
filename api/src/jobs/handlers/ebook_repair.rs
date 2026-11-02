@@ -370,6 +370,10 @@ impl EbookRepairHandler {
             }
         }
 
+        if !repaired.is_empty() {
+            crate::jobs::enqueue_reader_pack(&self.pool, &self.nats_publisher, book_id).await;
+        }
+
         // The text index was built from bytes that have just been replaced.
         if !repaired.is_empty() && ebook_segments::has_segments(&self.pool, book_id).await? {
             let title = books::get_title(&self.pool, book_id)

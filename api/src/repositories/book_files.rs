@@ -445,6 +445,53 @@ where
     Ok(path)
 }
 
+/// Which of `ids` still name a book file.
+pub async fn existing_ids<'e, E>(exec: E, ids: &[Uuid]) -> Result<Vec<Uuid>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let found = sqlx::query_scalar!("SELECT id FROM book_files WHERE id = ANY($1)", ids)
+        .fetch_all(exec)
+        .await?;
+    Ok(found)
+}
+
+/// Every book that has a file in one of `formats`.
+pub async fn list_book_ids_with_formats<'e, E>(exec: E, formats: &[&str]) -> Result<Vec<Uuid>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let formats: Vec<String> = formats.iter().map(|f| f.to_uppercase()).collect();
+    let ids = sqlx::query_scalar!(
+        "SELECT DISTINCT book_id FROM book_files WHERE format = ANY($1)",
+        &formats,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(ids)
+}
+
+/// A book's file row of one format, with the revision that changes whenever
+/// its content is replaced.
+pub async fn get_revision_by_format<'e, E>(
+    exec: E,
+    book_id: Uuid,
+    format: &str,
+) -> Result<Option<(Uuid, String, Uuid)>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let fmt = format.to_uppercase();
+    let row = sqlx::query!(
+        "SELECT id, file_path, content_revision FROM book_files WHERE book_id = $1 AND format = $2",
+        book_id,
+        fmt
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row.map(|r| (r.id, r.file_path, r.content_revision)))
+}
+
 /// Get path of any available file for a book (prefers EPUB, then any).
 pub async fn get_any_available_path<'e, E>(exec: E, book_id: Uuid) -> Result<Option<String>>
 where

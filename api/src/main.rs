@@ -362,6 +362,24 @@ async fn main() {
         }
     }
 
+    // Build reader packs for books that predate them or this pack generation.
+    // Idempotent: a no-op once every book's current pack exists.
+    {
+        use api::jobs::JobContext;
+        let context = JobContext::new("Preparing books for the app reader");
+        if let Err(e) = api::jobs::enqueue(
+            &pool,
+            state.nats.publisher(),
+            "reader_pack",
+            serde_json::json!({}),
+            context,
+        )
+        .await
+        {
+            error!("Failed to enqueue reader_pack sweep: {}", e);
+        }
+    }
+
     // Trigger automatic reindex if needed (after workers are running)
     if needs_reindex {
         use api::jobs::JobContext;

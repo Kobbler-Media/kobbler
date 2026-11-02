@@ -15,7 +15,6 @@ use thiserror::Error;
 #[derive(Debug, Clone)]
 pub struct EbookTextSegment {
     pub segment_index: i32,
-    pub cfi: String,
     pub text: String,
     pub chapter_title: Option<String>,
 }
@@ -58,7 +57,7 @@ pub fn extract_epub_text(path: &Path) -> Result<Vec<EbookTextSegment>, ExtractEr
     let mut segments = Vec::new();
     let mut segment_index: i32 = 0;
 
-    for (spine_idx, idref) in spine.iter().enumerate() {
+    for idref in spine.iter() {
         let href = match manifest.get(idref.as_str()) {
             Some(h) => h,
             None => continue,
@@ -76,7 +75,7 @@ pub fn extract_epub_text(path: &Path) -> Result<Vec<EbookTextSegment>, ExtractEr
             Err(_) => continue,
         };
 
-        let doc_segments = extract_text_from_xhtml(&content, spine_idx, &mut segment_index);
+        let doc_segments = extract_text_from_xhtml(&content, &mut segment_index);
         segments.extend(doc_segments);
     }
 
@@ -213,18 +212,13 @@ fn percent_decode(input: &str) -> String {
 ///
 /// Tracks heading elements for chapter titles and splits text by paragraphs.
 /// Generates CFI-like references for each segment.
-fn extract_text_from_xhtml(
-    content: &str,
-    spine_idx: usize,
-    segment_index: &mut i32,
-) -> Vec<EbookTextSegment> {
+fn extract_text_from_xhtml(content: &str, segment_index: &mut i32) -> Vec<EbookTextSegment> {
     let mut reader = Reader::from_str(content);
     reader.config_mut().trim_text(true);
 
     let mut segments = Vec::new();
     let mut current_chapter: Option<String> = None;
     let mut current_text = String::new();
-    let mut paragraph_index: usize = 0;
     let mut depth: Vec<String> = Vec::new();
     let mut in_heading = false;
     let mut heading_text = String::new();
@@ -248,8 +242,6 @@ fn extract_text_from_xhtml(
                         flush_segment(
                             &mut current_text,
                             &current_chapter,
-                            spine_idx,
-                            &mut paragraph_index,
                             segment_index,
                             &mut segments,
                         );
@@ -262,8 +254,6 @@ fn extract_text_from_xhtml(
                         flush_segment(
                             &mut current_text,
                             &current_chapter,
-                            spine_idx,
-                            &mut paragraph_index,
                             segment_index,
                             &mut segments,
                         );
@@ -296,8 +286,6 @@ fn extract_text_from_xhtml(
                         flush_segment(
                             &mut current_text,
                             &current_chapter,
-                            spine_idx,
-                            &mut paragraph_index,
                             segment_index,
                             &mut segments,
                         );
@@ -332,8 +320,6 @@ fn extract_text_from_xhtml(
     flush_segment(
         &mut current_text,
         &current_chapter,
-        spine_idx,
-        &mut paragraph_index,
         segment_index,
         &mut segments,
     );
@@ -345,8 +331,6 @@ fn extract_text_from_xhtml(
 fn flush_segment(
     text: &mut String,
     chapter_title: &Option<String>,
-    spine_idx: usize,
-    paragraph_index: &mut usize,
     segment_index: &mut i32,
     segments: &mut Vec<EbookTextSegment>,
 ) {
@@ -355,21 +339,13 @@ fn flush_segment(
         return;
     }
 
-    // CFI: /6/{spine_position}!/4/{paragraph_position}
-    // spine and paragraph positions are even numbers in EPUB CFI spec
-    let spine_pos = (spine_idx + 1) * 2;
-    let para_pos = (*paragraph_index + 1) * 2;
-    let cfi = format!("/6/{}!/4/{}", spine_pos, para_pos);
-
     segments.push(EbookTextSegment {
         segment_index: *segment_index,
-        cfi,
         text: trimmed,
         chapter_title: chapter_title.clone(),
     });
 
     *segment_index += 1;
-    *paragraph_index += 1;
     text.clear();
 }
 

@@ -65,14 +65,35 @@ where
     Ok(())
 }
 
-/// Delete all ebook segments for a book file.
-pub async fn delete_for_file<'e, E>(exec: E, book_file_id: Uuid) -> Result<()>
+/// Books whose segments were extracted before segments carried real
+/// epubcfi locations.
+pub async fn books_with_legacy_cfis<'e, E>(exec: E) -> Result<Vec<(Uuid, String)>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let rows = sqlx::query!(
+        r#"
+        SELECT DISTINCT b.id, b.title
+        FROM ebook_segments s
+        JOIN book_files f ON f.id = s.book_file_id
+        JOIN books b ON b.id = f.book_id
+        WHERE s.cfi NOT LIKE 'epubcfi(%'
+        "#
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.id, r.title)).collect())
+}
+
+/// Delete every ebook segment of a book, whichever of its files they were
+/// extracted from.
+pub async fn delete_for_book<'e, E>(exec: E, book_id: Uuid) -> Result<()>
 where
     E: Executor<'e, Database = Postgres>,
 {
     sqlx::query!(
-        "DELETE FROM ebook_segments WHERE book_file_id = $1",
-        book_file_id,
+        "DELETE FROM ebook_segments WHERE book_file_id IN (SELECT id FROM book_files WHERE book_id = $1)",
+        book_id,
     )
     .execute(exec)
     .await?;

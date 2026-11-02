@@ -5282,6 +5282,8 @@ export interface ReadAlongSyncPoint {
   audio_seconds: number;
   ebook_file_id: string;
   ebook_cfi: string;
+  /** Where the point falls in the app's reader pack. */
+  position: { chapter: number; block: number; offset: number } | null;
   confidence: number;
 }
 
@@ -5660,11 +5662,12 @@ export async function createPresetClipFromAudiobook(
 /** Get cross-format sync position. */
 export async function getSyncPosition(
   bookId: string,
-  params: { from: 'audio'; seconds: number } | { from: 'ebook'; cfi: string }
+  params: { from: 'audio'; seconds: number; fileId?: string } | { from: 'ebook'; cfi: string }
 ): Promise<SyncPositionResult | null> {
   const searchParams = new URLSearchParams({ from: params.from });
   if (params.from === 'audio') {
     searchParams.set('seconds', String(params.seconds));
+    if (params.fileId) searchParams.set('file_id', params.fileId);
   } else {
     searchParams.set('cfi', params.cfi);
   }

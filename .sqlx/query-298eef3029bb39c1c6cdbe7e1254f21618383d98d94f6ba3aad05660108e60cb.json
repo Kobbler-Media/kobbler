@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT rs.id, rs.device_id, rs.created_at, rs.updated_at, rs.priority_timestamp, rs.client_payload,\n               st.status, st.last_modified_at as status_last_modified, st.times_started_reading, st.last_time_started_reading,\n               stats.spent_reading_minutes, stats.remaining_time_minutes, stats.last_modified_at as stats_last_modified,\n               bm.progress_percent, bm.content_source_progress_percent, bm.location_value, bm.location_type, bm.location_source,\n               bm.last_modified_at as bookmark_last_modified\n        FROM reading_states rs\n        JOIN reading_status st ON st.reading_state_id = rs.id\n        JOIN reading_statistics stats ON stats.reading_state_id = rs.id\n        JOIN reading_bookmark bm ON bm.reading_state_id = rs.id\n        WHERE rs.id = $1\n        ",
+  "query": "\n        SELECT rs.id, rs.device_id, rs.created_at, rs.updated_at, rs.priority_timestamp, rs.client_payload,\n               st.status, st.last_modified_at as status_last_modified, st.times_started_reading, st.last_time_started_reading,\n               stats.spent_reading_minutes, stats.remaining_time_minutes, stats.last_modified_at as stats_last_modified,\n               bm.progress_percent, bm.content_source_progress_percent, bm.location_value, bm.location_type, bm.location_source, bm.kobo_location_value, bm.kobo_location_source,\n               bm.last_modified_at as bookmark_last_modified\n        FROM reading_states rs\n        JOIN reading_status st ON st.reading_state_id = rs.id\n        JOIN reading_statistics stats ON stats.reading_state_id = rs.id\n        JOIN reading_bookmark bm ON bm.reading_state_id = rs.id\n        WHERE rs.user_id = $1 AND rs.book_id = $2\n        ORDER BY\n            CASE\n                WHEN st.status = 'Reading' THEN 0\n                WHEN COALESCE(bm.progress_percent, 0) > 0 THEN 1\n                WHEN st.status = 'Finished' THEN 2\n                ELSE 3\n            END,\n            rs.updated_at DESC\n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -203,6 +203,28 @@
       },
       {
         "ordinal": 18,
+        "name": "kobo_location_value",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "kobo_location_value"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "kobo_location_source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "reading_bookmark",
+            "name": "kobo_location_source"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
         "name": "bookmark_last_modified",
         "type_info": "Timestamptz",
         "origin": {
@@ -215,6 +237,7 @@
     ],
     "parameters": {
       "Left": [
+        "Uuid",
         "Uuid"
       ]
     },
@@ -237,8 +260,10 @@
       true,
       true,
       true,
+      true,
+      true,
       false
     ]
   },
-  "hash": "ca202dcb7ecd00ec9f714df41fab99c1abc2aa40e79aab2eaf943f91d18a7aef"
+  "hash": "298eef3029bb39c1c6cdbe7e1254f21618383d98d94f6ba3aad05660108e60cb"
 }

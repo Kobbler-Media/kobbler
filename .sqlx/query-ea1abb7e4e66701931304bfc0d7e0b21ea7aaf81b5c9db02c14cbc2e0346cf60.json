@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ebook_segments WHERE book_file_id IN (SELECT id FROM book_files WHERE book_id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ea1abb7e4e66701931304bfc0d7e0b21ea7aaf81b5c9db02c14cbc2e0346cf60"
+}

@@ -3,13 +3,6 @@ use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 /// Helper: get the admin user ID from the database.
-async fn get_admin_user_id(server: &TestServer) -> uuid::Uuid {
-    sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM users WHERE email = 'admin@test.local'")
-        .fetch_one(&server.pool)
-        .await
-        .expect("admin user must exist")
-}
-
 /// Helper: enable hardcover sync for the admin user.
 async fn enable_hardcover_for_admin(server: &TestServer) {
     let user_id = get_admin_user_id(server).await;

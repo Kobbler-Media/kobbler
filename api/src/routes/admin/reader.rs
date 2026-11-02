@@ -12,16 +12,16 @@ use axum::{
 };
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::json;
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::convert::ConversionPipeline;
 use crate::jobs::handlers::queue_sync_job_for_user;
-use crate::repositories::{self, book_files, devices, reading_states, user_book_data};
+use crate::reader_pack;
+use crate::repositories::{self, devices, reading_states, user_book_data};
 use crate::routes::AuthUser;
 use crate::sync_providers::SyncAction;
+use kob_ebook::reader_pack::Position;
 
 /// Query params for book file download.
 #[derive(Deserialize)]
@@ -43,56 +43,16 @@ pub async fn download_book_file(
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid book id").into_response(),
     };
 
-    // Determine format: explicit request, or try preferred order.
-    //
-    // EPUB before KEPUB. KEPUB is a Kobo artefact — koboSpans around every
-    // sentence and the `div#book-columns` wrapper — and when both exist the
-    // plain EPUB is the more faithful thing to hand a browser. It also keeps
-    // the reader on the same document `ebook_segments` was extracted from, so
-    // the CFIs that drive read-along still point where they say they do.
-    // KEPUB stays in the list for books that only have one.
-    let formats_to_try: Vec<String> = if let Some(fmt) = &query.format {
-        vec![fmt.to_uppercase()]
-    } else {
-        vec![
-            "EPUB", "KEPUB", "AZW3", "AZW", "MOBI", "CBZ", "CBR", "PDF", "FB2",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect()
+    let requested = query.format.as_deref().map(str::to_uppercase);
+    let formats: Vec<&str> = match &requested {
+        Some(fmt) => vec![fmt.as_str()],
+        None => reader_pack::file::DOWNLOAD_FORMATS.to_vec(),
     };
-
-    let mut file_path = None;
-    let mut matched_format = String::new();
-    for fmt in &formats_to_try {
-        if let Ok(Some(path)) = book_files::get_path_by_format(&state.pool, book_id, fmt).await {
-            // A row can outlive its file: the file was deleted from disk and
-            // the row was not. Serving it would 404 deep in the open, so fall
-            // through to the next format — or to the on-demand conversion,
-            // which rebuilds the file and refreshes the row.
-            let full = crate::audio::path::resolve_file_path(&state.config.storage_root, &path);
-            if tokio::fs::try_exists(&full).await.unwrap_or(false) {
-                file_path = Some(path);
-                matched_format = fmt.clone();
-                break;
-            }
-        }
-    }
-
-    // On-demand EPUB conversion: if no file found, try converting a source file to EPUB
-    if file_path.is_none()
-        && let Some((path, fmt)) = try_convert_to_epub(&state, book_id).await
-    {
-        file_path = Some(path);
-        matched_format = fmt;
-    }
-
-    let file_path = match file_path {
-        Some(p) => p,
-        None => return (StatusCode::NOT_FOUND, "no readable file found").into_response(),
+    let Some(reader_file) = reader_pack::file::select(&state, book_id, &formats).await else {
+        return (StatusCode::NOT_FOUND, "no readable file found").into_response();
     };
-
-    let full_path = crate::audio::path::resolve_file_path(&state.config.storage_root, &file_path);
+    let matched_format = reader_file.format;
+    let full_path = reader_file.path;
 
     let file = match tokio::fs::File::open(&full_path).await {
         Ok(f) => f,
@@ -148,6 +108,8 @@ pub async fn download_book_file(
 pub struct SaveProgressRequest {
     pub progress_percent: f64,
     pub cfi: Option<String>,
+    /// The app's reader-pack position; translated to epubcfi when no cfi is sent.
+    pub position: Option<Position>,
     pub minutes_since_last_save: Option<i32>,
     /// True when the reader is being closed (triggers reading time sync).
     #[serde(default)]
@@ -205,20 +167,44 @@ pub async fn save_reader_progress(
 
     let percent = payload.progress_percent.clamp(0.0, 100.0);
 
+    let pack = if payload.cfi.is_some() || payload.position.is_some() {
+        reader_pack::for_book(&state, book_id).await
+    } else {
+        None
+    };
+    let cfi = payload.cfi.clone().or_else(|| {
+        let pack = pack.as_deref()?;
+        reader_pack::position::to_cfi(pack, payload.position.as_ref()?)
+    });
+
     // Update bookmark with progress and CFI
     if let Err(e) = reading_states::update_bookmark(
         &state.pool,
         state_id,
         Some(percent),
         None,
-        payload.cfi.as_deref(),
-        payload.cfi.as_ref().map(|_| "cfi"),
+        cfi.as_deref(),
+        cfi.as_ref().map(|_| "cfi"),
         Some("web-reader"),
     )
     .await
     {
         tracing::error!(error = %e, "failed to update bookmark");
         return (StatusCode::INTERNAL_SERVER_ERROR, "failed to save progress").into_response();
+    }
+
+    let kobo = pack.as_deref().and_then(|pack| {
+        let position = reader_pack::position::from_cfi(pack, cfi.as_deref()?)?;
+        reader_pack::position::to_kobo(pack, &position)
+    });
+    if let Err(e) = reading_states::set_kobo_location(
+        &state.pool,
+        state_id,
+        kobo.as_ref().map(|k| (k.span.as_str(), k.source.as_str())),
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "failed to store Kobo location");
     }
 
     // Get old status before updating (for sync transition detection)
@@ -327,161 +313,83 @@ pub async fn save_reader_progress(
 pub struct ReaderProgressResponse {
     pub progress_percent: Option<f64>,
     pub cfi: Option<String>,
+    /// The position in the app's reader pack, when asked for with `?position=true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<Position>,
 }
 
-/// Get saved reading progress for the web reader.
+#[derive(Deserialize)]
+pub struct ProgressQuery {
+    #[serde(default)]
+    pub position: bool,
+}
+
+/// The most recent reading position across all of the user's devices — web
+/// reader, app and Kobo — as epubcfi (what foliate resumes from), plus the
+/// app's pack position on request.
 pub async fn get_reader_progress(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(book_id): Path<String>,
+    Query(query): Query<ProgressQuery>,
 ) -> impl IntoResponse {
     let book_id = match Uuid::parse_str(&book_id) {
         Ok(id) => id,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid book id").into_response(),
     };
 
-    // Find web reader device
-    let device_id = match devices::get_web_reader_for_user(&state.pool, auth.user_id).await {
-        Ok(Some(id)) => id,
-        Ok(None) => {
-            return Json(ReaderProgressResponse {
-                progress_percent: None,
-                cfi: None,
-            })
-            .into_response();
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "failed to get web reader device");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response();
-        }
-    };
-
-    // Get reading state for this device + book
-    let state_id = match reading_states::get_id(&state.pool, auth.user_id, device_id, book_id).await
-    {
-        Ok(Some(id)) => id,
-        Ok(None) => {
-            return Json(ReaderProgressResponse {
-                progress_percent: None,
-                cfi: None,
-            })
-            .into_response();
-        }
+    let rows = match reading_states::list_for_user_book(&state.pool, auth.user_id, book_id).await {
+        Ok(rows) => rows,
         Err(e) => {
             tracing::error!(error = %e, "failed to get reading state");
             return (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response();
         }
     };
-
-    // Get bookmark data
-    match reading_states::get_full_by_id(&state.pool, state_id, book_id).await {
-        Ok(Some(row)) => Json(ReaderProgressResponse {
-            progress_percent: row.progress_percent,
-            cfi: row.location_value,
-        })
-        .into_response(),
-        Ok(None) => Json(ReaderProgressResponse {
+    let Some(latest) = rows
+        .into_iter()
+        .filter(|r| r.progress_percent.is_some() || r.location_value.is_some())
+        .max_by_key(|r| r.bookmark_last_modified)
+    else {
+        return Json(ReaderProgressResponse {
             progress_percent: None,
             cfi: None,
+            position: None,
         })
-        .into_response(),
-        Err(e) => {
-            tracing::error!(error = %e, "failed to get reading state");
-            (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response()
-        }
-    }
-}
-
-/// Formats that can be converted to EPUB via ebook-convert (Calibre).
-const EPUB_CONVERTIBLE_FORMATS: &[&str] = &[
-    "MOBI", "AZW", "AZW3", "FB2", "PDF", "DOCX", "LIT", "PDB", "RTF", "TXT", "HTML",
-];
-
-/// Attempt on-demand conversion of a source file to EPUB.
-///
-/// Returns `Some((path, "EPUB"))` on success, `None` if no convertible source
-/// exists or conversion fails. The native pipeline (boko) handles the common
-/// formats in milliseconds; the rare Calibre fallback (PDF/FB2/RTF/TXT/HTML/
-/// DOCX/LIT/PDB) is covered by the client's HTTP timeout.
-async fn try_convert_to_epub(state: &AppState, book_id: Uuid) -> Option<(String, String)> {
-    let files = book_files::list_by_book(&state.pool, book_id).await.ok()?;
-    // The first convertible source that is actually on disk. A row can point
-    // at a file that has gone away; skipping it lets a second source save the
-    // request instead of 404ing on the first ghost.
-    let source = files
-        .iter()
-        .filter(|f| {
-            EPUB_CONVERTIBLE_FORMATS
-                .iter()
-                .any(|fmt| f.format.eq_ignore_ascii_case(fmt))
-        })
-        .find(|f| {
-            crate::audio::path::resolve_file_path(&state.config.storage_root, &f.file_path).exists()
-        })?;
-
-    let source_path =
-        crate::audio::path::resolve_file_path(&state.config.storage_root, &source.file_path);
-
-    // The staleness baseline for the repair sweep: what the source looked
-    // like when this copy was made.
-    let source_mtime = tokio::fs::metadata(&source_path)
-        .await
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .map(crate::repositories::media_root_files::mtime_from_system_time);
-
-    let output_dir = std::path::Path::new(&state.config.storage_root)
-        .join("books")
-        .join(book_id.to_string());
-
-    let pipeline = ConversionPipeline::new();
-    let converted_path = match pipeline.convert_to_epub(&source_path, &output_dir).await {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!(error = %e, book_id = %book_id, "on-demand EPUB conversion failed");
-            return None;
-        }
+        .into_response();
     };
 
-    let file_size = tokio::fs::metadata(&converted_path)
-        .await
-        .map(|m| m.len() as i64)
-        .unwrap_or(0);
-
-    let path_str = converted_path.to_string_lossy().to_string();
-
-    let row_id = match book_files::upsert_full(
-        &state.pool,
-        book_files::BookFileFullInput {
-            book_id,
-            format: "EPUB".to_string(),
-            size_bytes: file_size,
-            file_path: path_str.clone(),
-            source_path: Some(source.file_path.clone()),
-            source_mtime,
-            file_hash: None,
-            source_type: Some("on_demand_conversion".to_string()),
-            source_metadata: Some(json!({ "source_format": source.format })),
-        },
-    )
-    .await
-    {
-        Ok(id) => id,
-        Err(e) => {
-            tracing::error!(error = %e, book_id = %book_id, "failed to register converted EPUB");
-            return None;
-        }
+    let is_kobo = latest.location_type.as_deref() == Some("KoboSpan");
+    let pack = if query.position || is_kobo {
+        reader_pack::for_book(&state, book_id).await
+    } else {
+        None
+    };
+    let cfi = if is_kobo {
+        pack.as_deref().and_then(|pack| {
+            let position = reader_pack::position::from_kobo(
+                pack,
+                latest.location_source.as_deref()?,
+                latest.location_value.as_deref()?,
+            )?;
+            reader_pack::position::to_cfi(pack, &position)
+        })
+    } else if latest.location_type.as_deref() == Some("cfi") {
+        latest.location_value
+    } else {
+        None
+    };
+    let position = if query.position {
+        pack.as_deref()
+            .zip(cfi.as_deref())
+            .and_then(|(pack, cfi)| reader_pack::position::from_cfi(pack, cfi))
+    } else {
+        None
     };
 
-    // The file was just written; if the row was a ghost marked unavailable,
-    // that state is stale now rather than waiting for the next availability
-    // pass.
-    let _ = book_files::set_available(&state.pool, row_id).await;
-
-    tracing::info!(
-        book_id = %book_id,
-        source_format = %source.format,
-        "on-demand EPUB conversion succeeded"
-    );
-    Some((path_str, "EPUB".to_string()))
+    Json(ReaderProgressResponse {
+        progress_percent: latest.progress_percent,
+        cfi,
+        position,
+    })
+    .into_response()
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, book_id, audio_file_id, audio_seconds, ebook_file_id, ebook_cfi, confidence, created_at\n        FROM cross_format_sync\n        WHERE book_id = $1 AND ebook_cfi <= $2\n        ORDER BY ebook_cfi DESC\n        LIMIT 1\n        ",
+  "query": "\n        SELECT id, book_id, audio_file_id, audio_seconds, ebook_file_id, ebook_cfi, confidence, created_at\n        FROM cross_format_sync\n        WHERE book_id = $1 AND audio_seconds <= $2 AND ($3::uuid IS NULL OR audio_file_id = $3)\n        ORDER BY audio_seconds DESC\n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -95,7 +95,8 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Text"
+        "Float8",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -109,5 +110,5 @@
       false
     ]
   },
-  "hash": "f11c411ff1c373f9d607444b9843e3fb54b1f907e5c6d99a56b3c754713c01ed"
+  "hash": "8a8d60ca13b1d142e7565b509c0bded4b9dc7426700d15eda048700cad8055b2"
 }
