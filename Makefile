@@ -33,10 +33,10 @@ fmt-api:
 	cargo fmt --manifest-path api/Cargo.toml
 
 lint-api:
-	SQLX_OFFLINE=true RUSTFLAGS="--cfg tokio_unstable" cargo clippy --manifest-path api/Cargo.toml --all-targets --all-features -- -D warnings
+	SQLX_OFFLINE=true cargo clippy --manifest-path api/Cargo.toml --all-targets --all-features -- -D warnings
 
 check-api:
-	SQLX_OFFLINE=true RUSTFLAGS="--cfg tokio_unstable" cargo check --manifest-path api/Cargo.toml
+	SQLX_OFFLINE=true cargo check --manifest-path api/Cargo.toml
 
 # Verify .sqlx cache matches code. If stale, run: make sqlx-prepare
 # `-- --all-targets` so test-only query macros (api/tests/) are included; without
@@ -46,18 +46,21 @@ check-api:
 # depending only on whether cargo happened to rebuild the dep, and get "pruned as
 # unreachable" then restored forever.
 sqlx-check: test-db-up sqlx-migrate
-	DATABASE_URL=postgres://kobbler:kobbler@localhost:5433/kobbler_test RUSTFLAGS="--cfg tokio_unstable" cargo sqlx prepare --workspace --all --check -- --all-targets
+	DATABASE_URL=postgres://kobbler:kobbler@localhost:5433/kobbler_test cargo sqlx prepare --workspace --all --check -- --all-targets
 
 # Regenerate .sqlx cache from current code + DB schema
 sqlx-prepare: test-db-up sqlx-migrate
-	DATABASE_URL=postgres://kobbler:kobbler@localhost:5433/kobbler_test RUSTFLAGS="--cfg tokio_unstable" cargo sqlx prepare --workspace --all -- --all-targets
+	DATABASE_URL=postgres://kobbler:kobbler@localhost:5433/kobbler_test cargo sqlx prepare --workspace --all -- --all-targets
 
 # Apply migrations to the test database
 sqlx-migrate: test-db-up
 	DATABASE_URL=postgres://kobbler:kobbler@localhost:5433/kobbler_test cargo sqlx migrate run --source api/migrations
 
+# No RUSTFLAGS anywhere here: .cargo/config.toml sets the tokio cfg for every cargo run,
+# and a step with flags of its own is a separate build of the whole dependency tree.
+# Warnings are denied by lint-api, whose clippy pass covers rustc's warnings too.
 build-api:
-	SQLX_OFFLINE=true RUSTFLAGS="-D warnings --cfg tokio_unstable" cargo build --manifest-path api/Cargo.toml
+	SQLX_OFFLINE=true cargo build --manifest-path api/Cargo.toml
 
 fmt-web:
 	npm --prefix web run format
@@ -101,7 +104,6 @@ test-api: test-db-up
 	NATS_URL_TEST=nats://localhost:4223 \
 	TEST_RUN_ID="$$RUN_ID" \
 	CARGO_INCREMENTAL=0 \
-	RUSTFLAGS="--cfg tokio_unstable" \
 	cargo test --manifest-path api/Cargo.toml -- --test-threads=4
 
 # Maintainer target: publishes the release images. Needs push rights on the

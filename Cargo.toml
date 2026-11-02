@@ -1,3 +1,12 @@
 [workspace]
 members = ["api", "kobo-proxy", "libs/stk-client"]
 resolver = "2"
+
+# Debug info is most of what a dev build writes, and the incremental cache holds a copy
+# of it per build flavour (lib, tests, check, clippy): at full debug for every crate the
+# target dir reached 99 GB. Line tables keep file:line in backtraces and panics.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

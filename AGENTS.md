@@ -17,8 +17,10 @@ investigation/status writeups (`HANDOFF-*`, `RESULTS-*`, `PROMPT-*`, `FINDINGS-*
 - `make web` — Frontend only.
 - `make sqlx-prepare` — Regenerate `.sqlx` cache after query/migration changes.
 
-Warnings are errors. `--cfg tokio_unstable` is required (the Makefile handles it, but if you set
-RUSTFLAGS manually, include it). Clippy `collapsible_if`: use let-chains, not nested `if let`.
+Warnings are errors (`lint-api` denies them). `--cfg tokio_unstable` is required and
+`.cargo/config.toml` sets it for every cargo run — don't set `RUSTFLAGS` yourself: any other flag
+set is a second full build of every dependency in `target/`, which is how it once reached 99 GB.
+Clippy `collapsible_if`: use let-chains, not nested `if let`.
 
 `make` is expensive — use `make quick` during dev, `make` once at the end.
 
