@@ -88,9 +88,17 @@ impl ReaderPackHandler {
             .map_err(|e| crate::jobs::JobError::ExecutionFailed(e.to_string()))?;
         info!(
             books = books.len(),
-            queued, removed, "Reader pack sweep complete"
+            queued,
+            removed,
+            re_extracted = legacy.len(),
+            "Reader pack sweep complete"
         );
-        Ok(json!({"books": books.len(), "queued": queued, "removed": removed}))
+        Ok(json!({
+            "books": books.len(),
+            "queued": queued,
+            "removed": removed,
+            "re_extracted": legacy.len(),
+        }))
     }
 }
 
