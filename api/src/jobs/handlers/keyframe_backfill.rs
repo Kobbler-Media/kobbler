@@ -2,12 +2,14 @@
 //!
 //! Scheduled job that finds video files needing work and routes them correctly:
 //! - Unprobed files (no metadata) → media_probe (which chains to media_extract)
-//! - Already-probed files missing keyframes → media_extract directly
+//! - Already-probed files missing keyframes, or with subtitle text not yet read →
+//!   media_extract directly, which does only the parts that are missing
 
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
-use crate::repositories::{movie_files, tv_episode_files};
+use crate::repositories::{movie_files, subtitle_tracks, tv_episode_files};
 use async_trait::async_trait;
+use kob_ffmpeg::subtitles::TEXT_CODECS;
 use nats_jobs::Publisher;
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -18,6 +20,8 @@ use tracing::info;
 use uuid::Uuid;
 
 use super::{MediaExtractPayload, MediaProbePayload};
+
+const SUBTITLE_CHECKS_PER_RUN: i64 = 500;
 
 pub struct KeyframeBackfillHandler {
     pool: PgPool,
@@ -104,12 +108,33 @@ impl JobHandler for KeyframeBackfillHandler {
             skipped_failed += sf;
         }
 
+        // Files extracted before their subtitle text was read get just that part.
+        let codecs: Vec<String> = TEXT_CODECS.iter().map(|c| c.to_string()).collect();
+        let unchecked_subs = subtitle_tracks::list_files_needing_text_check(
+            &self.pool,
+            &codecs,
+            SUBTITLE_CHECKS_PER_RUN,
+        )
+        .await
+        .map_err(|e| JobError::ExecutionFailed(format!("DB error: {e}")))?;
+        for (kind, file_id) in &unchecked_subs {
+            nats_jobs::check_cancelled(&cancel)?;
+            if extract_movies.contains(file_id) || extract_episodes.contains(file_id) {
+                continue;
+            }
+            let (e, sa, sf) = enqueue_extract(&self.pool, &self.publisher, *file_id, kind).await;
+            enqueued += e;
+            skipped_active += sa;
+            skipped_failed += sf;
+        }
+
         let probe_found = unprobed_movies.len() + unprobed_episodes.len();
         let extract_found = extract_movies.len() + extract_episodes.len();
 
         info!(
             unprobed = probe_found,
             missing_keyframes = extract_found,
+            unchecked_subtitles = unchecked_subs.len(),
             enqueued,
             skipped_active,
             skipped_failed,
@@ -119,6 +144,7 @@ impl JobHandler for KeyframeBackfillHandler {
         Ok(json!({
             "unprobed_found": probe_found,
             "missing_keyframes_found": extract_found,
+            "unchecked_subtitles_found": unchecked_subs.len(),
             "enqueued": enqueued,
             "skipped_already_active": skipped_active,
             "skipped_failed": skipped_failed,

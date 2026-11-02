@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT probe_data, skip_segments, subtitle_tracks, cache_path, filesize\n                FROM debrid_stream_sessions\n                WHERE id = $1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "probe_data",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "probe_data"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "skip_segments",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "skip_segments"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "subtitle_tracks",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "subtitle_tracks"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "cache_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "cache_path"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "filesize",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "filesize"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "973b7d35d73c239641431899718c774654de95d014d976e1a16fd6d2027f77a7"
+}

@@ -10,7 +10,9 @@ use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult, MediaRootIoGate};
 use crate::repositories::{media_roots, movie_files, subtitle_tracks, tv_episode_files};
 use crate::streaming::subtitle;
+use crate::streaming::subtitle_insight::{WINDOW_SECS, analyse_extracted};
 use async_trait::async_trait;
+use kob_ffmpeg::subtitles::TEXT_CODECS;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -55,6 +57,71 @@ impl MediaExtractHandler {
     }
 }
 
+impl MediaExtractHandler {
+    /// Reads the extracted text tracks for what their tags left out — see
+    /// `streaming::subtitle_insight`. Once per file: every track is marked checked after.
+    async fn check_subtitle_text(
+        &self,
+        movie_file_id: Option<Uuid>,
+        episode_file_id: Option<Uuid>,
+        tracks: &[subtitle_tracks::SubtitleTrackRow],
+        file_id: Uuid,
+        duration: Option<f64>,
+    ) -> usize {
+        let codecs: Vec<String> = TEXT_CODECS.iter().map(|c| c.to_string()).collect();
+        match subtitle_tracks::has_unchecked_text_tracks(
+            &self.pool,
+            movie_file_id,
+            episode_file_id,
+            &codecs,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return 0,
+            Err(e) => {
+                warn!(error = %e, "Failed to check subtitle text state (non-fatal)");
+                return 0;
+            }
+        }
+        let extracted: Vec<(i32, PathBuf)> = tracks
+            .iter()
+            .filter(|t| TEXT_CODECS.contains(&t.codec.as_str()))
+            .map(|t| {
+                (
+                    t.track_index,
+                    subtitle::cache_path(&self.storage_root, file_id, t.track_index, &t.codec),
+                )
+            })
+            .collect();
+        let window = duration.map_or(WINDOW_SECS, |d| d.min(WINDOW_SECS));
+        let insights = tokio::task::spawn_blocking(move || analyse_extracted(&extracted, window))
+            .await
+            .unwrap_or_default();
+        for insight in &insights {
+            if let Err(e) = subtitle_tracks::record_text_insight(
+                &self.pool,
+                movie_file_id,
+                episode_file_id,
+                insight.stream_index,
+                insight.language.as_deref(),
+                insight.forced,
+                insight.sdh,
+            )
+            .await
+            {
+                warn!(error = %e, "Failed to record subtitle insight (non-fatal)");
+            }
+        }
+        if let Err(e) =
+            subtitle_tracks::mark_text_checked(&self.pool, movie_file_id, episode_file_id).await
+        {
+            warn!(error = %e, "Failed to mark subtitle text checked (non-fatal)");
+        }
+        insights.len()
+    }
+}
+
 #[async_trait]
 impl JobHandler for MediaExtractHandler {
     fn job_type(&self) -> &'static str {
@@ -88,8 +155,8 @@ impl JobHandler for MediaExtractHandler {
             "Starting media extraction (keyframes + subtitles)"
         );
 
-        // Look up the file record to get file_path
-        let file_path = match payload.media_type.as_str() {
+        // Look up the file record: where it is, and which of this job's parts it still needs.
+        let (file_path, has_keyframes, duration) = match payload.media_type.as_str() {
             "movie" => {
                 let file = movie_files::get(&self.pool, payload.file_id)
                     .await
@@ -100,7 +167,11 @@ impl JobHandler for MediaExtractHandler {
                             payload.file_id
                         ))
                     })?;
-                file.file_path
+                (
+                    file.file_path,
+                    file.keyframes.is_some(),
+                    file.duration_seconds,
+                )
             }
             "episode" => {
                 let file = tv_episode_files::get(&self.pool, payload.file_id)
@@ -112,13 +183,21 @@ impl JobHandler for MediaExtractHandler {
                             payload.file_id
                         ))
                     })?;
-                file.file_path
+                (
+                    file.file_path,
+                    file.keyframes.is_some(),
+                    file.duration_seconds,
+                )
             }
             other => {
                 return Err(JobError::ExecutionFailed(format!(
                     "Unknown media type: {other}"
                 )));
             }
+        };
+        let (movie_file_id, episode_file_id) = match payload.media_type.as_str() {
+            "movie" => (Some(payload.file_id), None),
+            _ => (None, Some(payload.file_id)),
         };
 
         let full_path = PathBuf::from(&file_path);
@@ -145,78 +224,88 @@ impl JobHandler for MediaExtractHandler {
         .unwrap_or_default();
         let _io_permits = self.io_gate.acquire_many(media_root_ids).await;
 
-        // Probe keyframes for instant HLS playlist generation.
-        // For MKV files, read the Cues element (a few hundred KB) instead of scanning
-        // every packet header in the entire file (~14GB). Falls back to ffprobe if
-        // Cues are unavailable.
-        let keyframe_result = if is_matroska_path(&full_path) {
-            match mkv_cues::read_mkv_keyframes(&full_path).await {
-                Ok(kf) if !kf.is_empty() => {
-                    info!(
-                        file_id = %payload.file_id,
-                        count = kf.len(),
-                        "Fast MKV Cues keyframe extraction succeeded"
-                    );
-                    Ok(kf)
+        // Only what is missing: a file re-queued for its subtitles keeps its keyframes.
+        let keyframe_count = if has_keyframes {
+            0
+        } else {
+            // Probe keyframes for instant HLS playlist generation.
+            // For MKV files, read the Cues element (a few hundred KB) instead of scanning
+            // every packet header in the entire file (~14GB). Falls back to ffprobe if
+            // Cues are unavailable.
+            let keyframe_result = if is_matroska_path(&full_path) {
+                match mkv_cues::read_mkv_keyframes(&full_path).await {
+                    Ok(kf) if !kf.is_empty() => {
+                        info!(
+                            file_id = %payload.file_id,
+                            count = kf.len(),
+                            "Fast MKV Cues keyframe extraction succeeded"
+                        );
+                        Ok(kf)
+                    }
+                    Ok(_) => {
+                        info!(file_id = %payload.file_id, "MKV Cues empty, falling back to ffprobe");
+                        probe::probe_keyframes(&full_path).await
+                    }
+                    Err(e) => {
+                        info!(
+                            file_id = %payload.file_id,
+                            error = %e,
+                            "MKV Cues unavailable, falling back to ffprobe"
+                        );
+                        probe::probe_keyframes(&full_path).await
+                    }
+                }
+            } else {
+                // MP4 and other containers: ffprobe reads from container index (already fast)
+                probe::probe_keyframes(&full_path).await
+            };
+
+            match keyframe_result {
+                Ok(keyframes) if !keyframes.is_empty() => {
+                    let kf_value = serde_json::to_value(&keyframes).unwrap_or_default();
+                    let count = keyframes.len();
+                    let save_result = match payload.media_type.as_str() {
+                        "movie" => {
+                            movie_files::update_keyframes(&self.pool, payload.file_id, &kf_value)
+                                .await
+                        }
+                        "episode" => {
+                            tv_episode_files::update_keyframes(
+                                &self.pool,
+                                payload.file_id,
+                                &kf_value,
+                            )
+                            .await
+                        }
+                        _ => Ok(false),
+                    };
+                    if let Err(e) = save_result {
+                        warn!(error = %e, "Failed to save keyframes to DB");
+                    }
+                    count
                 }
                 Ok(_) => {
-                    info!(file_id = %payload.file_id, "MKV Cues empty, falling back to ffprobe");
-                    probe::probe_keyframes(&full_path).await
+                    // Save empty array so files with genuinely no keyframes aren't re-queued
+                    let empty = serde_json::Value::Array(vec![]);
+                    let save_result = match payload.media_type.as_str() {
+                        "movie" => {
+                            movie_files::update_keyframes(&self.pool, payload.file_id, &empty).await
+                        }
+                        "episode" => {
+                            tv_episode_files::update_keyframes(&self.pool, payload.file_id, &empty)
+                                .await
+                        }
+                        _ => Ok(false),
+                    };
+                    if let Err(e) = save_result {
+                        warn!(error = %e, "Failed to save empty keyframes to DB");
+                    }
+                    0
                 }
                 Err(e) => {
-                    info!(
-                        file_id = %payload.file_id,
-                        error = %e,
-                        "MKV Cues unavailable, falling back to ffprobe"
-                    );
-                    probe::probe_keyframes(&full_path).await
+                    warn!(error = %e, "Keyframe probe failed (non-fatal)");
+                    0
                 }
-            }
-        } else {
-            // MP4 and other containers: ffprobe reads from container index (already fast)
-            probe::probe_keyframes(&full_path).await
-        };
-
-        let keyframe_count = match keyframe_result {
-            Ok(keyframes) if !keyframes.is_empty() => {
-                let kf_value = serde_json::to_value(&keyframes).unwrap_or_default();
-                let count = keyframes.len();
-                let save_result = match payload.media_type.as_str() {
-                    "movie" => {
-                        movie_files::update_keyframes(&self.pool, payload.file_id, &kf_value).await
-                    }
-                    "episode" => {
-                        tv_episode_files::update_keyframes(&self.pool, payload.file_id, &kf_value)
-                            .await
-                    }
-                    _ => Ok(false),
-                };
-                if let Err(e) = save_result {
-                    warn!(error = %e, "Failed to save keyframes to DB");
-                }
-                count
-            }
-            Ok(_) => {
-                // Save empty array so files with genuinely no keyframes aren't re-queued
-                let empty = serde_json::Value::Array(vec![]);
-                let save_result = match payload.media_type.as_str() {
-                    "movie" => {
-                        movie_files::update_keyframes(&self.pool, payload.file_id, &empty).await
-                    }
-                    "episode" => {
-                        tv_episode_files::update_keyframes(&self.pool, payload.file_id, &empty)
-                            .await
-                    }
-                    _ => Ok(false),
-                };
-                if let Err(e) = save_result {
-                    warn!(error = %e, "Failed to save empty keyframes to DB");
-                }
-                0
-            }
-            Err(e) => {
-                warn!(error = %e, "Keyframe probe failed (non-fatal)");
-                0
             }
         };
 
@@ -230,64 +319,74 @@ impl JobHandler for MediaExtractHandler {
             _ => Ok(vec![]),
         };
 
-        let subs_extracted = match sub_tracks {
-            Ok(tracks) => {
-                let all_specs: Vec<transcode::SubtitleExtractSpec> = tracks
-                    .iter()
-                    .filter(|s| {
-                        !subtitle::is_bitmap_subtitle(&s.codec)
-                            && subtitle::subtitle_extension(&s.codec).is_some()
-                    })
-                    .map(|s| transcode::SubtitleExtractSpec {
-                        stream_index: s.track_index,
-                        output_path: subtitle::cache_path(
-                            &self.storage_root,
-                            payload.file_id,
-                            s.track_index,
-                            &s.codec,
-                        ),
-                    })
-                    .collect();
-
-                // Filter out already-extracted subtitles on the blocking pool
-                let text_subs = tokio::task::spawn_blocking(move || {
-                    all_specs
-                        .into_iter()
-                        .filter(|spec| !spec.output_path.exists())
-                        .collect::<Vec<_>>()
+        let sub_tracks = sub_tracks.unwrap_or_else(|e| {
+            warn!(error = %e, "Failed to query subtitle tracks (non-fatal)");
+            Vec::new()
+        });
+        let subs_extracted = {
+            let tracks = &sub_tracks;
+            let all_specs: Vec<transcode::SubtitleExtractSpec> = tracks
+                .iter()
+                .filter(|s| {
+                    !subtitle::is_bitmap_subtitle(&s.codec)
+                        && subtitle::subtitle_extension(&s.codec).is_some()
                 })
-                .await
-                .unwrap_or_default();
+                .map(|s| transcode::SubtitleExtractSpec {
+                    stream_index: s.track_index,
+                    output_path: subtitle::cache_path(
+                        &self.storage_root,
+                        payload.file_id,
+                        s.track_index,
+                        &s.codec,
+                    ),
+                })
+                .collect();
 
-                if !text_subs.is_empty() {
-                    match transcode::extract_all_subtitles(&full_path, &text_subs).await {
-                        Ok(()) => {
-                            info!(
-                                file_id = %payload.file_id,
-                                count = text_subs.len(),
-                                "Pre-extracted subtitle tracks"
-                            );
-                            text_subs.len()
-                        }
-                        Err(e) => {
-                            warn!(error = %e, "Subtitle pre-extraction failed (non-fatal)");
-                            0
-                        }
+            // Filter out already-extracted subtitles on the blocking pool
+            let text_subs = tokio::task::spawn_blocking(move || {
+                all_specs
+                    .into_iter()
+                    .filter(|spec| !spec.output_path.exists())
+                    .collect::<Vec<_>>()
+            })
+            .await
+            .unwrap_or_default();
+
+            if !text_subs.is_empty() {
+                match transcode::extract_all_subtitles(&full_path, &text_subs).await {
+                    Ok(()) => {
+                        info!(
+                            file_id = %payload.file_id,
+                            count = text_subs.len(),
+                            "Pre-extracted subtitle tracks"
+                        );
+                        text_subs.len()
                     }
-                } else {
-                    0
+                    Err(e) => {
+                        warn!(error = %e, "Subtitle pre-extraction failed (non-fatal)");
+                        0
+                    }
                 }
-            }
-            Err(e) => {
-                warn!(error = %e, "Failed to query subtitle tracks (non-fatal)");
+            } else {
                 0
             }
         };
+
+        let subs_checked = self
+            .check_subtitle_text(
+                movie_file_id,
+                episode_file_id,
+                &sub_tracks,
+                payload.file_id,
+                duration,
+            )
+            .await;
 
         info!(
             file_id = %payload.file_id,
             keyframes = keyframe_count,
             subs_extracted = subs_extracted,
+            subs_checked = subs_checked,
             "Media extraction complete"
         );
 
@@ -296,6 +395,7 @@ impl JobHandler for MediaExtractHandler {
             "media_type": payload.media_type,
             "keyframes": keyframe_count,
             "subs_extracted": subs_extracted,
+            "subs_checked": subs_checked,
         }))
     }
 }

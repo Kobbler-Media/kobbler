@@ -7,6 +7,7 @@ mod media;
 mod prepare;
 mod remote;
 mod response;
+mod subtitles;
 
 pub(crate) use media::commit_media;
 pub(crate) use prepare::probe_json;

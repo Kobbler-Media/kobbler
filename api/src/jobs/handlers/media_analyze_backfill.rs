@@ -16,7 +16,8 @@ use crate::RuntimeConfigManager;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::media_cache::PIPELINE_VERSION;
-use crate::repositories::{audiobook_files, movie_files, tv_episode_files};
+use crate::repositories::{audiobook_files, file_pictures, movie_files, tv_episode_files};
+use crate::streaming::session::MediaType;
 use crate::types::MediaScope;
 use async_trait::async_trait;
 use nats_jobs::Publisher;
@@ -52,6 +53,8 @@ pub struct MediaAnalyzeBackfillPayload {
     #[serde(default)]
     pub media_type: Option<MediaScope>,
 }
+
+const GAPS_PER_RUN: i64 = 1000;
 
 pub struct MediaAnalyzeBackfillHandler {
     pool: PgPool,
@@ -125,7 +128,8 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
         };
         for file_id in &movie_ids {
             nats_jobs::check_cancelled(&cancel)?;
-            match enqueue_media_analyze(&self.pool, &self.publisher, *file_id, "movie").await {
+            match enqueue_media_analyze(&self.pool, &self.publisher, *file_id, "movie", false).await
+            {
                 BackfillEnqueue::Enqueued => movie_enqueued += 1,
                 BackfillEnqueue::Skipped => movie_skipped += 1,
             }
@@ -145,7 +149,9 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
         };
         for file_id in &episode_ids {
             nats_jobs::check_cancelled(&cancel)?;
-            match enqueue_media_analyze(&self.pool, &self.publisher, *file_id, "episode").await {
+            match enqueue_media_analyze(&self.pool, &self.publisher, *file_id, "episode", false)
+                .await
+            {
                 BackfillEnqueue::Enqueued => episode_enqueued += 1,
                 BackfillEnqueue::Skipped => episode_skipped += 1,
             }
@@ -162,9 +168,35 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
             };
         for file_id in &audiobook_ids {
             nats_jobs::check_cancelled(&cancel)?;
-            match enqueue_media_analyze(&self.pool, &self.publisher, *file_id, "audiobook").await {
+            match enqueue_media_analyze(&self.pool, &self.publisher, *file_id, "audiobook", false)
+                .await
+            {
                 BackfillEnqueue::Enqueued => audiobook_enqueued += 1,
                 BackfillEnqueue::Skipped => audiobook_skipped += 1,
+            }
+        }
+
+        // ── Missing checks ──
+        // Files analysed before a cheap check existed get just that check, read from
+        // what the analyze already left on disk.
+        let gaps = file_pictures::list_needing_check(&self.pool, GAPS_PER_RUN)
+            .await
+            .map_err(|e| JobError::ExecutionFailed(format!("DB error (gaps): {e}")))?;
+        let mut gaps_enqueued = 0u32;
+        for gap in &gaps {
+            nats_jobs::check_cancelled(&cancel)?;
+            if movie_ids.contains(&gap.file_id) || episode_ids.contains(&gap.file_id) {
+                continue;
+            }
+            let kind = if gap.media_type == MediaType::Movie {
+                "movie"
+            } else {
+                "episode"
+            };
+            if let BackfillEnqueue::Enqueued =
+                enqueue_media_analyze(&self.pool, &self.publisher, gap.file_id, kind, true).await
+            {
+                gaps_enqueued += 1;
             }
         }
 
@@ -182,6 +214,8 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
             audiobook_found,
             audiobook_enqueued,
             audiobook_skipped,
+            gaps_found = gaps.len(),
+            gaps_enqueued,
             pipeline_version = PIPELINE_VERSION,
             all_video = payload.all_video,
             media_type = payload.media_type.map(|m| m.as_str()).unwrap_or("all"),
@@ -198,6 +232,8 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
             "audiobook_found": audiobook_found,
             "audiobook_enqueued": audiobook_enqueued,
             "audiobook_skipped": audiobook_skipped,
+            "gaps_found": gaps.len(),
+            "gaps_enqueued": gaps_enqueued,
             "pipeline_version": PIPELINE_VERSION,
             "all_video": payload.all_video,
             "media_type": payload.media_type.map(|m| m.as_str()),
@@ -218,6 +254,7 @@ async fn enqueue_media_analyze(
     publisher: &Publisher,
     file_id: Uuid,
     media_type: &str,
+    gaps_only: bool,
 ) -> BackfillEnqueue {
     let fid = file_id.to_string();
     if let Ok(true) = crate::jobs::has_active_job(pool, "media_analyze", "file_id", &fid).await {
@@ -229,8 +266,13 @@ async fn enqueue_media_analyze(
         force_regen: false,
         run_id: None,
         triggered_by: "backfill".to_string(),
+        gaps_only,
     };
-    let context = crate::jobs::JobContext::new("Backfill — media analyze");
+    let context = crate::jobs::JobContext::new(if gaps_only {
+        "Backfill — media analyze (missing checks)"
+    } else {
+        "Backfill — media analyze"
+    });
     if crate::jobs::enqueue_routine(
         pool,
         publisher,

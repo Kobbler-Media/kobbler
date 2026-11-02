@@ -2061,37 +2061,85 @@ pub async fn bulk_update_show_watch_state(
 
     let count = affected_episode_ids.len();
 
-    // Re-index the show in search
-    crate::jobs::enqueue_tv_show_index(&state.pool, state.nats.publisher(), id).await;
-
-    // Fire-and-forget: bulk sync all affected episodes to Trakt in a single API call
-    if !affected_episode_ids.is_empty() {
-        let watched_at_str = if body.watched {
-            Some(
-                OffsetDateTime::now_utc()
-                    .format(&time::format_description::well_known::Rfc3339)
-                    .unwrap(),
-            )
-        } else {
-            None
-        };
-        let _ = crate::jobs::enqueue_routine(
-            &state.pool,
-            state.nats.publisher(),
-            "trakt_bulk_sync_watch_state",
-            serde_json::json!({
-                "user_id": user_id,
-                "show_id": id,
-                "episode_ids": affected_episode_ids,
-                "watched": body.watched,
-                "watched_at": watched_at_str,
-            }),
-            crate::jobs::JobContext::new("Syncing bulk watch state to Trakt"),
-        )
-        .await;
-    }
+    after_bulk_watch(&state, user_id, id, &affected_episode_ids, body.watched).await;
 
     info!(show_id = %id, user_id = %user_id, watched = body.watched, count, "Bulk updated show watch state");
+
+    Ok(Json(json!({ "updated_count": count })))
+}
+
+/// Re-indexes the show and syncs the changed episodes to Trakt in one call.
+async fn after_bulk_watch(
+    state: &AppState,
+    user_id: Uuid,
+    show_id: Uuid,
+    episode_ids: &[Uuid],
+    watched: bool,
+) {
+    crate::jobs::enqueue_tv_show_index(&state.pool, state.nats.publisher(), show_id).await;
+    if episode_ids.is_empty() {
+        return;
+    }
+    let watched_at = watched.then(|| {
+        OffsetDateTime::now_utc()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap()
+    });
+    let _ = crate::jobs::enqueue_routine(
+        &state.pool,
+        state.nats.publisher(),
+        "trakt_bulk_sync_watch_state",
+        serde_json::json!({
+            "user_id": user_id,
+            "show_id": show_id,
+            "episode_ids": episode_ids,
+            "watched": watched,
+            "watched_at": watched_at,
+        }),
+        crate::jobs::JobContext::new("Syncing bulk watch state to Trakt"),
+    )
+    .await;
+}
+
+/// PUT /api/v1/admin/tv/episodes/:id/watch-state/earlier
+///
+/// Marks every episode of the show before this one watched, specials aside: a long-running
+/// sport otherwise keeps offering rounds the viewer has long moved past.
+pub async fn mark_earlier_episodes_watched(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<BulkWatchStateRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if !body.watched {
+        return Err(AppError::BadRequest(
+            "Only marking earlier episodes watched is supported".to_string(),
+        ));
+    }
+    let user_id = auth.user_id;
+    let episode = tv_episodes::get(&state.pool, id)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to query episode: {e}")))?
+        .ok_or_else(|| AppError::NotFound("Episode not found".to_string()))?;
+    let season = tv_seasons::get(&state.pool, episode.season_id)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to query season: {e}")))?
+        .ok_or_else(|| AppError::NotFound("Season not found".to_string()))?;
+
+    let affected_episode_ids = tv_watch_states::bulk_mark_earlier_watched(
+        &state.pool,
+        season.show_id,
+        season.season_sort_order,
+        episode.episode_sort_order,
+        user_id,
+        OffsetDateTime::now_utc(),
+    )
+    .await
+    .map_err(|e| AppError::Internal(format!("Failed to bulk update watch states: {e}")))?;
+
+    let count = affected_episode_ids.len();
+    after_bulk_watch(&state, user_id, season.show_id, &affected_episode_ids, true).await;
+    info!(episode_id = %id, user_id = %user_id, count, "Marked earlier episodes watched");
 
     Ok(Json(json!({ "updated_count": count })))
 }
@@ -2126,35 +2174,14 @@ pub async fn bulk_update_season_watch_state(
 
     let count = affected_episode_ids.len();
 
-    // Re-index the parent show in search
-    crate::jobs::enqueue_tv_show_index(&state.pool, state.nats.publisher(), season.show_id).await;
-
-    // Fire-and-forget: bulk sync all affected episodes to Trakt in a single API call
-    if !affected_episode_ids.is_empty() {
-        let watched_at_str = if body.watched {
-            Some(
-                OffsetDateTime::now_utc()
-                    .format(&time::format_description::well_known::Rfc3339)
-                    .unwrap(),
-            )
-        } else {
-            None
-        };
-        let _ = crate::jobs::enqueue_routine(
-            &state.pool,
-            state.nats.publisher(),
-            "trakt_bulk_sync_watch_state",
-            serde_json::json!({
-                "user_id": user_id,
-                "show_id": season.show_id,
-                "episode_ids": affected_episode_ids,
-                "watched": body.watched,
-                "watched_at": watched_at_str,
-            }),
-            crate::jobs::JobContext::new("Syncing bulk watch state to Trakt"),
-        )
-        .await;
-    }
+    after_bulk_watch(
+        &state,
+        user_id,
+        season.show_id,
+        &affected_episode_ids,
+        body.watched,
+    )
+    .await;
 
     info!(season_id = %id, user_id = %user_id, watched = body.watched, count, "Bulk updated season watch state");
 
@@ -4145,6 +4172,7 @@ async fn enqueue_v2_for_files(
             force_regen: force,
             run_id: Some(run_id),
             triggered_by: "manual".to_string(),
+            gaps_only: false,
         };
         let analyze_ctx = JobContext::for_entity(
             entity_type,

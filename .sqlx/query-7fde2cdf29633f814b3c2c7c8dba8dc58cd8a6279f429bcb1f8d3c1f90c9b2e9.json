@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE subtitle_tracks SET text_checked_at = NOW()\n        WHERE (movie_file_id = $1 OR episode_file_id = $2) AND text_checked_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7fde2cdf29633f814b3c2c7c8dba8dc58cd8a6279f429bcb1f8d3c1f90c9b2e9"
+}

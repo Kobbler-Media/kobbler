@@ -177,6 +177,8 @@ pub struct SubtitleFile {
     /// Whether the subtitle file has been extracted from the container.
     /// When false, extraction happens on-demand when the subtitle is requested.
     pub extracted: bool,
+    pub is_forced: bool,
+    pub is_hearing_impaired: bool,
 }
 
 impl PlaybackSession {

@@ -1329,6 +1329,10 @@ pub fn create_router(state: AppState) -> Router {
             get(tv_routes::get_watch_state).put(tv_routes::update_watch_state),
         )
         .route(
+            "/api/v1/admin/tv/episodes/{id}/watch-state/earlier",
+            put(tv_routes::mark_earlier_episodes_watched),
+        )
+        .route(
             "/api/v1/admin/tv/episodes/{id}/watch-state/position",
             patch(tv_routes::update_episode_position),
         )

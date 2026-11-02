@@ -86,8 +86,9 @@ pub(super) async fn open(
             is_default: a.is_default,
         })
         .collect();
-    let preferred = crate::streaming::decision::find_preferred_audio(
+    let preferred = crate::streaming::decision::preferred_audio(
         &audio_metas,
+        body.preferred_audio_title.as_deref(),
         audio_language(body, runtime),
     );
     let audio_index =
@@ -272,6 +273,7 @@ pub(super) async fn open(
         selected_subtitle_index: None,
         video_width: (width > 0).then_some(width),
         video_height: (height > 0).then_some(height),
+        picture: None,
     };
     Ok(Opened {
         session_id,

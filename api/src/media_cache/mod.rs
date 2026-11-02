@@ -30,6 +30,7 @@ pub mod analyze;
 pub mod embeddings;
 pub mod episode_cache;
 pub mod integrity;
+pub mod picture_area;
 pub mod readers;
 pub mod trickplay_sink;
 pub mod writers;

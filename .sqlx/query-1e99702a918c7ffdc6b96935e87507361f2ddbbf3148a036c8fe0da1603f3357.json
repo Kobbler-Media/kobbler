@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT episode_file_id AS \"id!\" FROM subtitle_tracks\n        WHERE episode_file_id IS NOT NULL AND text_checked_at IS NULL AND codec = ANY($1)\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "subtitle_tracks",
+            "name": "episode_file_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "1e99702a918c7ffdc6b96935e87507361f2ddbbf3148a036c8fe0da1603f3357"
+}

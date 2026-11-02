@@ -414,3 +414,70 @@ async fn bulk_unwatch_starts_the_show_over() {
         assert_eq!(cont["position_seconds"], 0, "{scope}");
     }
 }
+
+// =============================================================================
+// Tests — everything before an episode
+// =============================================================================
+
+#[tokio::test]
+async fn earlier_episodes_are_marked_watched_up_to_but_not_including_the_one_named() {
+    let server = TestServer::start_api_only().await;
+    let pool = &server.pool;
+
+    let show_id = create_show(&server, "Round By Round").await;
+    let specials = create_season(pool, show_id, 0).await;
+    sqlx::query("UPDATE tv_seasons SET is_special = true WHERE id = $1")
+        .bind(specials)
+        .execute(pool)
+        .await
+        .unwrap();
+    let special = create_episode(pool, specials, 1).await;
+    let s1 = create_season(pool, show_id, 1).await;
+    let s2 = create_season(pool, show_id, 2).await;
+    let earlier = [
+        create_episode(pool, s1, 1).await,
+        create_episode(pool, s1, 2).await,
+        create_episode(pool, s2, 1).await,
+    ];
+    let named = create_episode(pool, s2, 2).await;
+    let later = create_episode(pool, s2, 3).await;
+
+    let body = put_watch_state(
+        &server,
+        &format!("/api/v1/admin/tv/episodes/{named}/watch-state/earlier"),
+        json!({ "watched": true }),
+    )
+    .await;
+    assert_eq!(body["updated_count"], 3, "{body}");
+
+    for ep in earlier {
+        assert_eq!(
+            get_episode_watch_state(&server, ep).await["watched"],
+            true,
+            "{ep}"
+        );
+    }
+    for ep in [named, later, special] {
+        assert_ne!(
+            get_episode_watch_state(&server, ep).await["watched"],
+            true,
+            "{ep}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn earlier_episodes_of_an_unknown_episode_is_not_found() {
+    let server = TestServer::start_api_only().await;
+    let resp = server
+        .admin_client()
+        .put_json(
+            &format!(
+                "/api/v1/admin/tv/episodes/{}/watch-state/earlier",
+                Uuid::now_v7()
+            ),
+            &json!({ "watched": true }),
+        )
+        .await;
+    resp.assert_status(StatusCode::NOT_FOUND);
+}

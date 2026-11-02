@@ -90,11 +90,10 @@ pub struct StremioKeyResponse {
     pub created_at: String,
 }
 
-/// Row shape for SSE polling query (runtime query, not compile-time checked).
-#[derive(sqlx::FromRow)]
 struct DebridStatusRow {
     probe_data: Option<serde_json::Value>,
     skip_segments: Option<serde_json::Value>,
+    subtitle_tracks: Option<serde_json::Value>,
     cache_path: Option<String>,
     filesize: i64,
 }
@@ -366,6 +365,9 @@ pub struct StreamResolveBody {
     /// This viewer's audio language, over the server-wide preference.
     #[serde(default)]
     pub preferred_audio_language: Option<String>,
+    /// See `CreateSessionRequest::preferred_audio_title`.
+    #[serde(default)]
+    pub preferred_audio_title: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -443,6 +445,7 @@ pub async fn stream_status(
         // chapter-derived segments immediately after probe, then again with
         // the merged (chapter + cross-episode) result after analyze.
         let mut last_skip: Option<serde_json::Value> = None;
+        let mut last_subtitles: Option<serde_json::Value> = None;
         let mut sent_thumbnails = false;
         let mut sent_download_complete = false;
         // Timeout after 10 minutes to prevent leaked connections
@@ -460,14 +463,15 @@ pub async fn stream_status(
                 break;
             }
 
-            let row = sqlx::query_as::<_, DebridStatusRow>(
+            let row = sqlx::query_as!(
+                DebridStatusRow,
                 r#"
-                SELECT probe_data, skip_segments, cache_path, filesize
+                SELECT probe_data, skip_segments, subtitle_tracks, cache_path, filesize
                 FROM debrid_stream_sessions
                 WHERE id = $1
                 "#,
+                session_id,
             )
-            .bind(session_id)
             .fetch_optional(&pool)
             .await;
 
@@ -523,6 +527,18 @@ pub async fn stream_status(
                         .data(serde_json::to_string(&event).unwrap_or_default()),
                 );
                 sent_probe = true;
+            }
+
+            // Named from the head of the download, minutes in; see debrid_open::subtitles.
+            if let Some(ref tracks) = row.subtitle_tracks
+                && last_subtitles.as_ref() != Some(tracks)
+            {
+                let event = json!({ "type": "subtitles", "subtitles": tracks });
+                yield Ok(
+                    axum::response::sse::Event::default()
+                        .data(serde_json::to_string(&event).unwrap_or_default()),
+                );
+                last_subtitles = Some(tracks.clone());
             }
 
             if let Some(ref skip_data) = row.skip_segments

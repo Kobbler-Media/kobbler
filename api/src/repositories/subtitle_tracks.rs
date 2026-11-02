@@ -232,3 +232,117 @@ where
     .await?;
     Ok(result.rows_affected())
 }
+
+/// Files with text subtitle tracks nobody has read yet, as (media type, file id).
+pub async fn list_files_needing_text_check(
+    pool: &sqlx::PgPool,
+    text_codecs: &[String],
+    limit: i64,
+) -> Result<Vec<(&'static str, Uuid)>> {
+    let movies = sqlx::query_scalar!(
+        r#"
+        SELECT DISTINCT movie_file_id AS "id!" FROM subtitle_tracks
+        WHERE movie_file_id IS NOT NULL AND text_checked_at IS NULL AND codec = ANY($1)
+        LIMIT $2
+        "#,
+        text_codecs,
+        limit,
+    )
+    .fetch_all(pool)
+    .await?;
+    let episodes = sqlx::query_scalar!(
+        r#"
+        SELECT DISTINCT episode_file_id AS "id!" FROM subtitle_tracks
+        WHERE episode_file_id IS NOT NULL AND text_checked_at IS NULL AND codec = ANY($1)
+        LIMIT $2
+        "#,
+        text_codecs,
+        (limit - movies.len() as i64).max(0),
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(movies
+        .into_iter()
+        .map(|id| ("movie", id))
+        .chain(episodes.into_iter().map(|id| ("episode", id)))
+        .collect())
+}
+
+/// Fills in what the tags left out and never overrides a tag: a language only where
+/// there was none, forced and SDH only ever switched on. Exactly one file id is set.
+pub async fn record_text_insight<'e, E>(
+    exec: E,
+    movie_file_id: Option<Uuid>,
+    episode_file_id: Option<Uuid>,
+    track_index: i32,
+    language: Option<&str>,
+    forced: bool,
+    sdh: bool,
+) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query!(
+        r#"
+        UPDATE subtitle_tracks
+        SET language = CASE WHEN language IS NULL OR language = 'und' THEN COALESCE($4, language) ELSE language END,
+            is_forced = is_forced OR $5,
+            is_hearing_impaired = is_hearing_impaired OR $6,
+            text_checked_at = NOW()
+        WHERE (movie_file_id = $1 OR episode_file_id = $2) AND track_index = $3
+        "#,
+        movie_file_id,
+        episode_file_id,
+        track_index,
+        language,
+        forced,
+        sdh,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+/// Marks every track of the file checked, read or not: a track that cannot be read is not
+/// retried on every pass.
+pub async fn mark_text_checked<'e, E>(
+    exec: E,
+    movie_file_id: Option<Uuid>,
+    episode_file_id: Option<Uuid>,
+) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query!(
+        r#"
+        UPDATE subtitle_tracks SET text_checked_at = NOW()
+        WHERE (movie_file_id = $1 OR episode_file_id = $2) AND text_checked_at IS NULL
+        "#,
+        movie_file_id,
+        episode_file_id,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+pub async fn has_unchecked_text_tracks(
+    pool: &sqlx::PgPool,
+    movie_file_id: Option<Uuid>,
+    episode_file_id: Option<Uuid>,
+    text_codecs: &[String],
+) -> Result<bool> {
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS(
+            SELECT 1 FROM subtitle_tracks
+            WHERE (movie_file_id = $1 OR episode_file_id = $2) AND text_checked_at IS NULL AND codec = ANY($3)
+        ) AS "exists!"
+        "#,
+        movie_file_id,
+        episode_file_id,
+        text_codecs,
+    )
+    .fetch_one(pool)
+    .await?)
+}

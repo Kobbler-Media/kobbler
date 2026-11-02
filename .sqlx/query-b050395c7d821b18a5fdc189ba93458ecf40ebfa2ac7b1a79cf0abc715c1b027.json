@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE debrid_stream_sessions SET subtitle_tracks = $1, updated_at = NOW() WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b050395c7d821b18a5fdc189ba93458ecf40ebfa2ac7b1a79cf0abc715c1b027"
+}

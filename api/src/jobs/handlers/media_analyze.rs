@@ -28,11 +28,13 @@ use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult, MediaRootIoGate, PhaseTimings};
 use crate::media_cache::analyze::{AnalyzeInputs, run_analysis};
 use crate::media_cache::embeddings::{l2_normalise, pack_fp16};
+use crate::media_cache::picture_area::{self, PictureArea};
 use crate::media_cache::writers::{ArtefactInfo, write_atomic, write_manifest};
 use crate::media_cache::{self, Branch, PIPELINE_VERSION};
 use crate::repositories::media_cache_runs::{self, TriggeredBy};
 use crate::repositories::{audiobook_files, media_roots, movie_files, tv_episode_files};
 use crate::skip_detect::vision::VisionClient;
+use crate::streaming::session::MediaType;
 use async_trait::async_trait;
 use kob_ffmpeg::single_pass::BranchId;
 use nats_jobs::Publisher;
@@ -69,6 +71,11 @@ pub struct MediaAnalyzePayload {
     /// "manual" | "auto_ingest" | "backfill". Required — every caller names
     /// its source so we can segment run stats by trigger.
     pub triggered_by: String,
+    /// Fill only the cheap checks that read what an earlier analyze left on disk — the
+    /// picture area from trickplay — for files analysed before those checks existed.
+    /// No decode, and no skip_detect behind it.
+    #[serde(default)]
+    pub gaps_only: bool,
 }
 
 pub struct MediaAnalyzeHandler {
@@ -141,6 +148,25 @@ impl MediaAnalyzeHandler {
     /// the manifest (`present: false`, `attempted_at`, `error`) and we move
     /// on. The backfill walker respects `media_cache_version` so this path
     /// is only ever hit by a user Re-analyze Media click.
+    /// The picture area is a check over trickplay already on disk; failing it never
+    /// fails the analyze.
+    async fn check_picture(&self, payload: &MediaAnalyzePayload) -> Option<PictureArea> {
+        let media_type = match payload.media_type.as_str() {
+            "movie" => MediaType::Movie,
+            "episode" => MediaType::Episode,
+            _ => return None,
+        };
+        match picture_area::check_file(&self.pool, &self.storage_root, media_type, payload.file_id)
+            .await
+        {
+            Ok(area) => area.filter(|a| *a != PictureArea::FULL),
+            Err(e) => {
+                warn!(file_id = %payload.file_id, error = %e, "Picture area check failed");
+                None
+            }
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn run_embeddings_supplement(
         &self,
@@ -413,6 +439,13 @@ impl JobHandler for MediaAnalyzeHandler {
         // See media_probe: one pass over a given file at a time, queued rather
         // than dropped.
         let _file_lock = crate::jobs::file_lock::lock_file(payload.file_id).await;
+
+        if payload.gaps_only {
+            let area = self.check_picture(&payload).await;
+            return Ok(
+                json!({ "status": "gaps_filled", "file_id": payload.file_id, "barred": area.is_some() }),
+            );
+        }
 
         let _permit = self
             .enrichment_semaphore
@@ -745,6 +778,10 @@ impl JobHandler for MediaAnalyzeHandler {
                 "media_analyze timing"
             );
 
+            if is_video {
+                self.check_picture(&payload).await;
+            }
+
             return Ok(json!({
                 "status": "skipped_decode",
                 "reason": "manifest_up_to_date",
@@ -1058,6 +1095,12 @@ impl JobHandler for MediaAnalyzeHandler {
         // ── 10. Chain skip_detect ────────────────────────────────────────
         // Embeddings (if wanted) are already durable on disk at this point, so
         // skip_detect can read everything it needs from the cache.
+        // Before skip_detect, which is what finds the intro and credits the check
+        // would leave out: a re-analyze picks those up.
+        if is_video {
+            self.check_picture(&payload).await;
+        }
+
         {
             let label = if embeddings_ok {
                 "skip detect (audio + visual + credit-text)"

@@ -27,6 +27,8 @@ pub struct CreateExportRequest {
     pub quality: String,
     #[serde(default)]
     pub preferred_audio_language: Option<String>,
+    #[serde(default)]
+    pub preferred_audio_title: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -115,7 +117,11 @@ pub async fn create_export(
             ..ClientCapabilities::default()
         },
         ViewerPrefs {
-            preferred_audio_index: decision::find_preferred_audio(&meta.audio_metas, language),
+            preferred_audio_index: decision::preferred_audio(
+                &meta.audio_metas,
+                req.preferred_audio_title.as_deref(),
+                language,
+            ),
             preferred_subtitle_index: None,
             understood_language: language,
             subtitle_language: "",

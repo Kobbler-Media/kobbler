@@ -135,3 +135,23 @@ where
     .await?;
     Ok(row)
 }
+
+/// Whether the row was there to take them: the session's row can be written a moment after
+/// the stream it describes has started.
+pub async fn set_subtitle_tracks<'e, E>(
+    exec: E,
+    session_id: Uuid,
+    tracks: &serde_json::Value,
+) -> Result<bool>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let done = sqlx::query!(
+        "UPDATE debrid_stream_sessions SET subtitle_tracks = $1, updated_at = NOW() WHERE id = $2",
+        tracks,
+        session_id,
+    )
+    .execute(exec)
+    .await?;
+    Ok(done.rows_affected() > 0)
+}

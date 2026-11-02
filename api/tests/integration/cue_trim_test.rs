@@ -63,6 +63,8 @@ async fn serve(sidecars: bool, enabled: bool) -> Harness {
             title: None,
             file_path: dir.path().join("sub.vtt"),
             extracted: false,
+            is_forced: false,
+            is_hearing_impaired: false,
         }];
     }
     server

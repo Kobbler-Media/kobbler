@@ -1889,6 +1889,8 @@ export type PlaybackSubtitleTrack = {
   url: string | null;
   format: 'vtt' | 'ass' | 'burn_in';
   is_default: boolean;
+  is_forced: boolean;
+  is_hearing_impaired: boolean;
   requires_transcode: boolean;
 };
 
@@ -1917,6 +1919,8 @@ export type PlaybackSessionResponse = {
   media_id?: string;
   media_type?: string;
   preferred_audio_stream_index?: number;
+  /** Where the picture sits inside the frame when bars are baked into the encode, as fractions of it. */
+  picture?: { x: number; y: number; width: number; height: number };
 };
 
 export type VideoChapter = {

@@ -52,6 +52,7 @@ pub(crate) fn live_response(
         selected_subtitle_index: None,
         video_width: None,
         video_height: None,
+        picture: None,
     });
     response.method = session.decision.method;
     response.playlist_url =

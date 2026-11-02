@@ -2241,6 +2241,7 @@ pub async fn run_media_analyze_movie(
             force_regen: query.force,
             run_id: Some(run_id),
             triggered_by: "manual".to_string(),
+            gaps_only: false,
         };
         let analyze_ctx = crate::jobs::JobContext::for_entity(
             "movie",

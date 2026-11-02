@@ -47,6 +47,8 @@ pub struct PrewarmBody {
     pub estimated_duration: Option<f64>,
     #[serde(default)]
     pub preferred_audio_language: Option<String>,
+    #[serde(default)]
+    pub preferred_audio_title: Option<String>,
 }
 
 /// What to search for, the key a repeat call for the same title finds it under, and the
@@ -138,6 +140,7 @@ impl PrewarmBody {
             estimated_duration: self.estimated_duration,
             auto_create,
             preferred_audio_language: self.preferred_audio_language,
+            preferred_audio_title: self.preferred_audio_title,
         };
         Ok(Title {
             target,

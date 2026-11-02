@@ -324,6 +324,48 @@ where
     Ok(rows)
 }
 
+/// Marks every non-special episode of a show that sorts before (season, episode) watched.
+pub async fn bulk_mark_earlier_watched<'e, E>(
+    exec: E,
+    show_id: Uuid,
+    season_sort_order: i32,
+    episode_sort_order: i32,
+    user_id: Uuid,
+    watched_at: OffsetDateTime,
+) -> Result<Vec<Uuid>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let rows = sqlx::query_scalar!(
+        r#"
+        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, watched_at, position_seconds)
+        SELECT gen_random_uuid(), e.id, $1, TRUE, $2, NULL
+        FROM tv_episodes e
+        JOIN tv_seasons s ON s.id = e.season_id
+        WHERE s.show_id = $3
+          AND NOT s.is_special
+          AND (s.season_sort_order, e.episode_sort_order) < ($4, $5)
+        ON CONFLICT (episode_id, user_id)
+        DO UPDATE SET
+            source = 'local',
+            watched = TRUE,
+            watched_at = $2,
+            position_seconds = NULL,
+            updated_at = NOW()
+        RETURNING episode_id
+        "#,
+        user_id,
+        watched_at,
+        show_id,
+        season_sort_order,
+        episode_sort_order,
+    )
+    .fetch_all(exec)
+    .await?;
+
+    Ok(rows)
+}
+
 /// Bulk mark all episodes in a season as unwatched for a user, clearing saved positions too.
 /// Returns only the episodes that were watched (for Trakt sync).
 pub async fn bulk_mark_season_unwatched<'e, E>(

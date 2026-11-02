@@ -24,6 +24,7 @@ pub(super) struct Prepare {
     pub download_meter: Arc<DownloadMeter>,
     pub start_time: Option<f64>,
     pub audio_language: String,
+    pub audio_title: Option<String>,
     /// A warm session probes and decides, then holds off its transcode until claimed.
     pub warm: Option<WarmGate>,
 }
@@ -68,6 +69,7 @@ pub(super) async fn run(ctx: Prepare) {
         download_meter,
         start_time,
         audio_language,
+        audio_title,
         warm,
     } = ctx;
 
@@ -193,8 +195,11 @@ pub(super) async fn run(ctx: Prepare) {
         })
         .collect();
     // Resolve preferred audio from language settings
-    let preferred_audio =
-        crate::streaming::decision::find_preferred_audio(&audio_metas, &audio_language);
+    let preferred_audio = crate::streaming::decision::preferred_audio(
+        &audio_metas,
+        audio_title.as_deref(),
+        &audio_language,
+    );
 
     let decision = crate::streaming::decision::decide(
         &file_meta,
@@ -244,6 +249,14 @@ pub(super) async fn run(ctx: Prepare) {
             session.file_path = local_cache_path.clone();
         }
     }
+
+    tokio::spawn(super::subtitles::name_once_head_arrives(
+        bg_state.clone(),
+        session_id,
+        local_cache_path.clone(),
+        download_meter.clone(),
+        duration,
+    ));
 
     // Stored so the SSE status endpoint can emit probe_complete. `method` is the refined
     // decision: a client that started on the optimistic one compares against it.

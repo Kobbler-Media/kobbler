@@ -133,6 +133,7 @@ pub struct SubtitleTrackMeta {
     /// Matroska/MP4 "forced" disposition — a partial track covering only the
     /// foreign-language lines in otherwise-understood dialogue.
     pub is_forced: bool,
+    pub is_hearing_impaired: bool,
 }
 
 /// What the client (browser) can natively play.
@@ -557,20 +558,61 @@ fn title_names_language(title: Option<&str>, preferred: &str) -> bool {
         .any(|word| word == pref || (word.len() > 2 && codes.contains(&word)))
 }
 
+fn title_has(title: Option<&str>, markers: &[&str]) -> bool {
+    title.is_some_and(|t| {
+        let t = t.to_lowercase();
+        markers.iter().any(|m| t.contains(m))
+    })
+}
+
+// Sport ships the race as commentary beside a feed with none; that feed is never the one wanted.
+fn is_ambient(title: Option<&str>) -> bool {
+    title_has(
+        title,
+        &[
+            "ambient",
+            "natural sound",
+            "nat sound",
+            "clean feed",
+            "no commentary",
+            "effects only",
+        ],
+    )
+}
+
 fn is_commentary(title: Option<&str>) -> bool {
-    let Some(title) = title else {
-        return false;
-    };
-    let title = title.to_lowercase();
-    [
-        "commentary",
-        "commentaries",
-        "audio description",
-        "descriptive",
-        "described video",
-    ]
-    .iter()
-    .any(|marker| title.contains(marker))
+    !is_ambient(title)
+        && title_has(
+            title,
+            &[
+                "commentary",
+                "commentaries",
+                "audio description",
+                "descriptive",
+                "described video",
+            ],
+        )
+}
+
+/// The tracks that can stand for the title's own audio: commentary is passed over only
+/// for a real feature track, and an ambient feed only when anything else is there.
+fn feature_tracks(tracks: &[AudioTrackMeta]) -> Vec<&AudioTrackMeta> {
+    let narrated: Vec<_> = tracks
+        .iter()
+        .filter(|t| !is_ambient(t.title.as_deref()))
+        .collect();
+    let feature: Vec<_> = narrated
+        .iter()
+        .copied()
+        .filter(|t| !is_commentary(t.title.as_deref()))
+        .collect();
+    if !feature.is_empty() {
+        feature
+    } else if !narrated.is_empty() {
+        narrated
+    } else {
+        tracks.iter().collect()
+    }
 }
 
 fn speaks(track: &AudioTrackMeta, preferred: &str) -> bool {
@@ -594,9 +636,37 @@ pub fn find_preferred_audio(tracks: &[AudioTrackMeta], preferred_language: &str)
     if preferred_language.is_empty() {
         return None;
     }
+    feature_tracks(tracks)
+        .into_iter()
+        .find(|t| speaks(t, preferred_language))
+        .map(|t| t.stream_index)
+}
+
+/// A track the viewer picked by hand before, else the first feature track in their language.
+pub fn preferred_audio(
+    tracks: &[AudioTrackMeta],
+    title: Option<&str>,
+    language: &str,
+) -> Option<i32> {
+    title
+        .and_then(|t| find_audio_by_title(tracks, t))
+        .or_else(|| find_preferred_audio(tracks, language))
+}
+
+/// The track a viewer picked by hand on another episode, found again by its title: stream
+/// indices shift between releases, a muxer's track names mostly do not.
+pub fn find_audio_by_title(tracks: &[AudioTrackMeta], title: &str) -> Option<i32> {
+    let title = title.trim();
+    if title.is_empty() {
+        return None;
+    }
     tracks
         .iter()
-        .find(|t| !is_commentary(t.title.as_deref()) && speaks(t, preferred_language))
+        .find(|t| {
+            t.title
+                .as_deref()
+                .is_some_and(|t| t.trim().eq_ignore_ascii_case(title))
+        })
         .map(|t| t.stream_index)
 }
 
@@ -1066,6 +1136,7 @@ mod tests {
             title: None,
             is_default: true,
             is_forced: true,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1097,6 +1168,7 @@ mod tests {
             title: None,
             is_default: true,
             is_forced: true,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1127,6 +1199,7 @@ mod tests {
             title: None,
             is_default: true,
             is_forced: true,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1158,6 +1231,7 @@ mod tests {
             title: None,
             is_default: true,
             is_forced: false,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1188,6 +1262,7 @@ mod tests {
             title: None,
             is_default: false,
             is_forced: false,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1220,6 +1295,7 @@ mod tests {
             title: None,
             is_default: false,
             is_forced: false,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1250,6 +1326,7 @@ mod tests {
             title: None,
             is_default: false,
             is_forced: false,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1280,6 +1357,7 @@ mod tests {
             title: Some("English [SDH]".to_string()),
             is_default: true,
             is_forced: false,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1310,6 +1388,7 @@ mod tests {
             title: None,
             is_default: true,
             is_forced: false,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1342,6 +1421,7 @@ mod tests {
             title: Some("Forced".to_string()),
             is_default: false,
             is_forced: true,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1375,6 +1455,7 @@ mod tests {
             title: None,
             is_default: true,
             is_forced: false,
+            is_hearing_impaired: false,
         }];
         let d = decide(
             &file,
@@ -1829,5 +1910,32 @@ mod tests {
             audio(2, Some("eng"), Some("Commentary with the cast"), false),
         ];
         assert_eq!(find_preferred_audio(&only_commentary, "english"), None);
+    }
+
+    #[test]
+    fn find_preferred_audio_takes_commentary_over_ambient() {
+        let race = vec![
+            audio(1, Some("eng"), Some("Commentary"), true),
+            audio(2, None, Some("Natural/Ambient"), true),
+        ];
+        assert_eq!(find_preferred_audio(&race, "english"), Some(1));
+
+        let clean_feed = vec![
+            audio(1, Some("eng"), Some("Clean Feed"), true),
+            audio(2, Some("eng"), Some("No Commentary"), false),
+            audio(3, Some("eng"), Some("Sky Sports Commentary"), false),
+        ];
+        assert_eq!(find_preferred_audio(&clean_feed, "english"), Some(3));
+    }
+
+    #[test]
+    fn find_audio_by_title_matches_a_remembered_choice() {
+        let race = vec![
+            audio(1, Some("eng"), Some("Commentary"), true),
+            audio(2, None, Some("Natural/Ambient"), true),
+        ];
+        assert_eq!(find_audio_by_title(&race, "natural/ambient"), Some(2));
+        assert_eq!(find_audio_by_title(&race, "Pit lane"), None);
+        assert_eq!(find_audio_by_title(&race, ""), None);
     }
 }

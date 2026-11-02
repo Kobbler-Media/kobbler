@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tv_episode_files SET picture_x = $2, picture_y = $3, picture_width = $4, picture_height = $5,\n                      picture_checked_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Float8",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "764df366459959e3c80b01d3fd4d074812300e6acffa68588a1b1e18e644c65c"
+}

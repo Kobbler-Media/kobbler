@@ -249,6 +249,7 @@ pub(super) async fn open(
         selected_subtitle_index: None,
         video_width: None,
         video_height: None,
+        picture: None,
     };
 
     let target = DownloadTarget {
@@ -288,6 +289,7 @@ pub(super) async fn open(
         download_meter,
         start_time: body.start_time,
         audio_language: audio_language(body, runtime).to_string(),
+        audio_title: body.preferred_audio_title.clone(),
         warm,
     }));
 

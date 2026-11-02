@@ -128,6 +128,9 @@ pub struct CreateSessionRequest {
     /// only when [audio_track_index] is not set; takes precedence over the
     /// server-wide config default so each profile can override.
     pub preferred_audio_language: Option<String>,
+    /// Title of the audio track the viewer last picked by hand for this show or movie.
+    /// Wins over [preferred_audio_language] when a track of that title is present.
+    pub preferred_audio_title: Option<String>,
     /// Per-user preferred subtitle language. See [preferred_audio_language].
     pub preferred_subtitle_language: Option<String>,
     /// When false, the user has disabled subtitles by default — skip
@@ -189,6 +192,10 @@ pub struct SessionResponse {
     /// Source video height in pixels. See [video_width].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_height: Option<u32>,
+    /// Where the picture sits inside the frame when the encode has bars baked in, as
+    /// fractions of it: what a client keys an aspect choice on, rather than the frame.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub picture: Option<crate::media_cache::picture_area::PictureArea>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -260,6 +267,8 @@ pub struct SubtitleTrackResponse {
     pub url: Option<String>,
     pub format: String,
     pub is_default: bool,
+    pub is_forced: bool,
+    pub is_hearing_impaired: bool,
     pub requires_transcode: bool,
 }
 
@@ -471,7 +480,11 @@ pub(crate) async fn open_file_session(
     let preferred_audio = if req.audio_track_index.is_some() {
         req.audio_track_index
     } else {
-        decision::find_preferred_audio(&audio_metas, audio_lang_pref)
+        decision::preferred_audio(
+            &audio_metas,
+            req.preferred_audio_title.as_deref(),
+            audio_lang_pref,
+        )
     };
     let subtitles_enabled = req.subtitles_enabled.unwrap_or(true);
     let subtitle_lang_pref = req
@@ -670,6 +683,8 @@ pub(crate) async fn open_file_session(
                 url: Some(format!("{base_url}/subtitles/{}.{ext}", sf.track_id)),
                 format: format.to_string(),
                 is_default: Some(sf.stream_index) == selected_subtitle_index,
+                is_forced: sf.is_forced,
+                is_hearing_impaired: sf.is_hearing_impaired,
                 requires_transcode: false,
             }
         })
@@ -689,6 +704,8 @@ pub(crate) async fn open_file_session(
             url: None,
             format: "burn_in".to_string(),
             is_default: Some(sub.stream_index) == selected_subtitle_index,
+            is_forced: sub.is_forced,
+            is_hearing_impaired: sub.is_hearing_impaired,
             requires_transcode: true,
         });
     }
@@ -825,6 +842,11 @@ pub(crate) async fn open_file_session(
         MediaType::Recording => None,
     };
 
+    let picture = crate::repositories::file_pictures::get(&state.pool, req.media_type, file_id)
+        .await
+        .ok()
+        .flatten();
+
     let response = SessionResponse {
         session_id: session_id.to_string(),
         method: decision.method,
@@ -868,6 +890,7 @@ pub(crate) async fn open_file_session(
         } else {
             None
         },
+        picture,
     };
 
     // Compute ABR variants for VideoTranscode sessions with enough resolution
@@ -3126,6 +3149,7 @@ pub async fn switch_audio(
             selected_subtitle_index: None,
             video_width: if sw > 0 { Some(sw) } else { None },
             video_height: if sh > 0 { Some(sh) } else { None },
+            picture: None,
         })
         .into_response();
     }
@@ -3285,6 +3309,8 @@ pub async fn switch_audio(
                     url: Some(format!("{base_url}/subtitles/{}.{ext}", sf.track_id)),
                     format: format.to_string(),
                     is_default: Some(sf.stream_index) == switched_subtitle_index,
+                    is_forced: sf.is_forced,
+                    is_hearing_impaired: sf.is_hearing_impaired,
                     requires_transcode: false,
                 }
             })
@@ -3303,6 +3329,7 @@ pub async fn switch_audio(
         selected_subtitle_index: switched_subtitle_index,
         video_width: if sw > 0 { Some(sw) } else { None },
         video_height: if sh > 0 { Some(sh) } else { None },
+        picture: None,
     };
 
     info!(
@@ -3416,6 +3443,8 @@ pub async fn download_subtitle_to_session(
         )),
         file_path: sub_path,
         extracted: true,
+        is_forced: req.is_forced,
+        is_hearing_impaired: false,
     };
 
     session.subtitle_files.push(sub_file);
@@ -3430,6 +3459,8 @@ pub async fn download_subtitle_to_session(
         url: Some(format!("{base_url}/subtitles/{track_id}.{ext}")),
         format: ext.to_string(),
         is_default: false,
+        is_forced: req.is_forced,
+        is_hearing_impaired: false,
         requires_transcode: false,
     };
 
@@ -4164,6 +4195,7 @@ pub(crate) async fn load_playable_file(
                         title: s.title.clone(),
                         is_default: s.is_default,
                         is_forced: s.is_forced,
+                        is_hearing_impaired: s.is_hearing_impaired,
                     })
                     .collect();
                 info!(
@@ -4355,6 +4387,7 @@ async fn load_movie_file_meta(
             title: s.title.clone(),
             is_default: s.is_default,
             is_forced: s.is_forced,
+            is_hearing_impaired: s.is_hearing_impaired,
         })
         .collect();
 
@@ -4417,6 +4450,7 @@ async fn load_episode_file_meta(
             title: s.title.clone(),
             is_default: s.is_default,
             is_forced: s.is_forced,
+            is_hearing_impaired: s.is_hearing_impaired,
         })
         .collect();
 
@@ -4510,6 +4544,8 @@ fn build_subtitle_metadata(
                 title: sub.title.clone(),
                 file_path,
                 extracted,
+                is_forced: sub.is_forced,
+                is_hearing_impaired: sub.is_hearing_impaired,
             }
         })
         .collect()

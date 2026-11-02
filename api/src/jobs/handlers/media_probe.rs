@@ -264,6 +264,7 @@ impl JobHandler for MediaProbeHandler {
                             force_regen: false,
                             run_id: None,
                             triggered_by: "auto_ingest".to_string(),
+                            gaps_only: false,
                         };
                         let context = crate::jobs::JobContext::new("Analyzing media (single-pass)");
                         if let Err(e) = crate::jobs::enqueue_routine(

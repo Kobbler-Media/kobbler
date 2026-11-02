@@ -237,6 +237,8 @@ async fn the_index_a_session_sees_does_not_change_under_it() {
         title: None,
         file_path: dir.path().join("sub.vtt"),
         extracted: false,
+        is_forced: false,
+        is_hearing_impaired: false,
     }];
 
     let second = play(&server, session_id, "bytes=0-").await.body;

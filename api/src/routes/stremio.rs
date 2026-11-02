@@ -502,6 +502,7 @@ async fn try_resolve_option(
         start_time: None,
         auto_create: None,
         preferred_audio_language: None,
+        preferred_audio_title: None,
     };
 
     let resolve_resp =
