@@ -295,3 +295,25 @@ async fn the_sweep_builds_missing_packs_and_clears_those_of_deleted_files() {
         .unwrap();
     assert_eq!(again["queued"], 0, "a built pack was queued again: {again}");
 }
+
+/// More books than the server keeps loaded at once: opening the one after the
+/// cache fills must evict another, not hang.
+#[tokio::test]
+async fn opening_more_books_than_are_kept_loaded_does_not_hang() {
+    let server = TestServer::start_api_only().await;
+    let mut books = Vec::new();
+    for _ in 0..40 {
+        books.push(book_with_epub(&server).await);
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        for book_id in &books {
+            server
+                .admin_client()
+                .get(&format!("/api/v1/admin/books/{book_id}/reader-pack"))
+                .await
+                .assert_ok();
+        }
+    })
+    .await
+    .expect("opening books stalled once the loaded-pack cache was full");
+}

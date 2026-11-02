@@ -87,10 +87,14 @@ pub async fn ensure(storage_root: &str, file: &ReaderFile) -> Result<Arc<LoadedP
     }
     let target = dir.clone();
     let pack = Arc::new(tokio::task::spawn_blocking(move || load(&target)).await??);
-    if loaded().len() >= LOADED_CAP
-        && let Some(evict) = loaded().iter().next().map(|e| e.key().clone())
-    {
-        loaded().remove(&evict);
+    if loaded().len() >= LOADED_CAP {
+        // Taken into a local so the iterator's shard read guard is dropped
+        // before remove() asks for that shard's write lock: held across the
+        // remove, the thread deadlocks on itself.
+        let evict = loaded().iter().next().map(|e| e.key().clone());
+        if let Some(evict) = evict {
+            loaded().remove(&evict);
+        }
     }
     loaded().insert(dir, Arc::clone(&pack));
     Ok(pack)
