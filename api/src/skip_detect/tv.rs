@@ -249,10 +249,11 @@ struct ClusterPick {
     pair_count: usize,
 }
 
-/// Group `pairs` by `start_seconds` (consecutive sorted starts within
-/// `gap_secs` form one cluster), then return the cluster maximising
-/// `Σ density × mean_similarity`. Picked endpoints are `min(start)` and
-/// `median(end)` over the **winning cluster only** — guaranteeing both come
+/// Group `pairs` into clusters (a pair joins the running cluster when its
+/// start is within `gap_secs` of the previous start, or when it overlaps the
+/// cluster's span), then return the cluster maximising
+/// `Σ density × mean_similarity`. Picked endpoints are the second-earliest
+/// start and `median(end)` over the **winning cluster only** — guaranteeing both come
 /// from pairs that agree on the same content, instead of being synthesised
 /// from independent statistics across unrelated pairs (which previously
 /// stretched a 9s logo flash plus 60s of unrelated cold-open into a
@@ -267,16 +268,23 @@ fn pick_winning_start_cluster(pairs: &[vhash::VHashMatch], gap_secs: f64) -> Opt
             .partial_cmp(&b.start_seconds)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    let mut clusters: Vec<Vec<&vhash::VHashMatch>> = Vec::new();
+    // Overlap joins too: when the montage is re-cut per episode, a partner
+    // whose opening shots differ only starts matching tens of seconds in, yet
+    // it covers the same title sequence. Split off by start alone, those
+    // shorter (hence denser) pairs can outscore the full-length ones.
+    let mut clusters: Vec<(Vec<&vhash::VHashMatch>, f64)> = Vec::new();
     for m in sorted {
-        let extend = clusters
-            .last()
-            .and_then(|c| c.last())
-            .is_some_and(|prev| m.start_seconds - prev.start_seconds <= gap_secs);
+        let extend = clusters.last().is_some_and(|(c, span_end)| {
+            c.last()
+                .is_some_and(|prev| m.start_seconds - prev.start_seconds <= gap_secs)
+                || m.start_seconds < *span_end
+        });
         if extend {
-            clusters.last_mut().unwrap().push(m);
+            let (c, span_end) = clusters.last_mut().unwrap();
+            c.push(m);
+            *span_end = span_end.max(m.end_seconds);
         } else {
-            clusters.push(vec![m]);
+            clusters.push((vec![m], m.end_seconds));
         }
     }
     // `reduce` with strict `>` keeps the earlier cluster on a tie — clusters
@@ -284,24 +292,27 @@ fn pick_winning_start_cluster(pairs: &[vhash::VHashMatch], gap_secs: f64) -> Opt
     // the earliest equally-strong intro candidate.
     let score =
         |c: &[&vhash::VHashMatch]| -> f64 { c.iter().map(|m| m.density * m.mean_similarity).sum() };
-    let winner = clusters.into_iter().reduce(|best, candidate| {
-        if score(&candidate) > score(&best) {
-            candidate
-        } else {
-            best
-        }
-    })?;
+    let winner = clusters
+        .into_iter()
+        .map(|(c, _)| c)
+        .reduce(|best, candidate| {
+            if score(&candidate) > score(&best) {
+                candidate
+            } else {
+                best
+            }
+        })?;
     let mut starts: Vec<f64> = winner.iter().map(|m| m.start_seconds).collect();
     let mut ends: Vec<f64> = winner.iter().map(|m| m.end_seconds).collect();
     starts.sort_by(|a, b| a.partial_cmp(b).unwrap());
     ends.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let n = winner.len() as f64;
-    // Median start (not min) so a single outlier pair whose lhs drifts a few
-    // seconds earlier than the cluster majority can't drag the picked start
-    // before the real intro. Same upper-mid index as ends, so even-length
-    // clusters bias symmetrically. See harness against Paradise S02E03/E05/E08.
+    // Second-earliest start: a single outlier pair whose lhs drifts earlier
+    // than the rest can't drag the start before the real intro (Paradise
+    // S02E08), but partners that only matched the back half of the titles
+    // can't drag it into them either, as a median does (Leftovers S3).
     Some(ClusterPick {
-        start_seconds: starts[starts.len() / 2],
+        start_seconds: starts[1.min(starts.len() - 1)],
         end_seconds: ends[ends.len() / 2],
         density: winner.iter().map(|m| m.density).sum::<f64>() / n,
         mean_similarity: winner.iter().map(|m| m.mean_similarity).sum::<f64>() / n,
@@ -480,6 +491,7 @@ fn cluster_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::skip_detect::MIN_MATCH_DURATION;
     use crate::skip_detect::chromaprint::Fingerprint;
 
     fn m(start: f64, end: f64, density: f64, mean_similarity: f64) -> vhash::VHashMatch {
@@ -508,12 +520,12 @@ mod tests {
             m(280.6, 289.6, 1.00, 0.99), // ep7
         ];
         let pick = pick_winning_start_cluster(&pairs, 10.0).expect("expected a winning cluster");
-        // Median over the 2-pair winner [{280.6, 280.9}] is the upper-mid →
+        // Second-earliest start of the 2-pair winner [{280.6, 280.9}] →
         // 280.9. Span 280.9..289.6 = 8.7s falls below the 10s vhash-only
         // intro gate at the call site → S02E06 ends up with no intro picked.
         assert!(
             (pick.start_seconds - 280.9).abs() < 0.01,
-            "start should be median of the strongest pair cluster, got {}",
+            "start should come from the strongest pair cluster, got {}",
             pick.start_seconds
         );
         assert!(
@@ -530,7 +542,7 @@ mod tests {
         // than the cluster majority (575.6..575.9) — still inside the 10s
         // gap so it landed in the same start-cluster, but min(start) handed
         // back 569.2 and the extracted clip began ~6s before the actual
-        // intro. Median pulls back to 575.6.
+        // intro. The second-earliest start pulls back to 575.6.
         let pairs = vec![
             m(575.6, 585.3, 1.00, 0.97), // ep0
             m(575.6, 583.6, 1.00, 1.00), // ep1
@@ -542,7 +554,7 @@ mod tests {
         let pick = pick_winning_start_cluster(&pairs, 10.0).unwrap();
         assert!(
             (pick.start_seconds - 575.6).abs() < 0.01,
-            "median start must reject the 569.2 outlier; got {}",
+            "picked start must reject the 569.2 outlier; got {}",
             pick.start_seconds
         );
         assert_eq!(
@@ -557,7 +569,8 @@ mod tests {
         // repeat content per VHashMatch::mean_similarity comment) drifting
         // 16s apart at the 880-900s mark. Pre-fix min(start)/median(end)
         // emitted a 16s "intro" candidate that wasn't an intro at all.
-        // Median start collapses it to ~7s — below the 10s vhash-only gate.
+        // The second-earliest start collapses it to ~7s — below the 10s
+        // vhash-only gate.
         let pairs = vec![
             m(883.6, 890.9, 1.00, 0.77), // ep2
             m(892.3, 899.3, 0.90, 0.71), // ep5
@@ -593,6 +606,117 @@ mod tests {
         let pairs = vec![m(50.0, 60.0, 1.0, 0.9), m(500.0, 510.0, 1.0, 0.9)];
         let pick = pick_winning_start_cluster(&pairs, 10.0).unwrap();
         assert!((pick.start_seconds - 50.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn pick_cluster_leftovers_s3e04_partial_pairs_dont_split_the_intro() {
+        // The Leftovers 3x04 intro pairs, as matched against the rest of S3.
+        // The montage is re-cut per episode, so partners whose opening shots
+        // differ (5, 6, 8) only start matching ~30s in, while 2, 3 and 7
+        // match from the titles' first frame. All six describe the same
+        // 0..94s title sequence. Clustered by start alone, the three late
+        // pairs (denser because they are shorter) outscored the three full
+        // ones and the intro started at 30.91, dropping 28s of titles.
+        let pairs = vec![
+            m(6.92, 89.59, 0.90, 0.988),  // vs 2
+            m(1.92, 86.25, 0.91, 0.999),  // vs 3
+            m(30.91, 94.26, 0.99, 0.990), // vs 5
+            m(30.91, 90.59, 1.00, 0.993), // vs 6
+            m(0.00, 94.26, 0.90, 0.991),  // vs 7
+            m(30.91, 94.26, 1.00, 0.984), // vs 8
+        ];
+        let pick = pick_winning_start_cluster(&pairs, START_CLUSTER_GAP_SECS).unwrap();
+        assert_eq!(pick.pair_count, 6, "all six pairs are one intro");
+        assert!(
+            pick.start_seconds <= 2.5,
+            "titles begin at ~2.5s; got start {}",
+            pick.start_seconds
+        );
+        assert!(
+            (pick.end_seconds - 94.26).abs() < 0.01,
+            "end should stay at 94.26; got {}",
+            pick.end_seconds
+        );
+    }
+
+    /// Real vHash descriptors for The Leftovers S3E02–E08 title sequences
+    /// (0–110s; E06 440–570s, where its intro follows a cold open).
+    fn leftovers_s3_title_fixtures() -> Vec<(usize, Vec<vhash::FrameDescriptor>)> {
+        let raw: [(usize, &[u8]); 7] = [
+            (
+                2,
+                include_bytes!("../../tests/fixtures/vhash/leftovers_s3e02_titles.bin"),
+            ),
+            (
+                3,
+                include_bytes!("../../tests/fixtures/vhash/leftovers_s3e03_titles.bin"),
+            ),
+            (
+                4,
+                include_bytes!("../../tests/fixtures/vhash/leftovers_s3e04_titles.bin"),
+            ),
+            (
+                5,
+                include_bytes!("../../tests/fixtures/vhash/leftovers_s3e05_titles.bin"),
+            ),
+            (
+                6,
+                include_bytes!("../../tests/fixtures/vhash/leftovers_s3e06_titles.bin"),
+            ),
+            (
+                7,
+                include_bytes!("../../tests/fixtures/vhash/leftovers_s3e07_titles.bin"),
+            ),
+            (
+                8,
+                include_bytes!("../../tests/fixtures/vhash/leftovers_s3e08_titles.bin"),
+            ),
+        ];
+        raw.iter()
+            .map(|(ep, b)| {
+                (
+                    *ep,
+                    vhash::deserialize_descriptors(b).expect("decode fixture"),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn leftovers_s3_intro_starts_at_the_titles() {
+        // Regression for the 2026-11-03 re-run: 3x04's intro moved from 0.00
+        // to 30.91, and every other episode's start drifted 2–9s into the
+        // titles. Frame 0 is black and the titles open at ~2s in each of
+        // these episodes (3x04 at ~2.5s, "Starring Justin Theroux" ~7.5s).
+        let res = find_per_episode_vhash(&leftovers_s3_title_fixtures(), MIN_MATCH_DURATION);
+
+        let e04 = res.get(&4).expect("3x04 intro");
+        assert!(
+            e04.start_seconds <= 2.5,
+            "3x04 start {} drops the titles",
+            e04.start_seconds
+        );
+        assert!(
+            e04.end_seconds >= 91.5,
+            "3x04 end {} cuts the 'Directed by' card",
+            e04.end_seconds
+        );
+        assert!(e04.pair_count >= 5, "3x04 pair_count {}", e04.pair_count);
+
+        for ep in [2, 3, 7, 8] {
+            let m = res.get(&ep).unwrap_or_else(|| panic!("3x0{ep} intro"));
+            assert!(
+                m.start_seconds <= 2.5,
+                "3x0{ep} start {} drops the opening shot",
+                m.start_seconds
+            );
+        }
+        let e06 = res.get(&6).expect("3x06 intro");
+        assert!(
+            (460.0..=464.0).contains(&e06.start_seconds),
+            "3x06 start {}",
+            e06.start_seconds
+        );
     }
 
     #[test]
