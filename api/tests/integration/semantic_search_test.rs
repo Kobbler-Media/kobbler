@@ -387,8 +387,9 @@ async fn title_queries_become_hybrid_and_weak_artwork_matches_are_dropped() {
     let (titles, others): (Vec<_>, Vec<_>) = queries.iter().partition(|q| is_title_index(q));
     // Each title index: the summary hybrid, plus a pure-vector poster query.
     assert_eq!(titles.len(), 6, "{queries:?}");
-    let (summary, poster): (Vec<_>, Vec<_>) = titles
+    let (summary, poster): (Vec<&Value>, Vec<&Value>) = titles
         .iter()
+        .copied()
         .partition(|q| q["hybrid"]["embedder"] == "description");
     assert_eq!((summary.len(), poster.len()), (3, 3), "{queries:?}");
     for q in summary {

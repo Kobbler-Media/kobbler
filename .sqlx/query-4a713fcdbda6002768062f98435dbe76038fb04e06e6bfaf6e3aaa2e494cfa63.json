@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT entity_id, embedding\n        FROM search_embeddings\n        WHERE entity_type = $1 AND entity_id = ANY($2)\n        ",
+  "query": "\n        SELECT entity_id, kind, embedding\n        FROM search_embeddings\n        WHERE entity_type = $1 AND entity_id = ANY($2) AND model = $3\n        ",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,17 @@
       },
       {
         "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_embeddings",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
         "name": "embedding",
         "type_info": "Float4Array",
         "origin": {
@@ -29,13 +40,15 @@
     "parameters": {
       "Left": [
         "Text",
-        "UuidArray"
+        "UuidArray",
+        "Text"
       ]
     },
     "nullable": [
       false,
+      false,
       false
     ]
   },
-  "hash": "2cd5e08ad9f61144ae9f610c7d624b454c46c243f9e9f8c6fcc71bf32dba609a"
+  "hash": "4a713fcdbda6002768062f98435dbe76038fb04e06e6bfaf6e3aaa2e494cfa63"
 }

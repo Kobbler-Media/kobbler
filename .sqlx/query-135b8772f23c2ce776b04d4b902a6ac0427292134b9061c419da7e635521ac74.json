@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        DELETE FROM search_embeddings e\n        WHERE NOT EXISTS (\n            SELECT 1 FROM search_embedding_sources s\n            WHERE s.entity_type = e.entity_type AND s.entity_id = e.entity_id\n        )\n        RETURNING e.entity_type, e.entity_id\n        ",
+  "query": "\n        DELETE FROM search_embeddings e\n        WHERE NOT EXISTS (\n            SELECT 1 FROM search_embedding_sources s\n            WHERE s.entity_type = e.entity_type AND s.entity_id = e.entity_id\n              AND s.kind = e.kind\n        )\n        RETURNING e.entity_type, e.entity_id\n        ",
   "describe": {
     "columns": [
       {
@@ -34,5 +34,5 @@
       false
     ]
   },
-  "hash": "4b398f15a34bc9b1a64762165e3081d804f9229a3ce3fc165f7b3e72c0c521f8"
+  "hash": "135b8772f23c2ce776b04d4b902a6ac0427292134b9061c419da7e635521ac74"
 }

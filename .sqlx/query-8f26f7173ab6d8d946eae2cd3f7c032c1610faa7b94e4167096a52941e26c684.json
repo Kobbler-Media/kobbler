@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.entity_type AS \"entity_type!\", s.entity_id AS \"entity_id!\",\n               s.kind AS \"kind!\", s.source AS \"source!\", s.title\n        FROM search_embedding_sources s\n        LEFT JOIN search_embeddings e\n          ON e.entity_type = s.entity_type AND e.entity_id = s.entity_id AND e.kind = s.kind\n        WHERE e.source IS DISTINCT FROM s.source\n           OR e.model IS DISTINCT FROM $1\n        ORDER BY s.kind, s.entity_type, s.entity_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "entity_type!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_embedding_sources",
+            "name": "entity_type"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "entity_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "search_embedding_sources",
+            "name": "entity_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_embedding_sources",
+            "name": "kind"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "source!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_embedding_sources",
+            "name": "source"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_embedding_sources",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8f26f7173ab6d8d946eae2cd3f7c032c1610faa7b94e4167096a52941e26c684"
+}

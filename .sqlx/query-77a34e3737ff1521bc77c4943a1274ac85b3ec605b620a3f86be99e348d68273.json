@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO search_embeddings (entity_type, entity_id, kind, model, source, embedding)\n        SELECT s.entity_type, s.entity_id, s.kind, $4, s.source, $5\n        FROM search_embedding_sources s\n        WHERE s.entity_type = $1 AND s.entity_id = $2 AND s.kind = $3\n        ON CONFLICT (entity_type, entity_id, kind)\n        DO UPDATE SET source = EXCLUDED.source, model = EXCLUDED.model,\n                      embedding = EXCLUDED.embedding, created_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Float4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "77a34e3737ff1521bc77c4943a1274ac85b3ec605b620a3f86be99e348d68273"
+}

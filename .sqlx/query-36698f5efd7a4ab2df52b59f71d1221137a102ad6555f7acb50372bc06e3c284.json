@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM job_status\n            WHERE job_type = 'media_analyze'\n              AND payload->>'file_id' = $1\n              AND status = 'completed'\n              AND completed_at > NOW() - INTERVAL '1 hour'\n        ) AS \"exists!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "36698f5efd7a4ab2df52b59f71d1221137a102ad6555f7acb50372bc06e3c284"
+}
