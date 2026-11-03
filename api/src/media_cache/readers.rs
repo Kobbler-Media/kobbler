@@ -145,7 +145,23 @@ pub fn read_embeddings(storage_root: &str, file_id: Uuid) -> Option<EmbeddingsVi
     decode_embeddings(&cache_dir(storage_root, file_id), &info)
 }
 
+/// The model an embeddings artefact was computed with (recorded on failed
+/// attempts too). Caches from before the model was recorded have none.
+pub fn embeddings_model(info: &ArtefactInfo) -> Option<&str> {
+    info.params.get("model").and_then(|v| v.as_str())
+}
+
+/// Present and from [`EMBED_MODEL`](crate::embedding::EMBED_MODEL). Vectors from
+/// any other model live in a different space: comparing them with today's prompt
+/// vectors gives meaningless scores, so they read as missing.
+pub fn embeddings_are_current(info: &ArtefactInfo) -> bool {
+    info.present && embeddings_model(info) == Some(crate::embedding::EMBED_MODEL)
+}
+
 fn decode_embeddings(dir: &Path, info: &ArtefactInfo) -> Option<EmbeddingsView> {
+    if !embeddings_are_current(info) {
+        return None;
+    }
     let dim = info.params.get("dim")?.as_u64()? as usize;
     let count = info.params.get("count")?.as_u64()? as usize;
     let fps = info.params.get("fps")?.as_f64()?;
@@ -346,5 +362,43 @@ mod tests {
         };
         let win = view.window(0.0, 50.0);
         assert!(win.is_empty());
+    }
+
+    /// A model switch must read as "no embeddings", never as vectors from a
+    /// different space scored against today's prompts.
+    #[test]
+    fn embeddings_from_another_model_read_as_missing() {
+        use crate::media_cache::writers::{new_manifest_at, write_manifest_at, write_sidecar_at};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        write_sidecar_at(dir, Branch::Embeddings, &[0u8; 2 * 2 * 3]).unwrap();
+        let write = |model: &str| {
+            let mut m = new_manifest_at(dir, 60.0);
+            let mut params = serde_json::Map::new();
+            for (k, v) in [
+                ("dim", serde_json::json!(3)),
+                ("count", serde_json::json!(2)),
+                ("fps", serde_json::json!(1.0)),
+                ("model", serde_json::json!(model)),
+            ] {
+                params.insert(k.into(), v);
+            }
+            m.artefacts.set(
+                Branch::Embeddings,
+                ArtefactInfo {
+                    present: true,
+                    params,
+                },
+            );
+            write_manifest_at(dir, &m).unwrap();
+        };
+
+        write("google/siglip2-so400m-patch16-naflex");
+        assert!(read_embeddings_at(dir).is_none());
+
+        write(crate::embedding::EMBED_MODEL);
+        let view = read_embeddings_at(dir).expect("current model reads");
+        assert_eq!((view.count, view.dim), (2, 3));
     }
 }

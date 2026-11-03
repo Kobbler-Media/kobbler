@@ -2,14 +2,14 @@
 //!
 //! `recommend` sends Meili a filtered browse. The quality comes from the model
 //! reasoning over a shortlist that already carries the synopsis; with semantic
-//! search on, the user's own words only reorder that filtered shortlist by poster similarity.
+//! search on, the user's own words only reorder that filtered shortlist by summary similarity.
 //!
 //! The other half is watch state. It is per-user, it is deliberately not in the
 //! search documents — `MovieDocument.watched` was removed at v32 because it read
 //! an arbitrary user's row — so the subtraction happens in Rust, scoped by
 //! `user_id`, and these tests set up a second household member to prove it.
 //!
-//! Meili and koblem are wiremocks. No LLM, no GPU.
+//! Meili and the embedding service are wiremocks. No LLM, no GPU.
 
 use crate::common::*;
 use api::AppState;
@@ -287,17 +287,17 @@ async fn with_semantic_search_off_the_index_is_never_asked_for_a_vector_search()
 async fn semantic_search_on(server: &TestServer) -> MockServer {
     let koblem = MockServer::start().await;
     Mock::given(method("POST"))
-        .and(path("/v1/text_embeddings"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"embeddings": [vec![0.01_f32; 1152]]})),
-        )
+        .and(path("/v1/embeddings"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": [{"index": 0, "embedding": vec![0.01_f32; api::embedding::EMBED_DIM]}]
+        })))
         .mount(&koblem)
         .await;
     server
         .admin_client()
         .patch_json(
             "/api/v1/admin/config",
-            &json!({"semantic_search_enabled": true, "koblem_service_url": koblem.uri()}),
+            &json!({"semantic_search_enabled": true, "vision_service_url": koblem.uri()}),
         )
         .await
         .assert_ok();
@@ -305,7 +305,7 @@ async fn semantic_search_on(server: &TestServer) -> MockServer {
 }
 
 #[tokio::test]
-async fn a_vibe_orders_the_filtered_shortlist_by_artwork_when_semantic_search_is_on() {
+async fn a_vibe_orders_the_filtered_shortlist_by_summary_when_semantic_search_is_on() {
     let server = TestServer::start_api_only().await;
     let state = &server.app_state;
     let user_id = create_user_with_role(&server, "her@test.com", "viewer").await;
@@ -336,16 +336,21 @@ async fn a_vibe_orders_the_filtered_shortlist_by_artwork_when_semantic_search_is
         .map(|r| String::from_utf8_lossy(&r.body).into_owned())
         .collect();
     assert!(
-        embedded.iter().any(|b| b.contains("creepy")),
-        "the user's own words are what gets embedded: {embedded:?}"
+        embedded
+            .iter()
+            .any(|b| b.contains("task: search result | query: something creepy")),
+        "the user's own words are what gets embedded, as a search query: {embedded:?}"
     );
     let queries = sent_queries(&meili).await;
     let movies = queries.iter().find(|q| q["indexUid"] == "movies").unwrap();
     assert_eq!(
         movies["hybrid"],
-        json!({"embedder": "poster", "semanticRatio": 1.0})
+        json!({"embedder": "description", "semanticRatio": 1.0})
     );
-    assert_eq!(movies["vector"].as_array().map(Vec::len), Some(1152));
+    assert_eq!(
+        movies["vector"].as_array().map(Vec::len),
+        Some(api::embedding::EMBED_DIM)
+    );
     assert!(movies.get("sort").is_none(), "{movies}");
     assert!(
         movies["filter"]
@@ -357,7 +362,7 @@ async fn a_vibe_orders_the_filtered_shortlist_by_artwork_when_semantic_search_is
 }
 
 #[tokio::test]
-async fn a_vibe_with_koblem_down_falls_back_to_the_rating_order() {
+async fn a_vibe_with_the_embedder_down_falls_back_to_the_rating_order() {
     let server = TestServer::start_api_only().await;
     let state = &server.app_state;
     let user_id = create_user_with_role(&server, "her@test.com", "viewer").await;
@@ -371,7 +376,7 @@ async fn a_vibe_with_koblem_down_falls_back_to_the_rating_order() {
         .admin_client()
         .patch_json(
             "/api/v1/admin/config",
-            &json!({"semantic_search_enabled": true, "koblem_service_url": "http://127.0.0.1:9"}),
+            &json!({"semantic_search_enabled": true, "vision_service_url": "http://127.0.0.1:9"}),
         )
         .await
         .assert_ok();

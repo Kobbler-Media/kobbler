@@ -9,7 +9,8 @@
 //! 3. the model reasons over that shortlist and picks three.
 //!
 //! With semantic search on, the user's own words order the filtered shortlist by
-//! how well each poster matches them instead of by rating. Taken from the turn
+//! how well each title's summary matches them instead of by rating — "a slow-burn
+//! thriller about grief" is a summary match, not a poster one. Taken from the turn
 //! rather than a tool argument: the schema is capped at five, and the model
 //! paraphrasing the mood back adds nothing the message did not already say. That is one
 //! vector per title, not the per-segment transcript embeddings that came out at v23.
@@ -211,8 +212,7 @@ async fn vibe_vector(state: &AppState, vibe: &str) -> Option<Vec<f32>> {
     if !config.semantic_search_enabled {
         return None;
     }
-    let url = semantic::koblem_url(&config)?;
-    semantic::embed_text(&url, vibe)
+    semantic::embed_query(&config, vibe)
         .await
         .inspect_err(|e| tracing::warn!(error = %e, "Vibe embedding unavailable"))
         .ok()
@@ -272,7 +272,7 @@ fn candidate_query(
         "attributesToRetrieve": candidate_attributes(index),
     });
     if let Some(vector) = vibe {
-        query["hybrid"] = json!({"embedder": semantic::EMBEDDER, "semanticRatio": 1.0});
+        query["hybrid"] = json!({"embedder": semantic::DESCRIPTION_EMBEDDER, "semanticRatio": 1.0});
         query["vector"] = json!(vector);
         return query;
     }
@@ -647,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn a_vibe_vector_orders_by_artwork_instead_of_rating() {
+    fn a_vibe_vector_orders_by_summary_instead_of_rating() {
         let query = candidate_query(
             indexes::MOVIES,
             Some("Horror"),
@@ -657,7 +657,7 @@ mod tests {
         );
         assert_eq!(
             query["hybrid"],
-            json!({"embedder": "poster", "semanticRatio": 1.0})
+            json!({"embedder": "description", "semanticRatio": 1.0})
         );
         assert_eq!(query["vector"], json!([0.5, 0.5, 0.5]));
         assert!(query.get("sort").is_none(), "{query}");

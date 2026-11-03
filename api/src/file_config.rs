@@ -181,8 +181,12 @@ pub struct FileConfig {
     // Skip detection (intro/credits/recap)
     #[serde(default = "default_skip_detect_mode")]
     pub skip_detect_mode: String,
+    /// Image embedding server (EmbeddingGemma-2), or koblem.
     #[serde(default = "default_vision_service_url")]
     pub vision_service_url: Option<String>,
+    /// Always-on text embedding server; unset → text goes to `vision_service_url`.
+    #[serde(default)]
+    pub text_embedding_service_url: Option<String>,
 
     // IPTV configuration
     #[serde(default = "default_iptv_language_filter")]
@@ -310,7 +314,7 @@ fn default_semantic_search_ratio() -> f64 {
     0.5
 }
 fn default_vision_service_url() -> Option<String> {
-    Some("http://siglip2:8890".to_string())
+    Some("http://embed-vision:8080".to_string())
 }
 fn default_discover_region() -> String {
     "US".to_string()
@@ -404,6 +408,7 @@ impl Default for FileConfig {
             route_gpu_via_koblem: false,
             skip_detect_mode: default_skip_detect_mode(),
             vision_service_url: default_vision_service_url(),
+            text_embedding_service_url: None,
             iptv_language_filter: default_iptv_language_filter(),
             iptv_auto_create_channels: true,
             iptv_health_check_enabled: true,
@@ -616,6 +621,8 @@ impl FileConfig {
                     doc["skip_detect_mode"] = toml_edit::value(&self.skip_detect_mode);
                     doc["vision_service_url"] =
                         toml_edit::value(self.vision_service_url.as_deref().unwrap_or(""));
+                    doc["text_embedding_service_url"] =
+                        toml_edit::value(self.text_embedding_service_url.as_deref().unwrap_or(""));
 
                     // IPTV configuration
                     let mut lang_arr = toml_edit::Array::new();
@@ -958,8 +965,12 @@ impl FileConfig {
             self.meili_master_key.as_deref().unwrap_or("")
         ));
         output.push_str("# Semantic search: rank movies, shows and library books by how their\n");
-        output.push_str("# artwork matches the query (\"space adventure\", \"cosy animated\").\n");
-        output.push_str("# Needs koblem_service_url; vectors are computed on koblem's GPU.\n");
+        output.push_str(
+            "# summary (and poster) matches the query (\"a slow-burn thriller about grief\").\n",
+        );
+        output.push_str(
+            "# Needs an embedding service: vision_service_url, or koblem with GPU routing.\n",
+        );
         output.push_str(&format!(
             "semantic_search_enabled = {}\n",
             self.semantic_search_enabled
@@ -1441,6 +1452,11 @@ impl FileConfig {
                     Some(val.clone())
                 }
             }),
+            text_embedding_service_url: self
+                .text_embedding_service_url
+                .as_ref()
+                .filter(|val| !val.trim().is_empty())
+                .cloned(),
             iptv_language_filter: self.iptv_language_filter.clone(),
             iptv_auto_create_channels: self.iptv_auto_create_channels,
             iptv_health_check_enabled: self.iptv_health_check_enabled,
@@ -1551,6 +1567,7 @@ impl FileConfig {
             route_gpu_via_koblem: config.route_gpu_via_koblem,
             skip_detect_mode: config.skip_detect_mode.clone(),
             vision_service_url: config.vision_service_url.clone(),
+            text_embedding_service_url: config.text_embedding_service_url.clone(),
             iptv_language_filter: config.iptv_language_filter.clone(),
             iptv_auto_create_channels: config.iptv_auto_create_channels,
             iptv_health_check_enabled: config.iptv_health_check_enabled,

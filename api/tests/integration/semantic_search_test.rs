@@ -1,10 +1,13 @@
-//! Semantic search: artwork vectors from koblem, hybrid queries to Meilisearch.
+//! Semantic search: summary and artwork vectors from the embedding service (an
+//! OpenAI-shaped `/v1/embeddings`, llama-server or embedder), hybrid queries to
+//! Meilisearch.
 //!
-//! Meilisearch and koblem are both wiremocks. The real-Meili behaviour these stubs
-//! mirror — a `userProvided` embedder rejecting any batch with a document missing
-//! `_vectors.poster`, and refusing to be declared while such documents exist — is why
-//! the job writes documents before the embedder and why every title document carries
-//! the field, null included, while semantic search is on.
+//! Meilisearch and the embedding service are both wiremocks. The real-Meili
+//! behaviour these stubs mirror — a `userProvided` embedder rejecting any batch with
+//! a document missing `_vectors.<embedder>`, and refusing to be declared while such
+//! documents exist — is why the job writes documents before the embedders and why
+//! every title document carries both fields, null included, while semantic search
+//! is on.
 
 use std::sync::Arc;
 
@@ -17,7 +20,7 @@ use uuid::Uuid;
 use wiremock::matchers::{body_string_contains, method, path, path_regex};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
-const DIMS: usize = 1152;
+const DIMS: usize = api::embedding::EMBED_DIM;
 
 // =============================================================================
 // Harness
@@ -26,12 +29,12 @@ const DIMS: usize = 1152;
 struct Rig {
     server: TestServer,
     meili: MockServer,
-    koblem: MockServer,
+    embedder: MockServer,
 }
 
 async fn rig() -> Rig {
     let meili = MockServer::start().await;
-    let koblem = MockServer::start().await;
+    let embedder = MockServer::start().await;
     let backend: Arc<dyn SearchBackend> =
         Arc::new(MeiliState::new(&meili.uri(), "test-master-key").unwrap());
     let server = TestServer::start_api_only_with_search(backend).await;
@@ -46,7 +49,7 @@ async fn rig() -> Rig {
     Rig {
         server,
         meili,
-        koblem,
+        embedder,
     }
 }
 
@@ -56,7 +59,7 @@ impl Rig {
             .admin_client()
             .patch_json(
                 "/api/v1/admin/config",
-                &json!({"semantic_search_enabled": true, "koblem_service_url": self.koblem.uri()}),
+                &json!({"semantic_search_enabled": true, "vision_service_url": self.embedder.uri()}),
             )
             .await
             .assert_ok();
@@ -93,8 +96,8 @@ impl Rig {
         resp.json()
     }
 
-    async fn koblem_paths(&self) -> Vec<String> {
-        requests(&self.koblem)
+    async fn embedder_paths(&self) -> Vec<String> {
+        requests(&self.embedder)
             .await
             .into_iter()
             .map(|(_, path, _)| path)
@@ -130,40 +133,58 @@ async fn requests(mock: &MockServer) -> Vec<(String, String, Value)> {
         .collect()
 }
 
-fn text_vector() -> Vec<f32> {
-    vec![0.01; DIMS]
-}
+/// llama-server's `/v1/embeddings`: one vector per `input` item, text and images
+/// told apart so a test can see which one a stored vector came from.
+struct Embeddings;
 
-async fn koblem_embeds_text(koblem: &MockServer) {
-    Mock::given(method("POST"))
-        .and(path("/v1/text_embeddings"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"embeddings": [text_vector()]})),
-        )
-        .mount(koblem)
-        .await;
-}
+const TEXT_FILL: f32 = 0.01;
+const IMAGE_FILL: f32 = 0.02;
 
-/// koblem's OpenAI-shaped `/v1/embeddings`: one vector per `images` part.
-struct ImageEmbeddings;
-
-impl Respond for ImageEmbeddings {
+impl Respond for Embeddings {
     fn respond(&self, request: &Request) -> ResponseTemplate {
-        let body = String::from_utf8_lossy(&request.body);
-        let images = body.matches("name=\"images\"").count();
-        let data: Vec<Value> = (0..images)
-            .map(|i| json!({"object": "embedding", "index": i, "embedding": vec![0.02_f32; DIMS]}))
-            .collect();
+        let body: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
+        let data: Vec<Value> =
+            body["input"]
+                .as_array()
+                .map(|items| {
+                    items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| {
+                        let fill = if item.is_string() { TEXT_FILL } else { IMAGE_FILL };
+                        json!({"object": "embedding", "index": i, "embedding": vec![fill; DIMS]})
+                    })
+                    .collect()
+                })
+                .unwrap_or_default();
         ResponseTemplate::new(200).set_body_json(json!({"object": "list", "data": data}))
     }
 }
 
-async fn koblem_embeds_images(koblem: &MockServer) {
+async fn embedder_embeds_text(embedder: &MockServer) {
+    embedder_answers(embedder).await;
+}
+
+async fn embedder_embeds_images(embedder: &MockServer) {
+    embedder_answers(embedder).await;
+}
+
+async fn embedder_answers(embedder: &MockServer) {
     Mock::given(method("POST"))
         .and(path("/v1/embeddings"))
-        .respond_with(ImageEmbeddings)
-        .mount(koblem)
+        .respond_with(Embeddings)
+        .mount(embedder)
         .await;
+}
+
+/// The `input` items of every `/v1/embeddings` call the service received.
+async fn embedded_inputs(embedder: &MockServer) -> Vec<Value> {
+    requests(embedder)
+        .await
+        .into_iter()
+        .filter(|(_, path, _)| path == "/v1/embeddings")
+        .flat_map(|(_, _, body)| body["input"].as_array().cloned().unwrap_or_default())
+        .collect()
 }
 
 fn hit(index: &str, doc: Value, details: Option<Value>) -> Value {
@@ -214,14 +235,25 @@ fn task_info() -> Value {
 /// `GET .../settings/embedders` reports.
 async fn meili_accepts_writes(meili: &MockServer, configured: bool) {
     let embedders = match configured {
-        true => json!({"poster": {"source": "userProvided", "dimensions": DIMS}}),
+        true => json!({
+            "description": {"source": "userProvided", "dimensions": DIMS},
+            "poster": {"source": "userProvided", "dimensions": DIMS},
+        }),
         false => json!({}),
     };
+    meili_reports_embedders(meili, embedders).await;
+    meili_takes_writes(meili).await;
+}
+
+async fn meili_reports_embedders(meili: &MockServer, embedders: Value) {
     Mock::given(method("GET"))
         .and(path_regex(r"^/indexes/[a-z_]+/settings/embedders$"))
         .respond_with(ResponseTemplate::new(200).set_body_json(embedders))
         .mount(meili)
         .await;
+}
+
+async fn meili_takes_writes(meili: &MockServer) {
     for verb in ["PATCH", "DELETE", "PUT", "POST"] {
         Mock::given(method(verb))
             .and(path_regex(
@@ -300,7 +332,7 @@ fn is_title_index(q: &Value) -> bool {
 #[tokio::test]
 async fn search_is_keyword_only_while_semantic_search_is_off() {
     let rig = rig().await;
-    koblem_embeds_text(&rig.koblem).await;
+    embedder_embeds_text(&rig.embedder).await;
     meili_answers_search(&rig.meili, vec![]).await;
 
     rig.search("space adventure").await;
@@ -314,8 +346,8 @@ async fn search_is_keyword_only_while_semantic_search_is_off() {
         );
     }
     assert!(
-        rig.koblem_paths().await.is_empty(),
-        "koblem was asked to embed"
+        rig.embedder_paths().await.is_empty(),
+        "embedder was asked to embed"
     );
 }
 
@@ -323,7 +355,7 @@ async fn search_is_keyword_only_while_semantic_search_is_off() {
 async fn title_queries_become_hybrid_and_weak_artwork_matches_are_dropped() {
     let rig = rig().await;
     rig.enable().await;
-    koblem_embeds_text(&rig.koblem).await;
+    embedder_embeds_text(&rig.embedder).await;
     let keyword = movie_doc("Space Station 76");
     let strong = movie_doc("Interstellar");
     let weak = movie_doc("Downton Abbey");
@@ -353,20 +385,39 @@ async fn title_queries_become_hybrid_and_weak_artwork_matches_are_dropped() {
 
     let queries = rig.multi_search_queries().await;
     let (titles, others): (Vec<_>, Vec<_>) = queries.iter().partition(|q| is_title_index(q));
-    assert_eq!(titles.len(), 3, "{queries:?}");
-    for q in titles {
+    // Each title index: the summary hybrid, plus a pure-vector poster query.
+    assert_eq!(titles.len(), 6, "{queries:?}");
+    let (summary, poster): (Vec<_>, Vec<_>) = titles
+        .iter()
+        .partition(|q| q["hybrid"]["embedder"] == "description");
+    assert_eq!((summary.len(), poster.len()), (3, 3), "{queries:?}");
+    for q in summary {
         assert_eq!(
             q["hybrid"],
-            json!({"embedder": "poster", "semanticRatio": 0.5}),
+            json!({"embedder": "description", "semanticRatio": 0.5}),
             "{q}"
         );
+    }
+    for q in poster {
+        assert_eq!(
+            q["hybrid"],
+            json!({"embedder": "poster", "semanticRatio": 1.0}),
+            "{q}"
+        );
+    }
+    for q in titles {
         assert_eq!(q["vector"].as_array().map(Vec::len), Some(DIMS), "{q}");
         assert_eq!(q["q"], "space adventure");
     }
     for q in others {
         assert!(q.get("hybrid").is_none(), "{q}");
     }
-    assert_eq!(rig.koblem_paths().await, vec!["/v1/text_embeddings"]);
+    assert_eq!(rig.embedder_paths().await, vec!["/v1/embeddings"]);
+    // One query vector, embedded with the search-query prefix.
+    assert_eq!(
+        embedded_inputs(&rig.embedder).await,
+        vec![json!("task: search result | query: space adventure")]
+    );
 
     let titles: Vec<&str> = result["top_hits"]
         .as_array()
@@ -390,7 +441,7 @@ async fn the_semantic_ratio_setting_reaches_the_query() {
         )
         .await
         .assert_ok();
-    koblem_embeds_text(&rig.koblem).await;
+    embedder_embeds_text(&rig.embedder).await;
     meili_answers_search(&rig.meili, vec![]).await;
 
     rig.search("haunted house").await;
@@ -406,13 +457,13 @@ async fn the_semantic_ratio_setting_reaches_the_query() {
 }
 
 #[tokio::test]
-async fn koblem_down_means_keyword_search_not_a_failure() {
+async fn embedder_down_means_keyword_search_not_a_failure() {
     let rig = rig().await;
     rig.enable().await;
     Mock::given(method("POST"))
-        .and(path("/v1/text_embeddings"))
+        .and(path("/v1/embeddings"))
         .respond_with(ResponseTemplate::new(503).set_body_string("vision preempted"))
-        .mount(&rig.koblem)
+        .mount(&rig.embedder)
         .await;
     meili_answers_search(
         &rig.meili,
@@ -432,12 +483,12 @@ async fn koblem_down_means_keyword_search_not_a_failure() {
 async fn an_index_without_the_embedder_falls_back_to_keyword() {
     let rig = rig().await;
     rig.enable().await;
-    koblem_embeds_text(&rig.koblem).await;
+    embedder_embeds_text(&rig.embedder).await;
     Mock::given(method("POST"))
         .and(path("/multi-search"))
         .and(body_string_contains("hybrid"))
         .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-            "message": "Cannot find embedder with name `poster`.",
+            "message": "Cannot find embedder with name `description`.",
             "code": "invalid_search_embedder",
             "type": "invalid_request",
             "link": "https://docs.meilisearch.com/errors#invalid_search_embedder",
@@ -469,12 +520,12 @@ async fn an_index_without_the_embedder_falls_back_to_keyword() {
 async fn short_queries_and_ids_are_not_embedded() {
     let rig = rig().await;
     rig.enable().await;
-    koblem_embeds_text(&rig.koblem).await;
+    embedder_embeds_text(&rig.embedder).await;
     meili_answers_search(&rig.meili, vec![]).await;
 
     rig.search("up").await;
 
-    assert!(rig.koblem_paths().await.is_empty());
+    assert!(rig.embedder_paths().await.is_empty());
 }
 
 #[tokio::test]
@@ -496,10 +547,11 @@ async fn semantic_settings_are_validated() {
     let server = TestServer::start_api_only().await;
     let admin = server.admin_client();
 
+    // Vectors need an embedding service; clearing the only one is refused.
     admin
         .patch_json(
             "/api/v1/admin/config",
-            &json!({"semantic_search_enabled": true}),
+            &json!({"semantic_search_enabled": true, "vision_service_url": ""}),
         )
         .await
         .assert_status(StatusCode::BAD_REQUEST);
@@ -523,7 +575,7 @@ async fn only_admins_change_semantic_search() {
     viewer
         .patch_json(
             "/api/v1/admin/config",
-            &json!({"semantic_search_enabled": true, "koblem_service_url": "http://koblem:8090"}),
+            &json!({"semantic_search_enabled": true, "vision_service_url": "http://embed-vision:8080"}),
         )
         .await
         .assert_status(StatusCode::FORBIDDEN);
@@ -565,13 +617,13 @@ async fn turning_it_on_embeds_artwork_writes_vectors_then_declares_the_embedder(
     let with_poster = movie_with_cached_poster(&rig.server, "Interstellar").await;
     let without = movie_without_poster(&rig.server, "Untitled").await;
     meili_accepts_writes(&rig.meili, false).await;
-    koblem_embeds_images(&rig.koblem).await;
+    embedder_embeds_images(&rig.embedder).await;
 
     rig.enable().await;
     rig.run_vector_jobs().await;
 
     assert_eq!(stored_vector_count(&rig.server).await, 1);
-    assert_eq!(rig.koblem_paths().await, vec!["/v1/embeddings"]);
+    assert_eq!(rig.embedder_paths().await, vec!["/v1/embeddings"]);
 
     let writes = requests(&rig.meili).await;
     let docs_at = writes
@@ -589,7 +641,10 @@ async fn turning_it_on_embeds_artwork_writes_vectors_then_declares_the_embedder(
         vector_of(with_poster)["poster"].as_array().map(Vec::len),
         Some(DIMS)
     );
-    assert_eq!(vector_of(without), json!({"poster": null}));
+    assert_eq!(
+        vector_of(without),
+        json!({"description": null, "poster": null})
+    );
 
     let declared: Vec<_> = writes
         .iter()
@@ -602,8 +657,10 @@ async fn turning_it_on_embeds_artwork_writes_vectors_then_declares_the_embedder(
             *at > docs_at,
             "embedder declared before the documents carried vectors"
         );
-        assert_eq!(body["poster"]["source"], "userProvided");
-        assert_eq!(body["poster"]["dimensions"], DIMS);
+        for embedder in ["description", "poster"] {
+            assert_eq!(body[embedder]["source"], "userProvided", "{body}");
+            assert_eq!(body[embedder]["dimensions"], DIMS, "{body}");
+        }
     }
 
     let job: (String, Value) =
@@ -615,19 +672,172 @@ async fn turning_it_on_embeds_artwork_writes_vectors_then_declares_the_embedder(
     assert_eq!(job.1["embedded"], 1);
 }
 
+async fn movie_with_summary(server: &TestServer, title: &str, summary: &str) -> Uuid {
+    let id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO movies (id, title, year, description, genres) \
+         VALUES ($1, $2, 2014, $3, ARRAY['Science Fiction', 'Drama'])",
+    )
+    .bind(id)
+    .bind(title)
+    .bind(summary)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    id
+}
+
+/// Summaries are the primary signal: embedded as titled documents through the
+/// text path, stored, and sent to Meili as `_vectors.description`.
+#[tokio::test]
+async fn summaries_are_embedded_as_titled_documents() {
+    let rig = rig().await;
+    let id = movie_with_summary(
+        &rig.server,
+        "Interstellar",
+        "A crew travels through a wormhole.",
+    )
+    .await;
+    meili_accepts_writes(&rig.meili, false).await;
+    embedder_answers(&rig.embedder).await;
+
+    rig.enable().await;
+    rig.run_vector_jobs().await;
+
+    assert_eq!(
+        embedded_inputs(&rig.embedder).await,
+        vec![json!(
+            "title: Interstellar | text: A crew travels through a wormhole.\n\
+             Genres: Science Fiction, Drama\nYear: 2014"
+        )]
+    );
+    let (kind, model): (String, String) =
+        sqlx::query_as("SELECT kind, model FROM search_embeddings WHERE entity_id = $1")
+            .bind(id)
+            .fetch_one(&rig.server.pool)
+            .await
+            .unwrap();
+    assert_eq!(kind, "description");
+    assert_eq!(model, api::embedding::EMBED_MODEL);
+
+    let writes = requests(&rig.meili).await;
+    let docs = writes
+        .iter()
+        .find(|(m, p, _)| m == "PUT" && p == "/indexes/movies/documents")
+        .expect("movies rewritten");
+    let vectors = &docs.2.as_array().unwrap()[0]["_vectors"];
+    assert_eq!(vectors["poster"], Value::Null);
+    let description = vectors["description"].as_array().unwrap();
+    assert_eq!(description.len(), DIMS);
+    assert!((description[0].as_f64().unwrap() - f64::from(TEXT_FILL)).abs() < 1e-6);
+}
+
+/// With a text embedding service set, text goes there and only images go to the
+/// vision service.
+#[tokio::test]
+async fn text_goes_to_the_text_embedding_service_when_one_is_set() {
+    let rig = rig().await;
+    movie_with_summary(
+        &rig.server,
+        "Interstellar",
+        "A crew travels through a wormhole.",
+    )
+    .await;
+    movie_with_cached_poster(&rig.server, "Gravity").await;
+    meili_accepts_writes(&rig.meili, false).await;
+    embedder_answers(&rig.embedder).await;
+    let text = MockServer::start().await;
+    embedder_answers(&text).await;
+    rig.server
+        .admin_client()
+        .patch_json(
+            "/api/v1/admin/config",
+            &json!({"text_embedding_service_url": text.uri()}),
+        )
+        .await
+        .assert_ok();
+
+    rig.enable().await;
+    rig.run_vector_jobs().await;
+
+    let images = embedded_inputs(&rig.embedder).await;
+    assert_eq!(images.len(), 1, "{images:?}");
+    assert!(
+        images[0]["content"][0]["image_url"]["url"]
+            .as_str()
+            .is_some_and(|u| u.starts_with("data:image/jpeg;base64,"))
+    );
+    let texts = embedded_inputs(&text).await;
+    assert_eq!(texts.len(), 1, "{texts:?}");
+    assert!(
+        texts[0]
+            .as_str()
+            .is_some_and(|t| t.starts_with("title: Interstellar | text: "))
+    );
+    assert_eq!(stored_vector_count(&rig.server).await, 2);
+
+    // Queries are text, so they go there too.
+    rig.embedder.reset().await;
+    meili_answers_search(&rig.meili, vec![]).await;
+    rig.search("space adventure").await;
+    assert!(rig.embedder_paths().await.is_empty());
+    assert!(
+        embedded_inputs(&text)
+            .await
+            .contains(&json!("task: search result | query: space adventure"))
+    );
+}
+
+/// A previous model's embedder (SigLIP2's 1152-d `poster`) would reject every new
+/// vector. It is not "configured": it is removed before the documents are written,
+/// and the current pair declared after.
+#[tokio::test]
+async fn a_previous_models_embedder_is_replaced() {
+    let rig = rig().await;
+    movie_with_cached_poster(&rig.server, "Interstellar").await;
+    meili_reports_embedders(
+        &rig.meili,
+        json!({"poster": {"source": "userProvided", "dimensions": 1152}}),
+    )
+    .await;
+    meili_takes_writes(&rig.meili).await;
+    embedder_answers(&rig.embedder).await;
+
+    rig.enable().await;
+    rig.run_vector_jobs().await;
+
+    let writes = requests(&rig.meili).await;
+    let at = |verb: &str| -> Vec<usize> {
+        writes
+            .iter()
+            .enumerate()
+            .filter(|(_, (m, p, _))| m == verb && p.ends_with("/settings/embedders"))
+            .map(|(i, _)| i)
+            .collect()
+    };
+    let docs_at = writes
+        .iter()
+        .position(|(m, p, _)| m == "PUT" && p == "/indexes/movies/documents")
+        .expect("movies rewritten");
+    let (removed, declared) = (at("DELETE"), at("PATCH"));
+    assert_eq!((removed.len(), declared.len()), (3, 3), "{writes:?}");
+    assert!(removed.iter().all(|&i| i < docs_at));
+    assert!(declared.iter().all(|&i| i > docs_at));
+}
+
 #[tokio::test]
 async fn a_later_run_only_embeds_what_is_new() {
     let rig = rig().await;
     movie_with_cached_poster(&rig.server, "Interstellar").await;
     meili_accepts_writes(&rig.meili, false).await;
-    koblem_embeds_images(&rig.koblem).await;
+    embedder_embeds_images(&rig.embedder).await;
     rig.enable().await;
     rig.run_vector_jobs().await;
 
     rig.meili.reset().await;
-    rig.koblem.reset().await;
+    rig.embedder.reset().await;
     meili_accepts_writes(&rig.meili, true).await;
-    koblem_embeds_images(&rig.koblem).await;
+    embedder_embeds_images(&rig.embedder).await;
     let added = movie_with_cached_poster(&rig.server, "Gravity").await;
     rig.server.app_state.search.set_semantic_enabled(true);
     api::jobs::enqueue(
@@ -642,7 +852,7 @@ async fn a_later_run_only_embeds_what_is_new() {
     rig.run_vector_jobs().await;
 
     assert_eq!(stored_vector_count(&rig.server).await, 2);
-    assert_eq!(rig.koblem_paths().await.len(), 1);
+    assert_eq!(rig.embedder_paths().await.len(), 1);
     let writes = requests(&rig.meili).await;
     assert!(
         !writes
@@ -676,7 +886,7 @@ async fn turning_it_off_removes_the_embedder_then_the_vectors() {
         .runtime_config
         .update(api::runtime_config::RuntimeConfigUpdate {
             semantic_search_enabled: Some(true),
-            koblem_service_url: Some(rig.koblem.uri()),
+            vision_service_url: Some(rig.embedder.uri()),
             ..Default::default()
         })
         .await
@@ -705,7 +915,7 @@ async fn turning_it_off_removes_the_embedder_then_the_vectors() {
         "{}",
         writes[rewrite_at].2
     );
-    assert!(rig.koblem_paths().await.is_empty());
+    assert!(rig.embedder_paths().await.is_empty());
 }
 
 #[tokio::test]
@@ -734,14 +944,14 @@ async fn a_run_with_nothing_to_change_writes_nothing() {
 }
 
 #[tokio::test]
-async fn koblem_down_fails_the_job_before_the_embedder_is_declared() {
+async fn embedder_down_fails_the_job_before_the_embedder_is_declared() {
     let rig = rig().await;
     movie_with_cached_poster(&rig.server, "Interstellar").await;
     meili_accepts_writes(&rig.meili, false).await;
     Mock::given(method("POST"))
         .and(path("/v1/embeddings"))
         .respond_with(ResponseTemplate::new(503))
-        .mount(&rig.koblem)
+        .mount(&rig.embedder)
         .await;
 
     rig.enable().await;

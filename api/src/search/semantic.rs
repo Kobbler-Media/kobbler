@@ -1,16 +1,15 @@
-//! Semantic search over title artwork.
+//! Semantic search over title summaries and artwork.
 //!
-//! Each movie, show and library book carries one SigLIP2 vector of its poster or
-//! cover, computed on koblem's GPU and stored as a Meilisearch `userProvided`
-//! embedding. Queries are embedded with SigLIP2's text tower and searched as a
-//! hybrid. Text-to-text over descriptions was measured and rejected: SigLIP2's
-//! text tower is trained for text→image alignment, and description vectors all
-//! scored within a few hundredths of each other for any query.
+//! Each movie, show and library book carries up to two EmbeddingGemma-2 vectors,
+//! stored as Meilisearch `userProvided` embeddings: its summary (`description`,
+//! the primary signal — "a slow-burn thriller about grief" is a summary match) and
+//! its poster or cover (`poster`, secondary). Both share one space with the query,
+//! so one query vector, embedded with the search-query prefix, serves both. Meili
+//! holds no model: vectors are computed by the embedding service and only stored
+//! and compared there.
 
 use std::time::Duration;
 
-use koblem_client::KoblemClient;
-use koblem_client::types::VisionTextEmbedRequest;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::warn;
@@ -18,33 +17,55 @@ use uuid::Uuid;
 
 use super::backend::{SearchBackend, SearchError};
 use super::{BookDocument, MovieDocument, TvShowDocument, indexes};
-use crate::repositories::search_embeddings::{self, EmbeddedKind};
+use crate::embedding::{EMBED_DIM, EMBED_MODEL, EmbeddingClient, profile};
+use crate::repositories::search_embeddings::{self, EmbeddedKind, StoredVectors};
 use crate::runtime_config::RuntimeConfig;
 
-pub const EMBEDDER: &str = "poster";
-pub const DIMENSIONS: usize = 1152;
+/// The primary embedder: summary + genres + year, embedded as a titled document.
+pub const DESCRIPTION_EMBEDDER: &str = "description";
+/// The secondary embedder: poster or cover.
+pub const POSTER_EMBEDDER: &str = "poster";
+pub const EMBEDDERS: [&str; 2] = [DESCRIPTION_EMBEDDER, POSTER_EMBEDDER];
+pub const DIMENSIONS: usize = EMBED_DIM;
 pub const INDEXES: [&str; 3] = [indexes::MOVIES, indexes::TV_SHOWS, indexes::BOOKS];
 
-/// Raw text→image cosine similarities sit between about 0.0 and 0.18, so Meili's
-/// `(1 + cos) / 2` puts every semantic hit at 0.50–0.59, under any keyword hit.
-/// This spread (measured on a real library) stretches them so a good artwork match
-/// competes with keyword matches and an unrelated one falls towards zero.
-pub const DISTRIBUTION_MEAN: f64 = 0.53;
-pub const DISTRIBUTION_SIGMA: f64 = 0.01;
-
-/// Semantic-only hits below this corrected score are noise: every query has *some*
-/// nearest poster, and without a floor an unrelated one would take its type's top slot.
-pub const SEMANTIC_HIT_FLOOR: f64 = 0.3;
+/// Federation weight of the poster-only query against the summary hybrid. Below
+/// 1 so artwork fills in titles the summary missed without outranking a summary
+/// match. A title found by both keeps only its best-ranked hit.
+pub const POSTER_WEIGHT: f32 = 0.6;
 
 /// The palette searches as you type; past this, keyword results are what it shows.
 const QUERY_TIMEOUT: Duration = Duration::from_millis(1500);
 const MIN_QUERY_CHARS: usize = 3;
 
+pub fn description_distribution() -> profile::Distribution {
+    profile::active().description_distribution
+}
+
+pub fn poster_distribution() -> profile::Distribution {
+    profile::active().poster_distribution
+}
+
+/// Semantic-only hits below this corrected score are dropped.
+pub fn semantic_hit_floor() -> f64 {
+    profile::active().semantic_hit_floor
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct PosterVectors {
-    /// Always serialized, null included: Meili rejects a whole batch if any document
-    /// lacks `_vectors.poster` once the embedder exists.
+pub struct TitleVectors {
+    /// Both always serialized, null included: Meili rejects a whole batch if any
+    /// document lacks `_vectors.<embedder>` once that embedder exists.
+    pub description: Option<Vec<f32>>,
     pub poster: Option<Vec<f32>>,
+}
+
+impl From<StoredVectors> for TitleVectors {
+    fn from(v: StoredVectors) -> Self {
+        Self {
+            description: v.description,
+            poster: v.poster,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -53,18 +74,9 @@ pub struct SemanticQuery {
     pub ratio: f32,
 }
 
-pub fn koblem_url(config: &RuntimeConfig) -> Option<String> {
-    config
-        .koblem_service_url
-        .as_deref()
-        .map(|u| u.trim().trim_end_matches('/'))
-        .filter(|u| !u.is_empty())
-        .map(str::to_string)
-}
-
 /// The query vector for a hybrid search, or `None` to search by keyword alone —
 /// whether because semantic search is off, the query is too short to mean anything,
-/// or koblem is slow or down.
+/// or the text embedder is slow or down.
 pub async fn query_vector(config: &RuntimeConfig, query: &str) -> Option<SemanticQuery> {
     if !config.semantic_search_enabled || config.semantic_search_ratio <= 0.0 {
         return None;
@@ -73,8 +85,7 @@ pub async fn query_vector(config: &RuntimeConfig, query: &str) -> Option<Semanti
     if trimmed.chars().count() < MIN_QUERY_CHARS || Uuid::parse_str(trimmed).is_ok() {
         return None;
     }
-    let url = koblem_url(config)?;
-    match embed_text(&url, trimmed).await {
+    match embed_query(config, trimmed).await {
         Ok(vector) => Some(SemanticQuery {
             vector,
             ratio: config.semantic_search_ratio as f32,
@@ -86,23 +97,14 @@ pub async fn query_vector(config: &RuntimeConfig, query: &str) -> Option<Semanti
     }
 }
 
-pub async fn embed_text(koblem_url: &str, text: &str) -> Result<Vec<f32>, String> {
-    let client = KoblemClient::new(koblem_url.to_string());
-    let request = VisionTextEmbedRequest {
-        prompts: vec![text.to_string()],
-    };
-    let response = tokio::time::timeout(QUERY_TIMEOUT, client.text_embeddings(&request))
-        .await
-        .map_err(|_| format!("koblem took longer than {QUERY_TIMEOUT:?}"))?
-        .map_err(|e| e.to_string())?;
-    let vector = response
-        .embeddings
-        .into_iter()
-        .next()
-        .ok_or("koblem returned no embedding")?;
+/// `text` as a search query, from the text embedding service.
+pub async fn embed_query(config: &RuntimeConfig, text: &str) -> Result<Vec<f32>, String> {
+    let client =
+        EmbeddingClient::from_config(config).ok_or("no embedding service is configured")?;
+    let vector = client.embed_query(text, QUERY_TIMEOUT).await?;
     if vector.len() != DIMENSIONS {
         return Err(format!(
-            "koblem returned a {}-dimensional embedding, expected {DIMENSIONS}",
+            "the embedding service returned a {}-dimensional vector, expected {DIMENSIONS}",
             vector.len()
         ));
     }
@@ -112,7 +114,7 @@ pub async fn embed_text(koblem_url: &str, text: &str) -> Result<Vec<f32>, String
 pub trait VectorDoc {
     const KIND: EmbeddedKind;
     fn doc_id(&self) -> &str;
-    fn set_vectors(&mut self, vectors: PosterVectors);
+    fn set_vectors(&mut self, vectors: TitleVectors);
 }
 
 impl VectorDoc for MovieDocument {
@@ -120,7 +122,7 @@ impl VectorDoc for MovieDocument {
     fn doc_id(&self) -> &str {
         &self.id
     }
-    fn set_vectors(&mut self, vectors: PosterVectors) {
+    fn set_vectors(&mut self, vectors: TitleVectors) {
         self.vectors = Some(vectors);
     }
 }
@@ -130,7 +132,7 @@ impl VectorDoc for TvShowDocument {
     fn doc_id(&self) -> &str {
         &self.id
     }
-    fn set_vectors(&mut self, vectors: PosterVectors) {
+    fn set_vectors(&mut self, vectors: TitleVectors) {
         self.vectors = Some(vectors);
     }
 }
@@ -140,7 +142,7 @@ impl VectorDoc for BookDocument {
     fn doc_id(&self) -> &str {
         &self.id
     }
-    fn set_vectors(&mut self, vectors: PosterVectors) {
+    fn set_vectors(&mut self, vectors: TitleVectors) {
         self.vectors = Some(vectors);
     }
 }
@@ -159,14 +161,15 @@ pub async fn attach_vectors<D: VectorDoc>(
         .iter()
         .filter_map(|d| Uuid::parse_str(d.doc_id()).ok())
         .collect();
-    let mut stored = search_embeddings::vectors_for(pool, D::KIND, &ids)
+    let mut stored = search_embeddings::vectors_for(pool, D::KIND, &ids, EMBED_MODEL)
         .await
         .map_err(|e| SearchError::Backend(e.to_string()))?;
     for doc in docs.iter_mut() {
-        let poster = Uuid::parse_str(doc.doc_id())
+        let vectors = Uuid::parse_str(doc.doc_id())
             .ok()
-            .and_then(|id| stored.remove(&id));
-        doc.set_vectors(PosterVectors { poster });
+            .and_then(|id| stored.remove(&id))
+            .unwrap_or_default();
+        doc.set_vectors(vectors.into());
     }
     Ok(())
 }

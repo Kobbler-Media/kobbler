@@ -1,11 +1,12 @@
-//! Pure scoring for SigLIP2 zero-shot credit text detection.
+//! Pure scoring for zero-shot credit text detection.
 //!
-//! The vision client handles the network call to the classifier; this module
-//! turns the raw per-frame / per-prompt score matrix into [`CreditText`] by
-//! collapsing prompt scores, thresholding, and grouping gap-tolerant regions.
+//! The embedding client turns cached frame vectors into a per-frame /
+//! per-prompt cosine matrix; this module collapses prompt scores, thresholds
+//! them, and groups gap-tolerant regions into [`CreditText`]. The prompts and
+//! every score-scale number come from the model's
+//! [`ModelProfile`](crate::embedding::profile::ModelProfile).
 
-/// Per-frame credit-score threshold below which a frame is ignored.
-pub const CREDIT_TEXT_THRESHOLD: f64 = 0.10;
+use crate::embedding::profile::ModelProfile;
 
 /// Maximum gap (seconds) between hits to merge them into the same region.
 pub const GAP_TOLERANCE: f64 = 10.0;
@@ -45,29 +46,21 @@ impl CreditText {
     }
 }
 
-/// Text prompts for credit detection via zero-shot classification.
-/// Tuned against Invincible (white-on-black credits) and Scrubs 2026
-/// (small text over active scene). Real credits score 0.15-0.80,
-/// scenes score 0.000, credits-over-footage max 0.059.
-pub const CREDIT_PROMPTS: &[&str] = &[
-    "white text on a black background",
-    "end credits of a TV show",
-    "names and titles on a dark screen",
-    "production company logo",
-    "credits text overlaid on a scene",
-];
-
-/// Non-credit prompts for comparison (helps calibrate scores).
-pub const NON_CREDIT_PROMPTS: &[&str] = &[
-    "a scene from a TV show",
-    "animated characters",
-    "people in a room",
-];
+/// The prompts to classify against, credit prompts first — the order
+/// [`score_credit_text`] expects its score rows in.
+pub fn credit_prompts(profile: &ModelProfile) -> Vec<&'static str> {
+    profile
+        .credit_prompts
+        .iter()
+        .chain(profile.non_credit_prompts)
+        .copied()
+        .collect()
+}
 
 /// Score a batch of classification results for credit text.
 ///
 /// `scores[i]` is the per-prompt score row for frame `i`, ordered as
-/// `CREDIT_PROMPTS` followed by `NON_CREDIT_PROMPTS`. `frame_times[i]` is the
+/// [`credit_prompts`] returns them. `frame_times[i]` is the
 /// timestamp (seconds into the file) of frame `i`.
 ///
 /// Returns `(credits_start, credits_end, confidence)` for the densest detected
@@ -77,13 +70,15 @@ pub fn score_credit_text(
     scores: &[Vec<f32>],
     frame_times: &[f64],
     earliest_start: f64,
+    profile: &ModelProfile,
 ) -> Option<CreditText> {
     if scores.len() != frame_times.len() {
         return None;
     }
 
-    let credit_prompt_count = CREDIT_PROMPTS.len();
-    let total_prompts = credit_prompt_count + NON_CREDIT_PROMPTS.len();
+    let credit_prompt_count = profile.credit_prompts.len();
+    let non_credit_count = profile.non_credit_prompts.len();
+    let total_prompts = credit_prompt_count + non_credit_count;
 
     let mut frame_scores: Vec<(f64, f64)> = Vec::new();
     for (i, score_row) in scores.iter().enumerate() {
@@ -99,22 +94,23 @@ pub fn score_credit_text(
             .iter()
             .map(|&s| s as f64)
             .sum::<f64>()
-            / NON_CREDIT_PROMPTS.len() as f64;
+            / non_credit_count as f64;
         let credit_score = (credit_avg - non_credit_avg).max(0.0);
         frame_scores.push((frame_times[i], credit_score));
     }
 
-    detect_credit_regions(&frame_scores, earliest_start)
+    detect_credit_regions(&frame_scores, earliest_start, profile)
 }
 
 /// Pure region grouping — public so tests can exercise it directly.
 pub fn detect_credit_regions(
     frame_scores: &[(f64, f64)],
     earliest_start: f64,
+    profile: &ModelProfile,
 ) -> Option<CreditText> {
     let hits: Vec<(f64, f64)> = frame_scores
         .iter()
-        .filter(|(_, score)| *score >= CREDIT_TEXT_THRESHOLD)
+        .filter(|(_, score)| *score >= profile.credit_threshold)
         .copied()
         .collect();
 
@@ -148,7 +144,7 @@ pub fn detect_credit_regions(
         .map(|(i, _)| i)?;
     let scores = &regions[best_idx].2;
     let avg_score = scores.iter().sum::<f64>() / scores.len() as f64;
-    let confidence = (avg_score / 0.5).clamp(0.3, 0.95);
+    let confidence = (avg_score / profile.credit_confidence_full).clamp(0.3, 0.95);
     let substantial = |i: usize| i == best_idx || regions[i].2.len() >= MIN_CHAINED_REGION_HITS;
 
     let mut first = best_idx;
@@ -190,8 +186,21 @@ pub fn detect_credit_regions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embedding::profile::EG2;
 
     const NO_FLOOR: f64 = f64::NEG_INFINITY;
+
+    /// The grouping logic is scale-free; these cases are written on a 0.10
+    /// threshold / 0.5 full-confidence scale whatever the live model's is.
+    const SCALE: ModelProfile = ModelProfile {
+        credit_threshold: 0.10,
+        credit_confidence_full: 0.5,
+        ..EG2
+    };
+
+    fn regions(scores: &[(f64, f64)], floor: f64) -> Option<CreditText> {
+        detect_credit_regions(scores, floor, &SCALE)
+    }
 
     fn block(scores: &mut Vec<(f64, f64)>, from: u32, to: u32, score: f64) {
         scores.extend((from..to).map(|t| (t as f64, score)));
@@ -214,7 +223,7 @@ mod tests {
         block(&mut scores, 3135, 3153, 0.3);
         block(&mut scores, 3153, 3172, 0.0);
         block(&mut scores, 3172, 3311, 0.3);
-        let text = detect_credit_regions(&scores, NO_FLOOR).unwrap();
+        let text = regions(&scores, NO_FLOOR).unwrap();
         assert_eq!(text.blocks, vec![(2922.0, 3006.0), (3135.0, 3310.0)]);
     }
 
@@ -227,7 +236,7 @@ mod tests {
         block(&mut scores, 3283, 3404, 0.3);
         block(&mut scores, 3404, 3424, 0.0);
         block(&mut scores, 3424, 3558, 0.3);
-        let text = detect_credit_regions(&scores, NO_FLOOR).unwrap();
+        let text = regions(&scores, NO_FLOOR).unwrap();
         assert_eq!(text.blocks, vec![(3283.0, 3557.0)]);
     }
 
@@ -241,7 +250,7 @@ mod tests {
         block(&mut scores, 3100, 3115, 0.3);
         block(&mut scores, 3115, 3160, 0.0);
         block(&mut scores, 3160, 3300, 0.3);
-        let text = detect_credit_regions(&scores, NO_FLOOR).unwrap();
+        let text = regions(&scores, NO_FLOOR).unwrap();
         assert_eq!(text.blocks, vec![(2900.0, 2989.0), (3160.0, 3299.0)]);
     }
 
@@ -256,7 +265,7 @@ mod tests {
             let mut scores = Vec::new();
             block(&mut scores, from, to, 0.3);
             block(&mut scores, 2900, 3100, 0.3);
-            let (start, _, _) = flat(detect_credit_regions(&scores, floor)).unwrap();
+            let (start, _, _) = flat(regions(&scores, floor)).unwrap();
             assert_eq!(start, 2900.0, "{name}");
         }
     }
@@ -282,7 +291,7 @@ mod tests {
             scores.push((t, 0.30));
         }
 
-        let result = flat(detect_credit_regions(&scores, NO_FLOOR));
+        let result = flat(regions(&scores, NO_FLOOR));
         assert!(result.is_some());
         let (start, end, confidence) = result.unwrap();
         assert!(
@@ -316,7 +325,7 @@ mod tests {
             scores.push((t, 0.30));
         }
 
-        let result = flat(detect_credit_regions(&scores, NO_FLOOR));
+        let result = flat(regions(&scores, NO_FLOOR));
         assert!(result.is_some());
         let (start, end, _) = result.unwrap();
         assert!(
@@ -336,14 +345,14 @@ mod tests {
             (2883.0, 0.01),
             (2884.0, 0.01),
         ];
-        assert!(flat(detect_credit_regions(&scores, NO_FLOOR)).is_none());
+        assert!(flat(regions(&scores, NO_FLOOR)).is_none());
     }
 
     #[test]
     fn test_detect_credit_regions_no_hits() {
         // All scores below threshold — no credits
         let scores: Vec<(f64, f64)> = (0..100).map(|t| (t as f64, 0.05)).collect();
-        assert!(flat(detect_credit_regions(&scores, NO_FLOOR)).is_none());
+        assert!(flat(regions(&scores, NO_FLOOR)).is_none());
     }
 
     #[test]
@@ -357,7 +366,7 @@ mod tests {
         for t in (114..120).map(|t| t as f64) {
             scores.push((t, 0.20));
         }
-        let result = flat(detect_credit_regions(&scores, NO_FLOOR));
+        let result = flat(regions(&scores, NO_FLOOR));
         assert!(result.is_some());
         let (start, end, _) = result.unwrap();
         assert!(

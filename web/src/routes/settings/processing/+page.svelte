@@ -23,7 +23,7 @@
   let checkingIntegrity = $state(false);
   let visionHealth = $state<VisionHealthSnapshot | null>(null);
 
-  // Both passes fan out per file and run a SigLIP2 classify on each, and the
+  // Both passes fan out per file and run a credit-text classify on each, and the
   // library holds far more episode files than movie files — so scoping a run
   // to the kind whose handling actually changed is the difference between
   // minutes and a full-library GPU pass.
@@ -143,7 +143,8 @@
       const updates: SystemConfigUpdate = {
         enrichment_enabled: systemConfig.enrichment_enabled,
         skip_detect_mode: systemConfig.skip_detect_mode,
-        vision_service_url: systemConfig.vision_service_url
+        vision_service_url: systemConfig.vision_service_url,
+        text_embedding_service_url: systemConfig.text_embedding_service_url ?? ''
       };
       systemConfig = await updateSystemConfig(updates);
       showMessage('Configuration saved');
@@ -253,7 +254,7 @@
               >
                 <option value="off">Off</option>
                 <option value="audio">Audio Only (Chromaprint + boundary detection)</option>
-                <option value="full">Full (adds SigLIP2 visual analysis)</option>
+                <option value="full">Full (adds visual analysis)</option>
               </select>
             </div>
           </div>
@@ -282,19 +283,37 @@
 
           <div data-field="vision_service_url">
             <div class="field">
-              <label for="vision-url">Vision Service URL</label>
+              <label for="vision-url">Embedding Service URL</label>
               <input
                 id="vision-url"
                 type="text"
                 bind:value={systemConfig.vision_service_url}
                 onchange={saveSystemConfig}
-                placeholder="http://siglip2:8890"
+                placeholder="http://embed-vision:8080"
               />
               <span class="field-hint"
-                >Required for "Full" mode. Points at the SigLIP2 service (compose service
-                <code>siglip2</code>){systemConfig.koblem_ui_enabled
+                >Required for "Full" mode and semantic search. Points at the EmbeddingGemma-2 image
+                embedder (compose service <code>embed-vision</code>){systemConfig.koblem_ui_enabled
                   ? ', or at koblem when GPU routing is enabled'
                   : ''}.</span
+              >
+            </div>
+          </div>
+
+          <div data-field="text_embedding_service_url">
+            <div class="field">
+              <label for="text-embed-url">Text Embedding Service URL</label>
+              <input
+                id="text-embed-url"
+                type="text"
+                bind:value={systemConfig.text_embedding_service_url}
+                onchange={saveSystemConfig}
+                placeholder="http://embed-text:8080"
+              />
+              <span class="field-hint"
+                >Optional. An always-on text embedder (compose service <code>embed-text</code>) for
+                search queries, summaries and zero-shot prompts, so they never wait on the GPU
+                instance. Empty = use the Embedding Service URL.</span
               >
             </div>
           </div>

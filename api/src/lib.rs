@@ -15,6 +15,7 @@ pub mod db;
 pub mod debrid_outcomes;
 pub mod discover_art;
 pub mod ebook;
+pub mod embedding;
 pub mod enrichment_config;
 pub mod events;
 pub mod ffmpeg;

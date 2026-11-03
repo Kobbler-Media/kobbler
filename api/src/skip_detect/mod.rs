@@ -3,7 +3,7 @@
 //! Three detection signals feed into a fusion layer:
 //! 1. Chromaprint audio fingerprinting (cross-episode similarity)
 //! 2. Black frame + silence boundary refinement
-//! 3. SigLIP2 visual embeddings (optional, requires vision service)
+//! 3. EmbeddingGemma-2 frame embeddings (optional, requires an embedding service)
 
 pub mod boundary;
 pub mod cache_detect;
@@ -115,11 +115,12 @@ impl SegmentType {
 pub struct CandidateSignals {
     /// Chromaprint audio match density (0.0-1.0). Higher = more matched samples.
     pub chromaprint_score: Option<f64>,
-    /// SigLIP2 cross-episode visual similarity.
+    /// Frame-embedding visual consistency, on the 0-1 band `fusion` thresholds
+    /// (see `ModelProfile::visual_score`).
     pub visual_score: Option<f64>,
     /// dHash visual sequence match density (0.0-1.0).
     pub dhash_score: Option<f64>,
-    /// SigLIP2 zero-shot credit text detection confidence (0.0-1.0).
+    /// Zero-shot credit text detection confidence (0.0-1.0).
     pub credit_text_score: Option<f64>,
     pub boundary_match: Option<BoundaryMatch>,
     pub audio_profile: Option<AudioProfile>,
@@ -231,7 +232,7 @@ pub const MAX_POST_CREDITS_DURATION: f64 = 120.0; // 2 minutes
 
 // Thresholds — fusion
 pub const MIN_EFFECTIVE_CONFIDENCE: f64 = 0.55;
-/// Tail window (seconds) used by the embed_src branch — feeds vision SigLIP2
+/// Tail window (seconds) used by the embed_src branch — feeds the frame embeddings
 /// for credits classification. The detector vision scan reads back from the
 /// same window, so producer (`media_cache::analyze`) and consumer
 /// (`cache_detect`) must agree.

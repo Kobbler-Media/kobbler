@@ -226,25 +226,24 @@ impl JobHandler for LivetvAdDetectHandler {
         let mut vision_runs = Vec::new();
         if payload.detect && teletext_runs.is_empty() && !pass.frames.is_empty() {
             let runtime = self.state.runtime_config.get().await;
-            if let Some(url) = runtime.vision_service_url.clone() {
-                let client = crate::skip_detect::vision::VisionClient::new(&url);
-                if client.health().await {
-                    let _guard = self.state.gpu_lock.acquire_for_vision().await;
-                    let mut scores: Vec<(f64, f64)> = Vec::new();
-                    for chunk in pass.frames.chunks(VISION_BATCH) {
-                        match vision_signal::classify_frames(&client, chunk).await {
-                            Ok(mut s) => scores.append(&mut s),
-                            Err(e) => {
-                                warn!(error = %e, "zero-shot ad classification failed");
-                                break;
-                            }
+            if let Some(client) = crate::embedding::EmbeddingClient::from_config(&runtime)
+                && client.health().await
+            {
+                let _guard = self.state.gpu_lock.acquire_for_vision().await;
+                let mut scores: Vec<(f64, f64)> = Vec::new();
+                for chunk in pass.frames.chunks(VISION_BATCH) {
+                    match vision_signal::classify_frames(&client, chunk).await {
+                        Ok(mut s) => scores.append(&mut s),
+                        Err(e) => {
+                            warn!(error = %e, "zero-shot ad classification failed");
+                            break;
                         }
                     }
-                    vision_runs = vision_signal::runs_from_scores(
-                        &scores,
-                        &vision_signal::VisionConfig::default(),
-                    );
                 }
+                vision_runs = vision_signal::runs_from_scores(
+                    &scores,
+                    &vision_signal::VisionConfig::default(),
+                );
             }
         }
 

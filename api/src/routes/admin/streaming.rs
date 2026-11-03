@@ -4751,7 +4751,7 @@ pub struct RerunSkipDetectRequest {
     /// Restrict the run to one kind of media; absent covers both.
     ///
     /// Forcing both is not the cheap option it looks like. The season path runs
-    /// a SigLIP2 credit-text classify per episode exactly as the movie path
+    /// a credit-text classify per episode exactly as the movie path
     /// does, and the library holds ~16× as many episode files as movie files —
     /// so a forced library-wide run is a full-library GPU pass. A change that
     /// only moves the movie path should queue only movies.
@@ -4761,7 +4761,7 @@ pub struct RerunSkipDetectRequest {
 
 /// Re-run skip detection (intro / credits / post-credits) across the library.
 ///
-/// This is the escape hatch for "I turned SigLIP2 / Full mode on after the
+/// This is the escape hatch for "I turned vision / Full mode on after the
 /// library was already scanned".
 ///
 /// One job per season, not per file. Detection is season-scoped — a single job
@@ -4774,10 +4774,14 @@ pub struct RerunSkipDetectRequest {
 /// the expensive pass and is not what "re-run detection" means; detection reads
 /// the cache that already exists.
 ///
-/// Reading the cache is not free either, though: both paths run a SigLIP2
+/// Reading the cache is not free either, though: both paths run a zero-shot
 /// credit-text classify per file, and the library holds ~16x as many episode
 /// files as movie files. `media_type` narrows the run to the kind whose
 /// detection actually changed.
+///
+/// Files whose frame embeddings come from a previous model are not detected
+/// without vision: the job queues their embeddings-only re-embed and the season
+/// is detected when the last one lands (see `skip_detect::run_episode`).
 pub async fn rerun_skip_detect(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -4919,7 +4923,7 @@ mod tests {
     }
 
     /// Forcing a movies-only re-run must not pull in the ~10,000 episode files,
-    /// each of which costs a SigLIP2 classify.
+    /// each of which costs a credit-text classify.
     #[test]
     fn rerun_skip_detect_scopes_to_movies() {
         let req: RerunSkipDetectRequest =

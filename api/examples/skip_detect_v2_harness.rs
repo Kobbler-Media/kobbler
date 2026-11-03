@@ -6,13 +6,14 @@
 //!      uses for video files (chromaprint + silence + black_frames + vhash +
 //!      loudness + embed_src).
 //!   2. JPEG frames from the embed_src branch are sent to the vision service
-//!      via `api::skip_detect::vision::VisionClient::embed_images` — the same
-//!      client prod uses, same batching (VISION_BATCH_SIZE = 16).
+//!      via `api::embedding::EmbeddingClient::embed_images` — the same
+//!      client prod uses, same batching (4 images per request, 4 in flight).
 //!   3. Embeddings are l2-normalised and fp16-packed via
 //!      `api::media_cache::embeddings::{l2_normalise, pack_fp16}` — identical
 //!      to `media_analyze::embed_frames_inline` — then written to the
 //!      `Branch::Embeddings` sidecar. Manifest params (dim, count, fps, dtype,
-//!      model, width, start_time_secs, attempted_at) match prod byte for byte.
+//!      model, image_tokens, width, start_time_secs, attempted_at) match prod
+//!      byte for byte.
 //!   4. `api::skip_detect::cache_detect::detect_season_from_cache_with_chapters`
 //!      runs over the cache — the same function the prod handler wraps — so
 //!      `cache.embeddings` is populated and vision-driven signals
@@ -30,7 +31,7 @@
 //! Usage:
 //!   cargo run --release --example skip_detect_v2_harness -- \
 //!     --storage /tmp/kob-harness \
-//!     --vision-url http://192.0.2.40:8890 \
+//!     --vision-url http://192.0.2.40:8080 \
 //!     "/path/to/Season 01" \
 //!     "/path/to/Season 02"
 //!
@@ -45,6 +46,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
+use api::embedding::{EMBED_DIM, EMBED_MODEL, EmbeddingClient, IMAGE_TOKENS};
 use api::media_cache::embeddings::{l2_normalise, pack_fp16};
 use api::media_cache::episode_cache::{
     MediaKind, episode_cache_dir, read_manifest as read_episode_manifest,
@@ -59,7 +61,6 @@ use api::skip_detect::cache_detect::{
     EpisodeDiagnostics, MatchDiag, detect_season_from_cache_with_chapters,
 };
 use api::skip_detect::tv::EpisodeFile;
-use api::skip_detect::vision::VisionClient;
 use api::skip_detect::{
     AudioProfile, Candidate, DetectedSegment, SegmentType, extract_duration_secs,
 };
@@ -481,13 +482,11 @@ impl EpisodePlan {
 // single_pass decode + sidecar writes
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// SigLIP2 model metadata recorded in the manifest. Mirrors the private
+/// Embedding frame-grab metadata recorded in the manifest. Mirrors the private
 /// constants in `kobbler/api/src/jobs/handlers/media_analyze.rs` so the
 /// on-disk embeddings sidecar is byte-for-byte what prod writes.
-const EMBED_DIM: usize = 1152;
 const EMBED_FPS: f64 = 1.0;
 const EMBED_WIDTH: i32 = 768;
-const EMBED_MODEL: &str = "google/siglip2-so400m-patch16-naflex";
 
 /// Runs single_pass for one episode, writes all sidecars, and — if a vision
 /// URL is configured — sends the embed_src JPEGs to the vision service and
@@ -622,7 +621,7 @@ async fn embed_and_record(
         frames.len()
     );
 
-    let client = VisionClient::new(vision_url);
+    let client = EmbeddingClient::for_url(vision_url);
     if !client.health().await {
         let reason = "vision service not healthy";
         eprintln!("  ! vision: {}: {reason}", ep.label);
@@ -726,6 +725,7 @@ fn embeddings_params_success(
     params.insert("fps".into(), json!(EMBED_FPS));
     params.insert("dtype".into(), json!("f16"));
     params.insert("model".into(), json!(EMBED_MODEL));
+    params.insert("image_tokens".into(), json!(IMAGE_TOKENS));
     params.insert("width".into(), json!(EMBED_WIDTH));
     params.insert("start_time_secs".into(), json!(start_time_secs));
     params.insert("attempted_at".into(), json!(now_unix_secs()));
@@ -734,6 +734,7 @@ fn embeddings_params_success(
 
 fn embeddings_params_failure(reason: &str) -> serde_json::Map<String, serde_json::Value> {
     let mut params = serde_json::Map::new();
+    params.insert("model".into(), json!(EMBED_MODEL));
     params.insert("attempted_at".into(), json!(now_unix_secs()));
     params.insert("error".into(), json!(reason));
     params

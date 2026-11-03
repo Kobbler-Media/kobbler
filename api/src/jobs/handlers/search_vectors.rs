@@ -1,12 +1,16 @@
-//! Keeps the search indexes' artwork vectors in step with `semantic_search_enabled`.
+//! Keeps the search indexes' summary and artwork vectors in step with
+//! `semantic_search_enabled`.
 //!
-//! Turning semantic search on embeds every title's artwork through koblem, rewrites
-//! the title indexes with `_vectors`, then declares the embedder — in that order,
-//! because Meili refuses an embedder while any document lacks its vector. Turning it
-//! off removes the embedder, then rewrites the indexes without vectors. Between those
-//! transitions a run only embeds artwork that is new or changed.
+//! Turning semantic search on embeds every title's summary (text service) and
+//! artwork (image service), rewrites the title indexes with `_vectors`, then
+//! declares the embedders — in that order, because Meili refuses an embedder while
+//! any document lacks its vector. Any embedders already there that are not exactly
+//! the current ones (a previous model's, at another width) are removed first, or
+//! Meili would reject the new vectors. Turning it off removes the embedders, then
+//! rewrites the indexes without vectors. Between those transitions a run only
+//! embeds what is new, changed, or from another model.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -16,13 +20,13 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::embedding::{EMBED_MODEL, EmbedTask, EmbeddingClient};
 use crate::images::{self, ImageEntry, ImageType};
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
-use crate::repositories::search_embeddings::{self, EmbeddedKind, StaleEmbedding};
+use crate::repositories::search_embeddings::{self, EmbeddedKind, StaleEmbedding, VectorKind};
 use crate::runtime_config::RuntimeConfigManager;
 use crate::search::{self, SearchBackend, semantic};
-use crate::skip_detect::vision::VisionClient;
 
 pub const JOB_TYPE: &str = "search_vectors";
 
@@ -99,19 +103,35 @@ impl SearchVectorsHandler {
         .ok()
     }
 
-    /// Embeds every stale title's artwork and returns the titles that got a new vector.
+    /// Embeds every stale vector and returns the titles that got a new one.
     async fn embed_stale(
         &self,
-        koblem_url: &str,
+        client: &EmbeddingClient,
         cancel: &CancellationToken,
     ) -> JobResult<Vec<(EmbeddedKind, Uuid)>> {
-        let stale = search_embeddings::stale(&self.pool)
+        let stale = search_embeddings::stale(&self.pool, EMBED_MODEL)
             .await
-            .map_err(|e| JobError::retryable(format!("Failed to list stale artwork: {e}")))?;
-        let vision = VisionClient::new(koblem_url);
+            .map_err(|e| JobError::retryable(format!("Failed to list stale vectors: {e}")))?;
+        let (posters, descriptions): (Vec<StaleEmbedding>, Vec<StaleEmbedding>) = stale
+            .into_iter()
+            .partition(|t| t.vector == VectorKind::Poster);
         let mut embedded = Vec::new();
 
-        for batch in stale.chunks(EMBED_BATCH) {
+        for batch in descriptions.chunks(EMBED_BATCH) {
+            nats_jobs::check_cancelled(cancel)?;
+            let texts: Vec<(Option<&str>, &str)> = batch
+                .iter()
+                .map(|t| (t.title.as_deref(), t.source.as_str()))
+                .collect();
+            let vectors = client
+                .embed_texts(EmbedTask::Document, &texts, None)
+                .await
+                .map_err(|e| JobError::retryable(format!("summary embedding failed: {e}")))?;
+            let titles: Vec<&StaleEmbedding> = batch.iter().collect();
+            self.store(titles, vectors, &mut embedded).await?;
+        }
+
+        for batch in posters.chunks(EMBED_BATCH) {
             nats_jobs::check_cancelled(cancel)?;
             let mut titles = Vec::with_capacity(batch.len());
             let mut artwork = Vec::with_capacity(batch.len());
@@ -124,35 +144,51 @@ impl SearchVectorsHandler {
             if artwork.is_empty() {
                 continue;
             }
-            let vectors = vision
+            let vectors = client
                 .embed_images(&artwork)
                 .await
-                .map_err(|e| JobError::retryable(format!("koblem image embedding failed: {e}")))?;
-            if vectors.len() != titles.len() {
-                return Err(JobError::retryable(format!(
-                    "koblem returned {} embeddings for {} images",
-                    vectors.len(),
-                    titles.len()
-                )));
-            }
-            for (title, vector) in titles.into_iter().zip(vectors) {
-                if vector.len() != semantic::DIMENSIONS {
-                    return Err(JobError::ExecutionFailed(format!(
-                        "koblem returned a {}-dimensional embedding, expected {}",
-                        vector.len(),
-                        semantic::DIMENSIONS
-                    )));
-                }
-                let stored =
-                    search_embeddings::upsert(&self.pool, title.kind, title.entity_id, &vector)
-                        .await
-                        .map_err(|e| JobError::retryable(format!("Failed to store vector: {e}")))?;
-                if stored {
-                    embedded.push((title.kind, title.entity_id));
-                }
-            }
+                .map_err(|e| JobError::retryable(format!("artwork embedding failed: {e}")))?;
+            self.store(titles, vectors, &mut embedded).await?;
         }
         Ok(embedded)
+    }
+
+    async fn store(
+        &self,
+        titles: Vec<&StaleEmbedding>,
+        vectors: Vec<Vec<f32>>,
+        embedded: &mut Vec<(EmbeddedKind, Uuid)>,
+    ) -> JobResult<()> {
+        if vectors.len() != titles.len() {
+            return Err(JobError::retryable(format!(
+                "the embedding service returned {} vectors for {} inputs",
+                vectors.len(),
+                titles.len()
+            )));
+        }
+        for (title, vector) in titles.into_iter().zip(vectors) {
+            if vector.len() != semantic::DIMENSIONS {
+                return Err(JobError::ExecutionFailed(format!(
+                    "the embedding service returned a {}-dimensional vector, expected {}",
+                    vector.len(),
+                    semantic::DIMENSIONS
+                )));
+            }
+            let stored = search_embeddings::upsert(
+                &self.pool,
+                title.kind,
+                title.entity_id,
+                title.vector,
+                EMBED_MODEL,
+                &vector,
+            )
+            .await
+            .map_err(|e| JobError::retryable(format!("Failed to store vector: {e}")))?;
+            if stored && !embedded.contains(&(title.kind, title.entity_id)) {
+                embedded.push((title.kind, title.entity_id));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -181,7 +217,12 @@ impl JobHandler for SearchVectorsHandler {
             .map_err(|e| JobError::retryable(format!("Failed to read embedders: {e}")))?;
 
         if !enabled {
-            if !configured {
+            let present = self
+                .search
+                .has_embedders()
+                .await
+                .map_err(|e| JobError::retryable(format!("Failed to read embedders: {e}")))?;
+            if !present {
                 return Ok(json!({"enabled": false, "changed": false}));
             }
             self.search
@@ -193,26 +234,35 @@ impl JobHandler for SearchVectorsHandler {
             return Ok(json!({"enabled": false, "changed": true}));
         }
 
-        let koblem_url = semantic::koblem_url(&config).ok_or_else(|| {
+        let client = EmbeddingClient::from_config(&config).ok_or_else(|| {
             JobError::ExecutionFailed(
-                "semantic search is on but koblem_service_url is not set".to_string(),
+                "semantic search is on but no embedding service is configured".to_string(),
             )
         })?;
 
         let pruned = search_embeddings::prune(&self.pool)
             .await
             .map_err(|e| JobError::retryable(format!("Failed to prune vectors: {e}")))?;
-        let embedded = self.embed_stale(&koblem_url, &cancel).await?;
+        let embedded = self.embed_stale(&client, &cancel).await?;
 
         if configured {
+            let mut done: HashSet<(EmbeddedKind, Uuid)> = HashSet::new();
             for (kind, id) in pruned
                 .iter()
                 .map(|t| (t.kind, t.entity_id))
                 .chain(embedded.iter().copied())
             {
-                self.reindex_one(kind, id).await?;
+                if done.insert((kind, id)) {
+                    self.reindex_one(kind, id).await?;
+                }
             }
         } else {
+            // Clear whatever embedders are there first: a previous model's would
+            // reject documents carrying vectors of the new width.
+            self.search
+                .apply_embedders(false)
+                .await
+                .map_err(|e| JobError::retryable(e.to_string()))?;
             self.reindex_titles().await?;
             self.search
                 .apply_embedders(true)

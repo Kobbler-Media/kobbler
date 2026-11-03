@@ -57,9 +57,10 @@ fn is_weak_semantic_hit(details: Option<&serde_json::Map<String, serde_json::Val
         .and_then(|d| d.get("vectorSort"))
         .and_then(|v| v.get("similarity"))
         .and_then(serde_json::Value::as_f64)
-        .is_some_and(|similarity| similarity < semantic::SEMANTIC_HIT_FLOOR)
+        .is_some_and(|similarity| similarity < semantic::semantic_hit_floor())
 }
 
+/// A title index's query: keyword, or a hybrid against the summary embedder.
 fn titled_query<'a, Http: meilisearch_sdk::request::HttpClient>(
     index: &'a meilisearch_sdk::indexes::Index<Http>,
     query: &'a str,
@@ -69,10 +70,26 @@ fn titled_query<'a, Http: meilisearch_sdk::request::HttpClient>(
     search.with_query(query);
     if let Some(semantic) = semantic {
         search
-            .with_hybrid(semantic::EMBEDDER, semantic.ratio)
+            .with_hybrid(semantic::DESCRIPTION_EMBEDDER, semantic.ratio)
             .with_vector(&semantic.vector)
             .with_show_ranking_score_details(true);
     }
+    search.build()
+}
+
+/// The secondary, artwork-only query: pure vector, so it adds titles whose poster
+/// matches without repeating the keyword half the summary query already ran.
+fn poster_query<'a, Http: meilisearch_sdk::request::HttpClient>(
+    index: &'a meilisearch_sdk::indexes::Index<Http>,
+    query: &'a str,
+    semantic: &'a SemanticQuery,
+) -> meilisearch_sdk::search::SearchQuery<'a, Http> {
+    let mut search = index.search();
+    search
+        .with_query(query)
+        .with_hybrid(semantic::POSTER_EMBEDDER, 1.0)
+        .with_vector(&semantic.vector)
+        .with_show_ranking_score_details(true);
     search.build()
 }
 
@@ -183,6 +200,17 @@ impl MeiliState {
         multi_search.with_search_query(titled_query(&movies_index, query, semantic));
         multi_search
             .with_search_query_and_weight(titled_query(&tv_shows_index, query, semantic), 1.3);
+        if let Some(semantic) = semantic {
+            let w = semantic::POSTER_WEIGHT;
+            multi_search
+                .with_search_query_and_weight(poster_query(&books_index, query, semantic), w);
+            multi_search
+                .with_search_query_and_weight(poster_query(&movies_index, query, semantic), w);
+            multi_search.with_search_query_and_weight(
+                poster_query(&tv_shows_index, query, semantic),
+                w * 1.3,
+            );
+        }
         multi_search
             .with_search_query_and_weight(tv_seasons_index.search().with_query(query).build(), 0.8);
         multi_search.with_search_query_and_weight(
@@ -203,6 +231,9 @@ impl MeiliState {
         let mut top_hits = Vec::new();
         let mut remaining = Vec::new();
         let mut seen_types: HashSet<&'static str> = HashSet::new();
+        // The summary and poster queries can both find a title; hits arrive best
+        // first, so the first copy is the one to keep.
+        let mut seen_docs: HashSet<(String, String)> = HashSet::new();
 
         for hit in &result.hits {
             if is_weak_semantic_hit(hit.ranking_score_details.as_ref()) {
@@ -213,6 +244,11 @@ impl MeiliState {
                 .as_ref()
                 .map(|f| f.index_uid.as_str())
                 .unwrap_or("");
+            if let Some(id) = hit.result.get("id").and_then(serde_json::Value::as_str)
+                && !seen_docs.insert((index_uid.to_string(), id.to_string()))
+            {
+                continue;
+            }
 
             let search_hit = match index_uid {
                 indexes::BOOKS => serde_json::from_value::<BookDocument>(hit.result.clone())
@@ -2456,35 +2492,59 @@ impl SearchBackend for MeiliState {
         self.semantic.store(enabled, Ordering::Relaxed);
     }
 
+    /// Every title index has exactly the current embedders at the current width.
+    /// A name check alone would keep a previous model's embedder (e.g. a
+    /// 1152-d `poster`) that rejects every 768-d document.
     async fn embedders_configured(&self) -> Result<bool, SearchError> {
         let (client, _url) = self.get_client().await;
         for uid in semantic::INDEXES {
-            if !client
-                .index(uid)
-                .get_embedders()
-                .await?
-                .contains_key(semantic::EMBEDDER)
-            {
+            let embedders = client.index(uid).get_embedders().await?;
+            let current = embedders.len() == semantic::EMBEDDERS.len()
+                && semantic::EMBEDDERS.iter().all(|name| {
+                    embedders
+                        .get(*name)
+                        .is_some_and(|e| e.dimensions == Some(semantic::DIMENSIONS))
+                });
+            if !current {
                 return Ok(false);
             }
         }
         Ok(true)
     }
 
+    async fn has_embedders(&self) -> Result<bool, SearchError> {
+        let (client, _url) = self.get_client().await;
+        for uid in semantic::INDEXES {
+            if !client.index(uid).get_embedders().await?.is_empty() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     async fn apply_embedders(&self, enabled: bool) -> Result<(), SearchError> {
         let (client, _url) = self.get_client().await;
-        let embedders = HashMap::from([(
-            semantic::EMBEDDER.to_string(),
+        let embedder = |distribution: crate::embedding::profile::Distribution| {
             meilisearch_sdk::settings::Embedder {
                 source: meilisearch_sdk::settings::EmbedderSource::UserProvided,
                 dimensions: Some(semantic::DIMENSIONS),
                 distribution: Some(meilisearch_sdk::settings::EmbedderDistribution {
-                    mean: semantic::DISTRIBUTION_MEAN,
-                    sigma: semantic::DISTRIBUTION_SIGMA,
+                    mean: distribution.mean,
+                    sigma: distribution.sigma,
                 }),
                 ..Default::default()
-            },
-        )]);
+            }
+        };
+        let embedders = HashMap::from([
+            (
+                semantic::DESCRIPTION_EMBEDDER.to_string(),
+                embedder(semantic::description_distribution()),
+            ),
+            (
+                semantic::POSTER_EMBEDDER.to_string(),
+                embedder(semantic::poster_distribution()),
+            ),
+        ]);
         for uid in semantic::INDEXES {
             let index = client.index(uid);
             let task = match enabled {

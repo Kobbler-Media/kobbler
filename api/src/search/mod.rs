@@ -90,7 +90,9 @@ use sqlx::PgPool;
 /// - 41: Movie and TV show `rating` on its providers' 0-10 scale instead of halved to 0-5.
 /// - 42: Optional `_vectors.poster` (one SigLIP2 artwork vector per movie, show and
 ///   library book) behind `semantic_search_enabled`, plus its two settings documents.
-pub const SEARCH_SCHEMA_VERSION: i32 = 42;
+/// - 43: EmbeddingGemma-2 replaces SigLIP2: `_vectors` is now `{description, poster}`
+///   (768-d, summary first), and the Text Embedding Service URL setting document.
+pub const SEARCH_SCHEMA_VERSION: i32 = 43;
 
 /// Result of checking if search reindex is needed on startup.
 #[derive(Debug)]
@@ -311,7 +313,7 @@ pub struct BookDocument {
     /// Stored, not searchable. See `MovieDocument::description`.
     pub description: Option<String>,
     #[serde(rename = "_vectors", default, skip_serializing_if = "Option::is_none")]
-    pub vectors: Option<semantic::PosterVectors>,
+    pub vectors: Option<semantic::TitleVectors>,
 }
 
 impl BookDocument {
@@ -402,7 +404,7 @@ pub struct MovieDocument {
     /// shortlist is unusable without the text to reason over.
     pub description: Option<String>,
     #[serde(rename = "_vectors", default, skip_serializing_if = "Option::is_none")]
-    pub vectors: Option<semantic::PosterVectors>,
+    pub vectors: Option<semantic::TitleVectors>,
 }
 
 /// TV show document for search indexing.
@@ -426,7 +428,7 @@ pub struct TvShowDocument {
     pub runtime: Option<i32>,
     pub description: Option<String>,
     #[serde(rename = "_vectors", default, skip_serializing_if = "Option::is_none")]
-    pub vectors: Option<semantic::PosterVectors>,
+    pub vectors: Option<semantic::TitleVectors>,
 }
 
 /// TV season document for search indexing.

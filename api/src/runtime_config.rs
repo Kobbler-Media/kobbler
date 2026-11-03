@@ -163,8 +163,13 @@ pub struct RuntimeConfig {
     // Skip detection (intro/credits/recap)
     /// Skip detection mode: "off" (default), "audio", "full"
     pub skip_detect_mode: String,
-    /// Vision service URL for visual skip detection (e.g., http://siglip2:8890)
+    /// Image embedding server (EmbeddingGemma-2 llama-server, e.g.
+    /// http://embed-vision:8080, or koblem). Also serves text when
+    /// `text_embedding_service_url` is unset.
     pub vision_service_url: Option<String>,
+    /// Always-on text embedding server (e.g. http://embed-text:8080). Optional;
+    /// unset → text goes to the vision URL.
+    pub text_embedding_service_url: Option<String>,
 
     // IPTV configuration
     /// Language codes to show by default in IPTV channel listings (display filter, not storage filter)
@@ -280,7 +285,8 @@ impl Default for RuntimeConfig {
             gpu_preempt_tts: true,
             route_gpu_via_koblem: false,
             skip_detect_mode: "off".to_string(),
-            vision_service_url: Some("http://siglip2:8890".to_string()),
+            vision_service_url: Some("http://embed-vision:8080".to_string()),
+            text_embedding_service_url: None,
             iptv_language_filter: vec!["en".to_string()],
             iptv_auto_create_channels: true,
             iptv_health_check_enabled: true,
@@ -371,6 +377,7 @@ pub struct RuntimeConfigUpdate {
     pub route_gpu_via_koblem: Option<bool>,
     pub skip_detect_mode: Option<String>,
     pub vision_service_url: Option<String>,
+    pub text_embedding_service_url: Option<String>,
     pub iptv_language_filter: Option<Vec<String>>,
     pub iptv_auto_create_channels: Option<bool>,
     pub iptv_health_check_enabled: Option<bool>,
@@ -405,7 +412,7 @@ mod route_gpu_tests {
             koblem_service_url: Some("http://koblem:8090".to_string()),
             stt_service_url: Some("http://stt-parakeet:8022".to_string()),
             tts_service_url: Some("http://tts-chatterbox:8000".to_string()),
-            vision_service_url: Some("http://siglip2:8890".to_string()),
+            vision_service_url: Some("http://embed-vision:8080".to_string()),
             ..RuntimeConfig::default()
         }
     }
@@ -424,7 +431,7 @@ mod route_gpu_tests {
         );
         assert_eq!(
             c.effective_vision_url().as_deref(),
-            Some("http://siglip2:8890")
+            Some("http://embed-vision:8080")
         );
         assert!(
             c.use_local_gpu_lock(),
@@ -460,7 +467,7 @@ mod route_gpu_tests {
         );
         assert_eq!(
             c.effective_vision_url().as_deref(),
-            Some("http://siglip2:8890")
+            Some("http://embed-vision:8080")
         );
         assert!(c.use_local_gpu_lock(), "should fall back to local lock");
     }
@@ -556,6 +563,17 @@ impl RuntimeConfig {
             return Some(koblem.trim_end_matches('/').to_string());
         }
         self.vision_service_url.clone()
+    }
+
+    /// Where text is embedded: `text_embedding_service_url` when set (an
+    /// always-on instance needs no GPU gate), otherwise the vision URL.
+    pub fn effective_text_embedding_url(&self) -> Option<String> {
+        if let Some(url) = self.text_embedding_service_url.as_deref()
+            && !url.trim().is_empty()
+        {
+            return Some(url.trim().trim_end_matches('/').to_string());
+        }
+        self.effective_vision_url()
     }
 
     /// True when kobbler's local GpuLock should stay active. When routing
@@ -714,16 +732,19 @@ impl RuntimeConfigManager {
         let semantic_after = updates
             .semantic_search_enabled
             .unwrap_or(config.semantic_search_enabled);
-        let koblem_after = match &updates.koblem_service_url {
+        let set_after = |update: &Option<String>, current: &Option<String>| match update {
             Some(v) => !v.trim().is_empty(),
-            None => config
-                .koblem_service_url
-                .as_deref()
-                .is_some_and(|u| !u.trim().is_empty()),
+            None => current.as_deref().is_some_and(|u| !u.trim().is_empty()),
         };
-        if semantic_after && !koblem_after {
+        let routed_after = updates
+            .route_gpu_via_koblem
+            .unwrap_or(config.route_gpu_via_koblem)
+            && set_after(&updates.koblem_service_url, &config.koblem_service_url);
+        let embedder_after =
+            routed_after || set_after(&updates.vision_service_url, &config.vision_service_url);
+        if semantic_after && !embedder_after {
             return Err(RuntimeConfigError::Validation(
-                "semantic search needs a koblem_service_url: its vectors are computed on koblem's GPU"
+                "semantic search needs an embedding service: set vision_service_url, or route GPU calls via koblem"
                     .to_string(),
             ));
         }
@@ -905,6 +926,9 @@ impl RuntimeConfigManager {
         }
         if let Some(v) = updates.vision_service_url {
             config.vision_service_url = if v.is_empty() { None } else { Some(v) };
+        }
+        if let Some(v) = updates.text_embedding_service_url {
+            config.text_embedding_service_url = if v.trim().is_empty() { None } else { Some(v) };
         }
         if let Some(v) = updates.iptv_language_filter {
             config.iptv_language_filter = v;

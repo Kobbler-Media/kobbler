@@ -3,7 +3,7 @@
 //! Three independent detection passes feed candidates:
 //! 1. Chromaprint audio fingerprinting (repeated audio across episodes)
 //! 2. dHash visual sequence matching (repeated frame sequences across episodes)
-//! 3. SigLIP2 zero-shot credit text detection (text/names overlaid on video)
+//! 3. Zero-shot credit text detection (text/names overlaid on video)
 //!
 //! Confidence is assigned based on signal agreement. Vetoes suppress false positives.
 
@@ -219,7 +219,7 @@ fn score_one(candidate: Candidate) -> DetectedSegment {
 /// | Audio + dHash agree | 0.95 | Two independent methods found same thing |
 /// | Audio high density (>0.85) | 0.80 | Near-perfect theme song match |
 /// | dHash only, long sequence | 0.75 | Consistent title sequence, no audio theme |
-/// | SigLIP2 text (credits) | 0.70 | Text overlay detected |
+/// | Credit text (vision) | 0.70 | Text overlay detected |
 /// | Audio moderate (0.7-0.85) | 0.50 | Possible theme, needs more evidence |
 /// | Chapter agreement | +0.05–0.10 | Chapter marker confirms detection |
 fn compute_confidence(segment_type: &SegmentType, signals: &CandidateSignals) -> f64 {
@@ -242,7 +242,7 @@ fn compute_confidence(segment_type: &SegmentType, signals: &CandidateSignals) ->
         // already limits density for few-episode seasons.
         signals.dhash_score.unwrap_or(0.75).min(0.75)
     } else if *segment_type == SegmentType::Credits && has_credit_text {
-        // SigLIP2 detected credit text overlay
+        // Vision detected credit text overlay
         0.70
     } else if has_audio && has_visual {
         // Audio + visual agreement

@@ -23,6 +23,7 @@
 //! (including `embeddings.bin` when vision is configured) is durable.
 
 use crate::RuntimeConfigManager;
+use crate::embedding::{EMBED_DIM, EMBED_MODEL, EmbeddingClient, IMAGE_TOKENS};
 use crate::gpu::GpuLock;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult, MediaRootIoGate, PhaseTimings};
@@ -33,7 +34,6 @@ use crate::media_cache::writers::{ArtefactInfo, write_atomic, write_manifest};
 use crate::media_cache::{self, Branch, PIPELINE_VERSION};
 use crate::repositories::media_cache_runs::{self, TriggeredBy};
 use crate::repositories::{audiobook_files, media_roots, movie_files, tv_episode_files};
-use crate::skip_detect::vision::VisionClient;
 use crate::streaming::session::MediaType;
 use async_trait::async_trait;
 use kob_ffmpeg::single_pass::BranchId;
@@ -49,14 +49,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-/// SigLIP2 SO400M output dimensionality.
-const EMBED_DIM: usize = 1152;
 /// Frames-per-second at which embed_src is grabbed.
 const EMBED_FPS: f64 = 1.0;
 /// embed_src JPEG width — must match the vision server's expected input.
 const EMBED_WIDTH: i32 = 768;
-/// Vision model identifier recorded in the manifest.
-const EMBED_MODEL: &str = "google/siglip2-so400m-patch16-naflex";
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MediaAnalyzePayload {
@@ -343,6 +339,16 @@ impl MediaAnalyzeHandler {
             warn!(error = %e, "supplement: per-file manifest write failed");
         }
         timings.record("post_decode_writes", manifest_started.elapsed());
+
+        // The cache changed, so detection is out of date: stamp
+        // `media_cache_generated_at` before the enqueue below, or a season that
+        // was already current (a forced re-run that asked for these embeddings)
+        // passes the staleness gate as up to date and never re-detects.
+        if let Err(e) =
+            bump_media_cache_version(&self.pool, &payload.media_type, payload.file_id).await
+        {
+            warn!(error = %e, "supplement: media_cache_version bump failed");
+        }
 
         // Chain skip_detect regardless — audio + visual + (optionally) credit-text.
         let context = crate::jobs::JobContext::new("skip detect (post-supplement)");
@@ -674,7 +680,10 @@ impl JobHandler for MediaAnalyzeHandler {
             // here even when it's missing. Only attempt when vision is
             // configured NOW — otherwise there's nothing to supplement, and
             // repeated clicks would no-op (no loop).
-            let embeddings_missing = !branch_present(Branch::Embeddings);
+            // Embeddings from another model count as missing: the reader ignores
+            // them, so re-embedding is the only way vision gets used again.
+            let embeddings_missing = !branch_info(Branch::Embeddings)
+                .is_some_and(crate::media_cache::readers::embeddings_are_current);
             let config_for_supplement = self.runtime_config.get().await;
             let supplement_vision_url = config_for_supplement.effective_vision_url();
             let can_supplement_vision = supplement_vision_url
@@ -1329,14 +1338,14 @@ async fn do_embed_frames(
         .filter(|u| !u.is_empty())
         .ok_or_else(|| "vision_service_url not configured".to_string())?;
 
-    let client = VisionClient::new(vision_url);
+    let client = EmbeddingClient::for_url(vision_url);
     if !client.health().await {
         return Err("vision service not healthy".to_string());
     }
 
-    // VisionClient::embed_images batches internally at VISION_BATCH_SIZE (=16).
-    // We still chunk here so a cancel mid-file aborts promptly between batches
-    // rather than only between files.
+    // The client pipelines each batch as 4 requests of 4 images. We still chunk
+    // here so a cancel mid-file aborts promptly between batches rather than only
+    // between files.
     let mut jpegs: Vec<Vec<u8>> = frames.into_iter().map(|f| f.jpeg_data).collect();
     let total = jpegs.len();
     let mut all_embeddings: Vec<Vec<f32>> = Vec::with_capacity(total);
@@ -1358,13 +1367,13 @@ async fn do_embed_frames(
     if all_embeddings.is_empty() {
         return Err("vision service returned no embeddings".to_string());
     }
-    let dim = all_embeddings[0].len();
-    if dim != EMBED_DIM {
-        warn!(
-            got = dim,
-            expected = EMBED_DIM,
-            "embedding dim mismatch — recording actual value in manifest"
-        );
+    // The manifest records `EMBED_MODEL` and its width, and the reader decodes
+    // rows at that width: vectors of any other width are another model's.
+    if let Some(bad) = all_embeddings.iter().find(|v| v.len() != EMBED_DIM) {
+        return Err(format!(
+            "vision service returned {}-dimensional embeddings, expected {EMBED_DIM} ({EMBED_MODEL})",
+            bad.len()
+        ));
     }
 
     l2_normalise(&mut all_embeddings);
@@ -1401,14 +1410,18 @@ fn embeddings_params_success(count: usize, start_time_secs: f64) -> serde_json::
     params.insert("fps".into(), json!(EMBED_FPS));
     params.insert("dtype".into(), json!("f16"));
     params.insert("model".into(), json!(EMBED_MODEL));
+    params.insert("image_tokens".into(), json!(IMAGE_TOKENS));
     params.insert("width".into(), json!(EMBED_WIDTH));
     params.insert("start_time_secs".into(), json!(start_time_secs));
     params.insert("attempted_at".into(), json!(now_unix_secs()));
     params
 }
 
+/// Carries the model too: an attempt that failed under the current model is not
+/// stale, so skip_detect does not keep re-requesting it.
 fn embeddings_params_failure(reason: &str) -> serde_json::Map<String, Value> {
     let mut params = serde_json::Map::new();
+    params.insert("model".into(), json!(EMBED_MODEL));
     params.insert("attempted_at".into(), json!(now_unix_secs()));
     params.insert("error".into(), json!(reason));
     params

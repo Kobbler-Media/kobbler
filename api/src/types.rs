@@ -12,7 +12,7 @@ use std::str::FromStr;
 ///
 /// These fan-outs are not uniformly priced. The library holds roughly 600 movie
 /// files against 10,000 episode files, and both the skip-detect re-run and the
-/// media-analyze backfill run a SigLIP2 credit-text classify per file — so a
+/// media-analyze backfill run a credit-text classify per file — so a
 /// forced run over everything is a full-library GPU pass, ~16× the cost of the
 /// movie slice. When a change only moves one kind's detection, only that kind
 /// should be queued.

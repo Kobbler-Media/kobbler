@@ -66,7 +66,7 @@ pub struct SearchBackendStatus {
     pub tv_episode_count: Option<i64>,
     /// Number of indexed people.
     pub person_count: Option<i64>,
-    /// Titles carrying an artwork vector across the movie, show and book indexes.
+    /// Titles carrying a summary or artwork vector across the movie, show and book indexes.
     pub embedded_document_count: Option<i64>,
     /// Error message if not connected.
     pub error: Option<String>,
@@ -605,12 +605,19 @@ pub trait SearchBackend: Send + Sync {
 
     fn set_semantic_enabled(&self, _enabled: bool) {}
 
+    /// Whether the title indexes carry exactly the current embedders.
     async fn embedders_configured(&self) -> Result<bool, SearchError> {
         Ok(false)
     }
 
-    /// Declares or removes the artwork embedder on the title indexes and waits for
-    /// Meili to accept it. Declaring it fails while any document lacks `_vectors`.
+    /// Whether any title index carries any embedder at all, current or not.
+    async fn has_embedders(&self) -> Result<bool, SearchError> {
+        Ok(false)
+    }
+
+    /// Declares or removes the summary and artwork embedders on the title indexes
+    /// and waits for Meili to accept them. Declaring fails while any document
+    /// lacks `_vectors`.
     async fn apply_embedders(&self, _enabled: bool) -> Result<(), SearchError> {
         Ok(())
     }

@@ -21,19 +21,17 @@ use super::post_credits::detect_post_credits_from_cache;
 use super::primitives::boundary as boundary_primitive;
 use super::primitives::boundary::BoundarySearchDirection;
 use super::primitives::cosine::cluster_consistency;
-use super::primitives::credit_scoring::{
-    CREDIT_PROMPTS, CreditText, NON_CREDIT_PROMPTS, score_credit_text,
-};
+use super::primitives::credit_scoring::{CreditText, credit_prompts, score_credit_text};
 use super::tv::{
     EpisodeFile, chapter_override_position, find_per_episode_positions, find_per_episode_vhash,
 };
 use super::vhash::FrameDescriptor;
-use super::vision::VisionClient;
 use super::{
     BoundaryMatch, Candidate, CandidateSignals, DetectedSegment, INTRO_MAX_BER,
     MIN_CREDITS_DURATION, MIN_MATCH_DURATION, MIN_SKIP_DURATION, SegmentType,
     earliest_credits_start, extract_duration_secs, extraction_windows,
 };
+use crate::embedding::{EmbeddingClient, profile};
 use crate::media_cache::readers::{self, BlackGap, EmbeddingsView, SilenceGap};
 use crate::repositories::video_chapters;
 use kob_ffmpeg::filter::detect::{BlackInterval, SilenceInterval};
@@ -205,7 +203,7 @@ struct EpisodeCache {
 /// detection" for video.
 pub async fn detect_season_from_cache(
     pool: &PgPool,
-    config_vision_url: Option<&str>,
+    text_embed_url: Option<&str>,
     episodes: &[EpisodeFile],
     storage_root: &str,
 ) -> Vec<(Uuid, Vec<DetectedSegment>, EpisodeDiagnostics)> {
@@ -214,7 +212,7 @@ pub async fn detect_season_from_cache(
         chapters_by_file.insert(ep.file_id, load_chapters_for_file(pool, ep.file_id).await);
     }
     detect_season_from_cache_with_chapters(
-        config_vision_url,
+        text_embed_url,
         episodes,
         storage_root,
         &chapters_by_file,
@@ -225,11 +223,11 @@ pub async fn detect_season_from_cache(
 /// Pure variant: takes pre-loaded chapters, returns segments + diagnostics.
 ///
 /// Does not touch the database — the only I/O is cache reads under
-/// `storage_root` and (optionally) an HTTP call to `config_vision_url`.
+/// `storage_root` and (optionally) an HTTP call to `text_embed_url`.
 /// Mirrors `detect_season_from_cache` exactly; that function is a thin DB
 /// wrapper around this one.
 pub async fn detect_season_from_cache_with_chapters(
-    config_vision_url: Option<&str>,
+    text_embed_url: Option<&str>,
     episodes: &[EpisodeFile],
     storage_root: &str,
     chapters_by_file: &HashMap<Uuid, Vec<(f64, Option<String>)>>,
@@ -276,7 +274,7 @@ pub async fn detect_season_from_cache_with_chapters(
                 .cloned()
                 .unwrap_or_default();
             let (segments, mut diag) =
-                detect_single_file_with_diag(cache, config_vision_url, &chapters).await;
+                detect_single_file_with_diag(cache, text_embed_url, &chapters).await;
             diag.notes.push(
                 "fallback: single-file path (needed ≥2 episodes for cross-correlation)".into(),
             );
@@ -325,11 +323,13 @@ pub async fn detect_season_from_cache_with_chapters(
         .await
         .expect("skip-detect pairwise matching task panicked");
 
-    let vision_client = config_vision_url
+    // Classification only needs prompt vectors — the frame vectors are cached —
+    // so this is the text service, not the image one.
+    let vision_client = text_embed_url
         .filter(|u| !u.is_empty())
-        .map(VisionClient::new);
+        .map(EmbeddingClient::for_url);
     let vision_healthy = match vision_client.as_ref() {
-        Some(c) => c.health().await,
+        Some(c) => c.text_health().await,
         None => false,
     };
 
@@ -709,18 +709,18 @@ pub async fn detect_season_from_cache_with_chapters(
 /// No cross-correlation — audio/visual for credits only + post-credits.
 pub async fn detect_movie_from_cache(
     pool: &PgPool,
-    config_vision_url: Option<&str>,
+    text_embed_url: Option<&str>,
     movie: &MovieHandle,
     storage_root: &str,
 ) -> (Vec<DetectedSegment>, EpisodeDiagnostics) {
     let chapters = load_chapters_for_file(pool, movie.file_id).await;
-    detect_movie_from_cache_with_chapters(config_vision_url, movie, storage_root, &chapters).await
+    detect_movie_from_cache_with_chapters(text_embed_url, movie, storage_root, &chapters).await
 }
 
 /// Pure variant: takes pre-loaded chapters, returns segments + diagnostics.
 /// No DB access.
 pub async fn detect_movie_from_cache_with_chapters(
-    config_vision_url: Option<&str>,
+    text_embed_url: Option<&str>,
     movie: &MovieHandle,
     storage_root: &str,
     chapters: &[(f64, Option<String>)],
@@ -743,12 +743,12 @@ pub async fn detect_movie_from_cache_with_chapters(
         diag.notes.push("cache incomplete — not analyzed".into());
         return (Vec::new(), diag);
     };
-    detect_single_file_with_diag(&cache, config_vision_url, chapters).await
+    detect_single_file_with_diag(&cache, text_embed_url, chapters).await
 }
 
 async fn detect_single_file_with_diag(
     cache: &EpisodeCache,
-    vision_url: Option<&str>,
+    text_embed_url: Option<&str>,
     chapters: &[(f64, Option<String>)],
 ) -> (Vec<DetectedSegment>, EpisodeDiagnostics) {
     let mut diag = EpisodeDiagnostics {
@@ -763,9 +763,11 @@ async fn detect_single_file_with_diag(
     };
     let mut candidates: Vec<Candidate> = Vec::new();
 
-    let vision_client = vision_url.filter(|u| !u.is_empty()).map(VisionClient::new);
+    let vision_client = text_embed_url
+        .filter(|u| !u.is_empty())
+        .map(EmbeddingClient::for_url);
     let vision_healthy = match vision_client.as_ref() {
-        Some(c) => c.health().await,
+        Some(c) => c.text_health().await,
         None => false,
     };
 
@@ -1668,26 +1670,21 @@ fn build_vhash_only_candidate(
     }
 }
 
-/// Call the vision service's `classify_from_embeddings` + score with `score_credit_text`.
+/// Cosine the cached frame vectors against the credit prompts, then score with
+/// `score_credit_text`.
 async fn classify_credit_text(
-    client: &VisionClient,
+    client: &EmbeddingClient,
     window: &[Vec<f32>],
     fps: f64,
     window_start_time: f64,
     file_duration: f64,
 ) -> Option<CreditText> {
-    let prompts: Vec<&str> = CREDIT_PROMPTS
-        .iter()
-        .chain(NON_CREDIT_PROMPTS.iter())
-        .copied()
-        .collect();
-    let classify = match client
-        .classify_from_embeddings(window, &prompts, false)
-        .await
-    {
-        Ok(c) => c,
+    let profile = profile::active();
+    let prompts = credit_prompts(profile);
+    let scores = match client.classify_embeddings(window, &prompts).await {
+        Ok(scores) => scores,
         Err(e) => {
-            warn!(error = %e, "classify_from_embeddings failed");
+            warn!(error = %e, "credit-text classification failed");
             return None;
         }
     };
@@ -1695,9 +1692,10 @@ async fn classify_credit_text(
         .map(|i| window_start_time + i as f64 / fps)
         .collect();
     score_credit_text(
-        &classify.scores,
+        &scores,
         &frame_times,
         earliest_credits_start(file_duration),
+        profile,
     )
 }
 
@@ -1837,7 +1835,7 @@ fn visual_consistency_for_window(
     if window.len() < 4 {
         return None;
     }
-    Some(cluster_consistency(&window))
+    Some(profile::active().visual_score(cluster_consistency(&window)))
 }
 
 /// Filter out candidates that cannot possibly survive fusion's position /

@@ -306,12 +306,13 @@ impl DebridProcessHandler {
             return Ok(Vec::new());
         };
 
+        // Detection classifies cached frame vectors, which needs only the text
+        // embedder (prompt vectors).
         let vision_url_owned = self
             .runtime_config
             .get()
             .await
-            .vision_service_url
-            .clone()
+            .effective_text_embedding_url()
             .filter(|s| !s.is_empty());
         let vision_url = vision_url_owned.as_deref();
 

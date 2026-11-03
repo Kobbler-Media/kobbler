@@ -56,8 +56,8 @@ pub async fn update_config(
 
             if config.semantic_search_enabled != old_config.semantic_search_enabled {
                 let description = match config.semantic_search_enabled {
-                    true => "Building artwork vectors for semantic search",
-                    false => "Removing artwork vectors from search",
+                    true => "Building summary and artwork vectors for semantic search",
+                    false => "Removing semantic search vectors",
                 };
                 if let Err(e) = crate::jobs::enqueue(
                     &state.pool,

@@ -1,7 +1,7 @@
 //! Post-credits scene detection within a credits region — cache-only.
 //!
 //! Primary signal: audio hard cuts (sharp RMS drops) within the credits
-//! region, read from the cached `audio_peaks.bin`. Secondary signal: SigLIP
+//! region, read from the cached `audio_peaks.bin`. Secondary signal: frame
 //! embedding cluster break for visual confirmation, read from the cached
 //! `embeddings.bin` window.
 
@@ -107,7 +107,10 @@ pub fn detect_post_credits_from_cache(
         if window.len() < 4 {
             return None;
         }
-        let break_idx = cluster_primitive::find_cluster_break(&window, 0.5)?;
+        let break_idx = cluster_primitive::find_cluster_break(
+            &window,
+            crate::embedding::profile::active().cluster_break_cosine,
+        )?;
         let cut_frame_idx = ((cut_time - credits_start) * view.fps).round() as isize;
         let distance = (break_idx as isize - cut_frame_idx).abs();
         if distance <= 2 {

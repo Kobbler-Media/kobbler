@@ -29,6 +29,12 @@
   // When a koblem service URL is set, the backend uses koblem as the chat LLM
   // and ignores the external provider fields (see chatbot::llm::resolve).
   const koblemActive = $derived(!!systemConfig?.koblem_service_url?.trim());
+  // Semantic search embeds through the embedding service (Settings → Processing),
+  // or koblem when GPU calls are routed there.
+  const embedderActive = $derived(
+    !!systemConfig?.vision_service_url?.trim() ||
+      (!!systemConfig?.route_gpu_via_koblem && koblemActive)
+  );
 
   // Test connection state (uses current form values, not saved values)
   let testing = $state(false);
@@ -225,7 +231,7 @@
               {#if systemConfig?.semantic_search_enabled}
                 <div class="stat-item">
                   <span class="stat-count">{status.embedded_document_count ?? 0}</span>
-                  <span class="stat-label">Artwork vectors</span>
+                  <span class="stat-label">Titles with vectors</span>
                 </div>
               {/if}
             </div>
@@ -325,9 +331,11 @@
       <div class="config-card">
         <h3>Semantic Search</h3>
         <p class="card-description muted">
-          Also match movies, TV shows and library books by how their poster or cover fits the query,
-          so "space adventure" finds titles that share none of those words. Artwork and queries are
-          embedded on Koblem's GPU; search falls back to keywords whenever Koblem is unavailable.
+          Also match movies, TV shows and library books by how their summary — and, more lightly,
+          their poster or cover — fits the query, so "a slow-burn thriller about grief" finds titles
+          that share none of those words. Summaries, artwork and queries are embedded with
+          EmbeddingGemma-2 by the embedding service; search falls back to keywords whenever it is
+          unavailable.
         </p>
 
         <label class="toggle-label">
@@ -335,7 +343,7 @@
             type="checkbox"
             data-field="semantic_search_enabled"
             checked={systemConfig.semantic_search_enabled}
-            disabled={!koblemActive && !systemConfig.semantic_search_enabled}
+            disabled={!embedderActive && !systemConfig.semantic_search_enabled}
             onchange={(e) => {
               if (systemConfig)
                 systemConfig.semantic_search_enabled = (e.target as HTMLInputElement).checked;
@@ -343,11 +351,12 @@
           />
           <span>Enable semantic search</span>
         </label>
-        {#if !koblemActive}
-          <span class="field-hint">Needs a Koblem Service URL.</span>
+        {#if !embedderActive}
+          <span class="field-hint">Needs an Embedding Service URL (Settings → Processing).</span>
         {:else}
           <span class="field-hint">
-            Saving a change starts a background job that embeds or removes the artwork vectors.
+            Saving a change starts a background job that embeds or removes the summary and artwork
+            vectors.
           </span>
         {/if}
 
@@ -366,7 +375,7 @@
                   systemConfig.semantic_search_ratio = Number((e.target as HTMLInputElement).value);
               }}
             />
-            <span class="field-hint">0 = keyword matches only, 1 = artwork similarity only</span>
+            <span class="field-hint">0 = keyword matches only, 1 = semantic similarity only</span>
           </label>
         {/if}
       </div>

@@ -1,29 +1,16 @@
-//! SigLIP2 zero-shot "is this frame an advertisement".
+//! Zero-shot "is this frame an advertisement", by cosine against ad and
+//! programme prompts.
 //!
 //! The one modality with no cold-start problem: it needs neither a prior airing
 //! (chromaprint) nor a teletext stream, so it is what supplies the second
 //! independent signal on a recording whose transport stream carried no teletext.
 
-use crate::skip_detect::vision::VisionClient;
-
-/// The caller holds `gpu_lock.acquire_for_vision()` across this — vision is
-/// one-at-a-time in the current topology and an ungated call OOMs avatar/flux.
-const AD_PROMPTS: [&str; 4] = [
-    "a television advertisement",
-    "a commercial break",
-    "a product advertisement with on-screen pricing",
-    "a station identification bumper",
-];
-
-const PROGRAMME_PROMPTS: [&str; 4] = [
-    "a television programme",
-    "a live sports broadcast",
-    "a news broadcast",
-    "a scene from a television show",
-];
+use crate::embedding::EmbeddingClient;
+use crate::embedding::profile::{self, ModelProfile};
 
 #[derive(Debug, Clone)]
 pub struct VisionConfig {
+    /// Per-frame ad score (see [`ad_score`]) at or above which a frame is an ad.
     pub ad_threshold: f64,
     pub smoothing_window: usize,
     pub smoothing_needed: usize,
@@ -33,7 +20,7 @@ pub struct VisionConfig {
 impl Default for VisionConfig {
     fn default() -> Self {
         Self {
-            ad_threshold: 0.6,
+            ad_threshold: profile::active().ad_margin,
             smoothing_window: 7,
             smoothing_needed: 4,
             min_run_secs: 15.0,
@@ -41,17 +28,21 @@ impl Default for VisionConfig {
     }
 }
 
+/// The caller holds `gpu_lock.acquire_for_vision()` across this — the image
+/// encode is gated, and an ungated call can OOM avatar/flux.
 pub async fn classify_frames(
-    client: &VisionClient,
+    client: &EmbeddingClient,
     frames: &[(f64, Vec<u8>)],
 ) -> Result<Vec<(f64, f64)>, String> {
     if frames.is_empty() {
         return Ok(Vec::new());
     }
+    let profile = profile::active();
     let images: Vec<Vec<u8>> = frames.iter().map(|(_, jpeg)| jpeg.clone()).collect();
-    let prompts: Vec<&str> = AD_PROMPTS
+    let prompts: Vec<&str> = profile
+        .ad_prompts
         .iter()
-        .chain(PROGRAMME_PROMPTS.iter())
+        .chain(profile.programme_prompts)
         .copied()
         .collect();
     let scores = client.classify_images(&images, &prompts).await?;
@@ -65,23 +56,25 @@ pub async fn classify_frames(
     Ok(frames
         .iter()
         .zip(scores)
-        .map(|((time, _), row)| (*time, p_ad(&row)))
+        .map(|((time, _), row)| (*time, ad_score(&row, profile)))
         .collect())
 }
 
-fn p_ad(row: &[f32]) -> f64 {
+/// Best ad-prompt cosine minus best programme-prompt cosine. Every cosine sits
+/// in a narrow positive band, so the margin between the two sides is what
+/// separates them; a ratio would hover near 0.5 for every frame.
+fn ad_score(row: &[f32], profile: &ModelProfile) -> f64 {
     let best = |slice: &[f32]| -> f64 {
         slice
             .iter()
-            .fold(0.0f64, |acc, v| acc.max(f64::from(*v).max(0.0)))
+            .fold(f64::NEG_INFINITY, |acc, v| acc.max(f64::from(*v)))
     };
-    let split = AD_PROMPTS.len().min(row.len());
-    let ad = best(&row[..split]);
-    let programme = best(&row[split..]);
-    if ad + programme <= 0.0 {
+    let split = profile.ad_prompts.len().min(row.len());
+    let (ad, programme) = row.split_at(split);
+    if ad.is_empty() || programme.is_empty() {
         return 0.0;
     }
-    ad / (ad + programme)
+    best(ad) - best(programme)
 }
 
 pub fn runs_from_scores(scores: &[(f64, f64)], cfg: &VisionConfig) -> Vec<(f64, f64)> {
@@ -141,12 +134,20 @@ mod tests {
             .collect()
     }
 
+    /// Smoothing and run-building are scale-free; written on a 0.5 threshold.
+    fn cfg() -> VisionConfig {
+        VisionConfig {
+            ad_threshold: 0.5,
+            ..VisionConfig::default()
+        }
+    }
+
     #[test]
     fn a_sustained_run_of_ad_frames_becomes_one_span() {
         let mut pattern = vec![0.1; 30];
         pattern.extend(std::iter::repeat_n(0.9, 30));
         pattern.extend(std::iter::repeat_n(0.1, 30));
-        let runs = runs_from_scores(&scores(&pattern, 1.0), &VisionConfig::default());
+        let runs = runs_from_scores(&scores(&pattern, 1.0), &cfg());
         assert_eq!(runs.len(), 1, "{runs:?}");
         assert!((runs[0].0 - 30.0).abs() <= 3.0, "{runs:?}");
         assert!((runs[0].1 - 60.0).abs() <= 3.0, "{runs:?}");
@@ -157,18 +158,32 @@ mod tests {
         let mut pattern = vec![0.1; 40];
         pattern[20] = 0.95;
         pattern[21] = 0.95;
-        assert!(runs_from_scores(&scores(&pattern, 1.0), &VisionConfig::default()).is_empty());
+        assert!(runs_from_scores(&scores(&pattern, 1.0), &cfg()).is_empty());
     }
 
     #[test]
-    fn programme_confidence_beats_ad_confidence() {
-        assert!(p_ad(&[0.1, 0.1, 0.1, 0.1, 0.8, 0.2, 0.1, 0.1]) < 0.3);
-        assert!(p_ad(&[0.9, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]) > 0.7);
-        assert_eq!(p_ad(&[0.0; 8]), 0.0);
+    fn the_ad_score_is_the_margin_between_the_best_of_each_side() {
+        let p = profile::active();
+        let mut row = vec![0.20_f32; p.ad_prompts.len() + p.programme_prompts.len()];
+        row[p.ad_prompts.len()] = 0.30;
+        assert!(ad_score(&row, p) < 0.0, "programme wins");
+        row[0] = 0.36;
+        assert!((ad_score(&row, p) - 0.06).abs() < 1e-6);
+        assert!(ad_score(&row, p) >= VisionConfig::default().ad_threshold);
+        assert_eq!(
+            ad_score(
+                &[0.3, 0.2],
+                &ModelProfile {
+                    ad_prompts: &[],
+                    ..*p
+                }
+            ),
+            0.0
+        );
     }
 
     #[test]
     fn too_few_frames_to_smooth_marks_nothing() {
-        assert!(runs_from_scores(&scores(&[0.9; 4], 1.0), &VisionConfig::default()).is_empty());
+        assert!(runs_from_scores(&scores(&[0.9; 4], 1.0), &cfg()).is_empty());
     }
 }

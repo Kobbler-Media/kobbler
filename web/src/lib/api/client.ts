@@ -1297,7 +1297,10 @@ export interface SystemConfig {
   /// When false, kobbler's local GpuLock handles gating (standalone mode).
   route_gpu_via_koblem: boolean;
   skip_detect_mode: string;
+  /// Image embedding server (EmbeddingGemma-2), or koblem; also serves text when
+  /// `text_embedding_service_url` is unset.
   vision_service_url: string | null;
+  text_embedding_service_url: string | null;
   iptv_language_filter: string[];
   iptv_auto_create_channels: boolean;
   iptv_health_check_enabled: boolean;
@@ -1383,6 +1386,7 @@ export interface SystemConfigUpdate {
   route_gpu_via_koblem?: boolean;
   skip_detect_mode?: string;
   vision_service_url?: string | null;
+  text_embedding_service_url?: string | null;
   iptv_language_filter?: string[];
   iptv_auto_create_channels?: boolean;
   iptv_health_check_enabled?: boolean;
@@ -2556,7 +2560,7 @@ export async function runIntegrityCheck(
  * detection logic itself.
  *
  * `mediaType` narrows the run to `'movie'` or `'episode'`. Detection runs a
- * SigLIP2 credit-text classify per file on both paths, so a forced run over
+ * credit-text classify per file on both paths, so a forced run over
  * everything is a full-library GPU pass — scope it when only one path changed.
  */
 export async function rerunSkipDetect(

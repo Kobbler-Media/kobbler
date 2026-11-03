@@ -739,6 +739,7 @@ pub async fn start_nats_worker(
     // V2 skip detection — operates on cached embeddings, writes skip_detect_candidates
     worker.register_handler(HandlerAdapter::new(SkipDetectHandler::new(
         pool.clone(),
+        nats_publisher.clone(),
         runtime_config.clone(),
         storage_root.clone(),
         library_events.clone(),

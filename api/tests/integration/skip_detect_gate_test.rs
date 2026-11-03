@@ -221,6 +221,7 @@ async fn two_episode_v2_run_passes_sibling_gate() {
     let (library_events, _) = tokio::sync::broadcast::channel(16);
     let handler = SkipDetectHandler::new(
         server.pool.clone(),
+        server.nats_publisher.clone(),
         server.runtime_config.clone(),
         storage_root.clone(),
         library_events,
@@ -293,4 +294,173 @@ async fn two_episode_v2_run_passes_sibling_gate() {
         "expected ≥{} rows (intro + credits per episode) in episode_skip_segments, got {row_count}",
         file_ids.len() * 2,
     );
+}
+
+/// Mark one episode's cache as carrying embeddings from `model`.
+fn set_embeddings_model(storage_root: &str, file_id: Uuid, model: &str) {
+    let dir = episode_cache_dir(storage_root, &MediaKind::TvFile { file_id });
+    let mut m = api::media_cache::readers::read_manifest_at(&dir).expect("manifest");
+    let mut params = serde_json::Map::new();
+    params.insert("model".into(), json!(model));
+    m.artefacts.set(
+        Branch::Embeddings,
+        ArtefactInfo {
+            present: true,
+            params,
+        },
+    );
+    write_manifest_at(&dir, &m).expect("write manifest");
+}
+
+async fn pending_media_analyze(pool: &PgPool) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT payload->>'file_id' FROM job_status
+         WHERE job_type = 'media_analyze' AND status = 'pending' ORDER BY 1",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn vision_season(server: &TestServer) -> (SkipDetectHandler, Vec<Uuid>) {
+    server
+        .runtime_config
+        .update(RuntimeConfigUpdate {
+            skip_detect_mode: Some("full".to_string()),
+            // Never contacted: a deferred season makes no HTTP calls, and a
+            // detected one treats an unreachable text service as "no vision".
+            vision_service_url: Some("http://127.0.0.1:9".to_string()),
+            ..Default::default()
+        })
+        .await
+        .expect("set skip_detect config");
+    let storage_root = server.storage_root();
+    let (_season_id, file_ids) = seed_season(&server.pool, 2, 1800.0).await;
+    for fid in &file_ids {
+        write_video_cache(&storage_root, *fid, 1800.0);
+        tv_episode_files::set_media_cache_version(&server.pool, *fid, PIPELINE_VERSION)
+            .await
+            .expect("stamp media_cache_version");
+    }
+    let (library_events, _) = tokio::sync::broadcast::channel(16);
+    let handler = SkipDetectHandler::new(
+        server.pool.clone(),
+        server.nats_publisher.clone(),
+        server.runtime_config.clone(),
+        storage_root,
+        library_events,
+    );
+    (handler, file_ids)
+}
+
+async fn run(handler: &SkipDetectHandler, file_id: Uuid) -> serde_json::Value {
+    handler
+        .execute(
+            Uuid::now_v7(),
+            json!({"file_id": file_id, "media_type": "episode", "run_id": Uuid::now_v7()}),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("skip_detect ran")
+}
+
+/// Embeddings from the previous model are ignored by the reader, so detecting
+/// over them would run without vision and stamp the season current. The season
+/// is re-embedded first: only the stale file is queued, and nothing is detected.
+#[tokio::test]
+async fn embeddings_from_another_model_are_re_embedded_before_detection() {
+    let server = TestServer::start_api_only().await;
+    let (handler, file_ids) = vision_season(&server).await;
+    let storage_root = server.storage_root();
+    set_embeddings_model(
+        &storage_root,
+        file_ids[0],
+        "google/siglip2-so400m-patch16-naflex",
+    );
+    set_embeddings_model(&storage_root, file_ids[1], api::embedding::EMBED_MODEL);
+
+    let result = run(&handler, file_ids[0]).await;
+
+    assert_eq!(result["status"], "deferred", "{result}");
+    assert_eq!(result["reason"], "awaiting_embeddings", "{result}");
+    assert_eq!(
+        pending_media_analyze(&server.pool).await,
+        vec![file_ids[0].to_string()]
+    );
+    let ran: Option<time::OffsetDateTime> =
+        sqlx::query_scalar("SELECT skip_detect_ran_at FROM tv_episode_files WHERE id = $1")
+            .bind(file_ids[0])
+            .fetch_one(&server.pool)
+            .await
+            .unwrap();
+    assert!(ran.is_none(), "a deferred season must stay stale");
+
+    // A second trigger while the supplement is queued does not queue another.
+    run(&handler, file_ids[1]).await;
+    assert_eq!(pending_media_analyze(&server.pool).await.len(), 1);
+}
+
+/// Once every sibling carries current-model embeddings — or a failed attempt
+/// under the current model — the season is detected as normal.
+#[tokio::test]
+async fn current_model_embeddings_and_failed_attempts_do_not_defer() {
+    let server = TestServer::start_api_only().await;
+    let (handler, file_ids) = vision_season(&server).await;
+    let storage_root = server.storage_root();
+    set_embeddings_model(&storage_root, file_ids[0], api::embedding::EMBED_MODEL);
+    let dir = episode_cache_dir(
+        &storage_root,
+        &MediaKind::TvFile {
+            file_id: file_ids[1],
+        },
+    );
+    let mut m = api::media_cache::readers::read_manifest_at(&dir).unwrap();
+    let mut params = serde_json::Map::new();
+    params.insert("model".into(), json!(api::embedding::EMBED_MODEL));
+    params.insert("error".into(), json!("vision service not healthy"));
+    m.artefacts.set(
+        Branch::Embeddings,
+        ArtefactInfo {
+            present: false,
+            params,
+        },
+    );
+    write_manifest_at(&dir, &m).unwrap();
+
+    let result = run(&handler, file_ids[0]).await;
+
+    assert_ne!(result["status"], "deferred", "{result}");
+    assert!(result.get("episodes_processed").is_some(), "{result}");
+    assert!(pending_media_analyze(&server.pool).await.is_empty());
+}
+
+/// A re-embed that ran and still left the file stale (it could not write the
+/// cache) must not be queued again: its own chained detect would loop. The
+/// season is detected without vision for that file instead.
+#[tokio::test]
+async fn a_re_embed_that_did_not_take_is_not_retried() {
+    let server = TestServer::start_api_only().await;
+    let (handler, file_ids) = vision_season(&server).await;
+    let storage_root = server.storage_root();
+    set_embeddings_model(
+        &storage_root,
+        file_ids[0],
+        "google/siglip2-so400m-patch16-naflex",
+    );
+    set_embeddings_model(&storage_root, file_ids[1], api::embedding::EMBED_MODEL);
+    sqlx::query(
+        "INSERT INTO job_status (id, job_type, status, payload, completed_at)
+         VALUES ($1, 'media_analyze', 'completed', $2, NOW())",
+    )
+    .bind(Uuid::now_v7())
+    .bind(json!({"file_id": file_ids[0], "media_type": "episode"}))
+    .execute(&server.pool)
+    .await
+    .unwrap();
+
+    let result = run(&handler, file_ids[0]).await;
+
+    assert_ne!(result["status"], "deferred", "{result}");
+    assert!(result.get("episodes_processed").is_some(), "{result}");
+    assert!(pending_media_analyze(&server.pool).await.is_empty());
 }

@@ -41,6 +41,7 @@ use crate::skip_detect::cache_detect::{
 use crate::skip_detect::tv::EpisodeFile;
 use crate::skip_detect::{AudioProfile, Candidate, DetectedSegment, PipelineMode};
 use async_trait::async_trait;
+use nats_jobs::Publisher;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -71,6 +72,7 @@ pub struct SkipDetectPayload {
 
 pub struct SkipDetectHandler {
     pool: PgPool,
+    publisher: Publisher,
     runtime_config: RuntimeConfigManager,
     storage_root: String,
     library_events: tokio::sync::broadcast::Sender<crate::LibraryEvent>,
@@ -79,12 +81,14 @@ pub struct SkipDetectHandler {
 impl SkipDetectHandler {
     pub fn new(
         pool: PgPool,
+        publisher: Publisher,
         runtime_config: RuntimeConfigManager,
         storage_root: String,
         library_events: tokio::sync::broadcast::Sender<crate::LibraryEvent>,
     ) -> Self {
         Self {
             pool,
+            publisher,
             runtime_config,
             storage_root,
             library_events,
@@ -156,6 +160,12 @@ impl JobHandler for SkipDetectHandler {
         }
         let vision_url = config.effective_vision_url();
         let config_tag = skip_detect_config_tag(&mode, &vision_url);
+        // Frames were embedded through the vision URL; classifying them only
+        // needs prompt vectors, which come from the text service.
+        let embed = DetectEmbedding {
+            vision_on: vision_url.as_deref().is_some_and(|s| !s.is_empty()),
+            text_url: config.effective_text_embedding_url(),
+        };
 
         info!(
             job_id = %job_id,
@@ -173,9 +183,10 @@ impl JobHandler for SkipDetectHandler {
             "movie" => {
                 run_movie(
                     &self.pool,
+                    &self.publisher,
                     &self.storage_root,
                     payload.file_id,
-                    vision_url.as_deref(),
+                    &embed,
                     &config_tag,
                     payload.force,
                 )
@@ -184,9 +195,10 @@ impl JobHandler for SkipDetectHandler {
             "episode" => {
                 run_episode(
                     &self.pool,
+                    &self.publisher,
                     &self.storage_root,
                     payload.file_id,
-                    vision_url.as_deref(),
+                    &embed,
                     &config_tag,
                     payload.force,
                 )
@@ -284,9 +296,10 @@ async fn movie_needs_detect(pool: &PgPool, file_id: Uuid) -> JobResult<bool> {
 
 async fn run_movie(
     pool: &PgPool,
+    publisher: &Publisher,
     storage_root: &str,
     file_id: Uuid,
-    vision_url: Option<&str>,
+    embed: &DetectEmbedding,
     config_tag: &str,
     force: bool,
 ) -> JobResult<Value> {
@@ -298,12 +311,36 @@ async fn run_movie(
         .map_err(|e| JobError::ExecutionFailed(format!("DB error: {e}")))?
         .ok_or_else(|| JobError::ExecutionFailed(format!("Movie file not found: {file_id}")))?;
 
+    if embed.vision_on {
+        let kind = crate::media_cache::episode_cache::MediaKind::Movie {
+            movie_id: file.movie_id,
+        };
+        let stale = {
+            let root = storage_root.to_string();
+            tokio::task::spawn_blocking(move || {
+                crate::media_cache::episode_cache::read_manifest(&root, &kind)
+                    .is_some_and(|m| embeddings_stale(&m))
+            })
+            .await
+            .expect("skip-detect embeddings staleness task panicked")
+        };
+        if stale && request_embeddings(pool, publisher, &[file_id], "movie").await > 0 {
+            info!(file_id = %file_id, "skip_detect: embeddings from another model — re-embedding first");
+            return Ok(json!({
+                "status": "deferred",
+                "reason": "awaiting_embeddings",
+                "file_id": file_id,
+            }));
+        }
+    }
+
     let handle = MovieHandle {
         file_id: file.id,
         duration_seconds: file.duration_seconds.unwrap_or(0.0),
         movie_id: Some(file.movie_id),
     };
-    let (segments, diag) = detect_movie_from_cache(pool, vision_url, &handle, storage_root).await;
+    let (segments, diag) =
+        detect_movie_from_cache(pool, embed.text_url.as_deref(), &handle, storage_root).await;
 
     // Chapter-sourced segments (reads already-persisted video_chapters).
     let chapter_segments = load_chapter_segments_movie(pool, file_id).await;
@@ -349,9 +386,10 @@ async fn run_movie(
 
 async fn run_episode(
     pool: &PgPool,
+    publisher: &Publisher,
     storage_root: &str,
     file_id: Uuid,
-    vision_url: Option<&str>,
+    embed: &DetectEmbedding,
     config_tag: &str,
     force: bool,
 ) -> JobResult<Value> {
@@ -385,7 +423,7 @@ async fn run_episode(
     //    configured (otherwise media_analyze doesn't populate that slot at
     //    all). The last sibling's `media_analyze` will re-enqueue us when
     //    ready.
-    let require_embeddings = vision_url.is_some_and(|s| !s.is_empty());
+    let require_embeddings = embed.vision_on;
 
     // Drop siblings the probe already gave up on before requiring readiness.
     //
@@ -455,6 +493,53 @@ async fn run_episode(
     }
     let ready_ids = sibling_ids;
 
+    // 2b) Embeddings from another model are ignored by the reader, so detecting
+    //     now would run without vision and stamp the season current. Re-embed
+    //     first; each supplement re-enqueues us, and the last one finds the
+    //     season ready. If nothing could be queued, detect without vision for
+    //     those files rather than not at all.
+    if require_embeddings {
+        let stale: Vec<Uuid> = {
+            let ids = ready_ids.clone();
+            let root = storage_root.to_string();
+            tokio::task::spawn_blocking(move || {
+                ids.into_iter()
+                    .filter(|sid| {
+                        let kind =
+                            crate::media_cache::episode_cache::MediaKind::TvFile { file_id: *sid };
+                        crate::media_cache::episode_cache::read_manifest(&root, &kind)
+                            .is_some_and(|m| embeddings_stale(&m))
+                    })
+                    .collect()
+            })
+            .await
+            .expect("skip-detect embeddings staleness task panicked")
+        };
+        if !stale.is_empty() {
+            let queued = request_embeddings(pool, publisher, &stale, "episode").await;
+            if queued > 0 {
+                info!(
+                    file_id = %file_id,
+                    season_id = %season_id,
+                    stale = stale.len(),
+                    queued,
+                    "skip_detect: embeddings from another model — re-embedding first"
+                );
+                return Ok(json!({
+                    "status": "deferred",
+                    "reason": "awaiting_embeddings",
+                    "season_id": season_id,
+                    "stale": stale.len(),
+                }));
+            }
+            warn!(
+                season_id = %season_id,
+                stale = stale.len(),
+                "skip_detect: could not queue re-embedding; detecting without vision for those files"
+            );
+        }
+    }
+
     // 3) Build EpisodeFile list by reading each sibling's manifest for duration.
     let mut episodes: Vec<EpisodeFile> = Vec::with_capacity(ready_ids.len());
     for sid in &ready_ids {
@@ -486,7 +571,8 @@ async fn run_episode(
     }
 
     // 4) Run the cache-driven season detector.
-    let per_ep_segments = detect_season_from_cache(pool, vision_url, &episodes, storage_root).await;
+    let per_ep_segments =
+        detect_season_from_cache(pool, embed.text_url.as_deref(), &episodes, storage_root).await;
 
     // 5) Per-episode chapter-sourced segments.
     let mut chapter_by_file: std::collections::HashMap<
@@ -715,6 +801,92 @@ fn emit_diagnostics_log(anchor_file_id: Uuid, scope: &str, diags: &[EpisodeDiagn
             "skip_detect diag"
         );
     }
+}
+
+/// What detection needs to know about the embedding services.
+struct DetectEmbedding {
+    /// Frames are being embedded (a vision URL is configured), so caches are
+    /// expected to carry current-model embeddings.
+    vision_on: bool,
+    /// Where prompt vectors come from for zero-shot classification.
+    text_url: Option<String>,
+}
+
+/// The cache holds an embeddings entry — vectors or a failed attempt — that was
+/// not made by the current model. A cache with no entry at all is not stale: it
+/// is still waiting on its first analyze, which the readiness gate handles.
+fn embeddings_stale(manifest: &media_cache::writers::Manifest) -> bool {
+    manifest.artefacts.embeddings.as_ref().is_some_and(|info| {
+        media_cache::readers::embeddings_model(info) != Some(crate::embedding::EMBED_MODEL)
+    })
+}
+
+/// Queue the embeddings-only supplement for each file (a warm `media_analyze`
+/// re-embeds when its embeddings are stale). Returns how many files now have
+/// one queued or already running.
+///
+/// A file whose analyze finished within the last hour and is still stale is
+/// left out: that analyze could not re-embed it (and chained this very job), so
+/// queueing another would loop. It is detected without vision instead.
+async fn request_embeddings(
+    pool: &PgPool,
+    publisher: &Publisher,
+    file_ids: &[Uuid],
+    media_type: &str,
+) -> usize {
+    let mut queued = 0;
+    for file_id in file_ids {
+        let fid = file_id.to_string();
+        if let Ok(true) = crate::jobs::has_active_job(pool, "media_analyze", "file_id", &fid).await
+        {
+            queued += 1;
+            continue;
+        }
+        if analyzed_recently(pool, &fid).await {
+            warn!(file_id = %file_id, "skip_detect: re-embedding did not take; not retrying");
+            continue;
+        }
+        let payload = super::media_analyze::MediaAnalyzePayload {
+            file_id: *file_id,
+            media_type: media_type.to_string(),
+            force_regen: false,
+            run_id: None,
+            triggered_by: "backfill".to_string(),
+            gaps_only: false,
+        };
+        let context = crate::jobs::JobContext::new("Re-embed frames for skip detection");
+        match crate::jobs::enqueue_routine(
+            pool,
+            publisher,
+            "media_analyze",
+            serde_json::to_value(&payload).unwrap_or_default(),
+            context,
+        )
+        .await
+        {
+            Ok(_) => queued += 1,
+            Err(e) => warn!(error = %e, file_id = %file_id, "Failed to enqueue re-embedding"),
+        }
+    }
+    queued
+}
+
+async fn analyzed_recently(pool: &PgPool, file_id: &str) -> bool {
+    sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM job_status
+            WHERE job_type = 'media_analyze'
+              AND payload->>'file_id' = $1
+              AND status = 'completed'
+              AND completed_at > NOW() - INTERVAL '1 hour'
+        ) AS "exists!"
+        "#,
+        file_id,
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false)
 }
 
 /// True when `file_id`'s media_analyze cache is populated enough for
