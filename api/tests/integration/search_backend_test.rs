@@ -24,6 +24,7 @@ fn sample_book() -> BookDocument {
         narrator: None,
         all_series_names: None,
         description: None,
+        vectors: None,
     }
 }
 

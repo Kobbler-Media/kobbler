@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import {
     getSystemConfig,
     updateSystemConfig,
@@ -11,8 +11,8 @@
     getVisionHealth,
     type SystemConfig,
     type SystemConfigUpdate
-  } from '$lib/api/client';
-  import type { MediaScope, VisionHealthSnapshot } from '$lib/types';
+  } from '#lib/api/client.js';
+  import type { MediaScope, VisionHealthSnapshot } from '#lib/types.js';
 
   let systemConfig = $state<SystemConfig | null>(null);
   let systemConfigLoading = $state(true);

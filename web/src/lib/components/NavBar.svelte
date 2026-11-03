@@ -1,7 +1,7 @@
 <script lang="ts">
   import JobsIndicator from './JobsIndicator.svelte';
   import NotificationsIndicator from './NotificationsIndicator.svelte';
-  import { openCommandPalette } from '$lib/stores/ui.svelte';
+  import { openCommandPalette } from '#lib/stores/ui.svelte.js';
 
   interface Props {
     isAuthed: boolean;

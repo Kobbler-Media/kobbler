@@ -115,6 +115,42 @@ async fn the_feed_reports_a_response_while_it_is_still_open() {
     assert_eq!(after["feed"]["requests_open"], 0, "{after}");
 }
 
+/// A local read serves whatever the cache file holds, so a status that counts fewer
+/// bytes downloaded than the file holds tells a client it was served bytes that are not
+/// there yet.
+#[tokio::test]
+async fn the_reported_download_never_trails_the_cache_file() {
+    let data = noise(8 * MB);
+    let mut plan = UpstreamPlan::new(data);
+    plan.whole = WholeBody::Trickle {
+        chunk: 64 * 1024,
+        every: Duration::from_millis(250),
+    };
+    let rig = Rig::start(plan, "film.mp4").await;
+    let session_id = rig.resolve("tricklehash").await;
+    let path = rig.cache_file("tricklehash");
+    let on_disk = || std::fs::metadata(&path).map_or(0, |m| m.len());
+
+    let mut seen = 0;
+    for _ in 0..4 {
+        let grown_past = seen;
+        wait_until(
+            Duration::from_secs(10),
+            "the download stopped growing",
+            || {
+                seen = on_disk();
+                seen > grown_past
+            },
+        )
+        .await;
+        let status: Value = session_status(&rig.server, session_id).await.json();
+        assert!(
+            status["feed"]["downloaded_bytes"].as_u64().unwrap() >= seen,
+            "{seen} bytes on disk: {status}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn a_stalled_download_hands_the_rest_to_the_proxy() {
     let data = noise(3 * MB);

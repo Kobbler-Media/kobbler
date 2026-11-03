@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { login } from './data.svelte';
-import { clearAuth, getAuthState } from '$lib/stores/auth.svelte';
+import { clearAuth, getAuthState } from '#lib/stores/auth.svelte.js';
 
 const me = {
   user_id: 'u1',

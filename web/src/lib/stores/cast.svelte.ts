@@ -15,10 +15,10 @@ import {
   loadMedia,
   isSdkReady,
   getDeviceName as sdkGetDeviceName
-} from '$lib/cast/sender';
-import { startAudiobookCast, stopAudiobookCast, isAudiobookCasting } from '$lib/cast/audiobook';
-import { getAudioPlayerState } from '$lib/stores/audioplayer.svelte';
-import type { InitSessionPayload, ReceiverStatus } from '$lib/cast/messages';
+} from '#lib/cast/sender.js';
+import { startAudiobookCast, stopAudiobookCast, isAudiobookCasting } from '#lib/cast/audiobook.js';
+import { getAudioPlayerState } from '#lib/stores/audioplayer.svelte.js';
+import type { InitSessionPayload, ReceiverStatus } from '#lib/cast/messages.js';
 
 // ── State ──────────────────────────────────────────────────────
 

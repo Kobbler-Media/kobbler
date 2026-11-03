@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { initSettingsHighlight } from '$lib/utils/settings-highlight';
+  import { initSettingsHighlight } from '#lib/utils/settings-highlight.js';
 
   let { children } = $props();
 

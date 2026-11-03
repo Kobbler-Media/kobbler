@@ -1,6 +1,10 @@
-import type { DiscoverDetailResponse, DiscoverEpisode, StreamResolveParams } from '$lib/api/client';
-import type { DiscoverPreview } from '$lib/stores/discover-preview.svelte';
-import type { ReleaseDates } from '$lib/types';
+import type {
+  DiscoverDetailResponse,
+  DiscoverEpisode,
+  StreamResolveParams
+} from '#lib/api/client.js';
+import type { DiscoverPreview } from '#lib/stores/discover-preview.svelte.js';
+import type { ReleaseDates } from '#lib/types.js';
 
 export interface DiscoverSeason {
   season_number: number;

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { type MetadataResult } from '$lib/api/client';
+  import { type MetadataResult } from '#lib/api/client.js';
   import {
     MetadataBookSearch,
     MetadataSeriesSearch,

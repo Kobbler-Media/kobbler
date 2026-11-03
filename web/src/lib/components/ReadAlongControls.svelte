@@ -10,13 +10,13 @@
     setTemperature,
     restartTtsWithCurrentSettings,
     validateVoiceAgainst
-  } from '$lib/stores/readalong.svelte';
-  import type { TtsVoice } from '$lib/api/client';
+  } from '#lib/stores/readalong.svelte.js';
+  import type { TtsVoice } from '#lib/api/client.js';
   import {
     listVoicePresets,
     setActivePreset as apiSetActivePreset,
     type UserVoicePreset
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
   interface Props {
     voices?: Record<string, TtsVoice[]>;
     supportsEmotion?: boolean;

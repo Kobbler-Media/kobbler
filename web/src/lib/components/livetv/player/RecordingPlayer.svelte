@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
   import AdBreakPanel from '../AdBreakPanel.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { detectCapabilities } from '$lib/utils/media';
-  import * as api from '$lib/api/client';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { detectCapabilities } from '#lib/utils/media.js';
+  import * as api from '#lib/api/client.js';
   import type {
     LivetvAdBreak,
     LivetvRecording,
     PlaybackSessionResponse,
     SkipSegment
-  } from '$lib/types';
+  } from '#lib/types.js';
 
   interface Props {
     recording: LivetvRecording;

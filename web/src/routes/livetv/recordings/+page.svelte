@@ -1,23 +1,27 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { formatSize } from '$lib/utils/format';
+  import { formatSize } from '#lib/utils/format.js';
   import {
     onReconnect,
     offReconnect,
     on as onLiveEvent,
     off as offLiveEvent
-  } from '$lib/services/eventstream.svelte';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import LivetvTabs from '$lib/components/livetv/LivetvTabs.svelte';
-  import TunerTimeline from '$lib/components/livetv/TunerTimeline.svelte';
-  import RecordingRow from '$lib/components/livetv/RecordingRow.svelte';
-  import RecordingPlayer from '$lib/components/livetv/player/RecordingPlayer.svelte';
+  } from '#lib/services/eventstream.svelte.js';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import LivetvTabs from '#lib/components/livetv/LivetvTabs.svelte';
+  import TunerTimeline from '#lib/components/livetv/TunerTimeline.svelte';
+  import RecordingRow from '#lib/components/livetv/RecordingRow.svelte';
+  import RecordingPlayer from '#lib/components/livetv/player/RecordingPlayer.svelte';
   import { DeleteConfirmModal } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getLivetvState, fetchLivetvTuners, fetchLivetvLeases } from '$lib/stores/livetv.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import * as api from '$lib/api/client';
-  import type { LivetvRecording } from '$lib/types';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import {
+    getLivetvState,
+    fetchLivetvTuners,
+    fetchLivetvLeases
+  } from '#lib/stores/livetv.svelte.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import * as api from '#lib/api/client.js';
+  import type { LivetvRecording } from '#lib/types.js';
 
   const livetv = getLivetvState();
 

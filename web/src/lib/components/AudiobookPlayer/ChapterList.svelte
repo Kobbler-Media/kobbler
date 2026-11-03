@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { UnifiedChapter } from '$lib/types';
+  import type { UnifiedChapter } from '#lib/types.js';
   import {
     getAudioPlayerState,
     seekToUnifiedChapter,
     formatTime
-  } from '$lib/stores/audioplayer.svelte';
+  } from '#lib/stores/audioplayer.svelte.js';
 
   const player = getAudioPlayerState();
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { copyText } from '$lib/context/app.svelte';
-  import { listNotificationAgents, type NotificationAgent } from '$lib/api/client';
+  import { copyText } from '#lib/context/app.svelte.js';
+  import { listNotificationAgents, type NotificationAgent } from '#lib/api/client.js';
 
   const PORTAL_URL = 'https://discord.com/developers/applications';
   const INVITE_PERMISSIONS = 'View Channels, Send Messages, Read Message History, Embed Links';

@@ -6,8 +6,8 @@ import {
   heartbeatSession,
   updateMoviePosition,
   updateEpisodePosition
-} from '$lib/api/client';
-import type { PlaybackSessionResponse } from '$lib/types';
+} from '#lib/api/client.js';
+import type { PlaybackSessionResponse } from '#lib/types.js';
 import type Hls from 'hls.js';
 
 interface CreationParams {

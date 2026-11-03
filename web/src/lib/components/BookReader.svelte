@@ -8,8 +8,8 @@
     getRangeText,
     getTextAtPoint,
     getTextAroundClick
-  } from '$lib/utils/text-highlight';
-  import { installKoboTextOverlay } from '$lib/utils/kepub-text-overlay';
+  } from '#lib/utils/text-highlight.js';
+  import { installKoboTextOverlay } from '#lib/utils/kepub-text-overlay.js';
   import type { FoliateBook } from 'foliate-js/view.js';
 
   interface Props {

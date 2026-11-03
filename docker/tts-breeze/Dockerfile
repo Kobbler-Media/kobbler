@@ -15,7 +15,7 @@
 # BREEZE_REF is used as the git-clone cache key, so changing it forces a rebuild.
 
 # ─── build stage ──────────────────────────────────────────────────────────────
-FROM nvidia/cuda:13.3.0-devel-ubuntu24.04 AS builder
+FROM nvidia/cuda:13.4.3-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -62,7 +62,7 @@ RUN --mount=type=cache,target=/root/.ccache \
     && ccache -s
 
 # ─── runtime stage ────────────────────────────────────────────────────────────
-FROM nvidia/cuda:13.3.0-runtime-ubuntu24.04
+FROM nvidia/cuda:13.4.3-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 

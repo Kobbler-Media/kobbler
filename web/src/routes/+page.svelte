@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { showMessage } from '$lib/context/app.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import { mediaTypeChip } from '$lib/utils/chip-mappings';
-  import { getProviderName, getProviderColor, formatDuration } from '$lib/utils/format';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
-  import MediaCard from '$lib/components/shared/MediaCard.svelte';
-  import ScrollRow from '$lib/components/shared/ScrollRow.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
-  import { discoverLibraryRoute } from '$lib/utils/entity-routes';
-  import { onDebounced, off, onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
+  import { page } from '$app/state';
+  import { mediaTypeChip } from '#lib/utils/chip-mappings.js';
+  import { getProviderName, getProviderColor, formatDuration } from '#lib/utils/format.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import MediaCard from '#lib/components/shared/MediaCard.svelte';
+  import ScrollRow from '#lib/components/shared/ScrollRow.svelte';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
+  import { discoverLibraryRoute } from '#lib/utils/entity-routes.js';
+  import { onDebounced, off, onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
   import {
     searchMovies,
     searchTvShows,
@@ -27,14 +27,14 @@
     type DiscoverResponse,
     type ForYouItem,
     type StremioContinueItem
-  } from '$lib/api/client';
-  import type { MovieSearchResult, TvSearchResult, WatchNextItem, RecentItem } from '$lib/types';
-  import DiscoverRow from '$lib/components/discover/DiscoverRow.svelte';
-  import DiscoverCard from '$lib/components/discover/DiscoverCard.svelte';
-  import SearchSuggestions from '$lib/components/discover/SearchSuggestions.svelte';
-  import { useSearchSuggestions } from '$lib/composables/useSearchSuggestions.svelte';
-  import { ghostText } from '$lib/actions/ghostText';
-  import { watchStateVersion } from '$lib/stores/watchState.svelte';
+  } from '#lib/api/client.js';
+  import type { MovieSearchResult, TvSearchResult, WatchNextItem, RecentItem } from '#lib/types.js';
+  import DiscoverRow from '#lib/components/discover/DiscoverRow.svelte';
+  import DiscoverCard from '#lib/components/discover/DiscoverCard.svelte';
+  import SearchSuggestions from '#lib/components/discover/SearchSuggestions.svelte';
+  import { useSearchSuggestions } from '#lib/composables/useSearchSuggestions.svelte.js';
+  import { ghostText } from '#lib/actions/ghostText.js';
+  import { watchStateVersion } from '#lib/stores/watchState.svelte.js';
 
   type TypeFilter = 'all' | 'movies' | 'tv' | 'books';
 
@@ -183,7 +183,7 @@
       defaultProvider = bestVideo ?? ALL_PROVIDERS;
 
       // Use URL provider if specified, otherwise use default
-      const urlProv = $page.url.searchParams.get('provider');
+      const urlProv = page.url.searchParams.get('provider');
       if (urlProv) {
         const found = providers.find((p) => p.id === urlProv);
         selectedProvider = found ?? defaultProvider;
@@ -210,8 +210,9 @@
   });
 
   // Read initial query and type from URL
-  const urlQuery = $derived($page.url.searchParams.get('q') ?? '');
-  const urlType = $derived(($page.url.searchParams.get('type') as TypeFilter) ?? 'all');
+  const urlQuery = $derived(page.url.searchParams.get('q') ?? '');
+
+  const urlType = $derived((page.url.searchParams.get('type') as TypeFilter) ?? 'all');
 
   const allFilterOptions: { value: TypeFilter; label: string; icon: string }[] = [
     {
@@ -506,6 +507,7 @@
   // Watch next progress helpers
   function progressPercent(item: WatchNextItem): number {
     if (item.progress_percent != null) return Math.min(100, item.progress_percent);
+
     if (
       item.position_seconds != null &&
       item.duration_seconds != null &&

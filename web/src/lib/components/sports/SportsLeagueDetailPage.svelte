@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { VIDEO_RATING_SCALE } from '$lib/utils/rating';
+  import { VIDEO_RATING_SCALE } from '#lib/utils/rating.js';
   import { untrack } from 'svelte';
-  import type { TvShow, TvSeason } from '$lib/types';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
+  import type { TvShow, TvSeason } from '#lib/types.js';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
   import HeroActions from '../shared/HeroActions.svelte';
   import MetaLine from '../shared/MetaLine.svelte';
-  import GenreChips from '$lib/components/GenreChips.svelte';
+  import GenreChips from '#lib/components/GenreChips.svelte';
   import { SearchSelect } from '@koblibs/ui';
   import { InfiniteScroll } from '@koblibs/ui';
-  import { getSportsSeason } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { EpisodeBulkSelection } from '$lib/utils/episode-bulk.svelte';
+  import { getSportsSeason } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { EpisodeBulkSelection } from '#lib/utils/episode-bulk.svelte.js';
   import EpisodeBatchActions from '../tv/EpisodeBatchActions.svelte';
   import BulkSelectToggle from '../shared/BulkSelectToggle.svelte';
   import SeasonActions from '../shared/SeasonActions.svelte';

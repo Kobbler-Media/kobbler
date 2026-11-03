@@ -1,8 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { statusChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
-  import { BOOK_RATING_SCALE, formatRating } from '$lib/utils/rating';
+  import { statusChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import { BOOK_RATING_SCALE, formatRating } from '#lib/utils/rating.js';
 
   interface Props {
     title: string;

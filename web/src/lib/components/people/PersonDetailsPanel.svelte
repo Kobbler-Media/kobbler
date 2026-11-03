@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { PersonDetail, PersonFilmographyCredit } from '$lib/types';
-  import { getPersonFilmography, wantPersonCredit, dismissPersonCredit } from '$lib/api/client';
-  import { isActivelyWanted } from '$lib/utils/want-status';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { formatLifeDates } from '$lib/utils/format';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import type { PersonDetail, PersonFilmographyCredit } from '#lib/types.js';
+  import { getPersonFilmography, wantPersonCredit, dismissPersonCredit } from '#lib/api/client.js';
+  import { isActivelyWanted } from '#lib/utils/want-status.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { formatLifeDates } from '#lib/utils/format.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
 
   interface Props {
     person: PersonDetail;

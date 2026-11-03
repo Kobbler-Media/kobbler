@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { TvEpisode, TvSeason } from '$lib/types';
-  import { hasOutstandingWants } from '$lib/utils/want-status';
+  import type { TvEpisode, TvSeason } from '#lib/types.js';
+  import { hasOutstandingWants } from '#lib/utils/want-status.js';
   import TvEpisodeRow from './TvEpisodeRow.svelte';
   import SeasonActions from '../shared/SeasonActions.svelte';
   import SeasonAccordionShell from './SeasonAccordionShell.svelte';

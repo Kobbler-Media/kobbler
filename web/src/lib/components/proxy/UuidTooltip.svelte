@@ -7,8 +7,8 @@
 </script>
 
 <script lang="ts">
-  import { resolveUuids, type EntityRef, type ResolvedEntity } from '$lib/api/client';
-  import { openCommandPalette, setCommandPaletteQuery } from '$lib/stores/ui.svelte';
+  import { resolveUuids, type EntityRef, type ResolvedEntity } from '#lib/api/client.js';
+  import { openCommandPalette, setCommandPaletteQuery } from '#lib/stores/ui.svelte.js';
 
   interface Props {
     uuid: string;

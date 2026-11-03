@@ -1,13 +1,13 @@
 <script lang="ts">
-  import type { Book, SeriesSummary, LoadState } from '$lib/types';
-  import IdentifierLinks from '$lib/components/IdentifierLinks.svelte';
+  import type { Book, SeriesSummary, LoadState } from '#lib/types.js';
+  import IdentifierLinks from '#lib/components/IdentifierLinks.svelte';
   import { SearchSelect } from '@koblibs/ui';
-  import * as api from '$lib/api/client';
-  import { updateWantStatus } from '$lib/stores/wantStatus.svelte';
+  import * as api from '#lib/api/client.js';
+  import { updateWantStatus } from '#lib/stores/wantStatus.svelte.js';
   import EntityHero from './shared/EntityHero.svelte';
   import BookListItem from './shared/BookListItem.svelte';
   import CompletionBar from './shared/CompletionBar.svelte';
-  import { hasOutstandingBookWants } from '$lib/utils/want-status';
+  import { hasOutstandingBookWants } from '#lib/utils/want-status.js';
 
   interface Props {
     series: SeriesSummary;

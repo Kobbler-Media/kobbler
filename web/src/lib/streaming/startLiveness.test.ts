@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SessionFeed, SessionStatusResult } from '$lib/api/client';
+import type { SessionFeed, SessionStatusResult } from '#lib/api/client.js';
 import { formatBytes, judgeStart, startFeedLine, superviseStart } from './startLiveness';
 import type { StartProbe } from './startLiveness';
 

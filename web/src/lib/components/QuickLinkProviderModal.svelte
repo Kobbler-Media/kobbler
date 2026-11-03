@@ -4,9 +4,9 @@
    * Searches the specified provider and updates only that provider's identifier.
    * Does not modify any other book fields.
    */
-  import type { MetadataResult } from '$lib/api/client';
-  import { getProviderCode, getProviderColor } from '$lib/utils/format';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import type { MetadataResult } from '#lib/api/client.js';
+  import { getProviderCode, getProviderColor } from '#lib/utils/format.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
 
   interface Props {
     bookTitle: string;

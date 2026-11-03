@@ -1,21 +1,26 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import BookReader from '$lib/components/BookReader.svelte';
-  import ReadAlongControls from '$lib/components/ReadAlongControls.svelte';
+  import { page } from '$app/state';
+  import BookReader from '#lib/components/BookReader.svelte';
+  import ReadAlongControls from '#lib/components/ReadAlongControls.svelte';
   import {
     getBookFileUrl,
     getReaderProgress,
     updateReadingData,
     getTtsStatus,
     getReadAlongData
-  } from '$lib/api/client';
-  import type { TtsVoice, ReadAlongSyncPoint, ReadAlongTranscriptSegment } from '$lib/api/client';
+  } from '#lib/api/client.js';
+  import type {
+    TtsVoice,
+    ReadAlongSyncPoint,
+    ReadAlongTranscriptSegment
+  } from '#lib/api/client.js';
   import {
     ProgressTracker,
     isTrackingEnabled,
     setTrackingEnabled
-  } from '$lib/utils/reader-progress';
+  } from '#lib/utils/reader-progress.js';
+
   import {
     registerCallbacks,
     notifyPageReady,
@@ -25,11 +30,11 @@
     stop as stopReadAlong,
     getReadAlongState,
     setReadAlongNowPlaying
-  } from '$lib/stores/readalong.svelte';
+  } from '#lib/stores/readalong.svelte.js';
   import { onMount, onDestroy, untrack } from 'svelte';
-  import { requestWakeLock, releaseWakeLock } from '$lib/utils/wakelock';
-  import { getUIState } from '$lib/stores/ui.svelte';
-  import type { Book } from '$lib/types';
+  import { requestWakeLock, releaseWakeLock } from '#lib/utils/wakelock.js';
+  import { getUIState } from '#lib/stores/ui.svelte.js';
+  import type { Book } from '#lib/types.js';
 
   interface TocItem {
     label: string;
@@ -40,7 +45,7 @@
   let { data } = $props();
   const initialData = untrack(() => data);
   const book: Book | null = initialData.book;
-  const bookId: string = $page.params.id ?? '';
+  const bookId: string = page.params.id ?? '';
 
   // Reader state
   let reader = $state<BookReader>();
@@ -102,7 +107,7 @@
   // Check if book has any format available
   const hasFormat = (book?.formats ?? []).length > 0;
   // Use explicit format from query param if provided, otherwise let backend pick best
-  const requestedFormat = $page.url.searchParams.get('format') ?? undefined;
+  const requestedFormat = page.url.searchParams.get('format') ?? undefined;
   const fileUrl = hasFormat ? getBookFileUrl(bookId, requestedFormat) : '';
 
   function handleRelocate(detail: { progress: number; cfi: string; tocItem?: { label: string } }) {
@@ -301,9 +306,10 @@
   <!-- Toolbar -->
   <header class="reader-toolbar">
     <div class="toolbar-left">
-      <button type="button" class="toolbar-btn" onclick={handleClose} title="Close reader">
-        <span class="material-icons-outlined">close</span>
-      </button>
+      <button type="button" class="toolbar-btn" onclick={handleClose} title="Close reader"
+        ><span class="material-icons-outlined">close</span></button
+      >
+
       <button
         type="button"
         class="toolbar-btn"
@@ -392,6 +398,7 @@
   <!-- TOC sidebar -->
   {#if showToc}
     <div class="toc-overlay" role="presentation" onclick={() => (showToc = false)}></div>
+
     <nav class="toc-panel">
       <h2>Contents</h2>
       <ul>

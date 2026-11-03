@@ -1,16 +1,16 @@
 <script lang="ts">
-  import type { MediaRootFile, MediaRootFileLite, EntityGroupSummary } from '$lib/types';
+  import type { MediaRootFile, MediaRootFileLite, EntityGroupSummary } from '#lib/types.js';
   import { untrack } from 'svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
   import {
     listEntityGroups,
     listMediaRootFilesLite,
     bulkResolveMediaRootFiles,
     bulkRematchMediaRootFiles,
     bulkIgnoreMediaRootFiles
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getJobsState } from '$lib/stores/jobs.svelte';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getJobsState } from '#lib/stores/jobs.svelte.js';
   import MediaRootFileRow from './MediaRootFileRow.svelte';
 
   type EntityStatusFilter = 'all' | 'needs_action' | 'added';

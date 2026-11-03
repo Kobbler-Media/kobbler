@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
 
   interface Props {
     channelId: string;

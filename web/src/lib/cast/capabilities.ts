@@ -6,7 +6,7 @@
  * device can handle, so it picks the right playback method.
  */
 
-import type { ClientCapabilities } from '$lib/utils/media';
+import type { ClientCapabilities } from '#lib/utils/media.js';
 
 /**
  * Determine capabilities for a Cast device based on its model name.

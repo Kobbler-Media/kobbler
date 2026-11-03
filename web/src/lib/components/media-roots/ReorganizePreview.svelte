@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { Modal } from '@koblibs/ui';
-  import { triggerMediaRootReorganize, getJob } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { on, off } from '$lib/services/eventstream.svelte';
-  import type { Job, JobEvent } from '$lib/types';
+  import { triggerMediaRootReorganize, getJob } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { on, off } from '#lib/services/eventstream.svelte.js';
+  import type { Job, JobEvent } from '#lib/types.js';
 
   interface Props {
     rootId: string;

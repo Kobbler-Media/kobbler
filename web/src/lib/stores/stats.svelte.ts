@@ -1,9 +1,9 @@
 // Library stats store using Svelte 5 runes
 // Provides counts for nav sidebar
 
-import type { LibraryStats } from '$lib/types';
-import { getLibraryStats } from '$lib/api/client';
-import { getFormatFilter } from '$lib/stores/format-filter.svelte';
+import type { LibraryStats } from '#lib/types.js';
+import { getLibraryStats } from '#lib/api/client.js';
+import { getFormatFilter } from '#lib/stores/format-filter.svelte.js';
 
 const defaultStats: LibraryStats = {
   books_count: 0,

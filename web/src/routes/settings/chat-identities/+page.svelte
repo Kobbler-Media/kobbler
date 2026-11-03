@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getDevicesState } from '$lib/stores/devices.svelte';
-  import { loadUsers, showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { getDevicesState } from '#lib/stores/devices.svelte.js';
+  import { loadUsers, showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import { DeleteConfirmModal, SearchSelect, type SearchSelectItem } from '@koblibs/ui';
-  import DiscordSetup from '$lib/components/chat/DiscordSetup.svelte';
-  import GoogleChatSetup from '$lib/components/chat/GoogleChatSetup.svelte';
-  import * as api from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { ChatIdentitiesResponse, ChatIdentity, ChatPendingPairing } from '$lib/types';
+  import DiscordSetup from '#lib/components/chat/DiscordSetup.svelte';
+  import GoogleChatSetup from '#lib/components/chat/GoogleChatSetup.svelte';
+  import * as api from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { ChatIdentitiesResponse, ChatIdentity, ChatPendingPairing } from '#lib/types.js';
 
   const auth = getAuthState();
   const devicesStore = getDevicesState();

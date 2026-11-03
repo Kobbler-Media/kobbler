@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import * as api from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { PlaybackReport } from '$lib/types';
+  import * as api from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { PlaybackReport } from '#lib/types.js';
 
   let reports = $state<PlaybackReport[]>([]);
   let status = $state<'loading' | 'ready' | 'error'>('loading');

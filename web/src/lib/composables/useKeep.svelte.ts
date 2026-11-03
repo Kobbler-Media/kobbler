@@ -1,6 +1,6 @@
-import { getKeepStatus, getRecentStreams, keepStream } from '$lib/api/client';
-import type { KeepState } from '$lib/api/client';
-import type { HeroAction } from '$lib/components/shared/HeroActions.svelte';
+import { getKeepStatus, getRecentStreams, keepStream } from '#lib/api/client.js';
+import type { KeepState } from '#lib/api/client.js';
+import type { HeroAction } from '#lib/components/shared/HeroActions.svelte';
 
 const KEEP_POLL_MS = 2_000;
 const RUNNING: KeepState[] = ['queued', 'downloading', 'importing'];

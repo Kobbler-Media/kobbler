@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { SearchResult } from './types';
-  import { resultTypeChip, resultMetaChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
+  import { resultTypeChip, resultMetaChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
 
   interface Props {
     result: SearchResult;

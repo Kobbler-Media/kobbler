@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CachingState } from '$lib/streaming/cacheWait';
+  import type { CachingState } from '#lib/streaming/cacheWait.js';
 
   interface Props {
     title: string;

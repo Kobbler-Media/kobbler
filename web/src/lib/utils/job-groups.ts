@@ -1,4 +1,4 @@
-import type { Job } from '$lib/types';
+import type { Job } from '#lib/types.js';
 
 /**
  * Coarse job-type family used to group fan-out job rows. One download of N

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { Movie } from '$lib/types';
-  import MovieCard from '$lib/components/movies/MovieCard.svelte';
-  import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
+  import type { Movie } from '#lib/types.js';
+  import MovieCard from '#lib/components/movies/MovieCard.svelte';
+  import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
 
   type MovieFilter = 'all' | 'wanted' | 'in_library';
   export type MovieSortValue = 'title' | 'created_at';

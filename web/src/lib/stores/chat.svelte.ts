@@ -1,4 +1,4 @@
-import { getChatStatus as fetchChatStatus, type ChatStatus } from '$lib/api/client';
+import { getChatStatus as fetchChatStatus, type ChatStatus } from '#lib/api/client.js';
 
 export type { ChatStatus };
 

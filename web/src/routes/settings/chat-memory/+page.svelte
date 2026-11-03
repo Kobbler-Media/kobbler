@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { DeleteConfirmModal, SearchSelect, type SearchSelectItem } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import * as api from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
   import type {
     ChatFactKind,
     ChatMemoryResponse,
     ChatMemoryUser,
     ChatProfileFact
-  } from '$lib/types';
+  } from '#lib/types.js';
 
   const auth = getAuthState();
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChatTurnLogEntry } from '$lib/api/client';
+  import type { ChatTurnLogEntry } from '#lib/api/client.js';
 
   interface Props {
     log: ChatTurnLogEntry;

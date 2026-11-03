@@ -1,17 +1,17 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import BookFullPageView from '$lib/components/BookFullPageView.svelte';
-  import BookForm from '$lib/components/BookForm.svelte';
-  import { type BookFormData } from '$lib/types';
-  import AddEntityModal from '$lib/components/AddEntityModal.svelte';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import type { MetadataResult } from '$lib/api/client';
-  import type { ProviderInfo } from '$lib/components/MetadataSearchModal.svelte';
-  import { getProviderCode, getProviderColor, getProviderName } from '$lib/utils/format';
-  import type { Book, AuthorSearchResult, SeriesSearchResult } from '$lib/types';
+  import { page } from '$app/state';
+  import BookFullPageView from '#lib/components/BookFullPageView.svelte';
+  import BookForm from '#lib/components/BookForm.svelte';
+  import { type BookFormData } from '#lib/types.js';
+  import AddEntityModal from '#lib/components/AddEntityModal.svelte';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { MetadataResult } from '#lib/api/client.js';
+  import type { ProviderInfo } from '#lib/components/MetadataSearchModal.svelte';
+  import { getProviderCode, getProviderColor, getProviderName } from '#lib/utils/format.js';
+  import type { Book, AuthorSearchResult, SeriesSearchResult } from '#lib/types.js';
 
   // Load data from +page.ts
   let { data } = $props();
@@ -35,11 +35,11 @@
     }
   });
 
-  const itemId = $derived($page.params.id ?? '');
+  const itemId = $derived(page.params.id ?? '');
 
   // Navigation state for detail page stack
   type DetailState = { fromDetail?: boolean; closeUrl?: string };
-  const pageState = $derived($page.state as DetailState);
+  const pageState = $derived(page.state as DetailState);
 
   // Show back button if we navigated here from another detail page
   const canGoBack = $derived(pageState?.fromDetail === true);
@@ -276,9 +276,11 @@
       {#snippet footer()}
         <div class="action-footer">
           <div class="spacer"></div>
-          <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}>
-            Cancel
-          </button>
+
+          <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}
+            >Cancel</button
+          >
+
           <button
             type="button"
             class="btn btn-primary"

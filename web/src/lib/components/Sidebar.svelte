@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import NavGroup from './NavGroup.svelte';
-  import { toggleGroup, isGroupExpanded } from '$lib/stores/sidebar.svelte';
-  import { getStatsState, fetchStats } from '$lib/stores/stats.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import { getFormatFilter, setFormatFilter } from '$lib/stores/format-filter.svelte';
-  import { logout } from '$lib/services/data.svelte';
+  import { toggleGroup, isGroupExpanded } from '#lib/stores/sidebar.svelte.js';
+  import { getStatsState, fetchStats } from '#lib/stores/stats.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import { getFormatFilter, setFormatFilter } from '#lib/stores/format-filter.svelte.js';
+  import { logout } from '#lib/services/data.svelte.js';
   import { goto } from '$app/navigation';
-  import { env } from '$env/dynamic/public';
+  import { PUBLIC_DEV_MODE } from '$app/env/public';
 
   let filterQuery = $state('');
-  const isDevMode = env.PUBLIC_DEV_MODE === '1';
+  const isDevMode = PUBLIC_DEV_MODE === '1';
   const statsState = getStatsState();
   const stats = $derived(statsState.stats);
   const authState = getAuthState();
@@ -331,7 +331,13 @@
 
   // Access
   const settingsAccessItems: NavItem[] = [
-    { href: '/settings/users', label: 'Users', icon: ICON.users, minRole: 'admin' },
+    {
+      href: '/settings/users',
+      label: 'Users',
+      icon: ICON.users,
+      minRole: 'admin'
+    },
+
     {
       href: '/settings/chat-identities',
       label: 'Chat Identities',
@@ -361,8 +367,20 @@
 
   // Playback
   const settingsPlaybackItems: NavItem[] = [
-    { href: '/settings/streaming', label: 'Streaming', icon: ICON.streaming, minRole: 'admin' },
-    { href: '/settings/cast', label: 'Cast', icon: ICON.cast, minRole: 'admin' },
+    {
+      href: '/settings/streaming',
+      label: 'Streaming',
+      icon: ICON.streaming,
+      minRole: 'admin'
+    },
+
+    {
+      href: '/settings/cast',
+      label: 'Cast',
+      icon: ICON.cast,
+      minRole: 'admin'
+    },
+
     {
       href: '/settings/processing',
       label: 'Processing',
@@ -458,14 +476,14 @@
   const isFiltering = $derived(filterQuery.trim().length > 0);
 
   function isHomeActive(): boolean {
-    return $page.url.pathname === '/';
+    return page.url.pathname === '/';
   }
 
   const avatarLetter = $derived(authState.email ? authState.email.charAt(0).toUpperCase() : '?');
 
   async function handleLogout() {
     await logout();
-    goto('/', { replaceState: true });
+    goto('/', { replace: true });
   }
 </script>
 
@@ -483,7 +501,7 @@
     <a
       href="/dashboard"
       class="home-link"
-      class:active={$page.url.pathname === '/dashboard'}
+      class:active={page.url.pathname === '/dashboard'}
       title="Dashboard"
     >
       <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -627,7 +645,7 @@
                 <a
                   href={item.href}
                   class="nav-item"
-                  class:active={$page.url.pathname.startsWith(item.href)}
+                  class:active={page.url.pathname.startsWith(item.href)}
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"
                     ><path d={item.icon}></path></svg
@@ -644,7 +662,7 @@
                 <a
                   href={item.href}
                   class="nav-item"
-                  class:active={$page.url.pathname.startsWith(item.href)}
+                  class:active={page.url.pathname.startsWith(item.href)}
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"
                     ><path d={item.icon}></path></svg
@@ -661,7 +679,7 @@
                 <a
                   href={item.href}
                   class="nav-item"
-                  class:active={$page.url.pathname.startsWith(item.href)}
+                  class:active={page.url.pathname.startsWith(item.href)}
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"
                     ><path d={item.icon}></path></svg
@@ -678,7 +696,7 @@
                 <a
                   href={item.href}
                   class="nav-item"
-                  class:active={$page.url.pathname.startsWith(item.href)}
+                  class:active={page.url.pathname.startsWith(item.href)}
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"
                     ><path d={item.icon}></path></svg
@@ -695,7 +713,7 @@
                 <a
                   href={item.href}
                   class="nav-item"
-                  class:active={$page.url.pathname.startsWith(item.href)}
+                  class:active={page.url.pathname.startsWith(item.href)}
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"
                     ><path d={item.icon}></path></svg
@@ -712,7 +730,7 @@
                 <a
                   href={item.href}
                   class="nav-item"
-                  class:active={$page.url.pathname.startsWith(item.href)}
+                  class:active={page.url.pathname.startsWith(item.href)}
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"
                     ><path d={item.icon}></path></svg
@@ -729,7 +747,7 @@
                 <a
                   href={item.href}
                   class="nav-item"
-                  class:active={$page.url.pathname.startsWith(item.href)}
+                  class:active={page.url.pathname.startsWith(item.href)}
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"
                     ><path d={item.icon}></path></svg

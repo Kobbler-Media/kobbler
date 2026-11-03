@@ -1,31 +1,31 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import { isActivelyWanted } from '$lib/utils/want-status';
-  import EntityHero from '$lib/components/shared/EntityHero.svelte';
-  import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
-  import HeroActions from '$lib/components/shared/HeroActions.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import FilesList from '$lib/components/shared/FilesList.svelte';
-  import EpisodeForm from '$lib/components/tv/EpisodeForm.svelte';
-  import type { EpisodeFormData } from '$lib/components/tv/EpisodeForm.svelte';
-  import VideoMetadataFetchModal from '$lib/components/video/VideoMetadataFetchModal.svelte';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
-  import MoveFileModal from '$lib/components/shared/MoveFileModal.svelte';
-  import SubtitlesList from '$lib/components/shared/SubtitlesList.svelte';
-  import SubtitleSearchModal from '$lib/components/shared/SubtitleSearchModal.svelte';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import { isActivelyWanted } from '#lib/utils/want-status.js';
+  import EntityHero from '#lib/components/shared/EntityHero.svelte';
+  import PlaybackArea from '#lib/components/shared/PlaybackArea.svelte';
+  import HeroActions from '#lib/components/shared/HeroActions.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import FilesList from '#lib/components/shared/FilesList.svelte';
+  import EpisodeForm from '#lib/components/tv/EpisodeForm.svelte';
+  import type { EpisodeFormData } from '#lib/components/tv/EpisodeForm.svelte';
+  import VideoMetadataFetchModal from '#lib/components/video/VideoMetadataFetchModal.svelte';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
+  import MoveFileModal from '#lib/components/shared/MoveFileModal.svelte';
+  import SubtitlesList from '#lib/components/shared/SubtitlesList.svelte';
+  import SubtitleSearchModal from '#lib/components/shared/SubtitleSearchModal.svelte';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
   import type { SearchSelectItem } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
-  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
-  import { useTitleKeep } from '$lib/composables/useKeep.svelte';
-  import * as api from '$lib/api/client';
-  import { formatCalendarDate, formatEpisodeSearchTitle } from '$lib/utils/format';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import { usePlayback } from '#lib/composables/usePlayback.svelte.js';
+  import { useStreamPlayback } from '#lib/composables/useStreamPlayback.svelte.js';
+  import StreamPlaybackOverlays from '#lib/components/StreamPlaybackOverlays.svelte';
+  import { useTitleKeep } from '#lib/composables/useKeep.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { formatCalendarDate, formatEpisodeSearchTitle } from '#lib/utils/format.js';
   import type {
     TvEpisode,
     TvEpisodeFile,
@@ -36,7 +36,7 @@
     EpisodeDetailResult,
     SubtitleTrackInfo,
     ExternalSubtitleInfo
-  } from '$lib/types';
+  } from '#lib/types.js';
 
   let episode = $state<TvEpisode | null>(null);
   let files = $state<TvEpisodeFile[]>([]);
@@ -61,7 +61,7 @@
   let formValid = $state(false);
   let triggerSave = $state<(() => void) | undefined>(undefined);
 
-  const episodeId = $derived($page.params.id);
+  const episodeId = $derived(page.params.id);
   const statsState = getStatsState();
 
   const playback = usePlayback({
@@ -312,6 +312,7 @@
     if (!episode) return;
     try {
       const season = await api.getSeason(episode.season_id);
+
       siblingEpisodes = season.episodes
         .filter((ep) => ep.id !== episode!.id)
         .map((ep) => ({
@@ -434,9 +435,11 @@
           {deleting ? 'Deleting...' : 'Delete'}
         </button>
         <div class="spacer"></div>
-        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}>
-          Cancel
-        </button>
+
+        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}
+          >Cancel</button
+        >
+
         <button
           type="button"
           class="btn btn-primary"
@@ -485,8 +488,13 @@
               pinned: true,
               onSelect: toggleWatched
             },
+
             isActivelyWanted(episode!.want_status)
-              ? { label: 'Remove from Wanted', icon: 'close', onSelect: handleUnwant }
+              ? {
+                  label: 'Remove from Wanted',
+                  icon: 'close',
+                  onSelect: handleUnwant
+                }
               : !episode!.is_in_library && {
                   label: 'Want',
                   icon: 'bookmark_add',
@@ -534,7 +542,7 @@
           {#if parentShow && parentSeason}
             <div class="breadcrumb">
               <a href="/tv/{parentShow.id}">{parentShow.title}</a>
-              <span class="breadcrumb-sep">&rsaquo;</span>
+              <span class="breadcrumb-sep">›</span>
               <a href="/tv/seasons/{parentSeason.id}">Season {parentSeason.season_sort_order}</a>
             </div>
           {/if}

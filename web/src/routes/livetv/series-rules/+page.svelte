@@ -1,21 +1,21 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import SeriesRuleList from '$lib/components/livetv/SeriesRuleList.svelte';
-  import SeriesRuleEditor from '$lib/components/livetv/SeriesRuleEditor.svelte';
-  import SeriesRulePreview from '$lib/components/livetv/SeriesRulePreview.svelte';
+  import { page } from '$app/state';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import SeriesRuleList from '#lib/components/livetv/SeriesRuleList.svelte';
+  import SeriesRuleEditor from '#lib/components/livetv/SeriesRuleEditor.svelte';
+  import SeriesRulePreview from '#lib/components/livetv/SeriesRulePreview.svelte';
   import { DeleteConfirmModal } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import * as api from '$lib/api/client';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import * as api from '#lib/api/client.js';
   import type {
     LivetvChannel,
     LivetvSeriesRule,
     LivetvSeriesRuleInput,
     LivetvSeriesRulePreview
-  } from '$lib/types';
+  } from '#lib/types.js';
 
   const BLANK: LivetvSeriesRuleInput = {
     series_id: '',
@@ -152,7 +152,7 @@
       channels = channelList;
       error = '';
 
-      const wanted = $page.url.searchParams.get('rule');
+      const wanted = page.url.searchParams.get('rule');
       const target = rules.find((r) => r.id === wanted) ?? rules[0] ?? null;
       if (target) selectRule(target);
       else startCreate();
@@ -227,12 +227,13 @@
     <div class="head-actions">
       <a class="link-chip" href="/livetv/recordings">Recordings</a>
       {#if !creating && selectedId}
-        <button type="button" class="btn-sec" onclick={togglePaused}>
-          {draft.enabled ? 'Pause rule' : 'Resume rule'}
-        </button>
-        <button type="button" class="btn-danger" onclick={() => (confirmDelete = true)}>
-          Delete
-        </button>
+        <button type="button" class="btn-sec" onclick={togglePaused}
+          >{draft.enabled ? 'Pause rule' : 'Resume rule'}</button
+        >
+
+        <button type="button" class="btn-danger" onclick={() => (confirmDelete = true)}
+          >Delete</button
+        >
       {/if}
       <button
         type="button"
@@ -251,7 +252,9 @@
 
   <div class="layout">
     <SeriesRuleList {rules} {selectedId} {creating} onSelect={selectRule} onCreate={startCreate} />
+
     <SeriesRuleEditor value={draft} {channels} onChange={handleChange} />
+
     <SeriesRulePreview {preview} loading={previewLoading} error={previewError} />
   </div>
 

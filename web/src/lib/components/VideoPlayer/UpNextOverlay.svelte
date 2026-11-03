@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import type { NextEpisodeInfo } from '$lib/types';
+  import type { NextEpisodeInfo } from '#lib/types.js';
 
   interface Props {
     nextEpisode: NextEpisodeInfo;

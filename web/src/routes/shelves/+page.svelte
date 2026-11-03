@@ -1,18 +1,18 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import ShelvesPage from '$lib/components/pages/ShelvesPage.svelte';
-  import { getLibraryState } from '$lib/stores/library.svelte';
+  import { page } from '$app/state';
+  import ShelvesPage from '#lib/components/pages/ShelvesPage.svelte';
+  import { getLibraryState } from '#lib/stores/library.svelte.js';
   import {
     loadShelves,
     loadMoreShelves,
     loadShelfItems,
     showMessage
-  } from '$lib/context/app.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
-  import * as api from '$lib/api/client';
-  import type { Book } from '$lib/types';
+  } from '#lib/context/app.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
+  import * as api from '#lib/api/client.js';
+  import type { Book } from '#lib/types.js';
 
   // Store state
   const library = getLibraryState();
@@ -28,7 +28,7 @@
   let loading = $state(false);
 
   // URL state
-  const urlSelected = $derived($page.url.searchParams.get('selected'));
+  const urlSelected = $derived(page.url.searchParams.get('selected'));
 
   // Handle scroll-to-top event - reload from beginning of list
   const handleScrollToTop = () => {

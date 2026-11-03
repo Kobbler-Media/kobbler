@@ -1,15 +1,18 @@
 //! `recommend` and `whats_new`.
 //!
-//! `recommend` is the vibe question — "I feel like a horror film like Carrie" —
-//! and the important thing about it is what it is *not*. There is no embedder
-//! and no vector store: transcript embeddings went in at search schema v15 and
-//! came out at v23 on RAM cost, and the model already is the embedding. Gemma
-//! knows what Carrie is. So the shape is:
+//! `recommend` is the vibe question — "I feel like a horror film like Carrie".
+//! The model already is the embedding — Gemma knows what Carrie is — so the shape is:
 //!
 //! 1. the model turns the vibe into filters it can already express;
 //! 2. Meili returns 20-40 candidates **with the descriptions already on the
-//!    documents** (schema v33 — nothing here adds a field or bumps the version);
+//!    documents** (schema v33);
 //! 3. the model reasons over that shortlist and picks three.
+//!
+//! With semantic search on, the user's own words order the filtered shortlist by
+//! how well each poster matches them instead of by rating. Taken from the turn
+//! rather than a tool argument: the schema is capped at five, and the model
+//! paraphrasing the mood back adds nothing the message did not already say. That is one
+//! vector per title, not the per-segment transcript embeddings that came out at v23.
 //!
 //! Two things make it materially better and both already exist: the caller's
 //! watch state and their Tier 3 facts. Watch state is per-user and deliberately
@@ -29,7 +32,7 @@ use crate::AppState;
 use crate::chatbot::events::source_from_doc;
 use crate::repositories::chat_memory;
 use crate::routes::admin::calendar;
-use crate::search::indexes;
+use crate::search::{indexes, semantic};
 
 use super::read::ToolOutcome;
 
@@ -53,7 +56,12 @@ const WHATS_NEW_CAVEAT: &str = "Air dates come from TMDB and are unreliable for 
 ///
 /// `viewers` is everyone whose watch state should be subtracted: the caller,
 /// plus anyone named in `also_for`.
-pub async fn recommend(state: &AppState, viewers: &[Uuid], args: &Value) -> ToolOutcome {
+pub async fn recommend(
+    state: &AppState,
+    viewers: &[Uuid],
+    args: &Value,
+    user_message: &str,
+) -> ToolOutcome {
     let media_type = arg_str(args, "media_type")
         .filter(|m| *m != "any")
         .map(str::to_string);
@@ -63,6 +71,7 @@ pub async fn recommend(state: &AppState, viewers: &[Uuid], args: &Value) -> Tool
         .get("include_watched")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let vibe_vector = vibe_vector(state, user_message).await;
 
     let mut viewers: Vec<Uuid> = viewers.to_vec();
     let mut also_for_note: Option<String> = None;
@@ -83,13 +92,27 @@ pub async fn recommend(state: &AppState, viewers: &[Uuid], args: &Value) -> Tool
     }
 
     let targets = target_indexes(media_type.as_deref());
-    let mut queries = Vec::new();
-    for index in &targets {
-        queries.push(candidate_query(index, genre.as_deref(), years, false));
-    }
-    let mut results = match multi_search(state, &json!({"queries": queries})).await {
-        Ok(v) => v,
-        Err(e) => return ToolOutcome::failed(e),
+    let shortlist = |vector: Option<&[f32]>| -> Vec<Value> {
+        targets
+            .iter()
+            .map(|index| candidate_query(index, genre.as_deref(), years, false, vector))
+            .collect()
+    };
+    let first = match vibe_vector.as_deref() {
+        Some(vector) => multi_search(state, &json!({"queries": shortlist(Some(vector))}))
+            .await
+            .inspect_err(
+                |e| tracing::warn!(error = %e, "Vibe-ordered shortlist failed; ordering by rating"),
+            )
+            .ok(),
+        None => None,
+    };
+    let mut results = match first {
+        Some(v) => v,
+        None => match multi_search(state, &json!({"queries": shortlist(None)})).await {
+            Ok(v) => v,
+            Err(e) => return ToolOutcome::failed(e),
+        },
     };
 
     // A genre the library does not use as a facet is not an empty library, so
@@ -98,7 +121,7 @@ pub async fn recommend(state: &AppState, viewers: &[Uuid], args: &Value) -> Tool
     if total_hits(&results) == 0 && genre.is_some() {
         let retry: Vec<Value> = targets
             .iter()
-            .map(|index| candidate_query(index, genre.as_deref(), years, true))
+            .map(|index| candidate_query(index, genre.as_deref(), years, true, None))
             .collect();
         if let Ok(v) = multi_search(state, &json!({"queries": retry})).await
             && total_hits(&v) > 0
@@ -179,6 +202,22 @@ pub async fn recommend(state: &AppState, viewers: &[Uuid], args: &Value) -> Tool
     ToolOutcome::ok(observation, detail).with_sources(sources)
 }
 
+async fn vibe_vector(state: &AppState, vibe: &str) -> Option<Vec<f32>> {
+    let vibe = vibe.trim();
+    if vibe.is_empty() {
+        return None;
+    }
+    let config = state.runtime_config.get().await;
+    if !config.semantic_search_enabled {
+        return None;
+    }
+    let url = semantic::koblem_url(&config)?;
+    semantic::embed_text(&url, vibe)
+        .await
+        .inspect_err(|e| tracing::warn!(error = %e, "Vibe embedding unavailable"))
+        .ok()
+}
+
 fn target_indexes(media_type: Option<&str>) -> Vec<&'static str> {
     match media_type {
         Some("movie") => vec![indexes::MOVIES],
@@ -199,6 +238,7 @@ fn candidate_query(
     genre: Option<&str>,
     years: Option<(Option<i64>, Option<i64>)>,
     genre_as_text: bool,
+    vibe: Option<&[f32]>,
 ) -> Value {
     let mut filters: Vec<String> = Vec::new();
     match index {
@@ -231,6 +271,11 @@ fn candidate_query(
         "filter": filters.join(" AND "),
         "attributesToRetrieve": candidate_attributes(index),
     });
+    if let Some(vector) = vibe {
+        query["hybrid"] = json!({"embedder": semantic::EMBEDDER, "semanticRatio": 1.0});
+        query["vector"] = json!(vector);
+        return query;
+    }
     // `id` is the total-order tie-break: equal ratings would otherwise fall back
     // to Meili's internal document order, which is not stable across a reindex.
     match index {
@@ -563,6 +608,7 @@ mod tests {
             Some("Horror"),
             Some((Some(1970), Some(1985))),
             false,
+            None,
         );
         let filter = query["filter"].as_str().unwrap();
         assert!(filter.contains("genres = \"Horror\""), "{filter}");
@@ -573,8 +619,7 @@ mod tests {
         assert_eq!(query["q"], "");
     }
 
-    /// The whole point: descriptions come off the document, so there is no
-    /// second lookup and no embedder.
+    /// Descriptions come off the document, so there is no second lookup.
     #[test]
     fn candidates_carry_the_synopsis_the_model_reasons_over() {
         for index in [indexes::MOVIES, indexes::TV_SHOWS, indexes::BOOKS] {
@@ -592,12 +637,36 @@ mod tests {
             Some("Horror"),
             Some((Some(1970), None)),
             false,
+            None,
         );
         let filter = query["filter"].as_str().unwrap();
         assert!(!filter.contains("year"), "{filter}");
         // Books have no rating to lead on, so `id` is the whole sort — without it
         // the shortlist was Meili's internal document order, which a reindex changes.
         assert_eq!(query["sort"], json!(["id:asc"]));
+    }
+
+    #[test]
+    fn a_vibe_vector_orders_by_artwork_instead_of_rating() {
+        let query = candidate_query(
+            indexes::MOVIES,
+            Some("Horror"),
+            None,
+            false,
+            Some(&[0.5; 3]),
+        );
+        assert_eq!(
+            query["hybrid"],
+            json!({"embedder": "poster", "semanticRatio": 1.0})
+        );
+        assert_eq!(query["vector"], json!([0.5, 0.5, 0.5]));
+        assert!(query.get("sort").is_none(), "{query}");
+        assert!(
+            query["filter"]
+                .as_str()
+                .unwrap()
+                .contains("genres = \"Horror\"")
+        );
     }
 
     #[test]

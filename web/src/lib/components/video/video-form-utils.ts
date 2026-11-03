@@ -2,8 +2,8 @@
  * Shared helpers for video form SourceField integration.
  * Mirrors BookForm's source value logic for movie/TV search results.
  */
-import type { MovieSearchResult, TvSearchResult, VideoIdentifiers } from '$lib/types';
-import { getProviderCode, getProviderName } from '$lib/utils/format';
+import type { MovieSearchResult, TvSearchResult, VideoIdentifiers } from '#lib/types.js';
+import { getProviderCode, getProviderName } from '#lib/utils/format.js';
 
 export type VideoSourceValue = {
   source: string; // Provider code (e.g., 'TMDB')

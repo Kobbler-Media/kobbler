@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LivetvAdBreak } from '$lib/types';
+  import type { LivetvAdBreak } from '#lib/types.js';
 
   interface Props {
     breaks: LivetvAdBreak[];

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { showMessage } from '$lib/context/app.svelte';
-  import { formatTimeAgo } from '$lib/stores/jobs.svelte';
-  import * as api from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { WatchHistoryItem, WatchHistorySource } from '$lib/api/client';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { formatTimeAgo } from '#lib/stores/jobs.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { WatchHistoryItem, WatchHistorySource } from '#lib/api/client.js';
 
   const PAGE = 100;
   const SOURCES: [WatchHistorySource | null, string][] = [

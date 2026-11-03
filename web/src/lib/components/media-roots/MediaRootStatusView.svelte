@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { MediaRootFile, MediaRootFileLite } from '$lib/types';
+  import type { MediaRootFile, MediaRootFileLite } from '#lib/types.js';
   import {
     addMediaRootFileToLibrary,
     ignoreMediaRootFile,
@@ -11,11 +11,11 @@
     listStatusCounts,
     listMediaRootFilesLite,
     reinterpretMediaRootFiles
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import { untrack } from 'svelte';
-  import { formatSize } from '$lib/utils/format';
-  import { getJobsState } from '$lib/stores/jobs.svelte';
+  import { formatSize } from '#lib/utils/format.js';
+  import { getJobsState } from '#lib/stores/jobs.svelte.js';
   import { InfiniteScroll } from '@koblibs/ui';
 
   const PAGE_SIZE = 50;

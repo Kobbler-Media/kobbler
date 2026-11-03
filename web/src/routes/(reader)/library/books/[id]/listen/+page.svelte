@@ -1,22 +1,22 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { untrack, onMount, onDestroy } from 'svelte';
-  import { requestWakeLock, releaseWakeLock } from '$lib/utils/wakelock';
-  import AudioControls from '$lib/components/AudiobookPlayer/AudioControls.svelte';
-  import ChapterBookmarkTabs from '$lib/components/AudiobookPlayer/ChapterBookmarkTabs.svelte';
-  import WaveformBar from '$lib/components/AudiobookPlayer/WaveformBar.svelte';
-  import TranscriptSearch from '$lib/components/AudiobookPlayer/TranscriptSearch.svelte';
-  import TranscriptSubtitles from '$lib/components/AudiobookPlayer/TranscriptSubtitles.svelte';
-  import TranscriptReader from '$lib/components/AudiobookPlayer/TranscriptReader.svelte';
+  import { requestWakeLock, releaseWakeLock } from '#lib/utils/wakelock.js';
+  import AudioControls from '#lib/components/AudiobookPlayer/AudioControls.svelte';
+  import ChapterBookmarkTabs from '#lib/components/AudiobookPlayer/ChapterBookmarkTabs.svelte';
+  import WaveformBar from '#lib/components/AudiobookPlayer/WaveformBar.svelte';
+  import TranscriptSearch from '#lib/components/AudiobookPlayer/TranscriptSearch.svelte';
+  import TranscriptSubtitles from '#lib/components/AudiobookPlayer/TranscriptSubtitles.svelte';
+  import TranscriptReader from '#lib/components/AudiobookPlayer/TranscriptReader.svelte';
   import {
     hasTranscript,
     transcribeAudiobook,
     getReaderProgress,
     getSyncPosition,
     getTranscriptSegments
-  } from '$lib/api/client';
-  import type { SyncPositionResult, ReadAlongTranscriptSegment } from '$lib/api/client';
-  import ChapterEditor from '$lib/components/ChapterEditor.svelte';
+  } from '#lib/api/client.js';
+  import type { SyncPositionResult, ReadAlongTranscriptSegment } from '#lib/api/client.js';
+  import ChapterEditor from '#lib/components/ChapterEditor.svelte';
   import {
     getAudioPlayerState,
     play,
@@ -29,8 +29,8 @@
     stop as stopPlayer,
     formatTime,
     recordInteraction
-  } from '$lib/stores/audioplayer.svelte';
-  import type { Book } from '$lib/types';
+  } from '#lib/stores/audioplayer.svelte.js';
+  import type { Book } from '#lib/types.js';
 
   let { data } = $props();
   const initialData = untrack(() => data);

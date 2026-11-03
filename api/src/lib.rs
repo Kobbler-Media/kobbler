@@ -73,6 +73,7 @@ pub mod wanted;
 pub mod watch_completion;
 pub mod watch_handoff;
 pub mod watcher;
+pub mod xml_text;
 
 pub use config::Config;
 pub use db::DbPool;
@@ -226,6 +227,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/health", get(health::health))
         .route("/api/v1/admin/login", post(admin::login))
         .route("/api/v1/admin/me", get(admin::me))
+        .route("/api/v1/admin/auth/player-token", post(admin::player_token))
         .route("/api/v1/admin/logout", post(admin::logout))
         .route("/api/v1/admin/pin-login", post(admin::pin_login))
         .route("/api/v1/admin/me/password", put(admin::change_password))

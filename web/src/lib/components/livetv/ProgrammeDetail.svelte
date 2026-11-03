@@ -1,6 +1,6 @@
 <script lang="ts">
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { LivetvChannel, LivetvGuideEntry } from '$lib/types';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { LivetvChannel, LivetvGuideEntry } from '#lib/types.js';
   import RecordButton from './RecordButton.svelte';
   import { genreTint } from './tint';
 

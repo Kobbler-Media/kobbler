@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { TvEpisode } from '$lib/types';
-  import { getWantStatusDisplay, isActivelyWanted } from '$lib/utils/want-status';
+  import type { TvEpisode } from '#lib/types.js';
+  import { getWantStatusDisplay, isActivelyWanted } from '#lib/utils/want-status.js';
   import EpisodeSummary from './EpisodeSummary.svelte';
 
   interface Props {

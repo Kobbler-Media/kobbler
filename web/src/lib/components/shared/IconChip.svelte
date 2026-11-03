@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ChipDef } from '$lib/utils/chip-mappings';
+  import type { ChipDef } from '#lib/utils/chip-mappings.js';
 
   interface Props {
     icon?: string;

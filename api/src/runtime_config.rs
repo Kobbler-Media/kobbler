@@ -75,6 +75,8 @@ pub struct RuntimeConfig {
     pub meili_url: Option<String>,
     /// MeiliSearch master key (optional)
     pub meili_master_key: Option<String>,
+    pub semantic_search_enabled: bool,
+    pub semantic_search_ratio: f64,
 
     // Koblem (local LLM service)
     /// Koblem service URL (optional; enables local LLM features)
@@ -247,6 +249,8 @@ impl Default for RuntimeConfig {
             kobload_communication_mode: None,
             meili_url: None,
             meili_master_key: None,
+            semantic_search_enabled: false,
+            semantic_search_ratio: 0.5,
             koblem_service_url: None,
             koblem_api_key: None,
             chat_enabled: false,
@@ -335,6 +339,8 @@ pub struct RuntimeConfigUpdate {
     pub kobload_communication_mode: Option<String>,
     pub meili_url: Option<String>,
     pub meili_master_key: Option<String>,
+    pub semantic_search_enabled: Option<bool>,
+    pub semantic_search_ratio: Option<f64>,
     pub koblem_service_url: Option<String>,
     pub koblem_api_key: Option<String>,
     pub chat_enabled: Option<bool>,
@@ -689,6 +695,14 @@ impl RuntimeConfigManager {
             ));
         }
 
+        if let Some(v) = updates.semantic_search_ratio
+            && !(0.0..=1.0).contains(&v)
+        {
+            return Err(RuntimeConfigError::Validation(
+                "semantic_search_ratio must be between 0.0 and 1.0".to_string(),
+            ));
+        }
+
         let public_url = match updates.public_url {
             Some(raw) => Some(normalize_public_url(&raw).map_err(RuntimeConfigError::Validation)?),
             None => None,
@@ -696,6 +710,23 @@ impl RuntimeConfigManager {
 
         // Get current config
         let mut config = self.inner.write().await;
+
+        let semantic_after = updates
+            .semantic_search_enabled
+            .unwrap_or(config.semantic_search_enabled);
+        let koblem_after = match &updates.koblem_service_url {
+            Some(v) => !v.trim().is_empty(),
+            None => config
+                .koblem_service_url
+                .as_deref()
+                .is_some_and(|u| !u.trim().is_empty()),
+        };
+        if semantic_after && !koblem_after {
+            return Err(RuntimeConfigError::Validation(
+                "semantic search needs a koblem_service_url: its vectors are computed on koblem's GPU"
+                    .to_string(),
+            ));
+        }
 
         // Apply updates
         if let Some(v) = public_url {
@@ -778,6 +809,12 @@ impl RuntimeConfigManager {
         }
         if let Some(v) = updates.meili_master_key {
             config.meili_master_key = if v.is_empty() { None } else { Some(v) };
+        }
+        if let Some(v) = updates.semantic_search_enabled {
+            config.semantic_search_enabled = v;
+        }
+        if let Some(v) = updates.semantic_search_ratio {
+            config.semantic_search_ratio = v;
         }
         if let Some(v) = updates.koblem_service_url {
             config.koblem_service_url = if v.is_empty() { None } else { Some(v) };

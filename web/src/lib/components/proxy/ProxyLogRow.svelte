@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ProxyLogEntry } from '$lib/api/client';
+  import type { ProxyLogEntry } from '#lib/api/client.js';
   import UuidTooltip from './UuidTooltip.svelte';
 
   interface Props {

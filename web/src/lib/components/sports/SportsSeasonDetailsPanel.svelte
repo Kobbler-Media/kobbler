@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { TvSeason } from '$lib/types';
-  import { getWantStatusDisplay, hasOutstandingWants } from '$lib/utils/want-status';
+  import type { TvSeason } from '#lib/types.js';
+  import { getWantStatusDisplay, hasOutstandingWants } from '#lib/utils/want-status.js';
   import { SearchSelect } from '@koblibs/ui';
 
   interface Props {

@@ -1,8 +1,8 @@
 // Jobs store using Svelte 5 runes — driven by unified SSE events via layout.
 
-import type { Job, JobEvent } from '$lib/types';
-import { getJobs, getRunningJobsCount } from '$lib/api/client';
-import { getStreamState } from '$lib/services/eventstream.svelte';
+import type { Job, JobEvent } from '#lib/types.js';
+import { getJobs, getRunningJobsCount } from '#lib/api/client.js';
+import { getStreamState } from '#lib/services/eventstream.svelte.js';
 
 // State
 let jobs = $state.raw<Job[]>([]);

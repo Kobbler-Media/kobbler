@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { SubtitleTrackInfo, ExternalSubtitleInfo } from '$lib/types';
+  import type { SubtitleTrackInfo, ExternalSubtitleInfo } from '#lib/types.js';
 
   interface Props {
     subtitleTracks: SubtitleTrackInfo[];

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { Book, LoadState, BookSelectHandler } from '$lib/types';
-  import BookCard from '$lib/components/BookCard.svelte';
-  import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
-  import { createDelayedLoading } from '$lib/utils/delayed-loading.svelte';
+  import type { Book, LoadState, BookSelectHandler } from '#lib/types.js';
+  import BookCard from '#lib/components/BookCard.svelte';
+  import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
+  import { createDelayedLoading } from '#lib/utils/delayed-loading.svelte.js';
 
   type BrowseFilter = 'all' | 'recent' | 'pending' | 'synced';
   type OwnershipFilter = 'all' | 'owned' | 'wanted' | 'orphaned';

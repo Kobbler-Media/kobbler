@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { IptvProvider } from '$lib/types';
+  import type { IptvProvider } from '#lib/types.js';
 
   interface Props {
     onsubmit: (data: {

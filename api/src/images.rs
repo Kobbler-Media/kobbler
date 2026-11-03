@@ -578,34 +578,114 @@ pub async fn serve_entity_image(
         return Ok(image_response(bytes, &etag, request_headers));
     }
 
+    let bytes = fetch_uncached_image(
+        pool,
+        storage_root,
+        table,
+        image_key,
+        image_type,
+        entity_id,
+        images,
+    )
+    .await?;
+    // Use a fresh timestamp for the etag since we just cached
+    let etag = format!("{entity_id}-fresh");
+    Ok(image_response(bytes, &etag, request_headers))
+}
+
+/// An entity's image bytes, from the disk cache when the DB agrees it is current,
+/// otherwise downloaded from its source URL and cached.
+pub async fn load_entity_image(
+    pool: &sqlx::PgPool,
+    storage_root: &str,
+    table: &str,
+    image_key: &str,
+    image_type: ImageType,
+    entity_id: Uuid,
+    images: &ImageMap,
+) -> Result<Vec<u8>, ImageError> {
+    let is_cached = images.get(image_key).is_some_and(|e| e.cached_at.is_some());
+    if is_cached && cached_image_exists(storage_root, image_type, entity_id) {
+        return load_cached_image(storage_root, image_type, entity_id).await;
+    }
+    fetch_uncached_image(
+        pool,
+        storage_root,
+        table,
+        image_key,
+        image_type,
+        entity_id,
+        images,
+    )
+    .await
+}
+
+async fn fetch_uncached_image(
+    pool: &sqlx::PgPool,
+    storage_root: &str,
+    table: &str,
+    image_key: &str,
+    image_type: ImageType,
+    entity_id: Uuid,
+    images: &ImageMap,
+) -> Result<Vec<u8>, ImageError> {
     // Delete stale file when source_url changed (cached_at cleared but old file lingers)
-    if !is_cached && file_exists {
+    if cached_image_exists(storage_root, image_type, entity_id) {
         let stale_path = local_image_path(storage_root, image_type, entity_id);
         let _ = fs::remove_file(&stale_path).await;
     }
 
-    // Lazy-cache from source_url
     if let Some(url) = source_url(images, image_key) {
-        match cache_image(storage_root, image_type, entity_id, &url).await {
+        return match cache_image(storage_root, image_type, entity_id, &url).await {
             Ok(_) => {
                 let _ = mark_cached(pool, table, entity_id, image_key).await;
-                let bytes = load_cached_image(storage_root, image_type, entity_id).await?;
-                // Use a fresh timestamp for the etag since we just cached
-                let etag = format!("{entity_id}-fresh");
-                return Ok(image_response(bytes, &etag, request_headers));
+                load_cached_image(storage_root, image_type, entity_id).await
             }
             Err(e) => {
                 warn!(entity_id = %entity_id, image_key, error = %e, "Failed to cache image from source URL");
-                return Err(ImageError::NotFound(format!(
+                Err(ImageError::NotFound(format!(
                     "No {image_key} available for {entity_id}"
-                )));
+                )))
             }
-        }
+        };
     }
 
     Err(ImageError::NotFound(format!(
         "No {image_key} available for {entity_id}"
     )))
+}
+
+/// A book's cover from wherever it lives: an uploaded cover, the series image cache
+/// used for discovered books, the cover extracted from its ebook, or — downloaded and
+/// cached now — the cover URL from its metadata.
+pub async fn load_book_cover(
+    pool: &sqlx::PgPool,
+    storage_root: &str,
+    book_id: Uuid,
+) -> Option<Vec<u8>> {
+    let uploaded = PathBuf::from(storage_root)
+        .join("covers")
+        .join(format!("{book_id}.jpg"));
+    for path in [
+        uploaded,
+        local_image_path(storage_root, ImageType::Series, book_id),
+        local_image_path(storage_root, ImageType::BookExtracted, book_id),
+    ] {
+        if let Ok(bytes) = fs::read(&path).await {
+            return Some(bytes);
+        }
+    }
+
+    let url = crate::repositories::books::get_cover_url(pool, book_id)
+        .await
+        .ok()
+        .flatten()?;
+    let path = cache_image(storage_root, ImageType::Series, book_id, &url)
+        .await
+        .ok()?;
+    let bytes = fs::read(&path).await.ok()?;
+    let _ = mark_cached(pool, "books", book_id, "cover").await;
+    Some(bytes)
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import { getCastState, endCastSession, castSendMessage } from '$lib/stores/cast.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import { getCastState, endCastSession, castSendMessage } from '#lib/stores/cast.svelte.js';
 
   const cast = getCastState();
 

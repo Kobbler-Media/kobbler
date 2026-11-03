@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { onMount } from 'svelte';
   import NavGroup from './NavGroup.svelte';
-  import { toggleGroup, isGroupExpanded } from '$lib/stores/sidebar.svelte';
-  import { getStatsState, fetchStats } from '$lib/stores/stats.svelte';
-  import { getLivetvState, fetchLivetvTuners } from '$lib/stores/livetv.svelte';
+  import { toggleGroup, isGroupExpanded } from '#lib/stores/sidebar.svelte.js';
+  import { getStatsState, fetchStats } from '#lib/stores/stats.svelte.js';
+  import { getLivetvState, fetchLivetvTuners } from '#lib/stores/livetv.svelte.js';
   import TunerMeter from './livetv/TunerMeter.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import { getFormatFilter, setFormatFilter } from '$lib/stores/format-filter.svelte';
-  import { logout } from '$lib/services/data.svelte';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import { getFormatFilter, setFormatFilter } from '#lib/stores/format-filter.svelte.js';
+  import { logout } from '#lib/services/data.svelte.js';
   import { goto } from '$app/navigation';
-  import { registerOverlay, unregisterOverlay } from '$lib/stores/ui.svelte';
-  import { env } from '$env/dynamic/public';
+  import { registerOverlay, unregisterOverlay } from '#lib/stores/ui.svelte.js';
+  import { PUBLIC_DEV_MODE } from '$app/env/public';
 
   interface Props {
     open: boolean;
@@ -21,7 +21,7 @@
   let { open, onClose }: Props = $props();
 
   let filterQuery = $state('');
-  const isDevMode = env.PUBLIC_DEV_MODE === '1';
+  const isDevMode = PUBLIC_DEV_MODE === '1';
   const statsState = getStatsState();
   const stats = $derived(statsState.stats);
   const livetv = getLivetvState();
@@ -486,7 +486,7 @@
   const isFiltering = $derived(filterQuery.trim().length > 0);
 
   function isHomeActive(): boolean {
-    return $page.url.pathname === '/';
+    return page.url.pathname === '/';
   }
 
   const avatarLetter = $derived(authState.email ? authState.email.charAt(0).toUpperCase() : '?');
@@ -494,7 +494,7 @@
   async function handleLogout() {
     onClose();
     await logout();
-    goto('/', { replaceState: true });
+    goto('/', { replace: true });
   }
 
   // Close menu and clear filter only when an actual nav link is clicked
@@ -533,7 +533,7 @@
       <a
         href="/dashboard"
         class="home-link"
-        class:active={$page.url.pathname === '/dashboard'}
+        class:active={page.url.pathname === '/dashboard'}
         title="Dashboard"
       >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">

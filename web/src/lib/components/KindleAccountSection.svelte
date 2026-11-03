@@ -1,7 +1,7 @@
 <script lang="ts">
-  import * as api from '$lib/api/client';
-  import type { KindleTarget } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
+  import * as api from '#lib/api/client.js';
+  import type { KindleTarget } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
 
   interface Props {
     /** The Kobbler device ID to link kindle targets to. */

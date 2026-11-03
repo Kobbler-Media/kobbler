@@ -1,6 +1,6 @@
-import { ApiError, isStreamCaching, streamResolveStatus } from '$lib/api/client';
-import type { StreamResolveCachingResponse, StreamResolveResponse } from '$lib/api/client';
-import type { PlaybackSessionResponse } from '$lib/types';
+import { ApiError, isStreamCaching, streamResolveStatus } from '#lib/api/client.js';
+import type { StreamResolveCachingResponse, StreamResolveResponse } from '#lib/api/client.js';
+import type { PlaybackSessionResponse } from '#lib/types.js';
 import { CACHE_FAILURE_REASON } from './failure';
 
 const POLL_MS = 3000;

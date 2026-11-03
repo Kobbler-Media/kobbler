@@ -227,6 +227,7 @@ pub const TABLES_IN_ORDER: &[&str] = &[
     "client_playback_reports",
     "proxy_logs",
     "metadata_cache",
+    "search_embeddings",
     // Depends on users and chat_sessions
     "chat_turn_logs",
 ];

@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import DownloadsPage from '$lib/components/pages/DownloadsPage.svelte';
-  import { getDownloadsState, fetchDownloads } from '$lib/stores/downloads.svelte';
-  import { onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import DownloadsPage from '#lib/components/pages/DownloadsPage.svelte';
+  import { getDownloadsState, fetchDownloads } from '#lib/stores/downloads.svelte.js';
+  import { onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
 
   const auth = getAuthState();
 
@@ -19,18 +19,18 @@
   const loading = $derived(downloadsStore.loading);
 
   // URL-driven filter state
-  const filter = $derived(($page.url.searchParams.get('filter') as ViewFilter) || 'all');
+  const filter = $derived((page.url.searchParams.get('filter') as ViewFilter) || 'all');
 
   let reconnectHandler: (() => void) | null = null;
 
   function handleFilterChange(newFilter: ViewFilter) {
-    const url = new URL($page.url);
+    const url = new URL(page.url.href);
     if (newFilter === 'all') {
       url.searchParams.delete('filter');
     } else {
       url.searchParams.set('filter', newFilter);
     }
-    goto(url.toString(), { replaceState: true });
+    goto(url.toString(), { replace: true });
   }
 
   onMount(() => {

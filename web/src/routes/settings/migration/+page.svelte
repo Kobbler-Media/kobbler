@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import { SearchSelect } from '@koblibs/ui';
-  import type { MediaRoot } from '$lib/types';
+  import type { MediaRoot } from '#lib/types.js';
 
   const auth = getAuthState();
 

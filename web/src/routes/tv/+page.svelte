@@ -1,40 +1,40 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import { onReconnect, offReconnect, onDebounced, off } from '$lib/services/eventstream.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
+  import { page } from '$app/state';
+  import { onReconnect, offReconnect, onDebounced, off } from '#lib/services/eventstream.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
   import {
     captureScrollAnchor,
     restoreScrollAnchor,
     scrollContainerToTop,
     scrollItemToTop
-  } from '$lib/utils/scroll-anchor';
-  import TvShowsPage from '$lib/components/pages/TvShowsPage.svelte';
-  import VideoSearchModal from '$lib/components/movies/VideoSearchModal.svelte';
-  import TvShowDetailsPanel from '$lib/components/tv/TvShowDetailsPanel.svelte';
-  import TvShowForm from '$lib/components/tv/TvShowForm.svelte';
-  import type { TvShowFormData } from '$lib/components/tv/TvShowForm.svelte';
-  import VideoMetadataSearchModal from '$lib/components/video/VideoMetadataSearchModal.svelte';
-  import type { TvSearchResult, MovieSearchResult } from '$lib/types';
-  import SeasonDetailsPanel from '$lib/components/tv/SeasonDetailsPanel.svelte';
-  import SeasonForm from '$lib/components/tv/SeasonForm.svelte';
-  import type { SeasonFormData } from '$lib/components/tv/SeasonForm.svelte';
-  import EpisodeDetailsPanel from '$lib/components/tv/EpisodeDetailsPanel.svelte';
-  import EpisodeForm from '$lib/components/tv/EpisodeForm.svelte';
-  import type { EpisodeFormData } from '$lib/components/tv/EpisodeForm.svelte';
-  import PersonDetailsPanel from '$lib/components/people/PersonDetailsPanel.svelte';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
+  } from '#lib/utils/scroll-anchor.js';
+  import TvShowsPage from '#lib/components/pages/TvShowsPage.svelte';
+  import VideoSearchModal from '#lib/components/movies/VideoSearchModal.svelte';
+  import TvShowDetailsPanel from '#lib/components/tv/TvShowDetailsPanel.svelte';
+  import TvShowForm from '#lib/components/tv/TvShowForm.svelte';
+  import type { TvShowFormData } from '#lib/components/tv/TvShowForm.svelte';
+  import VideoMetadataSearchModal from '#lib/components/video/VideoMetadataSearchModal.svelte';
+  import type { TvSearchResult, MovieSearchResult } from '#lib/types.js';
+  import SeasonDetailsPanel from '#lib/components/tv/SeasonDetailsPanel.svelte';
+  import SeasonForm from '#lib/components/tv/SeasonForm.svelte';
+  import type { SeasonFormData } from '#lib/components/tv/SeasonForm.svelte';
+  import EpisodeDetailsPanel from '#lib/components/tv/EpisodeDetailsPanel.svelte';
+  import EpisodeForm from '#lib/components/tv/EpisodeForm.svelte';
+  import type { EpisodeFormData } from '#lib/components/tv/EpisodeForm.svelte';
+  import PersonDetailsPanel from '#lib/components/people/PersonDetailsPanel.svelte';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import MoveFileModal from '$lib/components/shared/MoveFileModal.svelte';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import MoveFileModal from '#lib/components/shared/MoveFileModal.svelte';
   import type { SearchSelectItem } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import * as api from '$lib/api/client';
-  import { formatEpisodeSearchTitle } from '$lib/utils/format';
-  import { unwantMessage } from '$lib/utils/want-status';
-  import type { TvShow, TvSeason, TvEpisode, PersonDetail } from '$lib/types';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { formatEpisodeSearchTitle } from '#lib/utils/format.js';
+  import { unwantMessage } from '#lib/utils/want-status.js';
+  import type { TvShow, TvSeason, TvEpisode, PersonDetail } from '#lib/types.js';
   import {
     pushEntity,
     popEntity,
@@ -42,28 +42,31 @@
     getNavigationState,
     updateCurrentEntityData,
     setLoadingEntity
-  } from '$lib/stores/navigation.svelte';
+  } from '#lib/stores/navigation.svelte.js';
 
-  import type { FilterValue, SortValue } from '$lib/components/pages/TvShowsPage.svelte';
+  import type { FilterValue, SortValue } from '#lib/components/pages/TvShowsPage.svelte';
 
   let shows = $state<TvShow[]>([]);
   let loading = $state(true);
   let error = $state('');
   const VALID_FILTERS: FilterValue[] = ['all', 'monitored', 'returning', 'ended'];
   const VALID_SORTS: SortValue[] = ['title', 'next_airing', 'created_at'];
+
   const filter = $derived(
-    VALID_FILTERS.includes($page.url.searchParams.get('filter') as FilterValue)
-      ? ($page.url.searchParams.get('filter') as FilterValue)
+    VALID_FILTERS.includes(page.url.searchParams.get('filter') as FilterValue)
+      ? (page.url.searchParams.get('filter') as FilterValue)
       : 'all'
   );
+
   const sort = $derived(
-    VALID_SORTS.includes($page.url.searchParams.get('sort') as SortValue)
-      ? ($page.url.searchParams.get('sort') as SortValue)
+    VALID_SORTS.includes(page.url.searchParams.get('sort') as SortValue)
+      ? (page.url.searchParams.get('sort') as SortValue)
       : 'title'
   );
-  const searchQuery = $derived($page.url.searchParams.get('q') || '');
-  const urlAround = $derived($page.url.searchParams.get('around'));
-  const urlAroundBefore = $derived($page.url.searchParams.get('around_before'));
+
+  const searchQuery = $derived(page.url.searchParams.get('q') || '');
+  const urlAround = $derived(page.url.searchParams.get('around'));
+  const urlAroundBefore = $derived(page.url.searchParams.get('around_before'));
   let showAddModal = $state(false);
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let availableLetters = $state<string[]>([]);
@@ -913,9 +916,11 @@
           </button>
           <div class="spacer"></div>
         {/if}
-        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={loading}>
-          Cancel
-        </button>
+
+        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={loading}
+          >Cancel</button
+        >
+
         <button
           class="btn-primary"
           type="button"

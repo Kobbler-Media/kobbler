@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import {
     getSystemConfig,
     updateSystemConfig,
@@ -15,9 +15,9 @@
     type SystemConfig,
     type StremioApiKey,
     type StremioAccount
-  } from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import { formatTimeAgo } from '$lib/stores/jobs.svelte';
+  } from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import { formatTimeAgo } from '#lib/stores/jobs.svelte.js';
 
   const auth = getAuthState();
 

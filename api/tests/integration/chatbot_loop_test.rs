@@ -492,3 +492,27 @@ async fn a_failed_turn_is_logged_too() {
     assert!(!rows[0].0);
     assert!(rows[0].1.is_some(), "the failure needs a reason to show");
 }
+
+/// A provider that reports an error mid-stream and then closes cleanly has not
+/// answered; the partial text must not be taken for a reply.
+#[tokio::test]
+async fn an_error_event_fails_the_completion_even_when_done_follows() {
+    let llm = mock_llm(sse(&[
+        content("Half an ans"),
+        json!({"error": {"message": "upstream exploded", "type": "upstream_error", "code": 502}}),
+    ]))
+    .await;
+    let cfg = api::chatbot::llm::LlmConfig {
+        base_url: format!("{}/v1", llm.uri()),
+        api_key: Some("test-key".into()),
+        model: "mock-model".into(),
+        is_koblem: false,
+        thinking: api::chatbot::llm::ThinkingLevel::Off,
+    };
+
+    let result =
+        api::chatbot::llm::complete(&cfg, &[ChatMessage::user("hi")], &[], |_| async {}).await;
+
+    let err = result.expect_err("an error event is a failed completion");
+    assert!(err.contains("upstream exploded"), "{err}");
+}

@@ -5,8 +5,8 @@ import type {
   StreamResolveResponse,
   StreamResolveStatusResponse,
   StreamSearchResponse
-} from '$lib/api/client';
-import type { PlaybackSessionResponse } from '$lib/types';
+} from '#lib/api/client.js';
+import type { PlaybackSessionResponse } from '#lib/types.js';
 
 const api = vi.hoisted(() => ({
   streamSearch: vi.fn(),
@@ -20,14 +20,14 @@ const api = vi.hoisted(() => ({
   releaseStreamPrewarm: vi.fn()
 }));
 
-vi.mock('$lib/api/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/api/client')>()),
+vi.mock('#lib/api/client.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#lib/api/client.js')>()),
   ...api
 }));
-vi.mock('$lib/services/eventstream.svelte', () => ({ on: vi.fn(), off: vi.fn() }));
-vi.mock('$lib/utils/media', () => ({ detectCapabilities: () => ({}) }));
+vi.mock('#lib/services/eventstream.svelte.js', () => ({ on: vi.fn(), off: vi.fn() }));
+vi.mock('#lib/utils/media.js', () => ({ detectCapabilities: () => ({}) }));
 
-const { ApiError } = await import('$lib/api/client');
+const { ApiError } = await import('#lib/api/client.js');
 const { useStreamPlayback } = await import('./useStreamPlayback.svelte');
 
 function option(hash: string): StreamOption {

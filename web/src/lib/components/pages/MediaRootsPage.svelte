@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import type { MediaRoot, MediaRootFile } from '$lib/types';
-  import { mediaTypeChip, mediaRootStatusChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
-  import { on, off } from '$lib/services/eventstream.svelte';
+  import type { MediaRoot, MediaRootFile } from '#lib/types.js';
+  import { mediaTypeChip, mediaRootStatusChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import { on, off } from '#lib/services/eventstream.svelte.js';
   import {
     listMediaRoots,
     getMediaRootFile,
@@ -17,21 +17,21 @@
     triggerWriteImages,
     detectMediaType,
     ApiError
-  } from '$lib/api/client';
-  import type { DetectMediaTypeResponse } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { formatDistanceToNow, formatDate } from '$lib/utils/format';
+  } from '#lib/api/client.js';
+  import type { DetectMediaTypeResponse } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { formatDistanceToNow, formatDate } from '#lib/utils/format.js';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import MediaRootDetailSidebar from '$lib/components/media-roots/MediaRootDetailSidebar.svelte';
-  import FileList from '$lib/components/media-roots/FileList.svelte';
-  import MediaRootEntityView from '$lib/components/media-roots/MediaRootEntityView.svelte';
-  import MatchResolver from '$lib/components/media-roots/MatchResolver.svelte';
-  import EntityReassignModal from '$lib/components/media-roots/EntityReassignModal.svelte';
-  import ScanResults from '$lib/components/media-roots/ScanResults.svelte';
-  import ReorganizePreview from '$lib/components/media-roots/ReorganizePreview.svelte';
-  import DirectoryBrowser from '$lib/components/media-roots/DirectoryBrowser.svelte';
+  import MediaRootDetailSidebar from '#lib/components/media-roots/MediaRootDetailSidebar.svelte';
+  import FileList from '#lib/components/media-roots/FileList.svelte';
+  import MediaRootEntityView from '#lib/components/media-roots/MediaRootEntityView.svelte';
+  import MatchResolver from '#lib/components/media-roots/MatchResolver.svelte';
+  import EntityReassignModal from '#lib/components/media-roots/EntityReassignModal.svelte';
+  import ScanResults from '#lib/components/media-roots/ScanResults.svelte';
+  import ReorganizePreview from '#lib/components/media-roots/ReorganizePreview.svelte';
+  import DirectoryBrowser from '#lib/components/media-roots/DirectoryBrowser.svelte';
   import { SearchSelect } from '@koblibs/ui';
-  import NamingTemplateEditor from '$lib/components/media-roots/NamingTemplateEditor.svelte';
+  import NamingTemplateEditor from '#lib/components/media-roots/NamingTemplateEditor.svelte';
 
   const mediaTypeOptions = [
     { value: 'tv', label: 'TV Shows' },

@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { Author, AuthorFormData, AuthorSearchResult } from '$lib/types';
-  import { getAuthors } from '$lib/api/client';
+  import type { Author, AuthorFormData, AuthorSearchResult } from '#lib/types.js';
+  import { getAuthors } from '#lib/api/client.js';
   import { SearchSelect } from '@koblibs/ui';
   import CoverSelector from './CoverSelector.svelte';
   import SourceField from './SourceField.svelte';

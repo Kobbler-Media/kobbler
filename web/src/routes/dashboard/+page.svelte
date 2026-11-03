@@ -1,25 +1,25 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getDevicesState } from '$lib/stores/devices.svelte';
-  import { loadDevices, loadActivity, ensureDevices } from '$lib/context/app.svelte';
+  import { getDevicesState } from '#lib/stores/devices.svelte.js';
+  import { loadDevices, loadActivity, ensureDevices } from '#lib/context/app.svelte.js';
   import {
     getDashboard,
     getNasHealth,
     getVisionHealth,
     getProxyLogs,
     type ProxyLogEntry
-  } from '$lib/api/client';
-  import type { NasHealthSnapshot, VisionHealthSnapshot } from '$lib/types';
-  import { createDelayedLoading } from '$lib/utils/delayed-loading.svelte';
-  import { onDebounced, off, onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
-  import { watchStateVersion } from '$lib/stores/watchState.svelte';
-  import type { RecentBook, RecentMovie, RecentTvEntry, ReadNextItem } from '$lib/types';
-  import { formatDuration, formatEpisodeCode } from '$lib/utils/format';
-  import { mediaTypeChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
-  import MediaCard from '$lib/components/shared/MediaCard.svelte';
-  import ScrollRow from '$lib/components/shared/ScrollRow.svelte';
-  import { getFormatFilter } from '$lib/stores/format-filter.svelte';
+  } from '#lib/api/client.js';
+  import type { NasHealthSnapshot, VisionHealthSnapshot } from '#lib/types.js';
+  import { createDelayedLoading } from '#lib/utils/delayed-loading.svelte.js';
+  import { onDebounced, off, onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
+  import { watchStateVersion } from '#lib/stores/watchState.svelte.js';
+  import type { RecentBook, RecentMovie, RecentTvEntry, ReadNextItem } from '#lib/types.js';
+  import { formatDuration, formatEpisodeCode } from '#lib/utils/format.js';
+  import { mediaTypeChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import MediaCard from '#lib/components/shared/MediaCard.svelte';
+  import ScrollRow from '#lib/components/shared/ScrollRow.svelte';
+  import { getFormatFilter } from '#lib/stores/format-filter.svelte.js';
 
   const devicesStore = getDevicesState();
   const activityEvents = $derived(devicesStore.activityEvents);

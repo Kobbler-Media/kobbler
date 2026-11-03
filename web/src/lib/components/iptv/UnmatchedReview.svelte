@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { IptvUnmatchedSource } from '$lib/types';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
+  import type { IptvUnmatchedSource } from '#lib/types.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
 
   interface Props {
     sources: IptvUnmatchedSource[];

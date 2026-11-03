@@ -4,11 +4,11 @@
     searchWantedNow,
     grabHeldMatch,
     rejectWantedDownload
-  } from '$lib/api/client';
-  import type { WantedStatusResponse, WantedMatch } from '$lib/types';
-  import { wantedPanelChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
+  } from '#lib/api/client.js';
+  import type { WantedStatusResponse, WantedMatch } from '#lib/types.js';
+  import { wantedPanelChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
 
   interface Props {
     wantedId: string;

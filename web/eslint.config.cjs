@@ -8,7 +8,7 @@ const globals = require('globals');
 
 module.exports = [
   {
-    ignores: ['.svelte-kit/**', 'dist/**', 'build/**', 'static/jassub/**']
+    ignores: ['.svelte-kit/**', 'dist/**', 'build/**', 'static/jassub/**', 'static/player/**']
   },
   js.configs.recommended,
   {

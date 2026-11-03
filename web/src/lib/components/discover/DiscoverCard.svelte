@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { DiscoverItem } from '$lib/api/client';
-  import MediaCard from '$lib/components/shared/MediaCard.svelte';
-  import { setDiscoverPreview } from '$lib/stores/discover-preview.svelte';
-  import { discoverLibraryRoute } from '$lib/utils/entity-routes';
+  import type { DiscoverItem } from '#lib/api/client.js';
+  import MediaCard from '#lib/components/shared/MediaCard.svelte';
+  import { setDiscoverPreview } from '#lib/stores/discover-preview.svelte.js';
+  import { discoverLibraryRoute } from '#lib/utils/entity-routes.js';
 
   interface Props {
     item: DiscoverItem;

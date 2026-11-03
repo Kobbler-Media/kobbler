@@ -157,6 +157,7 @@ async fn main() {
         .clone()
         .unwrap_or_else(|| config.meili_master_key.clone());
     let search_choice = SearchBackendChoice::from_config(&meili_url, &meili_master_key);
+    let semantic_search_enabled = rt_config.semantic_search_enabled;
     let hw_preference = rt_config
         .hw_encoder
         .as_deref()
@@ -165,7 +166,6 @@ async fn main() {
     drop(rt_config);
 
     let pool_clone = pool.clone();
-    let runtime_config_clone = runtime_config.clone();
     let ((search_backend, needs_reindex), (hw_accel, encoder_caps, decoder_caps)) = tokio::join!(
         async {
             let meili_state = match search_choice {
@@ -181,21 +181,9 @@ async fn main() {
                 error!("Failed to initialize MeiliSearch indexes: {err}");
             } else {
                 info!("MeiliSearch indexes initialized");
-                // Configure chat workspace if chat is enabled
-                let rt = runtime_config_clone.get().await;
-                if rt.chat_enabled {
-                    let (client, _) = meili_state.get_client().await;
-                    if let Err(e) =
-                        api::search::chat::setup_chat(&client, &meili_url, &meili_master_key, &rt)
-                            .await
-                    {
-                        error!("Failed to configure chat workspace on startup: {e}");
-                    } else {
-                        info!("Chat workspace configured");
-                    }
-                }
             }
             let backend: Arc<dyn SearchBackend> = Arc::new(meili_state);
+            backend.set_semantic_enabled(semantic_search_enabled);
             let reindex_check =
                 api::search::check_reindex_needed(&pool_clone, backend.as_ref()).await;
             if let Some(reason) = &reindex_check.reason {

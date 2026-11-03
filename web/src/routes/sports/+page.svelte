@@ -1,38 +1,38 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import { onReconnect, offReconnect, onDebounced, off } from '$lib/services/eventstream.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
+  import { page } from '$app/state';
+  import { onReconnect, offReconnect, onDebounced, off } from '#lib/services/eventstream.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
   import {
     captureScrollAnchor,
     restoreScrollAnchor,
     scrollContainerToTop,
     scrollItemToTop
-  } from '$lib/utils/scroll-anchor';
+  } from '#lib/utils/scroll-anchor.js';
   import { fade } from 'svelte/transition';
-  import SportsSearchModal from '$lib/components/SportsSearchModal.svelte';
-  import SportsLeagueDetailsPanel from '$lib/components/sports/SportsLeagueDetailsPanel.svelte';
-  import SportsSeasonDetailsPanel from '$lib/components/sports/SportsSeasonDetailsPanel.svelte';
-  import SportsEventDetailsPanel from '$lib/components/sports/SportsEventDetailsPanel.svelte';
-  import MoveFileModal from '$lib/components/shared/MoveFileModal.svelte';
-  import TvShowForm from '$lib/components/tv/TvShowForm.svelte';
-  import type { TvShowFormData } from '$lib/components/tv/TvShowForm.svelte';
-  import SeasonForm from '$lib/components/tv/SeasonForm.svelte';
-  import type { SeasonFormData } from '$lib/components/tv/SeasonForm.svelte';
-  import EpisodeForm from '$lib/components/tv/EpisodeForm.svelte';
-  import type { EpisodeFormData } from '$lib/components/tv/EpisodeForm.svelte';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
+  import SportsSearchModal from '#lib/components/SportsSearchModal.svelte';
+  import SportsLeagueDetailsPanel from '#lib/components/sports/SportsLeagueDetailsPanel.svelte';
+  import SportsSeasonDetailsPanel from '#lib/components/sports/SportsSeasonDetailsPanel.svelte';
+  import SportsEventDetailsPanel from '#lib/components/sports/SportsEventDetailsPanel.svelte';
+  import MoveFileModal from '#lib/components/shared/MoveFileModal.svelte';
+  import TvShowForm from '#lib/components/tv/TvShowForm.svelte';
+  import type { TvShowFormData } from '#lib/components/tv/TvShowForm.svelte';
+  import SeasonForm from '#lib/components/tv/SeasonForm.svelte';
+  import type { SeasonFormData } from '#lib/components/tv/SeasonForm.svelte';
+  import EpisodeForm from '#lib/components/tv/EpisodeForm.svelte';
+  import type { EpisodeFormData } from '#lib/components/tv/EpisodeForm.svelte';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import * as api from '$lib/api/client';
-  import { unwantMessage } from '$lib/utils/want-status';
-  import type { TvShow, TvSeason, TvEpisode } from '$lib/types';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { usePlayback } from '#lib/composables/usePlayback.svelte.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { unwantMessage } from '#lib/utils/want-status.js';
+  import type { TvShow, TvSeason, TvEpisode } from '#lib/types.js';
   import {
     pushEntity,
     popEntity,
@@ -40,7 +40,7 @@
     getNavigationState,
     updateCurrentEntityData,
     setLoadingEntity
-  } from '$lib/stores/navigation.svelte';
+  } from '#lib/stores/navigation.svelte.js';
 
   type FilterValue = 'all' | 'monitored' | 'ended';
 
@@ -65,8 +65,8 @@
 
   let localSearchQuery = $state('');
   let loadGeneration = 0;
-  const urlAround = $derived($page.url.searchParams.get('around'));
-  const urlAroundBefore = $derived($page.url.searchParams.get('around_before'));
+  const urlAround = $derived(page.url.searchParams.get('around'));
+  const urlAroundBefore = $derived(page.url.searchParams.get('around_before'));
 
   const nav = getNavigationState();
   const stats = getStatsState();
@@ -711,7 +711,6 @@
   const countDisplay = $derived(
     totalCount != null ? `${totalCount} leagues` : `${leagues.length} leagues`
   );
-
   const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ#'.split('');
 
   const statusBadge = (league: TvShow) => {
@@ -939,9 +938,11 @@
           </button>
           <div class="spacer"></div>
         {/if}
-        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={loading}>
-          Cancel
-        </button>
+
+        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={loading}
+          >Cancel</button
+        >
+
         <button
           class="btn-primary"
           type="button"

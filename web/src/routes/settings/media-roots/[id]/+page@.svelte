@@ -1,18 +1,18 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import MediaRootDetailPage from '$lib/components/media-roots/MediaRootDetailPage.svelte';
-  import MediaRootEditForm from '$lib/components/media-roots/MediaRootEditForm.svelte';
-  import MatchResolver from '$lib/components/media-roots/MatchResolver.svelte';
-  import EntityReassignModal from '$lib/components/media-roots/EntityReassignModal.svelte';
-  import FileInfoModal from '$lib/components/media-roots/FileInfoModal.svelte';
-  import ReorganizePreview from '$lib/components/media-roots/ReorganizePreview.svelte';
-  import DirectoryBrowser from '$lib/components/media-roots/DirectoryBrowser.svelte';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import type { MediaRoot, MediaRootFile, MediaRootFileLite } from '$lib/types';
+  import MediaRootDetailPage from '#lib/components/media-roots/MediaRootDetailPage.svelte';
+  import MediaRootEditForm from '#lib/components/media-roots/MediaRootEditForm.svelte';
+  import MatchResolver from '#lib/components/media-roots/MatchResolver.svelte';
+  import EntityReassignModal from '#lib/components/media-roots/EntityReassignModal.svelte';
+  import FileInfoModal from '#lib/components/media-roots/FileInfoModal.svelte';
+  import ReorganizePreview from '#lib/components/media-roots/ReorganizePreview.svelte';
+  import DirectoryBrowser from '#lib/components/media-roots/DirectoryBrowser.svelte';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { MediaRoot, MediaRootFile, MediaRootFileLite } from '#lib/types.js';
 
   let root = $state<MediaRoot | null>(null);
   let loading = $state(true);
@@ -40,7 +40,7 @@
   let editScanIntervalSeconds = $state<number | null>(null);
   let showBrowseEdit = $state(false);
 
-  const rootId = $derived($page.params.id);
+  const rootId = $derived(page.params.id);
 
   let loadGeneration = 0;
 
@@ -334,10 +334,9 @@
           type="button"
           class="btn btn-sec"
           onclick={() => (editing = false)}
-          disabled={saving}
+          disabled={saving}>Cancel</button
         >
-          Cancel
-        </button>
+
         <button type="button" class="btn btn-primary" onclick={saveEdit} disabled={saving}>
           <span class="material-icons-outlined">save</span>
           {saving ? 'Saving...' : 'Save'}

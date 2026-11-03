@@ -18,8 +18,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-const LANDED_AFTER_IDLE: std::time::Duration = std::time::Duration::from_millis(50);
-
 /// A host still refusing after this many retries has not handed over a single byte: the
 /// client is watching a spinner over it, so it is a dead link, not a hiccup.
 const MAX_ATTEMPTS_BEFORE_FIRST_BYTE: u32 = 1;
@@ -336,23 +334,11 @@ impl ProgressiveDownloadManager {
             let mut stream_error = false;
 
             loop {
-                // The latest write is only known to have landed once it is flushed; do
-                // that whenever the network pauses, so a reader waiting at the end of
-                // the file is not kept a chunk behind for the length of the pause.
-                let chunk = match tokio::time::timeout(LANDED_AFTER_IDLE, stream.next()).await {
-                    Ok(chunk) => chunk,
-                    Err(_) => {
-                        file.flush()
-                            .await
-                            .map_err(|e| format!("Flush error: {e}"))?;
-                        meter.record(downloaded as u64);
-                        // A stalled host must not keep a cancelled download holding the
-                        // file: whoever resumes it would append alongside.
-                        tokio::select! {
-                            chunk = stream.next() => chunk,
-                            _ = cancel.cancelled() => return Err(DownloadError::Failed("Cancelled".to_string())),
-                        }
-                    }
+                // A stalled host must not keep a cancelled download holding the file:
+                // whoever resumes it would append alongside.
+                let chunk = tokio::select! {
+                    chunk = stream.next() => chunk,
+                    _ = cancel.cancelled() => return Err(DownloadError::Failed("Cancelled".to_string())),
                 };
                 let Some(chunk) = chunk else {
                     break;
@@ -365,15 +351,17 @@ impl ProgressiveDownloadManager {
 
                 match chunk {
                     Ok(data) => {
-                        let durable = downloaded;
                         if let Err(e) = file.write_all(&data).await {
                             return Err(format!("Write error: {e}").into());
                         }
+                        // tokio's File returns from a write before it lands. A local read
+                        // follows this file, so the meter must count exactly what a reader
+                        // can see: never less, or a client is served bytes reported missing.
+                        file.flush()
+                            .await
+                            .map_err(|e| format!("Flush error: {e}"))?;
                         downloaded += data.len() as i64;
-                        // tokio's File hands writes to a blocking thread and returns before
-                        // they land, but each write first waits out the one before it. So
-                        // once this one is accepted, everything before it is readable.
-                        meter.record(durable as u64);
+                        meter.record(downloaded as u64);
                         // Reset resume counter on successful data
                         resume_attempts = 0;
                     }

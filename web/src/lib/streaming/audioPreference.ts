@@ -1,4 +1,4 @@
-import type { PlaybackAudioTrack, PlaybackMethod } from '$lib/types';
+import type { PlaybackAudioTrack, PlaybackMethod } from '#lib/types.js';
 
 export interface StartingAudio {
   active: number | null;

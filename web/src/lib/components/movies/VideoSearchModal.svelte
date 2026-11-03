@@ -8,10 +8,10 @@
     createMovie,
     createTvShow,
     getVideoMetadataProviders
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import type { MovieSearchResult, TvSearchResult } from '$lib/types';
-  import VideoMetadataMergePanel from '$lib/components/video/VideoMetadataMergePanel.svelte';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import type { MovieSearchResult, TvSearchResult } from '#lib/types.js';
+  import VideoMetadataMergePanel from '#lib/components/video/VideoMetadataMergePanel.svelte';
 
   type Result = MovieSearchResult | TvSearchResult;
 

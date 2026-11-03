@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { PersonDetail } from '$lib/types';
-  import { uploadPersonImage, personImageUrl } from '$lib/api/client';
+  import type { PersonDetail } from '#lib/types.js';
+  import { uploadPersonImage, personImageUrl } from '#lib/api/client.js';
 
   export interface PersonFormData {
     name: string;

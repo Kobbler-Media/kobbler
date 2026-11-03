@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { SvelteSet } from 'svelte/reactivity';
   import { formatAge } from '@koblibs/ui';
   import {
@@ -9,19 +9,19 @@
     onDebounced,
     on as onLiveEvent,
     off as offLiveEvent
-  } from '$lib/services/eventstream.svelte';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import LivetvTabs from '$lib/components/livetv/LivetvTabs.svelte';
-  import ChannelFacetRail from '$lib/components/livetv/ChannelFacetRail.svelte';
-  import type { FacetGroupId } from '$lib/components/livetv/types';
-  import ChannelTable from '$lib/components/livetv/ChannelTable.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getLivetvState, fetchLivetvTuners } from '$lib/stores/livetv.svelte';
-  import { openLivetvChannel, preWarmLivetvChannel } from '$lib/stores/livetvPlayer.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import * as api from '$lib/api/client';
-  import type { LivetvBulkAction, LivetvChannel, LivetvFacet, LivetvFacets } from '$lib/types';
+  } from '#lib/services/eventstream.svelte.js';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import LivetvTabs from '#lib/components/livetv/LivetvTabs.svelte';
+  import ChannelFacetRail from '#lib/components/livetv/ChannelFacetRail.svelte';
+  import type { FacetGroupId } from '#lib/components/livetv/types.js';
+  import ChannelTable from '#lib/components/livetv/ChannelTable.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getLivetvState, fetchLivetvTuners } from '#lib/stores/livetv.svelte.js';
+  import { openLivetvChannel, preWarmLivetvChannel } from '#lib/stores/livetvPlayer.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import * as api from '#lib/api/client.js';
+  import type { LivetvBulkAction, LivetvChannel, LivetvFacet, LivetvFacets } from '#lib/types.js';
 
   const livetv = getLivetvState();
 
@@ -79,8 +79,20 @@
       { value: enabled, label: 'enabled', tone: 'ink', sub: `of ${baselineTotal}` },
       { value: hd, label: 'HD', tone: 'hd', sub: null },
       { value: radio, label: 'radio', tone: 'radio', sub: null },
-      { value: dead, label: 'unnamed / dead', tone: 'dim', sub: 'auto-hidden' },
-      { value: withGuide, label: 'with guide data', tone: 'guide', sub: null },
+      {
+        value: dead,
+        label: 'unnamed / dead',
+        tone: 'dim',
+        sub: 'auto-hidden'
+      },
+
+      {
+        value: withGuide,
+        label: 'with guide data',
+        tone: 'guide',
+        sub: null
+      },
+
       {
         value: muxes,
         label: `mux${muxes === 1 ? '' : 'es'}`,
@@ -256,7 +268,7 @@
   }
 
   function readUrlState() {
-    const params = $page.url.searchParams;
+    const params = page.url.searchParams;
     searchQuery = params.get('search') ?? '';
     searchInput = searchQuery;
     selectedFacets = {

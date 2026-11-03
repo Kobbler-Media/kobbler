@@ -14,17 +14,17 @@
    *   - On select: extract identifiers, update existing entity, call onComplete
    *   - Used for linking metadata sources to existing books
    */
-  import type { MetadataResult } from '$lib/api/client';
-  import type { AuthorSearchResult, SeriesSearchResult } from '$lib/types';
+  import type { MetadataResult } from '#lib/api/client.js';
+  import type { AuthorSearchResult, SeriesSearchResult } from '#lib/types.js';
   import MetadataSearchModal, {
     type SearchSavedState,
     type ProviderInfo
   } from './MetadataSearchModal.svelte';
-  import type { BookFormData, AuthorFormData, SeriesFormData } from '$lib/types';
+  import type { BookFormData, AuthorFormData, SeriesFormData } from '#lib/types.js';
   import BookForm from './BookForm.svelte';
   import AuthorEditForm from './AuthorEditForm.svelte';
   import SeriesEditForm from './SeriesEditForm.svelte';
-  import * as api from '$lib/api/client';
+  import * as api from '#lib/api/client.js';
 
   export type EntityMode = 'book' | 'author' | 'series';
   type FlowState = 'search' | 'edit';

@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { VIDEO_RATING_SCALE } from '$lib/utils/rating';
+  import { VIDEO_RATING_SCALE } from '#lib/utils/rating.js';
   import { onMount } from 'svelte';
-  import type { TvShow } from '$lib/types';
-  import { getTvShowRating, updateTvShowRating, deleteTvShowRating } from '$lib/api/client';
-  import PersonCard from '$lib/components/shared/PersonCard.svelte';
-  import GenreChips from '$lib/components/GenreChips.svelte';
-  import DualRatingStars from '$lib/components/DualRatingStars.svelte';
+  import type { TvShow } from '#lib/types.js';
+  import { getTvShowRating, updateTvShowRating, deleteTvShowRating } from '#lib/api/client.js';
+  import PersonCard from '#lib/components/shared/PersonCard.svelte';
+  import GenreChips from '#lib/components/GenreChips.svelte';
+  import DualRatingStars from '#lib/components/DualRatingStars.svelte';
   import { SearchSelect } from '@koblibs/ui';
   import EntityHero from '../shared/EntityHero.svelte';
-  import { formatShowStatus } from '$lib/utils/format';
-  import { hasOutstandingWants } from '$lib/utils/want-status';
+  import { formatShowStatus } from '#lib/utils/format.js';
+  import { hasOutstandingWants } from '#lib/utils/want-status.js';
 
   interface Props {
     show: TvShow;

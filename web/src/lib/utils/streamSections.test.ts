@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { StreamGroup, StreamOption } from '$lib/api/client';
+import type { StreamGroup, StreamOption } from '#lib/api/client.js';
 import { streamSections } from './streamSections';
 
 const option = (id: string, group?: StreamGroup) => ({ id, group }) as StreamOption;

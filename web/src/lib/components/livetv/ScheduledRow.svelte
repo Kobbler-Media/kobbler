@@ -1,6 +1,6 @@
 <script lang="ts">
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { LivetvRecording, LivetvSeriesRule } from '$lib/types';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { LivetvRecording, LivetvSeriesRule } from '#lib/types.js';
 
   interface Props {
     recording: LivetvRecording;

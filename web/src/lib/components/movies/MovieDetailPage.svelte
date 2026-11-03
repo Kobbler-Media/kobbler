@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { VIDEO_RATING_SCALE } from '$lib/utils/rating';
+  import { VIDEO_RATING_SCALE } from '#lib/utils/rating.js';
   import { onMount } from 'svelte';
   import type {
     Movie,
@@ -7,7 +7,7 @@
     MovieWatchState,
     SubtitleTrackInfo,
     ExternalSubtitleInfo
-  } from '$lib/types';
+  } from '#lib/types.js';
   import {
     getMovieFiles,
     getMovieWatchState,
@@ -19,31 +19,31 @@
     queueMovieRelease,
     wantMovie,
     getMovieTracks
-  } from '$lib/api/client';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import CastSection from '$lib/components/shared/CastSection.svelte';
-  import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
-  import FilesList from '$lib/components/shared/FilesList.svelte';
-  import GenreChips from '$lib/components/GenreChips.svelte';
-  import { isActivelyWanted } from '$lib/utils/want-status';
-  import DualRatingStars from '$lib/components/DualRatingStars.svelte';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
-  import SubtitlesList from '$lib/components/shared/SubtitlesList.svelte';
-  import SubtitleSearchModal from '$lib/components/shared/SubtitleSearchModal.svelte';
-  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
-  import ReleaseAvailability from '$lib/components/shared/ReleaseAvailability.svelte';
-  import { libraryStatus, streamingAvailability } from '$lib/utils/releaseAvailability';
-  import { useTitleKeep } from '$lib/composables/useKeep.svelte';
+  } from '#lib/api/client.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import { usePlayback } from '#lib/composables/usePlayback.svelte.js';
+  import { useStreamPlayback } from '#lib/composables/useStreamPlayback.svelte.js';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import CastSection from '#lib/components/shared/CastSection.svelte';
+  import PlaybackArea from '#lib/components/shared/PlaybackArea.svelte';
+  import FilesList from '#lib/components/shared/FilesList.svelte';
+  import GenreChips from '#lib/components/GenreChips.svelte';
+  import { isActivelyWanted } from '#lib/utils/want-status.js';
+  import DualRatingStars from '#lib/components/DualRatingStars.svelte';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
+  import SubtitlesList from '#lib/components/shared/SubtitlesList.svelte';
+  import SubtitleSearchModal from '#lib/components/shared/SubtitleSearchModal.svelte';
+  import StreamPlaybackOverlays from '#lib/components/StreamPlaybackOverlays.svelte';
+  import ReleaseAvailability from '#lib/components/shared/ReleaseAvailability.svelte';
+  import { libraryStatus, streamingAvailability } from '#lib/utils/releaseAvailability.js';
+  import { useTitleKeep } from '#lib/composables/useKeep.svelte.js';
   import EntityHero from '../shared/EntityHero.svelte';
   import HeroActions from '../shared/HeroActions.svelte';
   import MetaLine from '../shared/MetaLine.svelte';
   import KidsAccess from '../shared/KidsAccess.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
 
   interface Props {
     movie: Movie;

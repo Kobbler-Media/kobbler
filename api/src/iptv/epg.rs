@@ -174,7 +174,6 @@ async fn build_epg_channel_map(pool: &PgPool) -> Result<HashMap<String, Uuid>> {
 /// Parse XMLTV XML into programme entries.
 fn parse_xmltv(data: &[u8], epg_map: &HashMap<String, Uuid>) -> Result<Vec<EpgEntry>> {
     let mut reader = Reader::from_reader(data);
-    reader.config_mut().trim_text(true);
 
     let mut programmes = Vec::new();
     let mut buf = Vec::new();
@@ -190,11 +189,12 @@ fn parse_xmltv(data: &[u8], epg_map: &HashMap<String, Uuid>) -> Result<Vec<EpgEn
     let mut current_episode_num: Option<String> = None;
     let mut current_language: Option<String> = None;
     let mut current_tag: Option<String> = None;
+    let mut text_buf = String::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                let local_name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let local_name = e.local_name().as_ref().to_string();
                 match local_name.as_str() {
                     "programme" => {
                         in_programme = true;
@@ -208,8 +208,8 @@ fn parse_xmltv(data: &[u8], epg_map: &HashMap<String, Uuid>) -> Result<Vec<EpgEn
                         current_stop = None;
 
                         for attr in e.attributes().flatten() {
-                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-                            let val = String::from_utf8_lossy(&attr.value).to_string();
+                            let key = attr.key.as_ref().to_string();
+                            let val = crate::xml_text::attr_value(&attr);
                             match key.as_str() {
                                 "channel" => {
                                     current_channel_id = epg_map.get(&val).copied();
@@ -226,14 +226,22 @@ fn parse_xmltv(data: &[u8], epg_map: &HashMap<String, Uuid>) -> Result<Vec<EpgEn
                     }
                     tag if in_programme => {
                         current_tag = Some(tag.to_string());
+                        text_buf.clear();
                     }
                     _ => {}
                 }
             }
-            Ok(Event::Text(ref e)) if in_programme => {
-                if let Some(ref tag) = current_tag {
-                    let text = e.decode().unwrap_or_default().to_string();
-                    match tag.as_str() {
+            Ok(Event::Text(ref e)) if current_tag.is_some() => text_buf.push_str(e.as_ref()),
+            Ok(Event::GeneralRef(ref e)) if current_tag.is_some() => {
+                crate::xml_text::push_ref(&mut text_buf, e);
+            }
+            Ok(Event::End(ref e)) => {
+                let text = text_buf.trim();
+                if let Some(tag) = current_tag.as_deref()
+                    && !text.is_empty()
+                {
+                    let text = text.to_string();
+                    match tag {
                         "title" => current_title = Some(text),
                         "desc" => current_desc = Some(text),
                         "category" => current_categories.push(text),
@@ -242,9 +250,7 @@ fn parse_xmltv(data: &[u8], epg_map: &HashMap<String, Uuid>) -> Result<Vec<EpgEn
                         _ => {}
                     }
                 }
-            }
-            Ok(Event::End(ref e)) => {
-                let local_name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let local_name = e.local_name().as_ref().to_string();
                 if local_name == "programme" && in_programme {
                     if let (Some(channel_id), Some(start), Some(stop)) =
                         (current_channel_id, current_start, current_stop)
@@ -437,6 +443,25 @@ mod tests {
         assert_eq!(result[0].title.as_deref(), Some("News"));
         assert_eq!(result[0].channel_id, id);
         assert_eq!(result[0].categories, vec!["News"]);
+    }
+
+    #[test]
+    fn parse_xmltv_resolves_entity_references() {
+        let xml = br#"<tv>
+  <programme start="20250101120000 +0000" stop="20250101130000 +0000" channel="bbc1">
+    <title>Law &amp; Order</title>
+    <desc>Benson &amp; Stabler &#8211; again</desc>
+  </programme>
+</tv>"#;
+        let mut map = HashMap::new();
+        map.insert("bbc1".to_string(), Uuid::now_v7());
+
+        let result = parse_xmltv(xml, &map).unwrap();
+        assert_eq!(result[0].title.as_deref(), Some("Law & Order"));
+        assert_eq!(
+            result[0].description.as_deref(),
+            Some("Benson & Stabler \u{2013} again")
+        );
     }
 
     #[test]

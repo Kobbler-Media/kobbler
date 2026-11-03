@@ -1,4 +1,4 @@
-import { saveReaderProgress } from '$lib/api/client';
+import { saveReaderProgress } from '#lib/api/client.js';
 
 const DEBOUNCE_MS = 3000;
 const PERIODIC_MS = 60000;

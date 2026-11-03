@@ -59,6 +59,7 @@ async fn call(
         auth: who,
         session_id,
         context_ref: None,
+        user_message: "",
     };
     dispatch::dispatch(&ctx, tool, &args).await
 }

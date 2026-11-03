@@ -3,18 +3,18 @@
    * BookFullPageView - Full page view for book details.
    * Renders within the content area using ContentPageView.
    */
-  import type { Book, ReadingData, ReadingStatus } from '$lib/types';
+  import type { Book, ReadingData, ReadingStatus } from '#lib/types.js';
   import ContentPageView from './ContentPageView.svelte';
   import IdentifierLinks from './IdentifierLinks.svelte';
   import GenreChips from './GenreChips.svelte';
   import BookFilesPanel from './BookFilesPanel.svelte';
-  import * as api from '$lib/api/client';
+  import * as api from '#lib/api/client.js';
   import ReadingSection from './ReadingSection.svelte';
   import DualRatingStars from './DualRatingStars.svelte';
   import EntityHero from './shared/EntityHero.svelte';
   import MetaLine from './shared/MetaLine.svelte';
   import UpgradeStatusBadge from './shared/UpgradeStatusBadge.svelte';
-  import { formatCalendarDate, formatSize } from '$lib/utils/format';
+  import { formatCalendarDate, formatSize } from '#lib/utils/format.js';
   import WantedStatusPanel from './WantedStatusPanel.svelte';
   import MoveToMediaRootModal from './MoveToMediaRootModal.svelte';
   import SelectDevicesModal from './SelectDevicesModal.svelte';

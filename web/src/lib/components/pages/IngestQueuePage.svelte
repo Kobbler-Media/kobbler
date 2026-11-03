@@ -10,20 +10,20 @@
     SeriesSearchResult,
     DeviceSummary,
     Book
-  } from '$lib/types';
-  import IngestQueueCard from '$lib/components/IngestQueueCard.svelte';
+  } from '#lib/types.js';
+  import IngestQueueCard from '#lib/components/IngestQueueCard.svelte';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import BookDetailsPanel from '$lib/components/BookDetailsPanel.svelte';
-  import BookForm from '$lib/components/BookForm.svelte';
-  import SeriesSidebarContent from '$lib/components/SeriesSidebarContent.svelte';
-  import AuthorSidebarContent from '$lib/components/AuthorSidebarContent.svelte';
-  import AddEntityModal from '$lib/components/AddEntityModal.svelte';
-  import { createDelayedLoading } from '$lib/utils/delayed-loading.svelte';
+  import BookDetailsPanel from '#lib/components/BookDetailsPanel.svelte';
+  import BookForm from '#lib/components/BookForm.svelte';
+  import SeriesSidebarContent from '#lib/components/SeriesSidebarContent.svelte';
+  import AuthorSidebarContent from '#lib/components/AuthorSidebarContent.svelte';
+  import AddEntityModal from '#lib/components/AddEntityModal.svelte';
+  import { createDelayedLoading } from '#lib/utils/delayed-loading.svelte.js';
   import {
     IngestBatchActions,
     IngestApprovalWizard,
     type BookFormData
-  } from '$lib/components/ingest';
+  } from '#lib/components/ingest/index.js';
   import {
     getNavigationState,
     pushEntity,
@@ -31,16 +31,16 @@
     clearStack,
     setLoadingEntity,
     updateCurrentEntityData
-  } from '$lib/stores/navigation.svelte';
-  import * as api from '$lib/api/client';
-  import type { MetadataResult } from '$lib/api/client';
-  import type { ProviderInfo } from '$lib/components/MetadataSearchModal.svelte';
+  } from '#lib/stores/navigation.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { MetadataResult } from '#lib/api/client.js';
+  import type { ProviderInfo } from '#lib/components/MetadataSearchModal.svelte';
   import {
     formatSize,
     getProviderCode,
     getProviderColor,
     getProviderName
-  } from '$lib/utils/format';
+  } from '#lib/utils/format.js';
 
   interface Props {
     groups: IngestQueueGroup[];

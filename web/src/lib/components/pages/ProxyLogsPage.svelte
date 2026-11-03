@@ -1,17 +1,17 @@
 <script lang="ts">
-  import type { LoadState } from '$lib/types';
+  import type { LoadState } from '#lib/types.js';
   import {
     clearProxyLogs,
     getProxyLogsExportUrl,
     type ProxyLogEntry,
     type ProxyLogsQuery
-  } from '$lib/api/client';
-  import { on, off, onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
+  } from '#lib/api/client.js';
+  import { on, off, onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
   import { InfiniteScroll } from '@koblibs/ui';
-  import { createDelayedLoading } from '$lib/utils/delayed-loading.svelte';
-  import ProxyLogRow from '$lib/components/proxy/ProxyLogRow.svelte';
-  import ProxyLogDetail from '$lib/components/proxy/ProxyLogDetail.svelte';
-  import ProxyLogDiffModal from '$lib/components/proxy/ProxyLogDiffModal.svelte';
+  import { createDelayedLoading } from '#lib/utils/delayed-loading.svelte.js';
+  import ProxyLogRow from '#lib/components/proxy/ProxyLogRow.svelte';
+  import ProxyLogDetail from '#lib/components/proxy/ProxyLogDetail.svelte';
+  import ProxyLogDiffModal from '#lib/components/proxy/ProxyLogDiffModal.svelte';
 
   type LoadProxyLogsHandler = (query: ProxyLogsQuery, append: boolean) => Promise<void>;
   type CopyToClipboardHandler = (text: string, label: string) => Promise<void>;

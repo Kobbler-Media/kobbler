@@ -1,5 +1,5 @@
-import type { MetadataResult } from '$lib/api/client';
-import { getProviderName } from '$lib/utils/format';
+import type { MetadataResult } from '#lib/api/client.js';
+import { getProviderName } from '#lib/utils/format.js';
 
 export interface SeriesBook {
   title: string;

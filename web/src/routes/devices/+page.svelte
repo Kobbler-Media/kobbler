@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
 
   onMount(() => {
-    goto('/settings/devices', { replaceState: true });
+    goto('/settings/devices', { replace: true });
   });
 </script>
 

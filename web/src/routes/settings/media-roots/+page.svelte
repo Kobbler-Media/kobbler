@@ -1,6 +1,6 @@
 <script lang="ts">
-  import MediaRootsPage from '$lib/components/pages/MediaRootsPage.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import MediaRootsPage from '#lib/components/pages/MediaRootsPage.svelte';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
 
   const auth = getAuthState();
 </script>

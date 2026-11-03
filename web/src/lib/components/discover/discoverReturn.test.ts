@@ -30,7 +30,7 @@ describe('discover return', () => {
     expect(ret.redirect('m1')).toBe(true);
     expect(ret.redirect('m1')).toBe(true);
     expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith('/movies/m1', { replaceState: true });
+    expect(navigate).toHaveBeenCalledWith('/movies/m1', { replace: true });
   });
 
   it('looks again when the page is shown from the back/forward cache', () => {

@@ -1,29 +1,29 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import HeroActions from '$lib/components/shared/HeroActions.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import EntityHero from '$lib/components/shared/EntityHero.svelte';
-  import SeasonForm from '$lib/components/tv/SeasonForm.svelte';
-  import type { SeasonFormData } from '$lib/components/tv/SeasonForm.svelte';
-  import EpisodeForm from '$lib/components/tv/EpisodeForm.svelte';
-  import type { EpisodeFormData } from '$lib/components/tv/EpisodeForm.svelte';
-  import VideoMetadataFetchModal from '$lib/components/video/VideoMetadataFetchModal.svelte';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
-  import TvEpisodeRow from '$lib/components/tv/TvEpisodeRow.svelte';
-  import EpisodeBatchActions from '$lib/components/tv/EpisodeBatchActions.svelte';
-  import { EpisodeBulkSelection } from '$lib/utils/episode-bulk.svelte';
-  import BulkSelectToggle from '$lib/components/shared/BulkSelectToggle.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import * as api from '$lib/api/client';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import HeroActions from '#lib/components/shared/HeroActions.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import EntityHero from '#lib/components/shared/EntityHero.svelte';
+  import SeasonForm from '#lib/components/tv/SeasonForm.svelte';
+  import type { SeasonFormData } from '#lib/components/tv/SeasonForm.svelte';
+  import EpisodeForm from '#lib/components/tv/EpisodeForm.svelte';
+  import type { EpisodeFormData } from '#lib/components/tv/EpisodeForm.svelte';
+  import VideoMetadataFetchModal from '#lib/components/video/VideoMetadataFetchModal.svelte';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
+  import TvEpisodeRow from '#lib/components/tv/TvEpisodeRow.svelte';
+  import EpisodeBatchActions from '#lib/components/tv/EpisodeBatchActions.svelte';
+  import { EpisodeBulkSelection } from '#lib/utils/episode-bulk.svelte.js';
+  import BulkSelectToggle from '#lib/components/shared/BulkSelectToggle.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import * as api from '#lib/api/client.js';
   import { SearchSelect } from '@koblibs/ui';
-  import { watchStateVersion } from '$lib/stores/watchState.svelte';
-  import { formatCalendarDate, formatEpisodeSearchTitle, pluralize } from '$lib/utils/format';
-  import { hasOutstandingWants, unwantMessage } from '$lib/utils/want-status';
-  import type { TvSeason, TvShow, SeasonDetailResult } from '$lib/types';
+  import { watchStateVersion } from '#lib/stores/watchState.svelte.js';
+  import { formatCalendarDate, formatEpisodeSearchTitle, pluralize } from '#lib/utils/format.js';
+  import { hasOutstandingWants, unwantMessage } from '#lib/utils/want-status.js';
+  import type { TvSeason, TvShow, SeasonDetailResult } from '#lib/types.js';
 
   let season = $state<TvSeason | null>(null);
   let loading = $state(true);
@@ -46,7 +46,7 @@
     notify: showMessage
   });
 
-  const seasonId = $derived($page.params.id);
+  const seasonId = $derived(page.params.id);
   const statsState = getStatsState();
 
   const releaseSearchTitle = $derived.by(() => {
@@ -379,9 +379,11 @@
           {deleting ? 'Deleting...' : 'Delete'}
         </button>
         <div class="spacer"></div>
-        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}>
-          Cancel
-        </button>
+
+        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}
+          >Cancel</button
+        >
+
         <button
           type="button"
           class="btn btn-primary"
@@ -411,9 +413,9 @@
     onClose={() => (addingEpisode = false)}
   >
     {#snippet headerActions()}
-      <button type="button" class="glass-btn" onclick={() => (addingEpisode = false)} title="Close">
-        <span class="material-icons-outlined">close</span>
-      </button>
+      <button type="button" class="glass-btn" onclick={() => (addingEpisode = false)} title="Close"
+        ><span class="material-icons-outlined">close</span></button
+      >
     {/snippet}
 
     <div class="edit-hero">

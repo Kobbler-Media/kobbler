@@ -4,8 +4,8 @@
    * All sidebar/navigation logic is handled by the route page.
    */
   import { untrack } from 'svelte';
-  import type { SeriesSummary, LoadState } from '$lib/types';
-  import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
+  import type { SeriesSummary, LoadState } from '#lib/types.js';
+  import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
 
   interface Props {
     seriesList: SeriesSummary[];

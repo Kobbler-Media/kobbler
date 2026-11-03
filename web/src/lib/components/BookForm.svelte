@@ -7,14 +7,14 @@
    * - Ingest mode: editing ingest queue items
    */
   import { untrack } from 'svelte';
-  import type { Book, AuthorInput, BookFormData, SeriesMembership } from '$lib/types';
-  import type { MetadataResult } from '$lib/api/client';
+  import type { Book, AuthorInput, BookFormData, SeriesMembership } from '#lib/types.js';
+  import type { MetadataResult } from '#lib/api/client.js';
   import type { ProviderInfo } from './MetadataSearchModal.svelte';
   import SourceField from './SourceField.svelte';
   import CoverSelector from './CoverSelector.svelte';
   import { MultiSearchSelect, SearchSelect } from '@koblibs/ui';
-  import * as api from '$lib/api/client';
-  import { getProviderCode, getProviderName } from '$lib/utils/format';
+  import * as api from '#lib/api/client.js';
+  import { getProviderCode, getProviderName } from '#lib/utils/format.js';
 
   interface Props {
     /** Existing book to edit (includes ingest items which are now Book-shaped). If undefined, form is in create mode. */

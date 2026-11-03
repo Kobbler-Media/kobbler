@@ -1,22 +1,22 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { uid } from '@koblibs/ui';
-  import { registerOverlay, unregisterOverlay } from '$lib/stores/ui.svelte';
-  import { on as onLiveEvent, off as offLiveEvent } from '$lib/services/eventstream.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
+  import { registerOverlay, unregisterOverlay } from '#lib/stores/ui.svelte.js';
+  import { on as onLiveEvent, off as offLiveEvent } from '#lib/services/eventstream.svelte.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
   import type {
     LivetvBufferState,
     LivetvChannel,
     LivetvRecording,
     LivetvSession
-  } from '$lib/types';
+  } from '#lib/types.js';
   import {
     claimLivetvSession,
     closeLivetvPlayer,
     setLivetvPlayerChannel
-  } from '$lib/stores/livetvPlayer.svelte';
-  import { getLivetvState, fetchLivetvLeases } from '$lib/stores/livetv.svelte';
+  } from '#lib/stores/livetvPlayer.svelte.js';
+  import { getLivetvState, fetchLivetvLeases } from '#lib/stores/livetv.svelte.js';
   import { networkTint } from '../tint';
   import LivePlayerTopBar from './LivePlayerTopBar.svelte';
   import LiveProgrammeBar from './LiveProgrammeBar.svelte';
@@ -24,7 +24,7 @@
   import LivePlayerControls from './LivePlayerControls.svelte';
   import ChannelRail from './ChannelRail.svelte';
   import { preloadHls, createLiveHls, type LiveHlsHandle } from './liveHls';
-  import { portal } from '$lib/utils/portal';
+  import { portal } from '#lib/utils/portal.js';
 
   interface Props {
     channel: LivetvChannel;

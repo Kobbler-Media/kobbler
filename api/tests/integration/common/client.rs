@@ -53,6 +53,15 @@ impl TestClient {
         TestResponse::from_reqwest(resp).await
     }
 
+    pub async fn post_with_header(&self, path: &str, name: &str, value: &str) -> TestResponse {
+        let mut req = self.client.post(self.url(path)).header(name, value);
+        if let Some(ref token) = self.auth_token {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        }
+        let resp = req.send().await.expect("POST request failed");
+        TestResponse::from_reqwest(resp).await
+    }
+
     /// Make a POST request with JSON body.
     pub async fn post_json<T: Serialize>(&self, path: &str, body: &T) -> TestResponse {
         let mut req = self.client.post(self.url(path)).json(body);

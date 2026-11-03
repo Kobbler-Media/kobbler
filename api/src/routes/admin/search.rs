@@ -46,7 +46,13 @@ pub async fn search(
             .into_response();
     }
 
-    match state.search.unified_search(&query.q, query.limit).await {
+    let config = state.runtime_config.get().await;
+    let semantic = crate::search::semantic::query_vector(&config, &query.q).await;
+    match state
+        .search
+        .unified_search(&query.q, query.limit, semantic.as_ref())
+        .await
+    {
         Ok(mut result) => {
             if auth.is_kids
                 && let Err(e) = crate::kids::filter_search(&state.pool, &mut result).await

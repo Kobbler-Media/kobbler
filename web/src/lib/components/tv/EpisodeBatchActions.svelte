@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { BulkEpisodeAction } from '$lib/types';
+  import type { BulkEpisodeAction } from '#lib/types.js';
 
   interface Props {
     selectedCount: number;

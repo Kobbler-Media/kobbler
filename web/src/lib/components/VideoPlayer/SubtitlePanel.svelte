@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import type { PlaybackSubtitleTrack } from '$lib/types';
+  import type { PlaybackSubtitleTrack } from '#lib/types.js';
 
   interface Props {
     subtitles: PlaybackSubtitleTrack[];

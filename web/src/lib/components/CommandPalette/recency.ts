@@ -1,7 +1,7 @@
 // API-backed frecency tracking for command palette
 
-import { getRecents, recordRecentAccess } from '$lib/api/client';
-import type { RecentItem } from '$lib/api/client';
+import { getRecents, recordRecentAccess } from '#lib/api/client.js';
+import type { RecentItem } from '#lib/api/client.js';
 import type { SearchResult } from './types';
 import { pages, commands, sections } from './registry';
 

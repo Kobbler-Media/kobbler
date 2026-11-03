@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Modal } from '@koblibs/ui';
   import { SearchSelect, type SearchSelectItem } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
 
   interface Props {
     title?: string;

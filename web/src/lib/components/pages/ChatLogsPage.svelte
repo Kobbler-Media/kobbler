@@ -1,9 +1,9 @@
 <script lang="ts">
   import { SearchSelect, InfiniteScroll } from '@koblibs/ui';
-  import type { ChatLogsQuery, ChatTurnLogEntry } from '$lib/api/client';
-  import type { UserSummary } from '$lib/types';
-  import ChatTurnLogRow from '$lib/components/chat-logs/ChatTurnLogRow.svelte';
-  import ChatTurnLogDetail from '$lib/components/chat-logs/ChatTurnLogDetail.svelte';
+  import type { ChatLogsQuery, ChatTurnLogEntry } from '#lib/api/client.js';
+  import type { UserSummary } from '#lib/types.js';
+  import ChatTurnLogRow from '#lib/components/chat-logs/ChatTurnLogRow.svelte';
+  import ChatTurnLogDetail from '#lib/components/chat-logs/ChatTurnLogDetail.svelte';
 
   interface Props {
     logs: ChatTurnLogEntry[];

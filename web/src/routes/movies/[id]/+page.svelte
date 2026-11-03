@@ -1,20 +1,20 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import MovieDetailPage from '$lib/components/movies/MovieDetailPage.svelte';
-  import MovieForm from '$lib/components/movies/MovieForm.svelte';
-  import type { MovieFormData } from '$lib/components/movies/MovieForm.svelte';
-  import VideoMetadataSearchModal from '$lib/components/video/VideoMetadataSearchModal.svelte';
-  import MoveFileModal from '$lib/components/shared/MoveFileModal.svelte';
+  import MovieDetailPage from '#lib/components/movies/MovieDetailPage.svelte';
+  import MovieForm from '#lib/components/movies/MovieForm.svelte';
+  import type { MovieFormData } from '#lib/components/movies/MovieForm.svelte';
+  import VideoMetadataSearchModal from '#lib/components/video/VideoMetadataSearchModal.svelte';
+  import MoveFileModal from '#lib/components/shared/MoveFileModal.svelte';
   import type { SearchSelectItem } from '@koblibs/ui';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import { on, off } from '$lib/services/eventstream.svelte';
-  import { getJobsState } from '$lib/stores/jobs.svelte';
-  import { watchStateVersion } from '$lib/stores/watchState.svelte';
-  import type { Movie, MovieSearchResult, TvSearchResult } from '$lib/types';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { on, off } from '#lib/services/eventstream.svelte.js';
+  import { getJobsState } from '#lib/stores/jobs.svelte.js';
+  import { watchStateVersion } from '#lib/stores/watchState.svelte.js';
+  import type { Movie, MovieSearchResult, TvSearchResult } from '#lib/types.js';
 
   let movie = $state<Movie | null>(null);
   let loading = $state(true);
@@ -43,8 +43,8 @@
     }
   };
 
-  const movieId = $derived($page.params.id);
-  const pageState = $derived($page.state as { editing?: boolean });
+  const movieId = $derived(page.params.id);
+  const pageState = $derived(page.state as { editing?: boolean });
   const jobsState = getJobsState();
   const syncing = $derived(
     jobsState.jobs.some(
@@ -339,9 +339,11 @@
           {deleting ? 'Deleting...' : 'Delete'}
         </button>
         <div class="spacer"></div>
-        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}>
-          Cancel
-        </button>
+
+        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}
+          >Cancel</button
+        >
+
         <button
           type="button"
           class="btn btn-primary"

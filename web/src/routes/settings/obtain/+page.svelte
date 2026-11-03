@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { SearchSelect } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import {
     getSystemConfig,
     updateSystemConfig,
@@ -10,7 +10,7 @@
     type SystemConfig,
     type SystemConfigUpdate,
     type TestConnectionResult
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
 
   const auth = getAuthState();
 

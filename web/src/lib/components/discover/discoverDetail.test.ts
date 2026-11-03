@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DiscoverEpisode } from '$lib/api/client';
+import type { DiscoverEpisode } from '#lib/api/client.js';
 import { episodeCode, parseDiscoverItem, streamTarget } from './discoverDetail';
 
 const season = (season_number: number, episode_count?: number) => ({

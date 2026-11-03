@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { Modal } from '@koblibs/ui';
-  import { searchSportsLeagues, createSportsLeague } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import type { TvSearchResult } from '$lib/types';
+  import { searchSportsLeagues, createSportsLeague } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import type { TvSearchResult } from '#lib/types.js';
 
   interface Props {
     initialQuery?: string;

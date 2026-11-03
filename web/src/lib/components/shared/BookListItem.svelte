@@ -1,11 +1,11 @@
 <script lang="ts">
   import MetaLine from './MetaLine.svelte';
-  import type { Book } from '$lib/types';
+  import type { Book } from '#lib/types.js';
   import {
     getBookListStatusBadge,
     shouldShowWantButton,
     shouldShowSkipButton
-  } from '$lib/utils/book-status';
+  } from '#lib/utils/book-status.js';
 
   interface Props {
     book: Book;

@@ -1,5 +1,5 @@
 import type Hls from 'hls.js';
-import { liveSyncRate, liveTargetLatency, tunerFollowLimit } from '$lib/streaming/liveLatency';
+import { liveSyncRate, liveTargetLatency, tunerFollowLimit } from '#lib/streaming/liveLatency.js';
 
 type HlsCtor = typeof Hls;
 

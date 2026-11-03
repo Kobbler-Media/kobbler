@@ -8,7 +8,7 @@ import type {
   PlaybackSubtitleTrack,
   SkipSegment,
   VideoChapter
-} from '$lib/types';
+} from '#lib/types.js';
 
 export const CAST_NAMESPACE = 'urn:x-cast:com.kobbler.cast';
 

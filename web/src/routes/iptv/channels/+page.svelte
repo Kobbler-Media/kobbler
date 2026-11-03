@@ -1,23 +1,23 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
-  import ChannelGrid from '$lib/components/iptv/ChannelGrid.svelte';
-  import ChannelDetailSidebar from '$lib/components/iptv/ChannelDetailSidebar.svelte';
-  import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
-  import { captureScrollAnchor, restoreScrollAnchor } from '$lib/utils/scroll-anchor';
+  import { onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
+  import ChannelGrid from '#lib/components/iptv/ChannelGrid.svelte';
+  import ChannelDetailSidebar from '#lib/components/iptv/ChannelDetailSidebar.svelte';
+  import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
+  import { captureScrollAnchor, restoreScrollAnchor } from '#lib/utils/scroll-anchor.js';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import type { IptvChannel, IptvGroup } from '$lib/types';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { IptvChannel, IptvGroup } from '#lib/types.js';
   import {
     pushEntity,
     clearStack,
     getNavigationState,
     updateCurrentEntityData,
     setLoadingEntity
-  } from '$lib/stores/navigation.svelte';
+  } from '#lib/stores/navigation.svelte.js';
 
   let channels = $state<IptvChannel[]>([]);
   let groups = $state<IptvGroup[]>([]);

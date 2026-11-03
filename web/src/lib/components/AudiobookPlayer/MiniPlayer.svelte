@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import AudioControls from './AudioControls.svelte';
-  import CastButton from '$lib/components/CastButton.svelte';
+  import CastButton from '#lib/components/CastButton.svelte';
   import {
     getAudioPlayerState,
     seekToGlobal,
@@ -9,7 +9,7 @@
     skipBackward,
     stop,
     formatTime
-  } from '$lib/stores/audioplayer.svelte';
+  } from '#lib/stores/audioplayer.svelte.js';
 
   const player = getAudioPlayerState();
 

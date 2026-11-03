@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Modal } from '@koblibs/ui';
-  import type { IndexerRelease, LibrarySearchResponse } from '$lib/types';
-  import { showMessage } from '$lib/context/app.svelte';
+  import type { IndexerRelease, LibrarySearchResponse } from '#lib/types.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import { untrack } from 'svelte';
 
   interface Props {

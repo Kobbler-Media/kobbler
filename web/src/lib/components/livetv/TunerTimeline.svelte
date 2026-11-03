@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LivetvLease, LivetvRecording, LivetvTuner } from '$lib/types';
+  import type { LivetvLease, LivetvRecording, LivetvTuner } from '#lib/types.js';
 
   interface Props {
     tuners: LivetvTuner[];

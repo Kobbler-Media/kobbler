@@ -1,5 +1,5 @@
-import { getSearchSuggestions } from '$lib/api/client';
-import type { SearchSuggestion } from '$lib/types';
+import { getSearchSuggestions } from '#lib/api/client.js';
+import type { SearchSuggestion } from '#lib/types.js';
 
 const DEBOUNCE_MS = 150;
 

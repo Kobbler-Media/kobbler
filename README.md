@@ -125,6 +125,7 @@ matching service. Kobbler works completely without all of them.
 | Intro/credit skip detection | `skip_detect_mode` | the vision sidecar |
 | Chat assistant | `chat_enabled` | any OpenAI-compatible LLM endpoint you supply |
 | Enrichment | `enrichment_enabled` | the above services |
+| Semantic (artwork) search | `semantic_search_enabled` | Meilisearch and [koblem](https://github.com/Kobbler-Media/koblem) |
 | Shared GPU routing | `route_gpu_via_koblem` | [koblem](https://github.com/Kobbler-Media/koblem), a separate project |
 | Automated acquisition | `kobload_*` | [Kobload](https://github.com/Kobbler-Media/kobload), a separate project |
 

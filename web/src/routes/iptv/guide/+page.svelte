@@ -1,13 +1,13 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import GroupPills from '$lib/components/iptv/GroupPills.svelte';
-  import EpgGrid from '$lib/components/iptv/EpgGrid.svelte';
-  import RecordButton from '$lib/components/iptv/RecordButton.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import type { IptvChannel, IptvEpgEntry, IptvGroup } from '$lib/types';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import GroupPills from '#lib/components/iptv/GroupPills.svelte';
+  import EpgGrid from '#lib/components/iptv/EpgGrid.svelte';
+  import RecordButton from '#lib/components/iptv/RecordButton.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { IptvChannel, IptvEpgEntry, IptvGroup } from '#lib/types.js';
 
   let channels = $state<IptvChannel[]>([]);
   let programs = $state<IptvEpgEntry[]>([]);

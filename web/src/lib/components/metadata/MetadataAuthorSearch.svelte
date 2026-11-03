@@ -1,7 +1,7 @@
 <script lang="ts">
   import { SearchSelect } from '@koblibs/ui';
   import { type AuthorResult, getConfidenceColor } from './types';
-  import { getProviderName, getProviderColor } from '$lib/utils/format';
+  import { getProviderName, getProviderColor } from '#lib/utils/format.js';
 
   interface Props {
     initialAuthor?: string;

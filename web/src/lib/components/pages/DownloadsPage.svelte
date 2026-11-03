@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { EnrichedDownload } from '$lib/api/client';
-  import * as downloadsStore from '$lib/stores/downloads.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import type { EnrichedDownload } from '#lib/api/client.js';
+  import * as downloadsStore from '#lib/stores/downloads.svelte.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
 
   type ViewFilter = 'all' | 'active' | 'completed' | 'failed';
 

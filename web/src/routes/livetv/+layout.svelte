@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import LiveTvPlayer from '$lib/components/livetv/player/LiveTvPlayer.svelte';
-  import { getLivetvPlayerState } from '$lib/stores/livetvPlayer.svelte';
+  import LiveTvPlayer from '#lib/components/livetv/player/LiveTvPlayer.svelte';
+  import { getLivetvPlayerState } from '#lib/stores/livetvPlayer.svelte.js';
 
   interface Props {
     children: Snippet;

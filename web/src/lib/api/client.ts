@@ -74,9 +74,9 @@ import type {
   IptvUnmatchedSource,
   IptvProgrammeWatch,
   IptvWatchMatch
-} from '$lib/types';
-import type { ClientCapabilities } from '$lib/utils/media';
-import { playbackClient } from '$lib/utils/playback-client';
+} from '#lib/types.js';
+import type { ClientCapabilities } from '#lib/utils/media.js';
+import { playbackClient } from '#lib/utils/playback-client.js';
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -185,8 +185,8 @@ export async function login(email: string, password: string): Promise<{ token: s
 }
 
 // Library Stats
-import type { LibraryStats } from '$lib/types';
-import type { MediaScope, SearchSuggestion } from '$lib/types';
+import type { LibraryStats } from '#lib/types.js';
+import type { MediaScope, SearchSuggestion } from '#lib/types.js';
 
 export async function getLibraryStats(format?: string): Promise<LibraryStats> {
   const qs = format && format !== 'all' ? `?format=${format}` : '';
@@ -347,7 +347,7 @@ export async function touchBooks(bookIds: string[]): Promise<void> {
 }
 
 // Reading data (status, progress, rating)
-import type { ReadingData, UpdateReadingRequest, LogReadingTimeRequest } from '$lib/types';
+import type { ReadingData, UpdateReadingRequest, LogReadingTimeRequest } from '#lib/types.js';
 
 /**
  * Get reading data for a book (current user's status, progress, rating)
@@ -1261,6 +1261,8 @@ export interface SystemConfig {
   kobload_communication_mode: string | null;
   meili_url: string | null;
   meili_master_key: string | null;
+  semantic_search_enabled: boolean;
+  semantic_search_ratio: number;
   koblem_service_url: string | null;
   koblem_api_key: string | null;
   /** Server-side opt-in (KOBLEM_UI_ENABLED env var), not a stored setting — read-only here. */
@@ -1348,6 +1350,8 @@ export interface SystemConfigUpdate {
   kobload_communication_mode?: string | null;
   meili_url?: string | null;
   meili_master_key?: string | null;
+  semantic_search_enabled?: boolean;
+  semantic_search_ratio?: number;
   koblem_service_url?: string | null;
   koblem_api_key?: string | null;
   chat_enabled?: boolean;
@@ -1540,7 +1544,7 @@ export async function deleteWanted(id: string): Promise<void> {
 // Wanted status and actions
 export async function getWantedStatus(
   id: string
-): Promise<import('$lib/types').WantedStatusResponse> {
+): Promise<import('#lib/types.js').WantedStatusResponse> {
   return request(`/api/v1/admin/wanted/${id}/status`);
 }
 
@@ -2754,7 +2758,7 @@ export async function moveEpisodeFile(
 
 export async function getNextEpisode(
   episodeId: string
-): Promise<import('$lib/types').NextEpisodeInfo | null> {
+): Promise<import('#lib/types.js').NextEpisodeInfo | null> {
   try {
     return await request(`/api/v1/admin/tv/episodes/${episodeId}/next`);
   } catch {
@@ -2771,6 +2775,7 @@ export interface SearchBackendStatus {
   author_count: number | null;
   series_count: number | null;
   genre_count: number | null;
+  embedded_document_count: number | null;
   error: string | null;
 }
 
@@ -3137,7 +3142,7 @@ export async function mergeVideoMetadata(
 export async function getVideoMovieDetails(
   providerId: string,
   provider?: string
-): Promise<import('$lib/types').MovieDetailResult> {
+): Promise<import('#lib/types.js').MovieDetailResult> {
   const params: Record<string, string | undefined> = { provider };
   return request(`/api/v1/admin/video-metadata/movies/${providerId}${buildQueryString(params)}`);
 }
@@ -3145,7 +3150,7 @@ export async function getVideoMovieDetails(
 export async function getVideoTvDetails(
   providerId: string,
   provider?: string
-): Promise<import('$lib/types').TvShowDetailResult> {
+): Promise<import('#lib/types.js').TvShowDetailResult> {
   const params: Record<string, string | undefined> = { provider };
   return request(`/api/v1/admin/video-metadata/tv/${providerId}${buildQueryString(params)}`);
 }
@@ -3154,7 +3159,7 @@ export async function getVideoSeasonDetails(
   providerId: string,
   seasonNumber: number,
   provider?: string
-): Promise<import('$lib/types').SeasonDetailResult> {
+): Promise<import('#lib/types.js').SeasonDetailResult> {
   const params: Record<string, string | undefined> = { provider };
   return request(
     `/api/v1/admin/video-metadata/tv/${providerId}/season/${seasonNumber}${buildQueryString(params)}`
@@ -4064,11 +4069,11 @@ export async function listMediaRoots(): Promise<MediaRoot[]> {
   return request('/api/v1/admin/media-roots');
 }
 
-export async function getNasHealth(): Promise<import('$lib/types').NasHealthSnapshot> {
+export async function getNasHealth(): Promise<import('#lib/types.js').NasHealthSnapshot> {
   return request('/api/v1/admin/system/nas-health');
 }
 
-export async function getVisionHealth(): Promise<import('$lib/types').VisionHealthSnapshot> {
+export async function getVisionHealth(): Promise<import('#lib/types.js').VisionHealthSnapshot> {
   return request('/api/v1/admin/system/vision-health');
 }
 
@@ -4168,7 +4173,7 @@ export async function listMediaRootFilesLite(
     limit?: number;
     offset?: number;
   }
-): Promise<import('$lib/types').FileListLiteResponse> {
+): Promise<import('#lib/types.js').FileListLiteResponse> {
   const qs = buildQueryString({ ...options, lite: true });
   // buildQueryString strips empty strings, but directory='' is meaningful (root-level only).
   // Append it manually if directory was explicitly provided.
@@ -4185,20 +4190,20 @@ export async function listMediaRootFilesLite(
 export async function listMediaRootDirectories(
   id: string,
   parent?: string
-): Promise<import('$lib/types').DirectoryEntry[]> {
+): Promise<import('#lib/types.js').DirectoryEntry[]> {
   const params = parent ? `?parent=${encodeURIComponent(parent)}` : '';
   return request(`/api/v1/admin/media-roots/${id}/directories${params}`);
 }
 
 export async function listEntityGroups(
   rootId: string
-): Promise<import('$lib/types').EntityGroupsResponse> {
+): Promise<import('#lib/types.js').EntityGroupsResponse> {
   return request(`/api/v1/admin/media-roots/${rootId}/entity-groups`);
 }
 
 export async function listStatusCounts(
   rootId: string
-): Promise<import('$lib/types').StatusCountsResponse> {
+): Promise<import('#lib/types.js').StatusCountsResponse> {
   return request(`/api/v1/admin/media-roots/${rootId}/status-counts`);
 }
 
@@ -4922,7 +4927,7 @@ export async function unsubscribeWebPush(endpoint: string): Promise<void> {
 
 // Notification Inbox (in-app)
 
-import type { UserNotification } from '$lib/types';
+import type { UserNotification } from '#lib/types.js';
 
 export interface NotificationInboxResponse {
   notifications: UserNotification[];
@@ -5033,7 +5038,7 @@ export async function saveAudioPosition(
 
 // Audiobook Chapter Management
 
-import type { UnifiedChapter } from '$lib/types';
+import type { UnifiedChapter } from '#lib/types.js';
 
 /** Get unified chapter timeline for a book (all files, with global timestamps). */
 export async function getBookChapters(bookId: string): Promise<UnifiedChapter[]> {
@@ -6326,7 +6331,7 @@ import type {
   LivetvSeriesRuleInput,
   LivetvSeriesRulePreview,
   LivetvOnNow
-} from '$lib/types';
+} from '#lib/types.js';
 
 export interface LivetvChannelQuery {
   [key: string]: string | number | boolean | undefined;

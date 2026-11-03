@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import {
     getSearchStatus,
     testSearchConnection,
@@ -12,7 +12,7 @@
     type SearchBackendStatus,
     type SystemConfig,
     type SystemConfigUpdate
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
 
   const auth = getAuthState();
 
@@ -27,7 +27,7 @@
   let systemConfigSaving = $state(false);
 
   // When a koblem service URL is set, the backend uses koblem as the chat LLM
-  // and ignores the external provider fields (see configure_chat_workspace).
+  // and ignores the external provider fields (see chatbot::llm::resolve).
   const koblemActive = $derived(!!systemConfig?.koblem_service_url?.trim());
 
   // Test connection state (uses current form values, not saved values)
@@ -103,6 +103,8 @@
       const updates: SystemConfigUpdate = {
         meili_url: systemConfig.meili_url ?? '',
         meili_master_key: systemConfig.meili_master_key ?? '',
+        semantic_search_enabled: systemConfig.semantic_search_enabled,
+        semantic_search_ratio: systemConfig.semantic_search_ratio,
         koblem_service_url: systemConfig.koblem_service_url,
         koblem_api_key: systemConfig.koblem_api_key,
         chat_enabled: systemConfig.chat_enabled,
@@ -220,6 +222,12 @@
                 <span class="stat-count">{status.genre_count ?? 0}</span>
                 <span class="stat-label">Genres</span>
               </div>
+              {#if systemConfig?.semantic_search_enabled}
+                <div class="stat-item">
+                  <span class="stat-count">{status.embedded_document_count ?? 0}</span>
+                  <span class="stat-label">Artwork vectors</span>
+                </div>
+              {/if}
             </div>
           </div>
         {/if}
@@ -312,6 +320,55 @@
             </div>
           {/if}
         </div>
+      </div>
+
+      <div class="config-card">
+        <h3>Semantic Search</h3>
+        <p class="card-description muted">
+          Also match movies, TV shows and library books by how their poster or cover fits the query,
+          so "space adventure" finds titles that share none of those words. Artwork and queries are
+          embedded on Koblem's GPU; search falls back to keywords whenever Koblem is unavailable.
+        </p>
+
+        <label class="toggle-label">
+          <input
+            type="checkbox"
+            data-field="semantic_search_enabled"
+            checked={systemConfig.semantic_search_enabled}
+            disabled={!koblemActive && !systemConfig.semantic_search_enabled}
+            onchange={(e) => {
+              if (systemConfig)
+                systemConfig.semantic_search_enabled = (e.target as HTMLInputElement).checked;
+            }}
+          />
+          <span>Enable semantic search</span>
+        </label>
+        {#if !koblemActive}
+          <span class="field-hint">Needs a Koblem Service URL.</span>
+        {:else}
+          <span class="field-hint">
+            Saving a change starts a background job that embeds or removes the artwork vectors.
+          </span>
+        {/if}
+
+        {#if systemConfig.semantic_search_enabled}
+          <label>
+            Semantic ratio: {systemConfig.semantic_search_ratio.toFixed(1)}
+            <input
+              type="range"
+              data-field="semantic_search_ratio"
+              min="0"
+              max="1"
+              step="0.1"
+              value={systemConfig.semantic_search_ratio}
+              oninput={(e) => {
+                if (systemConfig)
+                  systemConfig.semantic_search_ratio = Number((e.target as HTMLInputElement).value);
+              }}
+            />
+            <span class="field-hint">0 = keyword matches only, 1 = artwork similarity only</span>
+          </label>
+        {/if}
       </div>
 
       <div class="config-card">
@@ -660,7 +717,7 @@
 
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 12px;
   }
 
@@ -801,6 +858,10 @@
   .toggle-label input[type='checkbox'] {
     width: 16px;
     height: 16px;
+    accent-color: var(--accent);
+  }
+
+  .config-card input[type='range'] {
     accent-color: var(--accent);
   }
 

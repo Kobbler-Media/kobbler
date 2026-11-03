@@ -1,15 +1,15 @@
 <script lang="ts">
-  import type { UserNotification } from '$lib/types';
+  import type { UserNotification } from '#lib/types.js';
   import { goto } from '$app/navigation';
-  import { getNotificationInbox } from '$lib/api/client';
+  import { getNotificationInbox } from '#lib/api/client.js';
   import {
     markRead,
     markAllRead,
     loadUnreadCount,
     formatTimeAgo
-  } from '$lib/stores/notifications.svelte';
+  } from '#lib/stores/notifications.svelte.js';
   import { onMount } from 'svelte';
-  import { on, off, onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
+  import { on, off, onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
 
   let notifications = $state<UserNotification[]>([]);
   let total = $state(0);

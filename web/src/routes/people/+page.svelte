@@ -1,10 +1,10 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { showMessage } from '$lib/context/app.svelte';
-  import PersonCard from '$lib/components/shared/PersonCard.svelte';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
-  import * as api from '$lib/api/client';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import PersonCard from '#lib/components/shared/PersonCard.svelte';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
+  import * as api from '#lib/api/client.js';
 
   let people = $state<api.PersonListItem[]>([]);
   let nextCursor = $state<string | null>(null);

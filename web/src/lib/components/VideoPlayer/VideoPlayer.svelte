@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack, type Snippet } from 'svelte';
   import { uid } from '@koblibs/ui';
-  import { registerOverlay, unregisterOverlay } from '$lib/stores/ui.svelte';
-  import { enterPip, isPipActive, cleanupPip } from '$lib/stores/videopip.svelte';
+  import { registerOverlay, unregisterOverlay } from '#lib/stores/ui.svelte.js';
+  import { enterPip, isPipActive, cleanupPip } from '#lib/stores/videopip.svelte.js';
   import {
     destroyPlaybackSession,
     createPlaybackSession,
@@ -21,29 +21,29 @@
     getPlaybackHandoff,
     getPlaybackSessionStatus,
     reportStreamOutcome
-  } from '$lib/api/client';
-  import { superviseStart } from '$lib/streaming/startLiveness';
-  import { reconnectStep } from '$lib/streaming/reconnect';
-  import { startingAudio } from '$lib/streaming/audioPreference';
-  import { liveSyncRate, liveTargetLatency } from '$lib/streaming/liveLatency';
-  import { useKeep } from '$lib/composables/useKeep.svelte';
-  import type { CachingState } from '$lib/streaming/cacheWait';
+  } from '#lib/api/client.js';
+  import { superviseStart } from '#lib/streaming/startLiveness.js';
+  import { reconnectStep } from '#lib/streaming/reconnect.js';
+  import { startingAudio } from '#lib/streaming/audioPreference.js';
+  import { liveSyncRate, liveTargetLatency } from '#lib/streaming/liveLatency.js';
+  import { useKeep } from '#lib/composables/useKeep.svelte.js';
+  import type { CachingState } from '#lib/streaming/cacheWait.js';
   import StartShell from './StartShell.svelte';
-  import { createNextEpisodeWarmer } from '$lib/streaming/episodeStream';
-  import type { StreamPlayerFailure } from '$lib/composables/useStreamPlayback.svelte';
+  import { createNextEpisodeWarmer } from '#lib/streaming/episodeStream.js';
+  import type { StreamPlayerFailure } from '#lib/composables/useStreamPlayback.svelte.js';
   import {
     on as onLibraryEvent,
     off as offLibraryEvent,
     onReconnect,
     offReconnect
-  } from '$lib/services/eventstream.svelte';
-  import { playbackClientId } from '$lib/utils/playback-client';
+  } from '#lib/services/eventstream.svelte.js';
+  import { playbackClientId } from '#lib/utils/playback-client.js';
   import PlayerControls from './PlayerControls.svelte';
   import { SEGMENT_LABELS, creditsSkipTarget } from './segments';
-  import { showMessage } from '$lib/context/app.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import UpNextOverlay from './UpNextOverlay.svelte';
   import HandoffPrompt from './HandoffPrompt.svelte';
-  import SubtitleSearchModal from '$lib/components/shared/SubtitleSearchModal.svelte';
+  import SubtitleSearchModal from '#lib/components/shared/SubtitleSearchModal.svelte';
   import type {
     PlaybackMethod,
     PlaybackSessionResponse,
@@ -52,16 +52,16 @@
     NextEpisodeInfo,
     TvEpisode,
     WatchProgress
-  } from '$lib/types';
-  import type { ClientCapabilities } from '$lib/utils/media';
-  import { getCastState, castLoadMedia, endCastSession } from '$lib/stores/cast.svelte';
-  import { onStateChange, onMessage as onCastMessage, getDeviceName } from '$lib/cast/sender';
-  import { castCapabilities } from '$lib/cast/capabilities';
-  import { createPlaybackToken, revokePlaybackToken } from '$lib/api/client';
-  import type { InitSessionPayload } from '$lib/cast/messages';
+  } from '#lib/types.js';
+  import type { ClientCapabilities } from '#lib/utils/media.js';
+  import { getCastState, castLoadMedia, endCastSession } from '#lib/stores/cast.svelte.js';
+  import { onStateChange, onMessage as onCastMessage, getDeviceName } from '#lib/cast/sender.js';
+  import { castCapabilities } from '#lib/cast/capabilities.js';
+  import { createPlaybackToken, revokePlaybackToken } from '#lib/api/client.js';
+  import type { InitSessionPayload } from '#lib/cast/messages.js';
   import type Hls from 'hls.js';
-  import { parseVtt } from '$lib/utils/vttSubtitles';
-  import { replaceState } from '$app/navigation';
+  import { parseVtt } from '#lib/utils/vttSubtitles.js';
+  import { goto } from '$app/navigation';
 
   interface MediaInfo {
     title: string;
@@ -144,6 +144,7 @@
 
   // Mutable copies — updated when switching to next episode in-place
   let activeMediaId = $state(untrack(() => initialMediaId));
+
   let activeCreationParams = $state(
     untrack(() => (initialCreationParams ? { ...initialCreationParams } : defaultCreationParams))
   );
@@ -594,6 +595,7 @@
   let effectiveTime = $derived(
     castingMode && castState.mediaState ? castState.mediaState.currentTime : displayTime
   );
+
   let effectiveDuration = $derived(
     castingMode && castState.mediaState ? castState.mediaState.duration : duration
   );
@@ -610,8 +612,8 @@
         : null
     )
   );
-  let audioSwitchedSession: string | null = null;
 
+  let audioSwitchedSession: string | null = null;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   const overlayId = `video-player-${uid()}`;
 
@@ -1139,11 +1141,11 @@
         nextEpisode = info;
       });
 
-      // Update browser URL without navigation. Use SvelteKit's replaceState so
+      // Update browser URL without navigation. Use a shallow goto so
       // the router's own history state survives (a raw history.replaceState({})
       // wipes it and breaks back/forward).
       if (window.location.pathname.startsWith('/tv/episodes/')) {
-        replaceState(`/tv/episodes/${next.episode_id}`, {});
+        goto(`/tv/episodes/${next.episode_id}`, { shallow: true, replace: true });
       }
       onEpisodeChange?.(next.episode_id);
     } catch (e) {
@@ -3081,26 +3083,32 @@
         </div>
         <div class="skip-editor-row">
           <span class="skip-editor-label">Start</span>
+
           <button type="button" onclick={() => (editStart = Math.max(0, editStart - 1))}>-1s</button
           >
+
           <span class="time-value">{formatSkipTime(editStart)}</span>
           <button type="button" onclick={() => (editStart += 1)}>+1s</button>
         </div>
         <div class="skip-editor-row">
           <span class="skip-editor-label">End</span>
+
           <button type="button" onclick={() => (editEnd = Math.max(editStart + 1, editEnd - 1))}
             >-1s</button
           >
+
           <span class="time-value">{formatSkipTime(editEnd)}</span>
           <button type="button" onclick={() => (editEnd += 1)}>+1s</button>
         </div>
         <div class="skip-editor-actions">
           <button type="button" class="save-btn" onclick={saveSkipEdit}>Save</button>
+
           <button type="button" class="delete-btn" onclick={deleteSkipSegment}
             >{editSegment.segment_type === 'ad_break'
               ? 'Not an ad break'
               : 'Not an intro/credits'}</button
           >
+
           <button type="button" class="cancel-btn" onclick={() => (editingSkipSegment = false)}
             >Cancel</button
           >

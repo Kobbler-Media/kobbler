@@ -34,6 +34,9 @@ pub struct Ctx<'a> {
     /// What the last confident `resolve_media` settled on. This is what makes
     /// "no, the other one" and "the next one" resolvable rather than a guess.
     pub context_ref: Option<&'a str>,
+    /// What the user actually said this turn, for tools that read the mood itself
+    /// rather than have the model paraphrase it into another argument.
+    pub user_message: &'a str,
 }
 
 /// Run one tool call. Unknown names and refused roles come back as failed
@@ -57,7 +60,9 @@ pub async fn dispatch(ctx: &Ctx<'_>, name: &str, args: &Value) -> ToolOutcome {
         Tool::RecentlyAdded => read::recently_added(ctx.state, args).await,
         Tool::NextAiring => read::next_airing(ctx.state, args).await,
         Tool::SeasonStatus => seasons::season_status(ctx.state, args).await,
-        Tool::Recommend => suggest::recommend(ctx.state, &[ctx.auth.user_id], args).await,
+        Tool::Recommend => {
+            suggest::recommend(ctx.state, &[ctx.auth.user_id], args, ctx.user_message).await
+        }
         Tool::WhatsNew => suggest::whats_new(ctx.state, args).await,
         Tool::ListReleases => act::list_releases(ctx, args).await,
         Tool::GrabRelease => act::grab_release(ctx, args).await,

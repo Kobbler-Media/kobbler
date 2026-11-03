@@ -7,9 +7,9 @@
   import { onMount, untrack } from 'svelte';
   import { Modal } from '@koblibs/ui';
   import { SearchSelect } from '@koblibs/ui';
-  import { searchMovies, searchTvShows, getVideoMetadataProviders } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import type { MovieSearchResult, TvSearchResult } from '$lib/types';
+  import { searchMovies, searchTvShows, getVideoMetadataProviders } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import type { MovieSearchResult, TvSearchResult } from '#lib/types.js';
 
   type Result = MovieSearchResult | TvSearchResult;
 

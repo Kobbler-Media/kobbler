@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { MovieSearchResult, TvSearchResult } from '$lib/types';
+  import type { MovieSearchResult, TvSearchResult } from '#lib/types.js';
   import { getFieldOptions } from './video-merge-types';
-  import { mergeVideoMetadata } from '$lib/api/client';
+  import { mergeVideoMetadata } from '#lib/api/client.js';
 
   type Result = MovieSearchResult | TvSearchResult;
 

@@ -22,7 +22,6 @@ pub fn parse_nfo(content: &str) -> Result<SidecarMetadata, String> {
     }
 
     let mut reader = Reader::from_str(trimmed);
-    reader.config_mut().trim_text(true);
 
     let mut meta = SidecarMetadata {
         source_format: Some(SidecarFormat::Nfo),
@@ -47,7 +46,7 @@ pub fn parse_nfo(content: &str) -> Result<SidecarMetadata, String> {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
                 text_buf.clear();
-                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let tag = e.name().as_ref().to_string();
                 depth.push(tag.clone());
 
                 match tag.as_str() {
@@ -71,8 +70,8 @@ pub fn parse_nfo(content: &str) -> Result<SidecarMetadata, String> {
                         in_uniqueid = true;
                         uniqueid_type = String::new();
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"type" {
-                                uniqueid_type = String::from_utf8_lossy(&attr.value).to_lowercase();
+                            if attr.key.as_ref() == "type" {
+                                uniqueid_type = crate::xml_text::attr_value(&attr).to_lowercase();
                             }
                         }
                     }
@@ -83,21 +82,13 @@ pub fn parse_nfo(content: &str) -> Result<SidecarMetadata, String> {
                     _ => {}
                 }
             }
-            Ok(Event::Text(ref e)) => {
-                if let Ok(decoded) = e.decode() {
-                    text_buf.push_str(&decoded);
-                }
-            }
-            Ok(Event::GeneralRef(ref e)) => {
-                if let Ok(decoded) = e.decode() {
-                    text_buf.push_str(&decoded);
-                }
-            }
+            Ok(Event::Text(ref e)) => text_buf.push_str(e.as_ref()),
+            Ok(Event::GeneralRef(ref e)) => crate::xml_text::push_ref(&mut text_buf, e),
             Ok(Event::End(ref e)) => {
                 let text = text_buf.trim().to_string();
                 text_buf.clear();
 
-                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let tag = e.name().as_ref().to_string();
 
                 if !text.is_empty() {
                     let current_tag = depth.last().map(|s| s.as_str()).unwrap_or("");
@@ -382,6 +373,15 @@ fn write_uniqueid(
 mod tests {
     use super::*;
     use crate::sidecar::SidecarIdentifiers;
+
+    #[test]
+    fn test_parse_nfo_resolves_entity_references() {
+        let nfo =
+            "<movie><title>Law &amp; Order &#8211; SVU</title><plot>&lt;3 &#x41;</plot></movie>";
+        let meta = parse_nfo(nfo).expect("parse");
+        assert_eq!(meta.title.as_deref(), Some("Law & Order \u{2013} SVU"));
+        assert_eq!(meta.plot.as_deref(), Some("<3 A"));
+    }
 
     #[test]
     fn test_parse_movie_nfo() {

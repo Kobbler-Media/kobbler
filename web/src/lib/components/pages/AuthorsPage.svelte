@@ -4,9 +4,9 @@
    * All sidebar/navigation logic is handled by the route page.
    */
   import { untrack } from 'svelte';
-  import type { AuthorSummary, LoadState } from '$lib/types';
-  import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import type { AuthorSummary, LoadState } from '#lib/types.js';
+  import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
 
   interface Props {
     authors: AuthorSummary[];

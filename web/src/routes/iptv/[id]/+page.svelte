@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import type { IptvChannel, IptvSource, IptvEpgEntry } from '$lib/types';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
-  import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import EpgTimeline from '$lib/components/iptv/EpgTimeline.svelte';
-  import RecordButton from '$lib/components/iptv/RecordButton.svelte';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { IptvChannel, IptvSource, IptvEpgEntry } from '#lib/types.js';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
+  import { usePlayback } from '#lib/composables/usePlayback.svelte.js';
+  import EpgTimeline from '#lib/components/iptv/EpgTimeline.svelte';
+  import RecordButton from '#lib/components/iptv/RecordButton.svelte';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
 
-  const channelId = $derived($page.params.id ?? '');
-  const sourceIdParam = $derived($page.url.searchParams.get('source') ?? undefined);
-  const catchupEpgId = $derived($page.url.searchParams.get('catchup') ?? undefined);
+  const channelId = $derived(page.params.id ?? '');
+  const sourceIdParam = $derived(page.url.searchParams.get('source') ?? undefined);
+  const catchupEpgId = $derived(page.url.searchParams.get('catchup') ?? undefined);
 
   let channel = $state<IptvChannel | null>(null);
   let sources = $state<IptvSource[]>([]);

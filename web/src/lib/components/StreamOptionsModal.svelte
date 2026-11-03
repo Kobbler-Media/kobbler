@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Modal } from '@koblibs/ui';
-  import type { StreamOption } from '$lib/api/client';
-  import { streamSections } from '$lib/utils/streamSections';
+  import type { StreamOption } from '#lib/api/client.js';
+  import { streamSections } from '#lib/utils/streamSections.js';
 
   interface Props {
     options: StreamOption[];

@@ -1,32 +1,32 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import { onReconnect, offReconnect, onDebounced, off } from '$lib/services/eventstream.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
+  import { page } from '$app/state';
+  import { onReconnect, offReconnect, onDebounced, off } from '#lib/services/eventstream.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
   import {
     captureScrollAnchor,
     restoreScrollAnchor,
     scrollContainerToTop,
     scrollItemToTop
-  } from '$lib/utils/scroll-anchor';
-  import MoviesPage from '$lib/components/pages/MoviesPage.svelte';
-  import type { MovieSortValue } from '$lib/components/pages/MoviesPage.svelte';
-  import VideoSearchModal from '$lib/components/movies/VideoSearchModal.svelte';
-  import MovieDetailSidebar from '$lib/components/movies/MovieDetailSidebar.svelte';
-  import MovieForm from '$lib/components/movies/MovieForm.svelte';
-  import type { MovieFormData } from '$lib/components/movies/MovieForm.svelte';
-  import VideoMetadataSearchModal from '$lib/components/video/VideoMetadataSearchModal.svelte';
-  import type { MovieSearchResult, TvSearchResult } from '$lib/types';
-  import PersonDetailsPanel from '$lib/components/people/PersonDetailsPanel.svelte';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
+  } from '#lib/utils/scroll-anchor.js';
+  import MoviesPage from '#lib/components/pages/MoviesPage.svelte';
+  import type { MovieSortValue } from '#lib/components/pages/MoviesPage.svelte';
+  import VideoSearchModal from '#lib/components/movies/VideoSearchModal.svelte';
+  import MovieDetailSidebar from '#lib/components/movies/MovieDetailSidebar.svelte';
+  import MovieForm from '#lib/components/movies/MovieForm.svelte';
+  import type { MovieFormData } from '#lib/components/movies/MovieForm.svelte';
+  import VideoMetadataSearchModal from '#lib/components/video/VideoMetadataSearchModal.svelte';
+  import type { MovieSearchResult, TvSearchResult } from '#lib/types.js';
+  import PersonDetailsPanel from '#lib/components/people/PersonDetailsPanel.svelte';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import MoveFileModal from '$lib/components/shared/MoveFileModal.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import type { Movie, PersonDetail } from '$lib/types';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import MoveFileModal from '#lib/components/shared/MoveFileModal.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import type { Movie, PersonDetail } from '#lib/types.js';
   import {
     pushEntity,
     popEntity,
@@ -34,7 +34,7 @@
     getNavigationState,
     updateCurrentEntityData,
     setLoadingEntity
-  } from '$lib/stores/navigation.svelte';
+  } from '#lib/stores/navigation.svelte.js';
 
   type MovieFilter = 'all' | 'wanted' | 'in_library';
 
@@ -57,8 +57,8 @@
   let totalCount = $state<number | null>(null);
   let movingFileId = $state<string | null>(null);
   let loadGeneration = 0;
-  const urlAround = $derived($page.url.searchParams.get('around'));
-  const urlAroundBefore = $derived($page.url.searchParams.get('around_before'));
+  const urlAround = $derived(page.url.searchParams.get('around'));
+  const urlAroundBefore = $derived(page.url.searchParams.get('around_before'));
 
   const nav = getNavigationState();
   const statsState = getStatsState();
@@ -606,9 +606,11 @@
           Delete
         </button>
         <div class="spacer"></div>
-        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={loading}>
-          Cancel
-        </button>
+
+        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={loading}
+          >Cancel</button
+        >
+
         <button
           class="btn-primary"
           type="button"

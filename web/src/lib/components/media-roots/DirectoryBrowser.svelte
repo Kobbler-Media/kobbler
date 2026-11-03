@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Modal } from '@koblibs/ui';
-  import { browseDirectories } from '$lib/api/client';
-  import type { DirectoryEntry } from '$lib/api/client';
+  import { browseDirectories } from '#lib/api/client.js';
+  import type { DirectoryEntry } from '#lib/api/client.js';
 
   interface Props {
     open: boolean;

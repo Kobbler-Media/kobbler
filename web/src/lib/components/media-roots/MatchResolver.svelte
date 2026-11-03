@@ -8,8 +8,8 @@
     Movie,
     TvShow,
     TvSeason
-  } from '$lib/types';
-  import type { MetadataResult } from '$lib/api/client';
+  } from '#lib/types.js';
+  import type { MetadataResult } from '#lib/api/client.js';
   import {
     resolveMediaRootFileMatch,
     bulkManualResolveMediaRootFiles,
@@ -25,10 +25,10 @@
     getTvShow,
     createMovie,
     createTvShow
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import AddEntityModal from '$lib/components/AddEntityModal.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import AddEntityModal from '#lib/components/AddEntityModal.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
 
   type Tab = 'provider' | 'library';
 

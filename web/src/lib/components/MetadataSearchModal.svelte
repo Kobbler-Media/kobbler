@@ -3,16 +3,16 @@
    * MetadataSearchModal - Unified metadata search modal for books, authors, and series.
    * Supports dynamic provider selection, multi-select results, and merge preview.
    */
-  import type { MetadataResult } from '$lib/api/client';
-  import type { AuthorSearchResult, SeriesSearchResult } from '$lib/types';
+  import type { MetadataResult } from '#lib/api/client.js';
+  import type { AuthorSearchResult, SeriesSearchResult } from '#lib/types.js';
   import {
     getMetadataProviders,
     searchAuthors,
     searchSeries,
     mergeMetadata
-  } from '$lib/api/client';
-  import { getProviderCode, getProviderColor } from '$lib/utils/format';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  } from '#lib/api/client.js';
+  import { getProviderCode, getProviderColor } from '#lib/utils/format.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
 
   type SearchMode = 'book' | 'author' | 'series';
 

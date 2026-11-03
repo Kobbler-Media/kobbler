@@ -2,31 +2,31 @@
 name = "kobo-proxy"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.99"
 license = "AGPL-3.0-only"
 description = "Transparent byte-level proxy for Kobo e-reader sync protocol"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.53.1", features = ["net", "io-util", "sync", "rt-multi-thread", "macros", "time", "fs"] }
+tokio = { version = "1.54.1", features = ["net", "io-util", "sync", "rt-multi-thread", "macros", "time", "fs"] }
 
 # HTTP parsing (minimal, just for routing decisions)
 httparse = "1.10.1"
 
 # TLS for upstream connections
-tokio-rustls = "0.26.4"
-rustls = { version = "0.23.43", features = ["ring"] }
+tokio-rustls = "0.26.6"
+rustls = { version = "0.23.46", features = ["ring"] }
 rustls-pki-types = "1.15.1"
-webpki-roots = "1.0.9"
+webpki-roots = "1.0.11"
 
 # Compression (for modify/logging)
-flate2 = "1.1.9"
+flate2 = "1.1.10"
 
 # Async trait support
 async-trait = "0.1.92"
 
 # Types
-uuid = { version = "1.24.0", features = ["v4", "serde"] }
+uuid = { version = "1.29.0", features = ["v4", "serde"] }
 chrono = { version = "0.4.45", features = ["serde"] }
 
 # Logging
@@ -34,10 +34,10 @@ tracing = "0.1.44"
 
 # Serialization (for log entries)
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 
 # Error handling
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 
 # Byte buffer utilities
 bytes = "1.12.1"

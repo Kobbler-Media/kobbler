@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import TvShowForm from '$lib/components/tv/TvShowForm.svelte';
-  import type { TvShowFormData } from '$lib/components/tv/TvShowForm.svelte';
-  import SeasonForm from '$lib/components/tv/SeasonForm.svelte';
-  import type { SeasonFormData } from '$lib/components/tv/SeasonForm.svelte';
-  import SportsLeagueDetailPage from '$lib/components/sports/SportsLeagueDetailPage.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import { on, off } from '$lib/services/eventstream.svelte';
-  import { getJobsState } from '$lib/stores/jobs.svelte';
-  import type { TvShow, TvSeason } from '$lib/types';
-  import { unwantMessage } from '$lib/utils/want-status';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import TvShowForm from '#lib/components/tv/TvShowForm.svelte';
+  import type { TvShowFormData } from '#lib/components/tv/TvShowForm.svelte';
+  import SeasonForm from '#lib/components/tv/SeasonForm.svelte';
+  import type { SeasonFormData } from '#lib/components/tv/SeasonForm.svelte';
+  import SportsLeagueDetailPage from '#lib/components/sports/SportsLeagueDetailPage.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { on, off } from '#lib/services/eventstream.svelte.js';
+  import { getJobsState } from '#lib/stores/jobs.svelte.js';
+  import type { TvShow, TvSeason } from '#lib/types.js';
+  import { unwantMessage } from '#lib/utils/want-status.js';
 
   let league = $state<TvShow | null>(null);
   let loading = $state(true);
@@ -33,7 +33,7 @@
   let seasonsOffset = $state(0);
   const SEASONS_LIMIT = 20;
 
-  const leagueId = $derived($page.params.id);
+  const leagueId = $derived(page.params.id);
   const jobsState = getJobsState();
   const syncing = $derived(
     jobsState.jobs.some(
@@ -389,9 +389,11 @@
           {deleting ? 'Deleting...' : 'Delete'}
         </button>
         <div class="spacer"></div>
-        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}>
-          Cancel
-        </button>
+
+        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}
+          >Cancel</button
+        >
+
         <button
           type="button"
           class="btn btn-primary"

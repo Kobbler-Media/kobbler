@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import ActivityPage from '$lib/components/pages/ActivityPage.svelte';
-  import { getLibraryState } from '$lib/stores/library.svelte';
-  import { getDevicesState } from '$lib/stores/devices.svelte';
-  import { loadActivity, loadMoreActivity } from '$lib/context/app.svelte';
-  import { onDebounced, off, onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
+  import ActivityPage from '#lib/components/pages/ActivityPage.svelte';
+  import { getLibraryState } from '#lib/stores/library.svelte.js';
+  import { getDevicesState } from '#lib/stores/devices.svelte.js';
+  import { loadActivity, loadMoreActivity } from '#lib/context/app.svelte.js';
+  import { onDebounced, off, onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
 
   // Store state
   const library = getLibraryState();

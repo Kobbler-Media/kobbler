@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { formatAge } from '@koblibs/ui';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import TunerMeter from '$lib/components/livetv/TunerMeter.svelte';
-  import OptionRow from '$lib/components/livetv/OptionRow.svelte';
-  import ToggleRow from '$lib/components/livetv/ToggleRow.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getLivetvState, fetchLivetvTuners, setLivetvTuners } from '$lib/stores/livetv.svelte';
-  import * as api from '$lib/api/client';
-  import type { SystemConfig, SystemConfigUpdate } from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { LivetvDiscoveredTuner } from '$lib/types';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import TunerMeter from '#lib/components/livetv/TunerMeter.svelte';
+  import OptionRow from '#lib/components/livetv/OptionRow.svelte';
+  import ToggleRow from '#lib/components/livetv/ToggleRow.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getLivetvState, fetchLivetvTuners, setLivetvTuners } from '#lib/stores/livetv.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { SystemConfig, SystemConfigUpdate } from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { LivetvDiscoveredTuner } from '#lib/types.js';
 
   const livetv = getLivetvState();
 

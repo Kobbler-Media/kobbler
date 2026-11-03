@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getCastState } from '$lib/stores/cast.svelte';
+  import { getCastState } from '#lib/stores/cast.svelte.js';
 
   interface Props {
     class?: string;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LivetvFacet, LivetvFacets } from '$lib/types';
+  import type { LivetvFacet, LivetvFacets } from '#lib/types.js';
   import type { FacetGroupId } from './types';
 
   interface Props {

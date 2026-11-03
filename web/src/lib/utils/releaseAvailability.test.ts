@@ -8,7 +8,7 @@ import {
   type LibraryStatus,
   type StreamingAvailability
 } from './releaseAvailability';
-import type { ReleaseDates } from '$lib/types';
+import type { ReleaseDates } from '#lib/types.js';
 
 const today = '2026-10-21';
 

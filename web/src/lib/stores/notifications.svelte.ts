@@ -1,12 +1,12 @@
 // Notifications store using Svelte 5 runes — driven by unified SSE events via layout.
 
-import type { UserNotification } from '$lib/types';
+import type { UserNotification } from '#lib/types.js';
 import {
   getNotificationInbox,
   getUnreadNotificationCount,
   markNotificationRead,
   markAllNotificationsRead
-} from '$lib/api/client';
+} from '#lib/api/client.js';
 
 // State
 let notifications = $state.raw<UserNotification[]>([]);
@@ -72,4 +72,4 @@ export async function initNotificationsStore() {
 }
 
 // Re-export formatTimeAgo from jobs store for shared use
-export { formatTimeAgo } from '$lib/stores/jobs.svelte';
+export { formatTimeAgo } from '#lib/stores/jobs.svelte.js';

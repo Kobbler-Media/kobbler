@@ -414,6 +414,7 @@ async fn kids_search_filter_drops_blocked_titles() {
             runtime: None,
             content_rating: None,
             description: None,
+            vectors: None,
         })
     };
     let mut response = UnifiedSearchResponse {

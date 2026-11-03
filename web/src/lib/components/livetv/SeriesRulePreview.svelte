@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LivetvSeriesRulePreview } from '$lib/types';
+  import type { LivetvSeriesRulePreview } from '#lib/types.js';
 
   interface Props {
     preview: LivetvSeriesRulePreview | null;

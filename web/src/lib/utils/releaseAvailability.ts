@@ -1,5 +1,5 @@
-import type { StreamOption } from '$lib/api/client';
-import type { ReleaseDates } from '$lib/types';
+import type { StreamOption } from '#lib/api/client.js';
+import type { ReleaseDates } from '#lib/types.js';
 import { isActivelyWanted } from './want-status';
 
 export type StreamingAvailability = 'hidden' | 'checking' | 'instant' | 'available' | 'none';

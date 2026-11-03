@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { MediaRootFile } from '$lib/types';
+  import type { MediaRootFile } from '#lib/types.js';
   import {
     addMediaRootFileToLibrary,
     listMediaRootFiles,
@@ -8,8 +8,8 @@
     rematchMediaRootFile,
     bulkIgnoreMediaRootFiles,
     bulkRematchMediaRootFiles
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import { InfiniteScroll } from '@koblibs/ui';
 
   interface Props {

@@ -383,8 +383,9 @@ pub(crate) fn dangling_stylesheets(epub: &[u8]) -> Vec<String> {
         return Vec::new();
     };
 
-    let present: std::collections::HashSet<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+    let present: std::collections::HashSet<String> = archive
+        .file_names()
+        .filter_map(|name| name.ok().map(std::borrow::Cow::into_owned))
         .collect();
 
     let docs: Vec<String> = present

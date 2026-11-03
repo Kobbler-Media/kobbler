@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ProxyLogEntry } from '$lib/api/client';
+  import type { ProxyLogEntry } from '#lib/api/client.js';
   import { diffLines } from 'diff';
 
   interface DiffPart {

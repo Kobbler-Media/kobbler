@@ -4,13 +4,13 @@
 // 1. TTS mode: streams TTS audio and highlights sentences in the EPUB reader
 // 2. Audiobook mode: syncs existing audiobook playback with EPUB text highlighting
 
-import { synthesizeTts, getActivePreset } from '$lib/api/client';
+import { synthesizeTts, getActivePreset } from '#lib/api/client.js';
 import type {
   ReadAlongSyncPoint,
   ReadAlongTranscriptSegment,
   UserVoicePreset
-} from '$lib/api/client';
-import { getAudioPlayerState } from '$lib/stores/audioplayer.svelte';
+} from '#lib/api/client.js';
+import { getAudioPlayerState } from '#lib/stores/audioplayer.svelte.js';
 
 export type ReadAlongMode = 'off' | 'tts' | 'audiobook';
 

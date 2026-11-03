@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { getAudioStreamUrl } from '$lib/api/client';
+  import { getAudioStreamUrl } from '#lib/api/client.js';
 
   interface ChapterMarker {
     id: string;

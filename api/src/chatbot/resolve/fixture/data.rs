@@ -135,6 +135,7 @@ fn show(
         content_rating: None,
         runtime: Some(45),
         description: Some(description.to_string()),
+        vectors: None,
     }
 }
 
@@ -216,6 +217,7 @@ fn movie(
         runtime: Some(120),
         content_rating: None,
         description: Some(description.to_string()),
+        vectors: None,
     }
 }
 
@@ -248,6 +250,7 @@ fn book(
         narrator: None,
         all_series_names: series.map(|(_, n)| n.to_string()),
         description: Some(description.to_string()),
+        vectors: None,
     }
 }
 

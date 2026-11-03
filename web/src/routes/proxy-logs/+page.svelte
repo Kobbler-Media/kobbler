@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
-  import ProxyLogsPage from '$lib/components/pages/ProxyLogsPage.svelte';
-  import { getLibraryState } from '$lib/stores/library.svelte';
-  import { getDevicesState } from '$lib/stores/devices.svelte';
-  import { loadProxyLogs, copyText } from '$lib/context/app.svelte';
-  import { updateUrlParams, getNumParam } from '$lib/utils/url-state';
-  import type { ProxyLogsQuery } from '$lib/api/client';
+  import { page } from '$app/state';
+  import ProxyLogsPage from '#lib/components/pages/ProxyLogsPage.svelte';
+  import { getLibraryState } from '#lib/stores/library.svelte.js';
+  import { getDevicesState } from '#lib/stores/devices.svelte.js';
+  import { loadProxyLogs, copyText } from '#lib/context/app.svelte.js';
+  import { updateUrlParams, getNumParam } from '#lib/utils/url-state.js';
+  import type { ProxyLogsQuery } from '#lib/api/client.js';
 
   // Store state
   const library = getLibraryState();
@@ -22,10 +22,11 @@
   let loading = $state(false);
 
   // URL state
-  const urlOffset = $derived(getNumParam($page.url.searchParams, 'offset', 0));
-  const urlPath = $derived($page.url.searchParams.get('path') || '');
-  const urlMethod = $derived($page.url.searchParams.get('method') || '');
-  const urlSeverity = $derived($page.url.searchParams.get('severity') || '');
+  const urlOffset = $derived(getNumParam(page.url.searchParams, 'offset', 0));
+
+  const urlPath = $derived(page.url.searchParams.get('path') || '');
+  const urlMethod = $derived(page.url.searchParams.get('method') || '');
+  const urlSeverity = $derived(page.url.searchParams.get('severity') || '');
 
   // Handle scroll-to-top event - reload from beginning of list
   const handleScrollToTop = () => {

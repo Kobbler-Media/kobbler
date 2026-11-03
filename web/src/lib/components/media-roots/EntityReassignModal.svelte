@@ -1,15 +1,15 @@
 <script lang="ts">
-  import type { MovieSearchResult, TvSearchResult } from '$lib/types';
-  import type { MetadataResult } from '$lib/api/client';
+  import type { MovieSearchResult, TvSearchResult } from '#lib/types.js';
+  import type { MetadataResult } from '#lib/api/client.js';
   import {
     bulkManualResolveMediaRootFiles,
     searchTvShows,
     searchMovies,
     searchBooks,
     searchSportsLeagues
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getJobsState } from '$lib/stores/jobs.svelte';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getJobsState } from '#lib/stores/jobs.svelte.js';
 
   interface Props {
     mediaType: 'tv' | 'movie' | 'book' | 'audiobook' | 'sport';

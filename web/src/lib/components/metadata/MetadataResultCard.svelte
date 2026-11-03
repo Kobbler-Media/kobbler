@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { MetadataResult } from '$lib/api/client';
+  import type { MetadataResult } from '#lib/api/client.js';
   import { getConfidenceColor } from './types';
-  import { getProviderName, getProviderColor } from '$lib/utils/format';
+  import { getProviderName, getProviderColor } from '#lib/utils/format.js';
 
   interface Props {
     result: MetadataResult;

@@ -3,17 +3,17 @@ import type {
   StreamPrewarmParams,
   StreamResolveCachingResponse,
   StreamResolveParams
-} from '$lib/api/client';
+} from '#lib/api/client.js';
 import {
   deleteStreamSession,
   isStreamCaching,
   reportStreamOutcome,
   streamResolve,
   streamSearch
-} from '$lib/api/client';
-import type { PlaybackSessionResponse } from '$lib/types';
-import { detectCapabilities } from '$lib/utils/media';
-import { on, off } from '$lib/services/eventstream.svelte';
+} from '#lib/api/client.js';
+import type { PlaybackSessionResponse } from '#lib/types.js';
+import { detectCapabilities } from '#lib/utils/media.js';
+import { on, off } from '#lib/services/eventstream.svelte.js';
 import {
   newWalkState,
   optionKey,
@@ -22,18 +22,18 @@ import {
   toFailure,
   untriedOptions,
   walkStreams
-} from '$lib/streaming/walk';
-import type { WalkResult, WalkState } from '$lib/streaming/walk';
-import { waitForCache } from '$lib/streaming/cacheWait';
-import { createPrewarm } from '$lib/streaming/prewarm';
-import type { CachingState } from '$lib/streaming/cacheWait';
+} from '#lib/streaming/walk.js';
+import type { WalkResult, WalkState } from '#lib/streaming/walk.js';
+import { waitForCache } from '#lib/streaming/cacheWait.js';
+import { createPrewarm } from '#lib/streaming/prewarm.js';
+import type { CachingState } from '#lib/streaming/cacheWait.js';
 import {
   PLAYER_FAILURE_REASON,
   explainFailure,
   failureDetails,
   summarizeFailures,
   summarizeNoStreams
-} from '$lib/streaming/failure';
+} from '#lib/streaming/failure.js';
 import type { usePlayback } from './usePlayback.svelte';
 
 export interface StreamPlayerFailure {

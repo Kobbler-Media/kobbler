@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError } from '$lib/api/client';
+import { ApiError } from '#lib/api/client.js';
 import type {
   StreamAvailability,
   StreamOption,
   StreamResolveCachingResponse,
   StreamResolveResponse,
   StreamSearchResponse
-} from '$lib/api/client';
-import type { PlaybackSessionResponse } from '$lib/types';
+} from '#lib/api/client.js';
+import type { PlaybackSessionResponse } from '#lib/types.js';
 import {
   MAX_ATTEMPTS,
   MAX_WALK_RESOLVES,

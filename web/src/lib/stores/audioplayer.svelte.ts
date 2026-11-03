@@ -5,9 +5,9 @@ import {
   getBookChapters,
   getAudioPosition,
   saveAudioPosition
-} from '$lib/api/client';
-import type { AudiobookChapter, Book, UnifiedChapter } from '$lib/types';
-import { bumpWatchStateVersion } from '$lib/stores/watchState.svelte';
+} from '#lib/api/client.js';
+import type { AudiobookChapter, Book, UnifiedChapter } from '#lib/types.js';
+import { bumpWatchStateVersion } from '#lib/stores/watchState.svelte.js';
 
 export type SleepTimerMode = 'off' | '15' | '30' | '45' | '60' | 'end_of_chapter' | 'inactivity';
 

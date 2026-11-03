@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LivetvChannel, LivetvClashAction, LivetvSeriesRuleInput } from '$lib/types';
+  import type { LivetvChannel, LivetvClashAction, LivetvSeriesRuleInput } from '#lib/types.js';
 
   interface Props {
     value: LivetvSeriesRuleInput;

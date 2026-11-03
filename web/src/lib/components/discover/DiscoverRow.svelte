@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { DiscoverItem } from '$lib/api/client';
+  import type { DiscoverItem } from '#lib/api/client.js';
   import DiscoverCard from './DiscoverCard.svelte';
-  import ScrollRow from '$lib/components/shared/ScrollRow.svelte';
+  import ScrollRow from '#lib/components/shared/ScrollRow.svelte';
 
   interface Props {
     title: string;

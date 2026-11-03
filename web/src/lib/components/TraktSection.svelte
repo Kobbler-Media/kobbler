@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { showMessage } from '$lib/context/app.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import {
     getVideoSyncProviders,
     updateVideoSyncProvider,
@@ -8,8 +8,8 @@
     traktPollDeviceCode,
     traktDisconnect,
     traktImportHistory
-  } from '$lib/api/client';
-  import type { VideoSyncProvider } from '$lib/types';
+  } from '#lib/api/client.js';
+  import type { VideoSyncProvider } from '#lib/types.js';
 
   let provider = $state<VideoSyncProvider | null>(null);
   let loading = $state(true);

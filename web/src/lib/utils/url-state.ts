@@ -1,15 +1,13 @@
 import { goto } from '$app/navigation';
-import { get } from 'svelte/store';
-import { page } from '$app/stores';
+import { page } from '$app/state';
 
 /**
  * Update multiple URL search params at once.
  * Pass null or empty string to remove a param.
- * Uses replaceState to avoid polluting browser history on every change.
+ * Replaces the history entry to avoid polluting browser history on every change.
  */
 export function updateUrlParams(params: Record<string, string | number | null | undefined>) {
-  const currentPage = get(page);
-  const url = new URL(currentPage.url.href);
+  const url = new URL(page.url.href);
   for (const [key, value] of Object.entries(params)) {
     if (value === null || value === undefined || value === '') {
       url.searchParams.delete(key);
@@ -20,7 +18,7 @@ export function updateUrlParams(params: Record<string, string | number | null | 
   // Navigate to the current path with updated search params
   const target = url.pathname + url.search;
   // eslint-disable-next-line svelte/no-navigation-without-resolve -- Already on the current page, just updating params
-  goto(target, { replaceState: true, keepFocus: true, noScroll: true });
+  goto(target, { replace: true, reset: false });
 }
 
 /**
@@ -28,7 +26,7 @@ export function updateUrlParams(params: Record<string, string | number | null | 
  * Returns the parsed number or the default value.
  */
 export function getNumParam(
-  searchParams: URLSearchParams,
+  searchParams: Pick<URLSearchParams, 'get'>,
   key: string,
   defaultValue: number
 ): number {

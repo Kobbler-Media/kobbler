@@ -1,15 +1,15 @@
 <script lang="ts">
-  import type { Job } from '$lib/types';
+  import type { Job } from '#lib/types.js';
   import { goto } from '$app/navigation';
   import {
     getJobsState,
     initJobsStore,
     formatJobType,
     formatTimeAgo
-  } from '$lib/stores/jobs.svelte';
-  import { getStreamState } from '$lib/services/eventstream.svelte';
-  import { entityRoute } from '$lib/utils/entity-routes';
-  import { groupJobs } from '$lib/utils/job-groups';
+  } from '#lib/stores/jobs.svelte.js';
+  import { getStreamState } from '#lib/services/eventstream.svelte.js';
+  import { entityRoute } from '#lib/utils/entity-routes.js';
+  import { groupJobs } from '#lib/utils/job-groups.js';
   import { onMount } from 'svelte';
 
   const jobsState = getJobsState();

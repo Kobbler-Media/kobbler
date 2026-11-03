@@ -1,9 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import { getSyncProviders, updateSyncProvider, type SyncProviderSettings } from '$lib/api/client';
-  import TraktSection from '$lib/components/TraktSection.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import {
+    getSyncProviders,
+    updateSyncProvider,
+    type SyncProviderSettings
+  } from '#lib/api/client.js';
+  import TraktSection from '#lib/components/TraktSection.svelte';
 
   const PROVIDER_INFO: Record<string, { name: string; website: string; capabilities: string[] }> = {
     hardcover: {

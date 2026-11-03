@@ -3,10 +3,10 @@
    * SeriesFullPageView - Full page view for series details.
    * Two-column layout matching mockup: cover sidebar + main content.
    */
-  import * as api from '$lib/api/client';
-  import type { SeriesSummary, Book } from '$lib/types';
-  import { updateWantStatus } from '$lib/stores/wantStatus.svelte';
-  import { getBookListStatusBadge } from '$lib/utils/book-status';
+  import * as api from '#lib/api/client.js';
+  import type { SeriesSummary, Book } from '#lib/types.js';
+  import { updateWantStatus } from '#lib/stores/wantStatus.svelte.js';
+  import { getBookListStatusBadge } from '#lib/utils/book-status.js';
   import EntityHero from './shared/EntityHero.svelte';
   import ContentPageView from './ContentPageView.svelte';
   import MetaLine from './shared/MetaLine.svelte';

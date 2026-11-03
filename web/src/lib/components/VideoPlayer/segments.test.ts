@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SkipSegment } from '$lib/types';
+import type { SkipSegment } from '#lib/types.js';
 import { creditsSkipTarget } from './segments';
 
 const seg = (

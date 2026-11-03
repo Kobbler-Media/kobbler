@@ -1,10 +1,10 @@
 //! Search integration with pluggable backends (currently MeiliSearch).
 
 mod backend;
-pub mod chat;
 mod indexing;
 mod meili;
 mod selection;
+pub mod semantic;
 
 // Re-export the trait and filter types
 pub use backend::{
@@ -88,7 +88,9 @@ use sqlx::PgPool;
 /// - 39: Added the Stremio History static page.
 /// - 40: Added the Book Title Suggestions setting.
 /// - 41: Movie and TV show `rating` on its providers' 0-10 scale instead of halved to 0-5.
-pub const SEARCH_SCHEMA_VERSION: i32 = 41;
+/// - 42: Optional `_vectors.poster` (one SigLIP2 artwork vector per movie, show and
+///   library book) behind `semantic_search_enabled`, plus its two settings documents.
+pub const SEARCH_SCHEMA_VERSION: i32 = 42;
 
 /// Result of checking if search reindex is needed on startup.
 #[derive(Debug)]
@@ -308,6 +310,8 @@ pub struct BookDocument {
     pub all_series_names: Option<String>,
     /// Stored, not searchable. See `MovieDocument::description`.
     pub description: Option<String>,
+    #[serde(rename = "_vectors", default, skip_serializing_if = "Option::is_none")]
+    pub vectors: Option<semantic::PosterVectors>,
 }
 
 impl BookDocument {
@@ -397,6 +401,8 @@ pub struct MovieDocument {
     /// Stored, not searchable: keyword matching over synopses is noise, but a chat
     /// shortlist is unusable without the text to reason over.
     pub description: Option<String>,
+    #[serde(rename = "_vectors", default, skip_serializing_if = "Option::is_none")]
+    pub vectors: Option<semantic::PosterVectors>,
 }
 
 /// TV show document for search indexing.
@@ -419,6 +425,8 @@ pub struct TvShowDocument {
     pub content_rating: Option<String>,
     pub runtime: Option<i32>,
     pub description: Option<String>,
+    #[serde(rename = "_vectors", default, skip_serializing_if = "Option::is_none")]
+    pub vectors: Option<semantic::PosterVectors>,
 }
 
 /// TV season document for search indexing.

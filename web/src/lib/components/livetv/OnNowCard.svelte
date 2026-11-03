@@ -1,8 +1,8 @@
 <script lang="ts">
   import ConfidenceDots from './ConfidenceDots.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
   import { networkTint } from './tint';
-  import type { LivetvOnNowItem } from '$lib/types';
+  import type { LivetvOnNowItem } from '#lib/types.js';
 
   interface Props {
     item: LivetvOnNowItem;

@@ -3,21 +3,21 @@
   import ChapterMenu from './ChapterMenu.svelte';
   import SubtitlePanel from './SubtitlePanel.svelte';
   import EpisodeListPanel from './EpisodeListPanel.svelte';
-  import CastButton from '$lib/components/CastButton.svelte';
+  import CastButton from '#lib/components/CastButton.svelte';
   import type {
     PlaybackSubtitleTrack,
     PlaybackAudioTrack,
     VideoChapter,
     SkipSegment,
     TvEpisode
-  } from '$lib/types';
+  } from '#lib/types.js';
   import {
     parseVttThumbnails,
     findThumbnailAtTime,
     type ThumbnailEntry
-  } from '$lib/utils/vttThumbnails';
+  } from '#lib/utils/vttThumbnails.js';
   import { SEGMENT_COLORS, isVisibleSkipSegment, segmentTitle } from './segments';
-  import { pollThumbnailsVtt } from '$lib/utils/vttPoll';
+  import { pollThumbnailsVtt } from '#lib/utils/vttPoll.js';
 
   interface Props {
     playing: boolean;

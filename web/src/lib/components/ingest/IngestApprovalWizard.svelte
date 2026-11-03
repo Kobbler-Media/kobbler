@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { Book } from '$lib/types';
+  import type { Book } from '#lib/types.js';
   import { SearchSelect, type SearchSelectItem } from '@koblibs/ui';
-  import AuthorChips from '$lib/components/AuthorChips.svelte';
+  import AuthorChips from '#lib/components/AuthorChips.svelte';
   import { formatSize } from './types';
 
   interface Props {

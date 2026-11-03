@@ -1,27 +1,27 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import HeroActions from '$lib/components/shared/HeroActions.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import { formatCalendarDate, pluralize } from '$lib/utils/format';
-  import EntityHero from '$lib/components/shared/EntityHero.svelte';
-  import SeasonForm from '$lib/components/tv/SeasonForm.svelte';
-  import type { SeasonFormData } from '$lib/components/tv/SeasonForm.svelte';
-  import EpisodeForm from '$lib/components/tv/EpisodeForm.svelte';
-  import type { EpisodeFormData } from '$lib/components/tv/EpisodeForm.svelte';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import HeroActions from '#lib/components/shared/HeroActions.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import { formatCalendarDate, pluralize } from '#lib/utils/format.js';
+  import EntityHero from '#lib/components/shared/EntityHero.svelte';
+  import SeasonForm from '#lib/components/tv/SeasonForm.svelte';
+  import type { SeasonFormData } from '#lib/components/tv/SeasonForm.svelte';
+  import EpisodeForm from '#lib/components/tv/EpisodeForm.svelte';
+  import type { EpisodeFormData } from '#lib/components/tv/EpisodeForm.svelte';
   import { SearchSelect } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import { hasOutstandingWants, unwantMessage } from '$lib/utils/want-status';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
-  import TvEpisodeRow from '$lib/components/tv/TvEpisodeRow.svelte';
-  import type { TvSeason, TvShow } from '$lib/types';
-  import EpisodeBatchActions from '$lib/components/tv/EpisodeBatchActions.svelte';
-  import BulkSelectToggle from '$lib/components/shared/BulkSelectToggle.svelte';
-  import { EpisodeBulkSelection } from '$lib/utils/episode-bulk.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { hasOutstandingWants, unwantMessage } from '#lib/utils/want-status.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
+  import TvEpisodeRow from '#lib/components/tv/TvEpisodeRow.svelte';
+  import type { TvSeason, TvShow } from '#lib/types.js';
+  import EpisodeBatchActions from '#lib/components/tv/EpisodeBatchActions.svelte';
+  import BulkSelectToggle from '#lib/components/shared/BulkSelectToggle.svelte';
+  import { EpisodeBulkSelection } from '#lib/utils/episode-bulk.svelte.js';
 
   let season = $state<TvSeason | null>(null);
   let loading = $state(true);
@@ -34,7 +34,7 @@
   let formValid = $state(false);
   let triggerSave = $state<(() => void) | undefined>();
 
-  const seasonId = $derived($page.params.id);
+  const seasonId = $derived(page.params.id);
   const statsState = getStatsState();
   let releaseSearchEventId = $state<string | null>(null);
 
@@ -326,9 +326,11 @@
           {deleting ? 'Deleting...' : 'Delete'}
         </button>
         <div class="spacer"></div>
-        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}>
-          Cancel
-        </button>
+
+        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}
+          >Cancel</button
+        >
+
         <button
           type="button"
           class="btn btn-primary"
@@ -349,9 +351,9 @@
     onClose={() => (addingEvent = false)}
   >
     {#snippet headerActions()}
-      <button type="button" class="glass-btn" onclick={() => (addingEvent = false)} title="Close">
-        <span class="material-icons-outlined">close</span>
-      </button>
+      <button type="button" class="glass-btn" onclick={() => (addingEvent = false)} title="Close"
+        ><span class="material-icons-outlined">close</span></button
+      >
     {/snippet}
 
     <div class="edit-hero">

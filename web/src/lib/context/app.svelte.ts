@@ -3,7 +3,7 @@
  * Provides message display, clipboard helpers, and common state
  */
 
-import { showToast, setShowDetails, getUIState } from '$lib/stores/ui.svelte';
+import { showToast, setShowDetails, getUIState } from '#lib/stores/ui.svelte.js';
 import {
   getLibraryState,
   setSelection,
@@ -19,7 +19,7 @@ import {
   finishLoad,
   failLoad,
   resetLoad
-} from '$lib/stores/library.svelte';
+} from '#lib/stores/library.svelte.js';
 import {
   getDevicesState,
   setDevices,
@@ -27,13 +27,13 @@ import {
   setUsers,
   setIngestTokens,
   setProxyLogs
-} from '$lib/stores/devices.svelte';
-import { getAuthState, setAuthed } from '$lib/stores/auth.svelte';
-import { ensureStream, closeStream } from '$lib/services/eventstream.svelte';
-import * as api from '$lib/api/client';
-import type { Book, PaginatedResponse } from '$lib/types';
-import type { ProxyLogsQuery } from '$lib/api/client';
-import { getFormatFilter } from '$lib/stores/format-filter.svelte';
+} from '#lib/stores/devices.svelte.js';
+import { getAuthState, setAuthed } from '#lib/stores/auth.svelte.js';
+import { ensureStream, closeStream } from '#lib/services/eventstream.svelte.js';
+import * as api from '#lib/api/client.js';
+import type { Book, PaginatedResponse } from '#lib/types.js';
+import type { ProxyLogsQuery } from '#lib/api/client.js';
+import { getFormatFilter } from '#lib/stores/format-filter.svelte.js';
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || '';
 

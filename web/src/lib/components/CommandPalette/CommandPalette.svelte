@@ -8,7 +8,7 @@
     toggleTheme,
     registerOverlay,
     unregisterOverlay
-  } from '$lib/stores/ui.svelte';
+  } from '#lib/stores/ui.svelte.js';
   import {
     unifiedSearch,
     triggerReindex,
@@ -20,14 +20,14 @@
     clearProxyLogs,
     deleteCompletedJobs,
     clearRecents
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
   import type { GroupedResults, SearchResult } from './types';
   import { search, flattenResults, getResultUrl, parseQuery } from './search';
   import { recordAccess, getRecentResults } from './recency';
   import { commands as commandRegistry } from './registry';
   import CommandResults from './CommandResults.svelte';
-  import { useSearchSuggestions } from '$lib/composables/useSearchSuggestions.svelte';
-  import { ghostText } from '$lib/actions/ghostText';
+  import { useSearchSuggestions } from '#lib/composables/useSearchSuggestions.svelte.js';
+  import { ghostText } from '#lib/actions/ghostText.js';
   import ChatResults from './ChatResults.svelte';
   import {
     getChatState,
@@ -36,7 +36,7 @@
     clearChat,
     pokeInactivityTimer,
     pauseInactivityTimer
-  } from '$lib/stores/chat.svelte';
+  } from '#lib/stores/chat.svelte.js';
 
   const ui = getUIState();
   const chat = getChatState();

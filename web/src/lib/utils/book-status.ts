@@ -1,5 +1,5 @@
-import type { Book } from '$lib/types';
-import { getWantStatusOverride } from '$lib/stores/wantStatus.svelte';
+import type { Book } from '#lib/types.js';
+import { getWantStatusOverride } from '#lib/stores/wantStatus.svelte.js';
 
 export type StatusBadgeContext = 'card' | 'detail' | 'list';
 

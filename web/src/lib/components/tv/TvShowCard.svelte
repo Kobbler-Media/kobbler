@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { TvShow } from '$lib/types';
-  import { tvStatusChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
-  import MediaCard from '$lib/components/shared/MediaCard.svelte';
+  import type { TvShow } from '#lib/types.js';
+  import { tvStatusChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import MediaCard from '#lib/components/shared/MediaCard.svelte';
 
   interface Props {
     show: TvShow;

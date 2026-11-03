@@ -46,48 +46,10 @@ pub async fn cover(
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid book id").into_response(),
     };
 
-    // 1. Try standard library cover location
-    let mut library_path = PathBuf::from(&state.config.storage_root);
-    library_path.push("covers");
-    library_path.push(format!("{}.jpg", book_id));
-
-    if let Ok(bytes) = fs::read(&library_path).await {
-        return serve_cover_bytes(bytes);
+    match images::load_book_cover(&state.pool, &state.config.storage_root, book_id).await {
+        Some(bytes) => serve_cover_bytes(bytes),
+        None => (StatusCode::NOT_FOUND, "cover not found").into_response(),
     }
-
-    // 2. Try series image cache (used for discovered books)
-    let series_cache_path =
-        images::local_image_path(&state.config.storage_root, ImageType::Series, book_id);
-    if let Ok(bytes) = fs::read(&series_cache_path).await {
-        return serve_cover_bytes(bytes);
-    }
-
-    // 3. Try extracted cover from ebook file
-    let extracted_path = images::local_image_path(
-        &state.config.storage_root,
-        ImageType::BookExtracted,
-        book_id,
-    );
-    if let Ok(bytes) = fs::read(&extracted_path).await {
-        return serve_cover_bytes(bytes);
-    }
-
-    // 4. Try to lazy-cache from book's images JSONB in database
-    let cover_url: Option<String> = books::get_cover_url(&state.pool, book_id)
-        .await
-        .ok()
-        .flatten();
-
-    if let Some(url) = cover_url
-        && let Ok(path) =
-            images::cache_image(&state.config.storage_root, ImageType::Series, book_id, &url).await
-        && let Ok(bytes) = fs::read(&path).await
-    {
-        let _ = images::mark_cached(&state.pool, "books", book_id, "cover").await;
-        return serve_cover_bytes(bytes);
-    }
-
-    (StatusCode::NOT_FOUND, "cover not found").into_response()
 }
 
 /// Serve the extracted cover image for a book (from ebook file).

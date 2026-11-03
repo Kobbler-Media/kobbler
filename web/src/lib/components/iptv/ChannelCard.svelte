@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { IptvChannel } from '$lib/types';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
-  import MediaCard from '$lib/components/shared/MediaCard.svelte';
+  import type { IptvChannel } from '#lib/types.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import MediaCard from '#lib/components/shared/MediaCard.svelte';
 
   interface Props {
     channel: IptvChannel;

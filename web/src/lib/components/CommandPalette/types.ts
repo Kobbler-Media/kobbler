@@ -92,4 +92,4 @@ export type {
   UnifiedSearchBook,
   UnifiedSearchAuthor,
   UnifiedSearchSeries
-} from '$lib/api/client';
+} from '#lib/api/client.js';

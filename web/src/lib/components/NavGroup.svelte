@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import type { Snippet } from 'svelte';
 
   interface NavItem {
@@ -24,11 +24,11 @@
 
   function isActive(href: string): boolean {
     const url = new URL(href, 'http://x');
-    if (!$page.url.pathname.startsWith(url.pathname)) return false;
+    if (!page.url.pathname.startsWith(url.pathname)) return false;
     // If the nav item has query params, they must all match
     if (url.search) {
       for (const [key, value] of url.searchParams) {
-        if ($page.url.searchParams.get(key) !== value) return false;
+        if (page.url.searchParams.get(key) !== value) return false;
       }
       return true;
     }
@@ -45,7 +45,7 @@
         if (u.pathname === url.pathname && u.search && item.href !== href) {
           let allMatch = true;
           for (const [key, value] of u.searchParams) {
-            if ($page.url.searchParams.get(key) !== value) {
+            if (page.url.searchParams.get(key) !== value) {
               allMatch = false;
               break;
             }

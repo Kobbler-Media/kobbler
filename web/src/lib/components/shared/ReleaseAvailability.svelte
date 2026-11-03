@@ -1,6 +1,6 @@
 <script lang="ts">
   import DetailSection from './DetailSection.svelte';
-  import type { ReleaseDates } from '$lib/types';
+  import type { ReleaseDates } from '#lib/types.js';
   import {
     browserRegion,
     releaseAvailability,
@@ -8,7 +8,7 @@
     todayIso,
     type LibraryStatus,
     type StreamingAvailability
-  } from '$lib/utils/releaseAvailability';
+  } from '#lib/utils/releaseAvailability.js';
 
   interface Props {
     releaseDate: string | null;

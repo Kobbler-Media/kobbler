@@ -1,17 +1,15 @@
 //! `recommend` and `whats_new`.
 //!
-//! The load-bearing assertion in this file is a negative one: **no embedder.**
-//! `recommend` sends Meili a filtered browse and nothing that resembles a vector
-//! search, because transcript embeddings went in at schema v15 and came out at
-//! v23 on RAM cost. The quality comes from the model reasoning over a shortlist
-//! that already carries the synopsis, not from a similarity score.
+//! `recommend` sends Meili a filtered browse. The quality comes from the model
+//! reasoning over a shortlist that already carries the synopsis; with semantic
+//! search on, the user's own words only reorder that filtered shortlist by poster similarity.
 //!
 //! The other half is watch state. It is per-user, it is deliberately not in the
 //! search documents — `MovieDocument.watched` was removed at v32 because it read
 //! an arbitrary user's row — so the subtraction happens in Rust, scoped by
 //! `user_id`, and these tests set up a second household member to prove it.
 //!
-//! Meili is a wiremock. No LLM, no GPU.
+//! Meili and koblem are wiremocks. No LLM, no GPU.
 
 use crate::common::*;
 use api::AppState;
@@ -60,11 +58,23 @@ async fn call(
     tool: &str,
     args: Value,
 ) -> ToolOutcome {
+    call_saying(state, who, session_id, tool, args, "").await
+}
+
+async fn call_saying(
+    state: &AppState,
+    who: &AuthUser,
+    session_id: Uuid,
+    tool: &str,
+    args: Value,
+    user_message: &str,
+) -> ToolOutcome {
     let ctx = Ctx {
         state,
         auth: who,
         session_id,
         context_ref: None,
+        user_message,
     };
     dispatch::dispatch(&ctx, tool, &args).await
 }
@@ -241,9 +251,8 @@ async fn a_vibe_becomes_filters_and_a_shortlist_with_synopses() {
     );
 }
 
-/// The constraint that outlives this phase: no vector database, ever.
 #[tokio::test]
-async fn the_index_is_never_asked_for_a_semantic_search() {
+async fn with_semantic_search_off_the_index_is_never_asked_for_a_vector_search() {
     let server = TestServer::start_api_only().await;
     let state = &server.app_state;
     let user_id = create_user_with_role(&server, "her@test.com", "viewer").await;
@@ -269,9 +278,118 @@ async fn the_index_is_never_asked_for_a_semantic_search() {
         for forbidden in ["hybrid", "vector", "semanticRatio", "embedder"] {
             assert!(
                 !text.contains(forbidden),
-                "{forbidden} reached the index — the embedder was reverted at v23: {text}"
+                "{forbidden} reached the index with semantic search off: {text}"
             );
         }
+    }
+}
+
+async fn semantic_search_on(server: &TestServer) -> MockServer {
+    let koblem = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/text_embeddings"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"embeddings": [vec![0.01_f32; 1152]]})),
+        )
+        .mount(&koblem)
+        .await;
+    server
+        .admin_client()
+        .patch_json(
+            "/api/v1/admin/config",
+            &json!({"semantic_search_enabled": true, "koblem_service_url": koblem.uri()}),
+        )
+        .await
+        .assert_ok();
+    koblem
+}
+
+#[tokio::test]
+async fn a_vibe_orders_the_filtered_shortlist_by_artwork_when_semantic_search_is_on() {
+    let server = TestServer::start_api_only().await;
+    let state = &server.app_state;
+    let user_id = create_user_with_role(&server, "her@test.com", "viewer").await;
+    let session = session_for(state, user_id).await;
+    let meili = meili_returning(
+        &server,
+        vec![("movies", vec![movie(Uuid::now_v7(), "Carrie", 1976)])],
+    )
+    .await;
+    let koblem = semantic_search_on(&server).await;
+
+    let outcome = call_saying(
+        state,
+        &auth(user_id, "viewer"),
+        session,
+        "recommend",
+        json!({"media_type": "movie", "genre": "Horror"}),
+        "something creepy set in a small town",
+    )
+    .await;
+
+    assert_eq!(candidate_ids(&outcome).len(), 1);
+    let embedded: Vec<String> = koblem
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| String::from_utf8_lossy(&r.body).into_owned())
+        .collect();
+    assert!(
+        embedded.iter().any(|b| b.contains("creepy")),
+        "the user's own words are what gets embedded: {embedded:?}"
+    );
+    let queries = sent_queries(&meili).await;
+    let movies = queries.iter().find(|q| q["indexUid"] == "movies").unwrap();
+    assert_eq!(
+        movies["hybrid"],
+        json!({"embedder": "poster", "semanticRatio": 1.0})
+    );
+    assert_eq!(movies["vector"].as_array().map(Vec::len), Some(1152));
+    assert!(movies.get("sort").is_none(), "{movies}");
+    assert!(
+        movies["filter"]
+            .as_str()
+            .unwrap()
+            .contains("genres = \"Horror\""),
+        "the vibe orders the filtered set, it does not replace the filters"
+    );
+}
+
+#[tokio::test]
+async fn a_vibe_with_koblem_down_falls_back_to_the_rating_order() {
+    let server = TestServer::start_api_only().await;
+    let state = &server.app_state;
+    let user_id = create_user_with_role(&server, "her@test.com", "viewer").await;
+    let session = session_for(state, user_id).await;
+    let meili = meili_returning(
+        &server,
+        vec![("movies", vec![movie(Uuid::now_v7(), "Carrie", 1976)])],
+    )
+    .await;
+    server
+        .admin_client()
+        .patch_json(
+            "/api/v1/admin/config",
+            &json!({"semantic_search_enabled": true, "koblem_service_url": "http://127.0.0.1:9"}),
+        )
+        .await
+        .assert_ok();
+
+    let outcome = call_saying(
+        state,
+        &auth(user_id, "viewer"),
+        session,
+        "recommend",
+        json!({"media_type": "movie"}),
+        "something creepy set in a small town",
+    )
+    .await;
+
+    assert_eq!(candidate_ids(&outcome).len(), 1);
+    for query in sent_queries(&meili).await {
+        assert!(query.get("vector").is_none(), "{query}");
+        assert_eq!(query["sort"], json!(["rating:desc", "id:asc"]));
     }
 }
 

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { ActivityEvent, LoadState } from '$lib/types';
+  import type { ActivityEvent, LoadState } from '#lib/types.js';
   import { InfiniteScroll } from '@koblibs/ui';
-  import { createDelayedLoading } from '$lib/utils/delayed-loading.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import { createDelayedLoading } from '#lib/utils/delayed-loading.svelte.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
 
   type ViewEntityHandler = (url: string) => void;
 

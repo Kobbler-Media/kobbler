@@ -1,6 +1,6 @@
 <script lang="ts">
   import { SearchSelect, type SearchSelectItem } from '@koblibs/ui';
-  import { listPeople, personImageUrl, type CastInput, type CrewInput } from '$lib/api/client';
+  import { listPeople, personImageUrl, type CastInput, type CrewInput } from '#lib/api/client.js';
 
   export interface CastEntry {
     person_id: string;

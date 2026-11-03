@@ -2,7 +2,7 @@
 name = "api"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.99"
 license = "AGPL-3.0-only"
 autotests = false
 
@@ -25,44 +25,43 @@ path = "tests/integration/main.rs"
 [dependencies]
 axum = { version = "0.8.9", features = ["json", "ws", "multipart"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
-toml = "1.1.4"
-toml_edit = "0.25.13"
-tokio = { version = "1.53.1", features = ["full", "taskdump"] }
+serde_json = "1.0.154"
+toml = "1.1.8"
+toml_edit = "0.25.17"
+tokio = { version = "1.54.1", features = ["full", "taskdump"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls", "postgres", "macros", "uuid", "time"] }
-uuid = { version = "1.24.0", features = ["v4", "v5", "v7", "serde"] }
+uuid = { version = "1.29.0", features = ["v4", "v5", "v7", "serde"] }
 time = { version = "0.3.55", features = ["serde", "serde-well-known"] }
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
 dotenvy = "0.15.7"
-rand = "0.10.2"
-argon2 = "0.5.3"
-password-hash = "0.5.0"
+rand = "0.10.3"
+argon2 = "0.6.0"
 base64 = "0.23.1"
 whatlang = "0.18.0"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 infer = "0.22.0"
-sha2 = "0.11.0"
-xxhash-rust = { version = "0.8.18", features = ["xxh3"] }
+sha2 = "0.11.1"
+xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 hex = "0.4.3"
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 async-stream = "0.3.6"
 async-trait = "0.1.92"
-notify = "8.2.0"
+notify = "8.2.1"
 notify-debouncer-mini = "0.7.0"
-tower-http = { version = "0.7.0", features = ["trace", "cors"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json", "multipart", "stream", "gzip"] }
+tower-http = { version = "0.7.1", features = ["trace", "cors"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "multipart", "stream", "gzip"] }
 percent-encoding = "2.3.2"
 httpdate = "1.0.3"
 isolang = "2.4.0"
-tokio-util = { version = "0.7.19", features = ["io"] }
+tokio-util = { version = "0.7.20", features = ["io"] }
 tokio-stream = { version = "0.1.19", features = ["sync"] }
-twilight-gateway = { version = "0.17.1", default-features = false, features = ["rustls-webpki-roots"] }
-twilight-model = "0.17.1"
-futures = "0.3.33"
-futures-util = "0.3.33"
+twilight-gateway = { version = "0.18.0", default-features = false, features = ["rustls-webpki-roots"] }
+twilight-model = "0.18.0"
+futures = "0.3.34"
+futures-util = "0.3.34"
 bytes = "1.12.1"
 url = "2.5.8"
 regex = "1.13.1"
@@ -71,17 +70,17 @@ urlencoding = "2.1.3"
 unicode-normalization = "0.1.26"
 
 # Backup/restore
-async-compression = { version = "0.4.43", features = ["tokio", "gzip"] }
+async-compression = { version = "0.4.52", features = ["tokio", "gzip"] }
 tar = "0.4.46"
-flate2 = "1.1.9"
+flate2 = "1.1.10"
 tempfile = "3.27.0"
-zip = "8.6.0"
+zip = "9.3.0"
 csv = "1.4.0"
 
 # Kobo proxy
 kobo-proxy = { path = "../kobo-proxy" }
-jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
-rustls = { version = "0.23.43", default-features = false, features = ["ring"] }
+jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
 
 # NATS job system
 nats-jobs = { path = "../../koblibs/nats-jobs" }
@@ -89,10 +88,11 @@ kob-ffmpeg = { path = "../../koblibs/kob-ffmpeg" }
 kob-audio-norm = { path = "../../koblibs/kob-audio-norm" }
 kob-gpu-gate = { path = "../../koblibs/kob-gpu-gate" }
 kob-ebook = { path = "../../koblibs/kob-ebook" }
-async-nats = "0.50.0"
+koblem-client = { path = "../../koblibs/koblem-client" }
+async-nats = "0.51.0"
 
 # XML parsing (Kodi NFO, OPF sidecar files)
-quick-xml = { version = "0.41.0", features = ["serialize"] }
+quick-xml = { version = "0.42.0", features = ["serialize"] }
 
 # MeiliSearch for unified search
 meilisearch-sdk = "0.33.0"
@@ -100,12 +100,12 @@ meilisearch-sdk = "0.33.0"
 # Send-to-Kindle native client
 stk-client = { path = "../libs/stk-client" }
 dashmap = "6.2.1"
-crc32fast = "1.5.1"
+crc32fast = "1.5.4"
 
 # Web push notification crypto (RFC 8291 + VAPID)
 p256 = { version = "0.14.0", features = ["ecdh", "pkcs8"] }
-hkdf = "0.13"
-aes-gcm = "0.11.0"
+hkdf = "0.13.0"
+aes-gcm = "0.11.1"
 
 # Filesystem type detection (NFS/SMB mount detection for inotify skip)
 nix = { version = "0.31.3", features = ["fs"] }
@@ -122,10 +122,10 @@ tokio-console = ["dep:console-subscriber"]
 filetime = "0.2.29"
 tempfile = "3.27.0"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-test-case = "3.3.1"
+test-case = "3.4.1"
 wiremock = "0.6.5"
-jsonwebtoken = { version = "11.0.0", features = ["rust_crypto"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "json", "multipart", "stream", "gzip"] }
+jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "multipart", "stream", "gzip"] }
 
 [lints.clippy]
 # Every route helper that can fail early returns the HTTP response it wants sent, so the

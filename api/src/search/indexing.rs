@@ -85,7 +85,7 @@ pub async fn index_book(
     };
 
     let first_letter = BookDocument::compute_first_letter(&row.sort_title);
-    let doc = BookDocument {
+    let mut doc = BookDocument {
         id: row.id.to_string(),
         title: row.title,
         authors: row.authors,
@@ -104,8 +104,10 @@ pub async fn index_book(
         narrator: row.narrator,
         all_series_names: row.all_series_names,
         description: truncate_description(row.description),
+        vectors: None,
     };
 
+    super::semantic::attach_vectors(search, pool, std::slice::from_mut(&mut doc)).await?;
     search.index_book(doc).await?;
 
     Ok(())
@@ -330,6 +332,7 @@ pub async fn fetch_all_book_docs(
                 narrator: row.narrator,
                 all_series_names: row.all_series_names,
                 description: truncate_description(row.description),
+                vectors: None,
             }
         })
         .collect();
@@ -515,7 +518,7 @@ pub async fn index_movie(
     let genres = row.genres;
     let first_letter = compute_first_letter(&row.sort_title);
 
-    let doc = MovieDocument {
+    let mut doc = MovieDocument {
         id: row.id.to_string(),
         title: row.title,
         year: row.year,
@@ -529,8 +532,10 @@ pub async fn index_movie(
         runtime: row.runtime,
         content_rating: row.content_rating,
         description: truncate_description(row.description),
+        vectors: None,
     };
 
+    super::semantic::attach_vectors(search, pool, std::slice::from_mut(&mut doc)).await?;
     search.index_movie(doc).await?;
 
     Ok(())
@@ -611,7 +616,7 @@ pub async fn index_tv_show(
     let genres = row.genres;
     let first_letter = compute_first_letter(&row.sort_title);
 
-    let doc = TvShowDocument {
+    let mut doc = TvShowDocument {
         id: row.id.to_string(),
         title: row.title,
         year: row.year,
@@ -627,8 +632,10 @@ pub async fn index_tv_show(
         content_rating: row.content_rating,
         runtime: row.runtime,
         description: truncate_description(row.description),
+        vectors: None,
     };
 
+    super::semantic::attach_vectors(search, pool, std::slice::from_mut(&mut doc)).await?;
     search.index_tv_show(doc).await?;
 
     Ok(())
@@ -707,6 +714,7 @@ pub async fn fetch_all_movie_docs(
                 runtime: row.runtime,
                 content_rating: row.content_rating,
                 description: truncate_description(row.description),
+                vectors: None,
             }
         })
         .collect();
@@ -779,6 +787,7 @@ pub async fn fetch_all_tv_show_docs(
                 content_rating: row.content_rating,
                 runtime: row.runtime,
                 description: truncate_description(row.description),
+                vectors: None,
             }
         })
         .collect();

@@ -1,6 +1,6 @@
-import { createPlaybackSession, streamResolve, streamSearch } from '$lib/api/client';
-import type { PlaybackSessionResponse } from '$lib/types';
-import { detectCapabilities, type ClientCapabilities } from '$lib/utils/media';
+import { createPlaybackSession, streamResolve, streamSearch } from '#lib/api/client.js';
+import type { PlaybackSessionResponse } from '#lib/types.js';
+import { detectCapabilities, type ClientCapabilities } from '#lib/utils/media.js';
 import { createPrewarm } from './prewarm';
 import { rankOptions, resolveFirstReady } from './walk';
 

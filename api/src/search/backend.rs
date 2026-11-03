@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use serde::Serialize;
 
+use super::semantic::SemanticQuery;
 use super::{
     AuthorDocument, BookDocument, CommandDocument, GenreDocument, IptvChannelDocument,
     IptvEpgDocument, LivetvChannelDocument, LivetvGuideDocument, MediaRootFileDocument,
@@ -65,6 +66,8 @@ pub struct SearchBackendStatus {
     pub tv_episode_count: Option<i64>,
     /// Number of indexed people.
     pub person_count: Option<i64>,
+    /// Titles carrying an artwork vector across the movie, show and book indexes.
+    pub embedded_document_count: Option<i64>,
     /// Error message if not connected.
     pub error: Option<String>,
 }
@@ -187,10 +190,13 @@ pub trait SearchBackend: Send + Sync {
     ///
     /// Returns results ranked by relevance across all indexes, with `top_hits`
     /// containing the best hit of each type and `remaining` containing everything else.
+    /// `semantic` adds an artwork-vector half to the movie, show and book queries;
+    /// a backend that cannot run it answers by keyword alone rather than failing.
     async fn unified_search(
         &self,
         query: &str,
         limit: usize,
+        semantic: Option<&SemanticQuery>,
     ) -> Result<UnifiedSearchResponse, SearchError>;
 
     /// Legacy search across all entity types (grouped by type).
@@ -583,6 +589,31 @@ pub trait SearchBackend: Send + Sync {
     /// Returns Ok(()) if reconfiguration was successful, or an error if the new
     /// settings are invalid or connection failed.
     async fn reconfigure(&self, url: &str, master_key: &str) -> Result<(), SearchError>;
+
+    // =========================================================================
+    // Semantic search
+    // =========================================================================
+
+    fn supports_semantic(&self) -> bool {
+        false
+    }
+
+    /// Whether title documents are written with `_vectors`.
+    fn semantic_enabled(&self) -> bool {
+        false
+    }
+
+    fn set_semantic_enabled(&self, _enabled: bool) {}
+
+    async fn embedders_configured(&self) -> Result<bool, SearchError> {
+        Ok(false)
+    }
+
+    /// Declares or removes the artwork embedder on the title indexes and waits for
+    /// Meili to accept it. Declaring it fails while any document lacks `_vectors`.
+    async fn apply_embedders(&self, _enabled: bool) -> Result<(), SearchError> {
+        Ok(())
+    }
 }
 
 // =============================================================================
@@ -620,6 +651,7 @@ impl SearchBackend for SqlFallbackBackend {
         &self,
         _query: &str,
         _limit: usize,
+        _semantic: Option<&SemanticQuery>,
     ) -> Result<UnifiedSearchResponse, SearchError> {
         // Return empty results for federated search
         Ok(UnifiedSearchResponse {
@@ -1079,6 +1111,7 @@ impl SearchBackend for SqlFallbackBackend {
             tv_season_count: None,
             tv_episode_count: None,
             person_count: None,
+            embedded_document_count: None,
             error: None,
         }
     }

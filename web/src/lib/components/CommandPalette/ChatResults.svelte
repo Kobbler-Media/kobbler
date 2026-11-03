@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { getChatState, type ChatSource } from '$lib/stores/chat.svelte';
-  import { closeCommandPalette } from '$lib/stores/ui.svelte';
+  import { getChatState, type ChatSource } from '#lib/stores/chat.svelte.js';
+  import { closeCommandPalette } from '#lib/stores/ui.svelte.js';
   import { renderMarkdown } from './markdown';
 
   const chat = getChatState();

@@ -99,6 +99,7 @@ pub mod playback_tokens;
 pub mod provider_reconcile;
 pub mod proxy_logs;
 pub mod reading_states;
+pub mod search_embeddings;
 pub mod search_meta;
 pub mod search_recents;
 pub mod search_suggestions;

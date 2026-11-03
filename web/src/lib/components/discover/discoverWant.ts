@@ -5,7 +5,7 @@ import {
   setTvShowMonitored,
   wantDiscoverEpisode,
   wantMovie
-} from '$lib/api/client';
+} from '#lib/api/client.js';
 import { autoCreateFor, type DiscoverItem, type EpisodeRef } from './discoverDetail';
 
 /** Add the title to the library as wanted; resolves to the library page to land on. */

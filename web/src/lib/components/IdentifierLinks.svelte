@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getProviderName } from '$lib/utils/format';
+  import { getProviderName } from '#lib/utils/format.js';
 
   interface Props {
     identifiers: Record<string, string>;

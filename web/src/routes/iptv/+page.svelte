@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import type { IptvChannel, IptvWatchMatch, IptvEpgEntry } from '$lib/types';
+  import { onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { IptvChannel, IptvWatchMatch, IptvEpgEntry } from '#lib/types.js';
 
   type WatchHistoryEntry = { channel_id: string; watch_count: number; last_watched_at: string };
   let watchMatches = $state<IptvWatchMatch[]>([]);

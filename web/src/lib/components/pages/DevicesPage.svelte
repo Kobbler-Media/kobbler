@@ -5,13 +5,13 @@
     LoadState,
     DeviceType,
     DeviceActivity
-  } from '$lib/types';
+  } from '#lib/types.js';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import DeviceDetailSidebar from '$lib/components/DeviceDetailSidebar.svelte';
-  import AddDeviceModal from '$lib/components/AddDeviceModal.svelte';
-  import { createDelayedLoading } from '$lib/utils/delayed-loading.svelte';
-  import { pluralize } from '$lib/utils/format';
-  import * as api from '$lib/api/client';
+  import DeviceDetailSidebar from '#lib/components/DeviceDetailSidebar.svelte';
+  import AddDeviceModal from '#lib/components/AddDeviceModal.svelte';
+  import { createDelayedLoading } from '#lib/utils/delayed-loading.svelte.js';
+  import { pluralize } from '#lib/utils/format.js';
+  import * as api from '#lib/api/client.js';
 
   const DEVICE_TYPE_LABELS: Record<DeviceType, string> = {
     kobo: 'Kobo',

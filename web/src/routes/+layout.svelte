@@ -1,19 +1,19 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
-  import '$lib/styles/global.css';
-  import '$lib/styles/panel.css';
+  import { page } from '$app/state';
+  import '#lib/styles/global.css';
+  import '#lib/styles/panel.css';
   import { goto, beforeNavigate } from '$app/navigation';
-  import favicon from '$lib/assets/favicon.svg';
+  import favicon from '#lib/assets/favicon.svg';
   import { Toast } from '@koblibs/ui';
   import { ScrollToTop } from '@koblibs/ui';
-  import LoginForm from '$lib/components/LoginForm.svelte';
-  import NavBar from '$lib/components/NavBar.svelte';
-  import Sidebar from '$lib/components/Sidebar.svelte';
-  import MobileMenu from '$lib/components/MobileMenu.svelte';
-  import { CommandPalette } from '$lib/components/CommandPalette';
-  import MiniPlayer from '$lib/components/AudiobookPlayer/MiniPlayer.svelte';
-  import CastMiniController from '$lib/components/CastMiniController.svelte';
+  import LoginForm from '#lib/components/LoginForm.svelte';
+  import NavBar from '#lib/components/NavBar.svelte';
+  import Sidebar from '#lib/components/Sidebar.svelte';
+  import MobileMenu from '#lib/components/MobileMenu.svelte';
+  import { CommandPalette } from '#lib/components/CommandPalette/index.js';
+  import MiniPlayer from '#lib/components/AudiobookPlayer/MiniPlayer.svelte';
+  import CastMiniController from '#lib/components/CastMiniController.svelte';
   import {
     getStreamState,
     setApiBase,
@@ -23,18 +23,18 @@
     ensureStream,
     retryStream,
     cleanup as cleanupStream
-  } from '$lib/services/eventstream.svelte';
-  import { initCast } from '$lib/stores/cast.svelte';
-  import { handleKobloadDownloadEvent } from '$lib/stores/downloads.svelte';
-  import { handleJobEvent, loadJobs, syncRunningCount } from '$lib/stores/jobs.svelte';
+  } from '#lib/services/eventstream.svelte.js';
+  import { initCast } from '#lib/stores/cast.svelte.js';
+  import { handleKobloadDownloadEvent } from '#lib/stores/downloads.svelte.js';
+  import { handleJobEvent, loadJobs, syncRunningCount } from '#lib/stores/jobs.svelte.js';
   import {
     handleNotificationCreated,
     loadNotifications,
     loadUnreadCount
-  } from '$lib/stores/notifications.svelte';
-  import { updateWantStatus } from '$lib/stores/wantStatus.svelte';
-  import { fetchStats } from '$lib/stores/stats.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  } from '#lib/stores/notifications.svelte.js';
+  import { updateWantStatus } from '#lib/stores/wantStatus.svelte.js';
+  import { fetchStats } from '#lib/stores/stats.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import {
     getUIState,
     setTheme,
@@ -42,9 +42,10 @@
     openCommandPalette,
     hasOpenOverlays,
     closeTopOverlay
-  } from '$lib/stores/ui.svelte';
-  import { checkAuth, login, loadLibraryDevices } from '$lib/services/data.svelte';
-  import { loadLibrary, refreshBook, ensureDevices } from '$lib/context/app.svelte';
+  } from '#lib/stores/ui.svelte.js';
+  import { checkAuth, login, loadLibraryDevices } from '#lib/services/data.svelte.js';
+  import { safeNextPath } from '#lib/utils/next-path.js';
+  import { loadLibrary, refreshBook, ensureDevices } from '#lib/context/app.svelte.js';
 
   let { children } = $props();
 
@@ -83,10 +84,16 @@
       await login(email, password);
       await startSession();
 
+      const next = safeNextPath(page.url.searchParams.get('next'));
+      if (next) {
+        window.location.assign(next);
+        return;
+      }
+
       // Navigate to library or restore last page
       const lastPage = localStorage.getItem('kobbler-page') || 'library';
-      if ($page.url.pathname === '/') {
-        goto(`/${lastPage}`, { replaceState: true });
+      if (page.url.pathname === '/') {
+        goto(`/${lastPage}`, { replace: true });
       }
     } finally {
       loading = false;
@@ -95,7 +102,7 @@
 
   // Save current page to localStorage when it changes
   $effect(() => {
-    const pathname = $page.url.pathname;
+    const pathname = page.url.pathname;
     const pageName = pathname.slice(1).split('/')[0];
     if (pageName && isAuthed) {
       localStorage.setItem('kobbler-page', pageName);
@@ -113,7 +120,9 @@
     }
   }
 
-  beforeNavigate(({ type, cancel }) => {
+  beforeNavigate(({ type, cancel, shallow }) => {
+    if (shallow && type === 'goto') return;
+
     if (type === 'popstate' && hasOpenOverlays()) {
       cancel();
       closeTopOverlay();

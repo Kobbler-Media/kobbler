@@ -6,12 +6,12 @@ const api = vi.hoisted(() => ({
   getRecentStreams: vi.fn()
 }));
 
-vi.mock('$lib/api/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/api/client')>()),
+vi.mock('#lib/api/client.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#lib/api/client.js')>()),
   ...api
 }));
 
-const { ApiError } = await import('$lib/api/client');
+const { ApiError } = await import('#lib/api/client.js');
 const { useKeep, findStreamSession } = await import('./useKeep.svelte');
 
 function setup() {

@@ -9,7 +9,7 @@ import type {
   LoadKey,
   LoadState,
   LoadStatus
-} from '$lib/types';
+} from '#lib/types.js';
 
 // Books
 let books = $state.raw<Book[]>([]);

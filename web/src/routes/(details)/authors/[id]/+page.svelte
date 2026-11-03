@@ -1,16 +1,16 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import AuthorFullPageView from '$lib/components/AuthorFullPageView.svelte';
-  import AuthorEditForm from '$lib/components/AuthorEditForm.svelte';
-  import { type AuthorFormData } from '$lib/types';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import * as api from '$lib/api/client';
-  import { hasOutstandingBookWants } from '$lib/utils/want-status';
-  import type { AuthorSummary, Book, SeriesSummary } from '$lib/types';
+  import { page } from '$app/state';
+  import AuthorFullPageView from '#lib/components/AuthorFullPageView.svelte';
+  import AuthorEditForm from '#lib/components/AuthorEditForm.svelte';
+  import { type AuthorFormData } from '#lib/types.js';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { hasOutstandingBookWants } from '#lib/utils/want-status.js';
+  import type { AuthorSummary, Book, SeriesSummary } from '#lib/types.js';
 
   // Load data from +page.ts
   let { data } = $props();
@@ -34,11 +34,11 @@
   });
 
   const stats = getStatsState();
-  const authorId = $derived($page.params.id ?? '');
+  const authorId = $derived(page.params.id ?? '');
 
   // Navigation state for detail page stack
   type DetailState = { fromDetail?: boolean; closeUrl?: string };
-  const pageState = $derived($page.state as DetailState);
+  const pageState = $derived(page.state as DetailState);
 
   // Show back button if we navigated here from another detail page
   const canGoBack = $derived(pageState?.fromDetail === true);
@@ -284,9 +284,11 @@
             {deleting ? 'Deleting...' : 'Delete Author'}
           </button>
           <div class="spacer"></div>
-          <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}>
-            Cancel
-          </button>
+
+          <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}
+            >Cancel</button
+          >
+
           <button
             type="button"
             class="btn btn-primary"

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { Book, BookSelectHandler } from '$lib/types';
-  import { getBookStatusBadge } from '$lib/utils/book-status';
-  import { statusChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
-  import MediaCard from '$lib/components/shared/MediaCard.svelte';
+  import type { Book, BookSelectHandler } from '#lib/types.js';
+  import { getBookStatusBadge } from '#lib/utils/book-status.js';
+  import { statusChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import MediaCard from '#lib/components/shared/MediaCard.svelte';
 
   interface Props {
     book: Book;

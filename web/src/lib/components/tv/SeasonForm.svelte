@@ -1,13 +1,13 @@
 <script lang="ts">
-  import type { TvSeason, SeasonDetailResult } from '$lib/types';
-  import SourceField from '$lib/components/SourceField.svelte';
-  import CoverSelector from '$lib/components/CoverSelector.svelte';
+  import type { TvSeason, SeasonDetailResult } from '#lib/types.js';
+  import SourceField from '#lib/components/SourceField.svelte';
+  import CoverSelector from '#lib/components/CoverSelector.svelte';
   import {
     buildVideoSourceValues,
     getVideoInitialByPriority,
     getVideoInitialSourceForField,
     buildVideoCoverOptions
-  } from '$lib/components/video/video-form-utils';
+  } from '#lib/components/video/video-form-utils.js';
 
   export interface SeasonFormData {
     season_identifier: string;

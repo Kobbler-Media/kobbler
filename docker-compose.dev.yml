@@ -17,7 +17,7 @@ networks:
 
 services:
   kobbler-db:
-    image: postgres:18.4
+    image: postgres:18.6
     container_name: kobbler-db
     environment:
       POSTGRES_DB: kobbler
@@ -36,7 +36,7 @@ services:
       - kob_dev
 
   meilisearch:
-    image: getmeili/meilisearch:v1.54.3
+    image: getmeili/meilisearch:v1.56.1
     container_name: kobbler-meilisearch
     environment:
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-dev-master-key}

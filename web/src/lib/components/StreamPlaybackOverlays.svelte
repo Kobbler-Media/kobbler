@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { StreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
+  import type { StreamPlayback } from '#lib/composables/useStreamPlayback.svelte.js';
   import StreamOptionsModal from './StreamOptionsModal.svelte';
   import StreamFailurePanel from './StreamFailurePanel.svelte';
 

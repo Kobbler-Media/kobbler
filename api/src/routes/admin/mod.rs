@@ -73,7 +73,7 @@ pub mod watchlist;
 
 // Auth
 pub use auth::{
-    change_password, clear_profile_pin, delete_avatar, get_avatar, login, logout, me,
+    change_password, clear_profile_pin, delete_avatar, get_avatar, login, logout, me, player_token,
     set_profile_pin, update_display_name, update_timezone, upload_avatar, verify_profile_pin,
 };
 

@@ -2,9 +2,9 @@
   import { Modal } from '@koblibs/ui';
   import { SearchSelect, type SearchSelectItem } from '@koblibs/ui';
   import KindleAccountSection from './KindleAccountSection.svelte';
-  import type { UserSummary, DeviceType } from '$lib/types';
-  import * as api from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
+  import type { UserSummary, DeviceType } from '#lib/types.js';
+  import * as api from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
 
   interface Props {
     users: UserSummary[];

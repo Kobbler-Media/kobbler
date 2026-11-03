@@ -11,8 +11,8 @@
     type FaEvent,
     type FaPlayback
   } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
   import {
     listVoicePresets,
     createVoicePreset,
@@ -37,7 +37,7 @@
     type TtsStatus,
     type AudiobookSummary,
     type AudiobookDetail
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
 
   const MAX_PRESETS = 10;
   const TTS_TEST_TEXT =

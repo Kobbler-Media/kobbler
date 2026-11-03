@@ -6,11 +6,11 @@
  * handles file transitions, saves position, and broadcasts updates.
  */
 
-import { createPlaybackToken, revokePlaybackToken } from '$lib/api/client';
-import { getAudioPlayerState, pause, getFileIds } from '$lib/stores/audioplayer.svelte';
-import { getCastState } from '$lib/stores/cast.svelte';
-import { sendMessage } from '$lib/cast/sender';
-import type { InitAudiobookPayload } from '$lib/cast/messages';
+import { createPlaybackToken, revokePlaybackToken } from '#lib/api/client.js';
+import { getAudioPlayerState, pause, getFileIds } from '#lib/stores/audioplayer.svelte.js';
+import { getCastState } from '#lib/stores/cast.svelte.js';
+import { sendMessage } from '#lib/cast/sender.js';
+import type { InitAudiobookPayload } from '#lib/cast/messages.js';
 
 let audiobookCastToken: string | null = null;
 let audiobookCasting = false;

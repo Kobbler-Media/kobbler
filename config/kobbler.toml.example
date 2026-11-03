@@ -160,6 +160,15 @@ ebook_meta_path = ""
 meili_url = "http://meilisearch:7700"
 # meili_master_key = ""
 
+# Semantic search ranks movies, TV shows and library books by how well their
+# poster or cover matches the query, so "space adventure" or "cosy animated
+# film" find titles whose names share none of those words. Off by default.
+# Needs Meilisearch and `koblem_service_url`: artwork and queries are embedded
+# with SigLIP2 on koblem's GPU. Keyword search carries on if koblem is down.
+semantic_search_enabled = false
+# 0.0 = keyword only, 1.0 = artwork similarity only.
+semantic_search_ratio = 0.5
+
 # =============================================================================
 # Media / Storage
 # =============================================================================

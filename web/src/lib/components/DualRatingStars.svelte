@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BOOK_RATING_SCALE, formatRating, starFill } from '$lib/utils/rating';
+  import { BOOK_RATING_SCALE, formatRating, starFill } from '#lib/utils/rating.js';
 
   /**
    * DualRatingStars - Shows community rating (gold fill) + user rating (accent outline)

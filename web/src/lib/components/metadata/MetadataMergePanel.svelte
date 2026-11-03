@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { MetadataResult } from '$lib/api/client';
+  import type { MetadataResult } from '#lib/api/client.js';
   import { type OverrideableField, getFieldOptions } from './types';
-  import { getProviderName } from '$lib/utils/format';
+  import { getProviderName } from '#lib/utils/format.js';
 
   interface Props {
     results: MetadataResult[];

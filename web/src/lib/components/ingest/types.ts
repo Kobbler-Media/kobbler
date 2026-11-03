@@ -1,4 +1,4 @@
-import type { IngestQueueGroup, IngestQueueStatusCounts, SeriesSummary } from '$lib/types';
+import type { IngestQueueGroup, IngestQueueStatusCounts, SeriesSummary } from '#lib/types.js';
 
 /** Author with optional Hardcover ID for enrichment */
 export interface AuthorInput {

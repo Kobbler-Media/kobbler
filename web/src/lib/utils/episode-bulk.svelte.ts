@@ -1,6 +1,6 @@
 import { SvelteSet } from 'svelte/reactivity';
-import type { BulkEpisodeAction, BulkEpisodeResult } from '$lib/types';
-import * as api from '$lib/api/client';
+import type { BulkEpisodeAction, BulkEpisodeResult } from '#lib/types.js';
+import * as api from '#lib/api/client.js';
 
 const ACTION_LABELS: Record<BulkEpisodeAction, string> = {
   delete_files: 'Delete files',

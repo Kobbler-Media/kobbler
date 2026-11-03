@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({ getSearchSuggestions: vi.fn() }));
 
-vi.mock('$lib/api/client', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/api/client')>()),
+vi.mock('#lib/api/client.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#lib/api/client.js')>()),
   ...api
 }));
 

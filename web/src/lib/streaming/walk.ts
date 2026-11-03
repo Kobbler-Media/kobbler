@@ -1,11 +1,11 @@
-import { ApiError, isStreamCaching } from '$lib/api/client';
+import { ApiError, isStreamCaching } from '#lib/api/client.js';
 import type {
   StreamOption,
   StreamResolveCachingResponse,
   StreamResolveResponse,
   StreamSearchResponse
-} from '$lib/api/client';
-import type { PlaybackSessionResponse } from '$lib/types';
+} from '#lib/api/client.js';
+import type { PlaybackSessionResponse } from '#lib/types.js';
 
 // kobload prewarms the top 8 in rank order; past ~6 the next option is
 // rarely warm, so walking further only trades one cold wait for another.

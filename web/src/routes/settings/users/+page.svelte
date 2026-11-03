@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getLibraryState } from '$lib/stores/library.svelte';
-  import { getDevicesState } from '$lib/stores/devices.svelte';
-  import { loadUsers, showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { getLibraryState } from '#lib/stores/library.svelte.js';
+  import { getDevicesState } from '#lib/stores/devices.svelte.js';
+  import { loadUsers, showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import { DeleteConfirmModal, SearchSelect, type SearchSelectItem } from '@koblibs/ui';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import * as api from '$lib/api/client';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import * as api from '#lib/api/client.js';
 
   const auth = getAuthState();
 

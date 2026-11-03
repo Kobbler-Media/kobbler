@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { AuthorRef } from '$lib/types';
+  import type { AuthorRef } from '#lib/types.js';
 
   interface Props {
     authors: AuthorRef[];

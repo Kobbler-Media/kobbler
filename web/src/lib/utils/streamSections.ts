@@ -1,4 +1,4 @@
-import type { StreamGroup, StreamOption } from '$lib/api/client';
+import type { StreamGroup, StreamOption } from '#lib/api/client.js';
 
 export interface StreamSection {
   title: string | null;

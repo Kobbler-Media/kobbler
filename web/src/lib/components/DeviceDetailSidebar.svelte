@@ -1,9 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { DeviceSummary, UserSummary, DeviceType, DeviceActivity } from '$lib/types';
+  import type { DeviceSummary, UserSummary, DeviceType, DeviceActivity } from '#lib/types.js';
   import MiniBookCard from './MiniBookCard.svelte';
   import KindleAccountSection from './KindleAccountSection.svelte';
-  import { formatDistanceToNow } from '$lib/utils/format';
+  import { formatDistanceToNow } from '#lib/utils/format.js';
 
   const DEVICE_TYPE_LABELS: Record<DeviceType, string> = {
     kobo: 'Kobo',

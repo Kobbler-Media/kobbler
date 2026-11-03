@@ -1,9 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { TvShow } from '$lib/types';
-  import TvShowCard from '$lib/components/tv/TvShowCard.svelte';
-  import TvBatchActions from '$lib/components/tv/TvBatchActions.svelte';
-  import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
+  import type { TvShow } from '#lib/types.js';
+  import TvShowCard from '#lib/components/tv/TvShowCard.svelte';
+  import TvBatchActions from '#lib/components/tv/TvBatchActions.svelte';
+  import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
 
   export type FilterValue = 'all' | 'monitored' | 'returning' | 'ended';
   export type SortValue = 'title' | 'next_airing' | 'created_at';

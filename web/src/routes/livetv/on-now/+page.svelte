@@ -6,16 +6,16 @@
     offReconnect,
     on as onLiveEvent,
     off as offLiveEvent
-  } from '$lib/services/eventstream.svelte';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import OnNowNotice from '$lib/components/livetv/OnNowNotice.svelte';
-  import OnNowCard from '$lib/components/livetv/OnNowCard.svelte';
-  import ConfidenceDots from '$lib/components/livetv/ConfidenceDots.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { openLivetvChannel } from '$lib/stores/livetvPlayer.svelte';
-  import * as api from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { LivetvOnNow, LivetvOnNowItem } from '$lib/types';
+  } from '#lib/services/eventstream.svelte.js';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import OnNowNotice from '#lib/components/livetv/OnNowNotice.svelte';
+  import OnNowCard from '#lib/components/livetv/OnNowCard.svelte';
+  import ConfidenceDots from '#lib/components/livetv/ConfidenceDots.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { openLivetvChannel } from '#lib/stores/livetvPlayer.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { LivetvOnNow, LivetvOnNowItem } from '#lib/types.js';
 
   let data = $state<LivetvOnNow | null>(null);
   let loading = $state(true);

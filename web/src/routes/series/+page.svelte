@@ -1,29 +1,29 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import SeriesPage from '$lib/components/pages/SeriesPage.svelte';
-  import BookDetailsPanel from '$lib/components/BookDetailsPanel.svelte';
-  import BookForm from '$lib/components/BookForm.svelte';
-  import SeriesSidebarContent from '$lib/components/SeriesSidebarContent.svelte';
-  import SeriesEditForm from '$lib/components/SeriesEditForm.svelte';
-  import AuthorSidebarContent from '$lib/components/AuthorSidebarContent.svelte';
-  import AuthorEditForm from '$lib/components/AuthorEditForm.svelte';
+  import { page } from '$app/state';
+  import SeriesPage from '#lib/components/pages/SeriesPage.svelte';
+  import BookDetailsPanel from '#lib/components/BookDetailsPanel.svelte';
+  import BookForm from '#lib/components/BookForm.svelte';
+  import SeriesSidebarContent from '#lib/components/SeriesSidebarContent.svelte';
+  import SeriesEditForm from '#lib/components/SeriesEditForm.svelte';
+  import AuthorSidebarContent from '#lib/components/AuthorSidebarContent.svelte';
+  import AuthorEditForm from '#lib/components/AuthorEditForm.svelte';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import AddEntityModal from '$lib/components/AddEntityModal.svelte';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
-  import { getLibraryState } from '$lib/stores/library.svelte';
-  import { getDevicesState } from '$lib/stores/devices.svelte';
+  import AddEntityModal from '#lib/components/AddEntityModal.svelte';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
+  import { getLibraryState } from '#lib/stores/library.svelte.js';
+  import { getDevicesState } from '#lib/stores/devices.svelte.js';
   import {
     loadSeries,
     loadMoreSeries,
     loadPreviousSeries,
     loadDevices,
     showMessage
-  } from '$lib/context/app.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
-  import { scrollContainerToTop, scrollItemToTop } from '$lib/utils/scroll-anchor';
+  } from '#lib/context/app.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
+  import { scrollContainerToTop, scrollItemToTop } from '#lib/utils/scroll-anchor.js';
   import {
     getNavigationState,
     pushEntity,
@@ -31,10 +31,10 @@
     clearStack,
     setLoadingEntity,
     updateCurrentEntityData
-  } from '$lib/stores/navigation.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import * as api from '$lib/api/client';
-  import { searchBookReleases, queueBookRelease } from '$lib/api/client';
+  } from '#lib/stores/navigation.svelte.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { searchBookReleases, queueBookRelease } from '#lib/api/client.js';
   import type {
     SeriesSummary,
     Book,
@@ -44,7 +44,7 @@
     BookFormData,
     AuthorFormData,
     SeriesFormData
-  } from '$lib/types';
+  } from '#lib/types.js';
 
   // Store state
   const library = getLibraryState();
@@ -62,19 +62,23 @@
 
   // Navigation sidebar state
   const currentNavEntity = $derived(nav.current);
+
   const currentNavSeries = $derived(
     currentNavEntity?.type === 'series'
       ? (currentNavEntity.data as SeriesSummary | undefined)
       : undefined
   );
+
   const currentNavBook = $derived(
     currentNavEntity?.type === 'book' ? (currentNavEntity.data as Book | undefined) : undefined
   );
+
   const currentNavAuthor = $derived(
     currentNavEntity?.type === 'author'
       ? (currentNavEntity.data as AuthorSummary | undefined)
       : undefined
   );
+
   const showNavSidebar = $derived(nav.isOpen && currentNavEntity !== undefined);
 
   // Books for series/author sidebar
@@ -102,9 +106,10 @@
   let formCanSave: boolean | undefined = $state();
 
   // URL state
-  const urlSelected = $derived($page.url.searchParams.get('selected'));
-  const urlSearch = $derived($page.url.searchParams.get('q') || '');
-  const urlAround = $derived($page.url.searchParams.get('around'));
+  const urlSelected = $derived(page.url.searchParams.get('selected'));
+
+  const urlSearch = $derived(page.url.searchParams.get('q') || '');
+  const urlAround = $derived(page.url.searchParams.get('around'));
 
   // Track last selected to prevent duplicate loads
   let lastUrlSelected = $state<string | null>(null);
@@ -598,9 +603,10 @@
   {#snippet footer()}
     {#if editMode && currentNavEntity?.type === 'book' && currentNavBook}
       <div class="sidebar-footer-actions">
-        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={savingEdit}>
-          Cancel
-        </button>
+        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={savingEdit}
+          >Cancel</button
+        >
+
         <button
           class="btn-primary"
           type="button"

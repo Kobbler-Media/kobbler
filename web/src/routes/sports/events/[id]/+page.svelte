@@ -1,35 +1,35 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import { isActivelyWanted } from '$lib/utils/want-status';
-  import MoveFileModal from '$lib/components/shared/MoveFileModal.svelte';
-  import EpisodeForm from '$lib/components/tv/EpisodeForm.svelte';
-  import type { EpisodeFormData } from '$lib/components/tv/EpisodeForm.svelte';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import { isActivelyWanted } from '#lib/utils/want-status.js';
+  import MoveFileModal from '#lib/components/shared/MoveFileModal.svelte';
+  import EpisodeForm from '#lib/components/tv/EpisodeForm.svelte';
+  import type { EpisodeFormData } from '#lib/components/tv/EpisodeForm.svelte';
   import type { SearchSelectItem } from '@koblibs/ui';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import * as api from '$lib/api/client';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import * as api from '#lib/api/client.js';
   import {
     getEpisodeWatchState,
     updateEpisodeWatchState,
     deleteEpisodeFile,
     rejectDownload,
     replaceFile
-  } from '$lib/api/client';
-  import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
-  import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
-  import HeroActions from '$lib/components/shared/HeroActions.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import { formatCalendarDate } from '$lib/utils/format';
-  import FilesList from '$lib/components/shared/FilesList.svelte';
-  import EntityHero from '$lib/components/shared/EntityHero.svelte';
-  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
-  import type { TvEpisode, TvEpisodeFile, TvWatchState, TvSeason, TvShow } from '$lib/types';
+  } from '#lib/api/client.js';
+  import { usePlayback } from '#lib/composables/usePlayback.svelte.js';
+  import { useStreamPlayback } from '#lib/composables/useStreamPlayback.svelte.js';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
+  import PlaybackArea from '#lib/components/shared/PlaybackArea.svelte';
+  import HeroActions from '#lib/components/shared/HeroActions.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import { formatCalendarDate } from '#lib/utils/format.js';
+  import FilesList from '#lib/components/shared/FilesList.svelte';
+  import EntityHero from '#lib/components/shared/EntityHero.svelte';
+  import StreamPlaybackOverlays from '#lib/components/StreamPlaybackOverlays.svelte';
+  import type { TvEpisode, TvEpisodeFile, TvWatchState, TvSeason, TvShow } from '#lib/types.js';
 
   let event = $state<TvEpisode | null>(null);
   let files = $state<TvEpisodeFile[]>([]);
@@ -50,7 +50,7 @@
   let triggerSave = $state<(() => void) | undefined>();
 
   const stats = getStatsState();
-  const eventId = $derived($page.params.id);
+  const eventId = $derived(page.params.id);
 
   const playback = usePlayback({
     mediaType: 'episode',
@@ -202,6 +202,7 @@
     if (!event?.season_id) return;
     try {
       const season = await api.getSportsSeason(event.season_id);
+
       siblingEvents = season.episodes
         .filter((ep) => ep.id !== event!.id)
         .map((ep) => ({
@@ -369,9 +370,11 @@
           {deleting ? 'Deleting...' : 'Delete'}
         </button>
         <div class="spacer"></div>
-        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}>
-          Cancel
-        </button>
+
+        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}
+          >Cancel</button
+        >
+
         <button
           type="button"
           class="btn btn-primary"
@@ -409,9 +412,16 @@
               >Season {parentSeason.season_sort_order}</a
             >
           {/if}
+
           <span>Event {event!.episode_sort_order}</span>
-          {#if event!.air_date}<span>{formatCalendarDate(event!.air_date)}</span>{/if}
-          {#if event!.runtime}<span>{event!.runtime}m</span>{/if}
+
+          {#if event!.air_date}
+            <span>{formatCalendarDate(event!.air_date)}</span>
+          {/if}
+
+          {#if event!.runtime}
+            <span>{event!.runtime}m</span>
+          {/if}
         </MetaLine>
       {/snippet}
 
@@ -426,8 +436,13 @@
               pinned: true,
               onSelect: toggleWatched
             },
+
             isActivelyWanted(event!.want_status)
-              ? { label: 'Remove from Wanted', icon: 'close', onSelect: handleUnwant }
+              ? {
+                  label: 'Remove from Wanted',
+                  icon: 'close',
+                  onSelect: handleUnwant
+                }
               : !event!.is_in_library && {
                   label: 'Want',
                   icon: 'bookmark_add',

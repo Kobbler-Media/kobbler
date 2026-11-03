@@ -3,12 +3,12 @@
    * SeriesEditForm - Rich form for creating/editing series.
    * Works in both create mode (no existing series) and edit mode.
    */
-  import type { SeriesSummary, SeriesSearchResult, SeriesFormData } from '$lib/types';
-  import * as api from '$lib/api/client';
+  import type { SeriesSummary, SeriesSearchResult, SeriesFormData } from '#lib/types.js';
+  import * as api from '#lib/api/client.js';
   import { SearchSelect } from '@koblibs/ui';
   import SourceField from './SourceField.svelte';
   import CoverSelector from './CoverSelector.svelte';
-  import { getProviderCode, getProviderName } from '$lib/utils/format';
+  import { getProviderCode, getProviderName } from '#lib/utils/format.js';
 
   type SourceValue = {
     source: string;

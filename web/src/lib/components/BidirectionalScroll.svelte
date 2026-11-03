@@ -5,7 +5,7 @@
     getScrollContainer,
     restoreScrollAnchor,
     type ScrollAnchor
-  } from '$lib/utils/scroll-anchor';
+  } from '#lib/utils/scroll-anchor.js';
 
   interface Props {
     hasMore: boolean;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { VIDEO_RATING_SCALE } from '$lib/utils/rating';
+  import { VIDEO_RATING_SCALE } from '#lib/utils/rating.js';
   import { onMount } from 'svelte';
   import type {
     Movie,
@@ -7,7 +7,7 @@
     MovieWatchState,
     SubtitleTrackInfo,
     ExternalSubtitleInfo
-  } from '$lib/types';
+  } from '#lib/types.js';
   import {
     getMovieFiles,
     getMovieWatchState,
@@ -15,22 +15,22 @@
     deleteMovieFile,
     rejectDownload,
     getMovieTracks
-  } from '$lib/api/client';
-  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
-  import { isActivelyWanted } from '$lib/utils/want-status';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
-  import PersonCard from '$lib/components/shared/PersonCard.svelte';
-  import GenreChips from '$lib/components/GenreChips.svelte';
-  import DualRatingStars from '$lib/components/DualRatingStars.svelte';
+  } from '#lib/api/client.js';
+  import StreamPlaybackOverlays from '#lib/components/StreamPlaybackOverlays.svelte';
+  import { isActivelyWanted } from '#lib/utils/want-status.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { usePlayback } from '#lib/composables/usePlayback.svelte.js';
+  import { useStreamPlayback } from '#lib/composables/useStreamPlayback.svelte.js';
+  import PersonCard from '#lib/components/shared/PersonCard.svelte';
+  import GenreChips from '#lib/components/GenreChips.svelte';
+  import DualRatingStars from '#lib/components/DualRatingStars.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
-  import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
-  import FilesList from '$lib/components/shared/FilesList.svelte';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
-  import SubtitlesList from '$lib/components/shared/SubtitlesList.svelte';
-  import SubtitleSearchModal from '$lib/components/shared/SubtitleSearchModal.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
+  import PlaybackArea from '#lib/components/shared/PlaybackArea.svelte';
+  import FilesList from '#lib/components/shared/FilesList.svelte';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
+  import SubtitlesList from '#lib/components/shared/SubtitlesList.svelte';
+  import SubtitleSearchModal from '#lib/components/shared/SubtitleSearchModal.svelte';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
 
   interface Props {
     movie: Movie;

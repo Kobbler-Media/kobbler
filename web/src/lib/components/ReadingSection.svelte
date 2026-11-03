@@ -4,7 +4,7 @@
    * Design: [Want] [Reading] [Done]  ━━━━━━░░░  67%
    */
   import ReadingProgressPopover from './ReadingProgressPopover.svelte';
-  import type { ReadingStatus } from '$lib/types';
+  import type { ReadingStatus } from '#lib/types.js';
 
   interface Props {
     /** Current reading status */

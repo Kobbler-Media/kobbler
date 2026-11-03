@@ -1,21 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAuthState, setAvatarUrl } from '$lib/stores/auth.svelte';
-  import { getUIState, setTheme } from '$lib/stores/ui.svelte';
-  import AvatarCropper from '$lib/components/AvatarCropper.svelte';
-  import { checkAuth } from '$lib/services/data.svelte';
-  import { createWebPushController } from '$lib/services/webpush.svelte';
+  import { getAuthState, setAvatarUrl } from '#lib/stores/auth.svelte.js';
+  import { getUIState, setTheme } from '#lib/stores/ui.svelte.js';
+  import AvatarCropper from '#lib/components/AvatarCropper.svelte';
+  import { checkAuth } from '#lib/services/data.svelte.js';
+  import { createWebPushController } from '#lib/services/webpush.svelte.js';
   import {
     getMyNotificationPrefs,
     updateMyNotificationPrefs,
     updateMyTimezone
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
   import type {
     ChatNotificationPrefs,
     ChatNotificationPrefsUpdate,
     MuteDuration,
     NotificationTrigger
-  } from '$lib/types';
+  } from '#lib/types.js';
 
   const authState = getAuthState();
   const ui = getUIState();

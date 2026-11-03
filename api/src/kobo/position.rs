@@ -85,8 +85,9 @@ pub fn position_survives(epub: &[u8], position: &SavedPosition) -> bool {
     };
 
     let wanted = position.source.trim_start_matches('/');
-    let Some(entry_name) = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+    let Some(entry_name) = archive
+        .file_names()
+        .filter_map(|name| name.ok().map(std::borrow::Cow::into_owned))
         .find(|name| name == wanted || name.ends_with(&format!("/{wanted}")))
     else {
         return false;

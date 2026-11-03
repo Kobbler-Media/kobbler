@@ -414,11 +414,13 @@ impl StreamAccumulator {
 
 /// Split an SSE buffer into complete `data:` payloads, leaving any partial line
 /// in `buf`. `[DONE]` is consumed here — it is a framing marker, not a payload.
-pub fn drain_sse_payloads(buf: &mut String) -> Vec<String> {
+// Bytes, not text: a network read can end inside a multi-byte character, and
+// only a whole line is guaranteed to be whole UTF-8.
+pub fn drain_sse_payloads(buf: &mut Vec<u8>) -> Vec<String> {
     let mut out = Vec::new();
-    while let Some(newline) = buf.find('\n') {
-        let line = buf[..newline].trim_end_matches('\r').trim().to_string();
-        buf.drain(..newline + 1);
+    while let Some(newline) = buf.iter().position(|&b| b == b'\n') {
+        let raw: Vec<u8> = buf.drain(..=newline).collect();
+        let line = String::from_utf8_lossy(&raw).trim().to_string();
         let Some(data) = line.strip_prefix("data:") else {
             continue;
         };
@@ -519,15 +521,22 @@ where
     }
 
     let mut acc = StreamAccumulator::new();
-    let mut buf = String::new();
+    let mut buf = Vec::new();
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("the language model stream failed: {e}"))?;
-        buf.push_str(&String::from_utf8_lossy(&chunk));
+        buf.extend_from_slice(&chunk);
         for payload in drain_sse_payloads(&mut buf) {
             let Ok(value) = serde_json::from_str::<Value>(&payload) else {
                 continue;
             };
+            if let Some(error) = value.get("error") {
+                let message = error
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map_or_else(|| error.to_string(), str::to_string);
+                return Err(format!("the language model reported an error: {message}"));
+            }
             if let Some(text) = acc.push_chunk(&value) {
                 on_delta(text).await;
             }
@@ -752,12 +761,26 @@ mod tests {
 
     #[test]
     fn sse_payloads_survive_a_chunk_boundary_mid_line() {
-        let mut buf = String::new();
-        buf.push_str("data: {\"a\":");
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"data: {\"a\":");
         assert!(drain_sse_payloads(&mut buf).is_empty());
-        buf.push_str("1}\n\ndata: [DONE]\n\n");
+        buf.extend_from_slice(b"1}\n\ndata: [DONE]\n\n");
         assert_eq!(drain_sse_payloads(&mut buf), vec!["{\"a\":1}".to_string()]);
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn sse_payloads_survive_a_chunk_boundary_mid_character() {
+        let line = "data: {\"t\":\"café\"}\n\n".as_bytes();
+        let split = line.iter().position(|&b| b == 0xC3).unwrap() + 1;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&line[..split]);
+        assert!(drain_sse_payloads(&mut buf).is_empty());
+        buf.extend_from_slice(&line[split..]);
+        assert_eq!(
+            drain_sse_payloads(&mut buf),
+            vec!["{\"t\":\"café\"}".to_string()]
+        );
     }
 
     #[test]

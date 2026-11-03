@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LivetvSeriesRule } from '$lib/types';
+  import type { LivetvSeriesRule } from '#lib/types.js';
 
   interface Props {
     rules: LivetvSeriesRule[];

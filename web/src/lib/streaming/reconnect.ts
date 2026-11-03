@@ -1,4 +1,4 @@
-import type { SessionStatusResult } from '$lib/api/client';
+import type { SessionStatusResult } from '#lib/api/client.js';
 
 /**
  * What to do about a stream that was lost, given what the server says of its session.

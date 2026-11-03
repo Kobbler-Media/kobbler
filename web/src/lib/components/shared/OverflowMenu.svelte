@@ -15,7 +15,7 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
-  import { portal } from '$lib/utils/portal';
+  import { portal } from '#lib/utils/portal.js';
   import { uid } from '@koblibs/ui';
 
   interface Props {

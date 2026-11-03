@@ -11,7 +11,6 @@ use std::path::Path;
 /// Parse a Calibre/OPF metadata file into `SidecarMetadata`.
 pub fn parse_opf(content: &str) -> Result<SidecarMetadata, String> {
     let mut reader = Reader::from_str(content.trim());
-    reader.config_mut().trim_text(true);
 
     let mut meta = SidecarMetadata {
         source_format: Some(SidecarFormat::CalibreOpf),
@@ -28,7 +27,7 @@ pub fn parse_opf(content: &str) -> Result<SidecarMetadata, String> {
     loop {
         match reader.read_event() {
             Ok(Event::Empty(ref e)) => {
-                let raw_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let raw_tag = e.name().as_ref().to_string();
                 let tag = strip_ns(&raw_tag);
 
                 // Handle self-closing <meta name="calibre:series" content="..." />
@@ -38,7 +37,7 @@ pub fn parse_opf(content: &str) -> Result<SidecarMetadata, String> {
             }
             Ok(Event::Start(ref e)) => {
                 text_buf.clear();
-                let raw_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let raw_tag = e.name().as_ref().to_string();
                 let tag = strip_ns(&raw_tag);
 
                 // Handle <meta> that has a start tag (unusual but possible)
@@ -53,16 +52,8 @@ pub fn parse_opf(content: &str) -> Result<SidecarMetadata, String> {
 
                 depth.push(tag);
             }
-            Ok(Event::Text(ref e)) => {
-                if let Ok(decoded) = e.decode() {
-                    text_buf.push_str(&decoded);
-                }
-            }
-            Ok(Event::GeneralRef(ref e)) => {
-                if let Ok(decoded) = e.decode() {
-                    text_buf.push_str(&decoded);
-                }
-            }
+            Ok(Event::Text(ref e)) => text_buf.push_str(e.as_ref()),
+            Ok(Event::GeneralRef(ref e)) => crate::xml_text::push_ref(&mut text_buf, e),
             Ok(Event::End(_)) => {
                 let text = text_buf.trim().to_string();
                 text_buf.clear();
@@ -131,10 +122,10 @@ fn strip_ns(tag: &str) -> String {
 /// Extract opf:scheme attribute from a dc:identifier element.
 fn extract_scheme(e: &BytesStart<'_>) -> Option<String> {
     for attr in e.attributes().flatten() {
-        let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+        let key = attr.key.as_ref().to_string();
         let local_key = strip_ns(&key);
         if local_key == "scheme" {
-            return Some(String::from_utf8_lossy(&attr.value).to_lowercase());
+            return Some(crate::xml_text::attr_value(&attr).to_lowercase());
         }
     }
     None
@@ -145,8 +136,8 @@ fn handle_meta_element(e: &BytesStart<'_>, book: &mut BookSidecar) {
     let mut name = String::new();
     let mut content_val = String::new();
     for attr in e.attributes().flatten() {
-        let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-        let val = String::from_utf8_lossy(&attr.value).to_string();
+        let key = attr.key.as_ref().to_string();
+        let val = crate::xml_text::attr_value(&attr);
         match key.as_str() {
             "name" => name = val,
             "content" => content_val = val,
@@ -314,6 +305,20 @@ fn write_dc_element(
 mod tests {
     use super::*;
     use crate::sidecar::SidecarIdentifiers;
+
+    #[test]
+    fn test_parse_opf_resolves_entity_references() {
+        let opf = r#"<package xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata>
+    <dc:title>Pride &amp; Prejudice</dc:title>
+    <meta name="calibre:series" content="Austen &amp; Co" />
+  </metadata></package>"#;
+        let meta = parse_opf(opf).expect("parse");
+        assert_eq!(meta.title.as_deref(), Some("Pride & Prejudice"));
+        assert_eq!(
+            meta.book.and_then(|b| b.series).as_deref(),
+            Some("Austen & Co")
+        );
+    }
 
     #[test]
     fn test_parse_opf() {

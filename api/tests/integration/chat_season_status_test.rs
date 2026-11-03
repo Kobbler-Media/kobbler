@@ -59,6 +59,7 @@ async fn call(state: &AppState, who: &AuthUser, session_id: Uuid, args: Value) -
         auth: who,
         session_id,
         context_ref: None,
+        user_message: "",
     };
     dispatch::dispatch(&ctx, "season_status", &args).await
 }

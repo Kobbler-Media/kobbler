@@ -1,5 +1,7 @@
 //! NATS JetStream integration for cross-service communication and job processing.
 
+mod event_consumer;
+
 use nats_jobs::{
     JobHandler as NatsJobHandler, JobStatusDb, NatsClient, NatsConfig, Publisher, ScheduledJob,
     Scheduler, WorkerConfig,
@@ -101,6 +103,7 @@ use crate::jobs::handlers::{
     ReaderPackHandler,
     SearchIndexHandler,
     SearchReindexHandler,
+    SearchVectorsHandler,
     SeriesEnrichHandler,
     SeriesSyncCheckHandler,
     SessionCleanupHandler,
@@ -123,6 +126,7 @@ use crate::jobs::handlers::{
     TvWantHandler,
 };
 use crate::jobs::worker::JobHandler;
+use event_consumer::{EventConsumer, consume_events};
 
 /// NATS state for the application (required).
 #[derive(Clone)]
@@ -498,6 +502,12 @@ pub async fn start_nats_worker(
     worker.register_handler(HandlerAdapter::new(SearchReindexHandler::new(
         pool.clone(),
         search.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(SearchVectorsHandler::new(
+        pool.clone(),
+        search.clone(),
+        runtime_config.clone(),
+        storage_root.clone(),
     )));
 
     // Maintenance handlers
@@ -1020,6 +1030,18 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
         std::time::Duration::from_secs(24 * 3600), // daily
     ));
 
+    // Artwork vectors for semantic search: a no-op unless the setting changed or new
+    // titles arrived. On boot it also repairs a Meilisearch that lost its embedder.
+    scheduler.register(
+        ScheduledJob::new(
+            "search-vectors",
+            "kobbler",
+            crate::jobs::handlers::search_vectors::JOB_TYPE,
+            std::time::Duration::from_secs(6 * 3600),
+        )
+        .run_immediately(),
+    );
+
     // Database cleanup — removes orphaned rows (e.g. episode files with no episode links)
     scheduler.register(ScheduledJob::new(
         "database-cleanup",
@@ -1359,144 +1381,47 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
     scheduler.run(shutdown_rx).await;
 }
 
-/// Subscribe to download events from Kobload.
-///
-/// This function handles NATS reconnections automatically - when NATS reconnects,
-/// the consumer is recreated to handle the case where consumer state was lost.
 pub async fn subscribe_download_events(
     nats: NatsClient,
     pool: PgPool,
     library_events: tokio::sync::broadcast::Sender<crate::LibraryEvent>,
 ) {
-    use futures::StreamExt;
-
-    let mut reconnect_rx = nats.subscribe_reconnect();
-    let mut backoff = std::time::Duration::from_secs(1);
-
-    let consumer_config = async_nats::jetstream::consumer::pull::Config {
-        durable_name: Some("kobbler-download-events".to_string()),
-        filter_subject: "events.download.>".to_string(),
-        ..Default::default()
+    let consumer = EventConsumer {
+        durable: "kobbler-download-events",
+        filter_subject: "events.download.>",
+        label: "download",
     };
-
-    'reconnect: loop {
-        // Get fresh stream reference
-        let stream = match nats.jetstream().get_stream("EVENTS").await {
-            Ok(s) => s,
-            Err(e) => {
-                error!(
-                    "Failed to get EVENTS stream: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        let consumer = match stream
-            .get_or_create_consumer("kobbler-download-events", consumer_config.clone())
-            .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                error!(
-                    "Failed to create download events consumer: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        let mut messages = match consumer.messages().await {
-            Ok(m) => m,
-            Err(e) => {
-                error!(
-                    "Failed to get messages stream: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        info!("Subscribed to download events from Kobload");
-        backoff = std::time::Duration::from_secs(1); // Reset backoff on successful setup
-
-        loop {
-            tokio::select! {
-                // Proactive: Reconnect signal from NatsClient
-                _ = reconnect_rx.recv() => {
-                    info!("Download events consumer received reconnect signal, recreating consumer");
-                    continue 'reconnect;
-                }
-
-                msg_result = messages.next() => {
-                    match msg_result {
-                        Some(Ok(msg)) => {
-                            let event: nats_jobs::Event = match serde_json::from_slice(&msg.payload) {
-                                Ok(e) => e,
-                                Err(e) => {
-                                    error!("Failed to deserialize download event: {}", e);
-                                    let _ = msg.ack().await;
-                                    continue;
-                                }
-                            };
-
-                            info!(
-                                event_type = %event.event_type,
-                                event_id = %event.id,
-                                "Received download event"
-                            );
-
-                            // Handle different event types
-                            match event.event_type.as_str() {
-                                "download.completed" => {
-                                    if let Err(e) =
-                                        handle_download_completed(&pool, &library_events, event.payload).await
-                                    {
-                                        error!("Failed to handle download completed event: {}", e);
-                                    }
-                                }
-                                "download.watch_matched" => {
-                                    if let Err(e) =
-                                        handle_watch_matched(&pool, &library_events, event.payload).await
-                                    {
-                                        error!("Failed to handle watch matched event: {}", e);
-                                    }
-                                }
-                                _ => {
-                                    tracing::warn!("Unknown download event type: {}", event.event_type);
-                                }
-                            }
-
-                            let _ = msg.ack().await;
-                        }
-                        Some(Err(e)) => {
-                            // Fallback: Handle stream errors by reconnecting
-                            error!(
-                                "Error receiving download event: {}, reconnecting",
-                                e
-                            );
-                            tokio::time::sleep(backoff).await;
-                            backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                            continue 'reconnect;
-                        }
-                        None => {
-                            // Stream ended unexpectedly
-                            error!("Download events stream ended, reconnecting");
-                            tokio::time::sleep(backoff).await;
-                            backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                            continue 'reconnect;
-                        }
+    consume_events(nats, consumer, move |event| {
+        let pool = pool.clone();
+        let library_events = library_events.clone();
+        async move {
+            info!(
+                event_type = %event.event_type,
+                event_id = %event.id,
+                "Received download event"
+            );
+            match event.event_type.as_str() {
+                "download.completed" => {
+                    if let Err(e) =
+                        handle_download_completed(&pool, &library_events, event.payload).await
+                    {
+                        error!("Failed to handle download completed event: {}", e);
                     }
+                }
+                "download.watch_matched" => {
+                    if let Err(e) =
+                        handle_watch_matched(&pool, &library_events, event.payload).await
+                    {
+                        error!("Failed to handle watch matched event: {}", e);
+                    }
+                }
+                _ => {
+                    tracing::warn!("Unknown download event type: {}", event.event_type);
                 }
             }
         }
-    }
+    })
+    .await;
 }
 
 /// Handle download completion events from NATS.
@@ -1665,129 +1590,31 @@ async fn handle_watch_matched(
     Ok(())
 }
 
-/// Subscribe to want response events from Kobload.
-///
-/// This function handles NATS reconnections automatically - when NATS reconnects,
-/// the consumer is recreated to handle the case where consumer state was lost.
 pub async fn subscribe_want_response_events(
     nats: NatsClient,
     pool: PgPool,
     library_events: tokio::sync::broadcast::Sender<crate::LibraryEvent>,
 ) {
-    use futures::StreamExt;
-
-    let mut reconnect_rx = nats.subscribe_reconnect();
-    let mut backoff = std::time::Duration::from_secs(1);
-
-    let consumer_config = async_nats::jetstream::consumer::pull::Config {
-        durable_name: Some("kobbler-want-response".to_string()),
-        filter_subject: "events.want.response.kobbler".to_string(),
-        ..Default::default()
+    let consumer = EventConsumer {
+        durable: "kobbler-want-response",
+        filter_subject: "events.want.response.kobbler",
+        label: "want response",
     };
-
-    'reconnect: loop {
-        // Get fresh stream reference
-        let stream = match nats.jetstream().get_stream("EVENTS").await {
-            Ok(s) => s,
-            Err(e) => {
-                error!(
-                    "Failed to get EVENTS stream for want responses: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        let consumer = match stream
-            .get_or_create_consumer("kobbler-want-response", consumer_config.clone())
-            .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                error!(
-                    "Failed to create want response consumer: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        let mut messages = match consumer.messages().await {
-            Ok(m) => m,
-            Err(e) => {
-                error!(
-                    "Failed to get want response messages stream: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        info!("Subscribed to want response events from Kobload");
-        backoff = std::time::Duration::from_secs(1); // Reset backoff on successful setup
-
-        loop {
-            tokio::select! {
-                // Proactive: Reconnect signal from NatsClient
-                _ = reconnect_rx.recv() => {
-                    info!("Want response consumer received reconnect signal, recreating consumer");
-                    continue 'reconnect;
-                }
-
-                msg_result = messages.next() => {
-                    match msg_result {
-                        Some(Ok(msg)) => {
-                            let event: nats_jobs::Event = match serde_json::from_slice(&msg.payload) {
-                                Ok(e) => e,
-                                Err(e) => {
-                                    error!("Failed to deserialize want response event: {}", e);
-                                    let _ = msg.ack().await;
-                                    continue;
-                                }
-                            };
-
-                            info!(
-                                event_type = %event.event_type,
-                                event_id = %event.id,
-                                "Received want response event"
-                            );
-
-                            if let Err(e) =
-                                handle_want_response(&pool, &library_events, event.payload).await
-                            {
-                                error!("Failed to handle want response event: {}", e);
-                            }
-
-                            let _ = msg.ack().await;
-                        }
-                        Some(Err(e)) => {
-                            // Fallback: Handle stream errors by reconnecting
-                            error!(
-                                "Error receiving want response event: {}, reconnecting",
-                                e
-                            );
-                            tokio::time::sleep(backoff).await;
-                            backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                            continue 'reconnect;
-                        }
-                        None => {
-                            // Stream ended unexpectedly
-                            error!("Want response events stream ended, reconnecting");
-                            tokio::time::sleep(backoff).await;
-                            backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                            continue 'reconnect;
-                        }
-                    }
-                }
+    consume_events(nats, consumer, move |event| {
+        let pool = pool.clone();
+        let library_events = library_events.clone();
+        async move {
+            info!(
+                event_type = %event.event_type,
+                event_id = %event.id,
+                "Received want response event"
+            );
+            if let Err(e) = handle_want_response(&pool, &library_events, event.payload).await {
+                error!("Failed to handle want response event: {}", e);
             }
         }
-    }
+    })
+    .await;
 }
 
 async fn handle_want_response(
@@ -2193,8 +2020,6 @@ async fn handle_want_response_season(
     Ok(())
 }
 
-/// Subscribe to ingest-ready events from Kobload.
-///
 /// When Kobload finishes metadata extraction, it publishes `events.ingest.ready`
 /// containing the callback payload. This subscriber enqueues a `kobload_ingest`
 /// job so kobbler can process the files asynchronously.
@@ -2203,172 +2028,80 @@ pub async fn subscribe_ingest_ready_events(
     pool: PgPool,
     nats_publisher: nats_jobs::Publisher,
 ) {
-    use futures::StreamExt;
+    let consumer = EventConsumer {
+        durable: "kobbler-ingest-ready",
+        filter_subject: "events.ingest.ready",
+        label: "ingest-ready",
+    };
+    consume_events(nats, consumer, move |event| {
+        let pool = pool.clone();
+        let nats_publisher = nats_publisher.clone();
+        async move { handle_ingest_ready(&pool, &nats_publisher, event).await }
+    })
+    .await;
+}
 
-    let mut reconnect_rx = nats.subscribe_reconnect();
-    let mut backoff = std::time::Duration::from_secs(1);
+async fn handle_ingest_ready(
+    pool: &PgPool,
+    nats_publisher: &nats_jobs::Publisher,
+    event: nats_jobs::Event,
+) {
+    // Defense-in-depth against event redelivery.
+    let idempotency_key = event
+        .payload
+        .get("idempotency_key")
+        .and_then(|v| v.as_str())
+        .and_then(|s| uuid::Uuid::parse_str(s).ok());
 
-    let consumer_config = async_nats::jetstream::consumer::pull::Config {
-        durable_name: Some("kobbler-ingest-ready".to_string()),
-        filter_subject: "events.ingest.ready".to_string(),
-        ..Default::default()
+    if let Some(key) = idempotency_key
+        && let Ok(Some(attempt_id)) = wanted_attempts_repo::check_idempotency_key(pool, key).await
+    {
+        info!(
+            event_id = %event.id,
+            idempotency_key = %key,
+            attempt_id = %attempt_id,
+            "Ingest-ready event already processed (idempotency key found), skipping"
+        );
+        return;
+    }
+
+    info!(
+        event_id = %event.id,
+        "Received ingest-ready event, enqueuing kobload_ingest job"
+    );
+
+    let job_payload = serde_json::json!({
+        "request": event.payload,
+        "response_mode": "nats",
+    });
+
+    let download_entity_id = event
+        .payload
+        .get("download_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| uuid::Uuid::parse_str(s).ok());
+    let display = if let Some(eid) = download_entity_id {
+        crate::jobs::fetch_job_display(pool, "download", eid).await
+    } else {
+        None
+    };
+    let context = nats_jobs::JobContext {
+        description: "Processing Kobload ingest via NATS".to_string(),
+        entity_type: Some("download".to_string()),
+        entity_id: download_entity_id,
+        display,
     };
 
-    'reconnect: loop {
-        let stream = match nats.jetstream().get_stream("EVENTS").await {
-            Ok(s) => s,
-            Err(e) => {
-                error!(
-                    "Failed to get EVENTS stream for ingest-ready: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        let consumer = match stream
-            .get_or_create_consumer("kobbler-ingest-ready", consumer_config.clone())
-            .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                error!(
-                    "Failed to create ingest-ready consumer: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        let mut messages = match consumer.messages().await {
-            Ok(m) => m,
-            Err(e) => {
-                error!(
-                    "Failed to get ingest-ready messages stream: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        info!("Subscribed to ingest-ready events from Kobload");
-        backoff = std::time::Duration::from_secs(1);
-
-        loop {
-            tokio::select! {
-                _ = reconnect_rx.recv() => {
-                    info!("Ingest-ready consumer received reconnect signal, recreating consumer");
-                    continue 'reconnect;
-                }
-
-                msg_result = messages.next() => {
-                    match msg_result {
-                        Some(Ok(msg)) => {
-                            let event: nats_jobs::Event = match serde_json::from_slice(&msg.payload) {
-                                Ok(e) => e,
-                                Err(e) => {
-                                    error!("Failed to deserialize ingest-ready event: {}", e);
-                                    let _ = msg.ack().await;
-                                    continue;
-                                }
-                            };
-
-                            // Check idempotency key before enqueuing to prevent duplicate jobs
-                            // (defense-in-depth against event redelivery)
-                            let idempotency_key = event.payload.get("idempotency_key")
-                                .and_then(|v| v.as_str())
-                                .and_then(|s| uuid::Uuid::parse_str(s).ok());
-
-                            if let Some(key) = idempotency_key
-                                && let Ok(Some(attempt_id)) = crate::repositories::wanted_attempts::check_idempotency_key(&pool, key).await
-                            {
-                                info!(
-                                    event_id = %event.id,
-                                    idempotency_key = %key,
-                                    attempt_id = %attempt_id,
-                                    "Ingest-ready event already processed (idempotency key found), skipping"
-                                );
-                                if let Err(e) = msg.ack().await {
-                                    error!("Failed to ack duplicate ingest-ready event: {}", e);
-                                }
-                                continue;
-                            }
-
-                            info!(
-                                event_id = %event.id,
-                                "Received ingest-ready event, enqueuing kobload_ingest job"
-                            );
-
-                            // Enqueue a kobload_ingest job with the callback payload and NATS response mode
-                            let job_payload = serde_json::json!({
-                                "request": event.payload,
-                                "response_mode": "nats",
-                            });
-
-                            let download_entity_id = event.payload.get("download_id")
-                                    .and_then(|v| v.as_str())
-                                    .and_then(|s| uuid::Uuid::parse_str(s).ok());
-                            let display = if let Some(eid) = download_entity_id {
-                                crate::jobs::fetch_job_display(&pool, "download", eid).await
-                            } else {
-                                None
-                            };
-                            let context = nats_jobs::JobContext {
-                                description: "Processing Kobload ingest via NATS".to_string(),
-                                entity_type: Some("download".to_string()),
-                                entity_id: download_entity_id,
-                                display,
-                            };
-
-                            match crate::jobs::enqueue(
-                                &pool,
-                                &nats_publisher,
-                                "kobload_ingest",
-                                job_payload,
-                                context,
-                            ).await {
-                                Ok(job_id) => {
-                                    info!(job_id = %job_id, "Enqueued kobload_ingest job");
-                                }
-                                Err(e) => {
-                                    error!("Failed to enqueue kobload_ingest job: {}", e);
-                                }
-                            }
-
-                            if let Err(e) = msg.ack().await {
-                                error!("Failed to ack ingest-ready event: {}", e);
-                            }
-                        }
-                        Some(Err(e)) => {
-                            error!(
-                                "Error receiving ingest-ready event: {}, reconnecting",
-                                e
-                            );
-                            tokio::time::sleep(backoff).await;
-                            backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                            continue 'reconnect;
-                        }
-                        None => {
-                            error!("Ingest-ready events stream ended, reconnecting");
-                            tokio::time::sleep(backoff).await;
-                            backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                            continue 'reconnect;
-                        }
-                    }
-                }
-            }
+    match crate::jobs::enqueue(pool, nats_publisher, "kobload_ingest", job_payload, context).await {
+        Ok(job_id) => {
+            info!(job_id = %job_id, "Enqueued kobload_ingest job");
+        }
+        Err(e) => {
+            error!("Failed to enqueue kobload_ingest job: {}", e);
         }
     }
 }
 
-/// Subscribe to watch pattern deleted events from Kobload.
-///
 /// When a watch pattern is deleted in Kobload, reset the corresponding entity's
 /// want_status back to "none" so it no longer appears as downloading/watching/searching.
 pub async fn subscribe_watch_pattern_deleted_events(
@@ -2376,114 +2109,27 @@ pub async fn subscribe_watch_pattern_deleted_events(
     pool: PgPool,
     library_events: tokio::sync::broadcast::Sender<crate::LibraryEvent>,
 ) {
-    use futures::StreamExt;
-
-    let mut reconnect_rx = nats.subscribe_reconnect();
-    let mut backoff = std::time::Duration::from_secs(1);
-
-    let consumer_config = async_nats::jetstream::consumer::pull::Config {
-        durable_name: Some("kobbler-watch-pattern-deleted".to_string()),
-        filter_subject: "events.watch_pattern.>".to_string(),
-        ..Default::default()
+    let consumer = EventConsumer {
+        durable: "kobbler-watch-pattern-deleted",
+        filter_subject: "events.watch_pattern.>",
+        label: "watch pattern",
     };
-
-    'reconnect: loop {
-        let stream = match nats.jetstream().get_stream("EVENTS").await {
-            Ok(s) => s,
-            Err(e) => {
-                error!(
-                    "Failed to get EVENTS stream for watch pattern events: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        let consumer = match stream
-            .get_or_create_consumer("kobbler-watch-pattern-deleted", consumer_config.clone())
-            .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                error!(
-                    "Failed to create watch pattern events consumer: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        let mut messages = match consumer.messages().await {
-            Ok(m) => m,
-            Err(e) => {
-                error!(
-                    "Failed to get watch pattern messages stream: {}, retrying in {:?}",
-                    e, backoff
-                );
-                tokio::time::sleep(backoff).await;
-                backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                continue 'reconnect;
-            }
-        };
-
-        info!("Subscribed to watch pattern events from Kobload");
-        backoff = std::time::Duration::from_secs(1);
-
-        loop {
-            tokio::select! {
-                _ = reconnect_rx.recv() => {
-                    info!("Watch pattern events consumer received reconnect signal, recreating consumer");
-                    continue 'reconnect;
+    consume_events(nats, consumer, move |event| {
+        let pool = pool.clone();
+        let library_events = library_events.clone();
+        async move {
+            if event.event_type == "watch_pattern.deleted" {
+                if let Err(e) =
+                    handle_watch_pattern_deleted(&pool, &library_events, event.payload).await
+                {
+                    error!("Failed to handle watch pattern deleted event: {}", e);
                 }
-
-                msg_result = messages.next() => {
-                    match msg_result {
-                        Some(Ok(msg)) => {
-                            let event: nats_jobs::Event = match serde_json::from_slice(&msg.payload) {
-                                Ok(e) => e,
-                                Err(e) => {
-                                    error!("Failed to deserialize watch pattern event: {}", e);
-                                    let _ = msg.ack().await;
-                                    continue;
-                                }
-                            };
-
-                            if event.event_type == "watch_pattern.deleted" {
-                                if let Err(e) =
-                                    handle_watch_pattern_deleted(&pool, &library_events, event.payload).await
-                                {
-                                    error!("Failed to handle watch pattern deleted event: {}", e);
-                                }
-                            } else {
-                                tracing::warn!("Unknown watch pattern event type: {}", event.event_type);
-                            }
-
-                            let _ = msg.ack().await;
-                        }
-                        Some(Err(e)) => {
-                            error!(
-                                "Error receiving watch pattern event: {}, reconnecting",
-                                e
-                            );
-                            tokio::time::sleep(backoff).await;
-                            backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                            continue 'reconnect;
-                        }
-                        None => {
-                            error!("Watch pattern events stream ended, reconnecting");
-                            tokio::time::sleep(backoff).await;
-                            backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
-                            continue 'reconnect;
-                        }
-                    }
-                }
+            } else {
+                tracing::warn!("Unknown watch pattern event type: {}", event.event_type);
             }
         }
-    }
+    })
+    .await;
 }
 
 async fn handle_watch_pattern_deleted(

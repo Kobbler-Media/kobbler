@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DiscoverEpisode } from '$lib/api/client';
+  import type { DiscoverEpisode } from '#lib/api/client.js';
   import EpisodeSummary from '../tv/EpisodeSummary.svelte';
 
   interface Props {

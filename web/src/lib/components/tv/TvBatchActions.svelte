@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getKobloadQualityProfiles, type KobloadQualityProfile } from '$lib/api/client';
+  import { getKobloadQualityProfiles, type KobloadQualityProfile } from '#lib/api/client.js';
 
   interface Props {
     selectedCount: number;

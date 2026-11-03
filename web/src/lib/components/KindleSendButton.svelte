@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import * as api from '$lib/api/client';
-  import type { KindleTarget, KindleDelivery } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
+  import * as api from '#lib/api/client.js';
+  import type { KindleTarget, KindleDelivery } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
 
   interface Props {
     bookId: string;

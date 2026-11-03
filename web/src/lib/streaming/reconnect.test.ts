@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SessionStatusResult } from '$lib/api/client';
+import type { SessionStatusResult } from '#lib/api/client.js';
 import { reconnectStep } from './reconnect';
 
 function status(state: 'ready' | 'preparing' | 'failed'): SessionStatusResult {

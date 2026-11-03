@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type Hls from 'hls.js';
 import { createLiveHls } from './liveHls';
-import { LIVE_CATCH_UP_RATE, LIVE_REBUILD_RATE } from '$lib/streaming/liveLatency';
+import { LIVE_CATCH_UP_RATE, LIVE_REBUILD_RATE } from '#lib/streaming/liveLatency.js';
 
 class FakeHls {
   static Events = { MANIFEST_PARSED: 'mp', FRAG_BUFFERED: 'fb', ERROR: 'err' };

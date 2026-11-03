@@ -1,37 +1,37 @@
 <script lang="ts">
-  import { VIDEO_RATING_SCALE } from '$lib/utils/rating';
+  import { VIDEO_RATING_SCALE } from '#lib/utils/rating.js';
   import { onMount } from 'svelte';
-  import type { TvEpisode, TvShow, TvWatchState } from '$lib/types';
+  import type { TvEpisode, TvShow, TvWatchState } from '#lib/types.js';
   import {
     getTvShowRating,
     updateTvShowRating,
     deleteTvShowRating,
     getEpisodeFiles,
     getEpisodeWatchState
-  } from '$lib/api/client';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import GenreChips from '$lib/components/GenreChips.svelte';
-  import DualRatingStars from '$lib/components/DualRatingStars.svelte';
+  } from '#lib/api/client.js';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import GenreChips from '#lib/components/GenreChips.svelte';
+  import DualRatingStars from '#lib/components/DualRatingStars.svelte';
   import { DeleteConfirmModal } from '@koblibs/ui';
   import TvSeasonAccordion from './TvSeasonAccordion.svelte';
   import EpisodeBatchActions from './EpisodeBatchActions.svelte';
-  import { EpisodeBulkSelection } from '$lib/utils/episode-bulk.svelte';
-  import BulkSelectToggle from '$lib/components/shared/BulkSelectToggle.svelte';
+  import { EpisodeBulkSelection } from '#lib/utils/episode-bulk.svelte.js';
+  import BulkSelectToggle from '#lib/components/shared/BulkSelectToggle.svelte';
   import EntityHero from '../shared/EntityHero.svelte';
   import HeroActions from '../shared/HeroActions.svelte';
   import MetaLine from '../shared/MetaLine.svelte';
   import DetailSection from '../shared/DetailSection.svelte';
   import CastSection from '../shared/CastSection.svelte';
   import KidsAccess from '../shared/KidsAccess.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import { formatShowStatus, formatDuration } from '$lib/utils/format';
-  import { hasOutstandingWants } from '$lib/utils/want-status';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
-  import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import { formatShowStatus, formatDuration } from '#lib/utils/format.js';
+  import { hasOutstandingWants } from '#lib/utils/want-status.js';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
+  import { usePlayback } from '#lib/composables/usePlayback.svelte.js';
+  import { useStreamPlayback } from '#lib/composables/useStreamPlayback.svelte.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import StreamPlaybackOverlays from '#lib/components/StreamPlaybackOverlays.svelte';
 
   interface Props {
     show: TvShow;

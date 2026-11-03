@@ -3,7 +3,7 @@
    * SourceField - A form field with a source selector dropdown.
    * Shows values from different metadata sources and allows switching between them.
    */
-  import { getProviderColor } from '$lib/utils/format';
+  import { getProviderColor } from '#lib/utils/format.js';
 
   type SourceValue = {
     source: string; // e.g., 'GR', 'GB', 'HC'

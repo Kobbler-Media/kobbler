@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { getLibraryState } from '$lib/stores/library.svelte';
-  import { getDevicesState, setCreatedIngestToken } from '$lib/stores/devices.svelte';
-  import { loadIngestTokens, showMessage, copyText } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import * as api from '$lib/api/client';
+  import { getLibraryState } from '#lib/stores/library.svelte.js';
+  import { getDevicesState, setCreatedIngestToken } from '#lib/stores/devices.svelte.js';
+  import { loadIngestTokens, showMessage, copyText } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import * as api from '#lib/api/client.js';
 
   const auth = getAuthState();
 

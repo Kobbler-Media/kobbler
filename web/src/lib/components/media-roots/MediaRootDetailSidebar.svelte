@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { MediaRoot } from '$lib/types';
+  import type { MediaRoot } from '#lib/types.js';
   import MediaRootInfoCard from './MediaRootInfoCard.svelte';
   import MediaRootEditForm from './MediaRootEditForm.svelte';
 

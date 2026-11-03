@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { MediaRootFile, MediaRootFileLite, DirectoryEntry } from '$lib/types';
+  import type { MediaRootFile, MediaRootFileLite, DirectoryEntry } from '#lib/types.js';
   import { untrack } from 'svelte';
   import {
     listMediaRootFilesLite,
     listMediaRootDirectories,
     directoryAction
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import MediaRootFileRow from './MediaRootFileRow.svelte';
 
   interface Props {

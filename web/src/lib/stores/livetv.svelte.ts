@@ -1,6 +1,6 @@
-import type { LivetvLease, LivetvTuner } from '$lib/types';
-import type { TunerLease } from '$lib/components/livetv/types';
-import { getLivetvLeases, getLivetvTuners } from '$lib/api/client';
+import type { LivetvLease, LivetvTuner } from '#lib/types.js';
+import type { TunerLease } from '#lib/components/livetv/types.js';
+import { getLivetvLeases, getLivetvTuners } from '#lib/api/client.js';
 
 let tuners = $state<LivetvTuner[]>([]);
 let leases = $state<LivetvLease[]>([]);

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { DiscoverEpisode } from '$lib/api/client';
+  import type { DiscoverEpisode } from '#lib/api/client.js';
   import SeasonAccordionShell from '../tv/SeasonAccordionShell.svelte';
   import DiscoverEpisodeRow from './DiscoverEpisodeRow.svelte';
   import { listedSeasons, type DiscoverSeason, type EpisodeRef } from './discoverDetail';

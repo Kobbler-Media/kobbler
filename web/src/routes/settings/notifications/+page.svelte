@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import { createWebPushController } from '$lib/services/webpush.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import { createWebPushController } from '#lib/services/webpush.svelte.js';
   import {
     listNotificationTypes,
     listNotificationAgents,
@@ -14,7 +14,7 @@
     type NotificationAgent,
     type CreateNotificationAgentRequest,
     type UpdateNotificationAgentRequest
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
 
   const auth = getAuthState();
 

@@ -1,4 +1,4 @@
-.PHONY: all quick web up deps deps-web deps-plugin fmt fmt-api fmt-web fmt-plugin lint lint-api lint-web lint-plugin check check-api check-web check-plugin sqlx-check sqlx-prepare sqlx-migrate build build-api build-web test test-api test-web test-db-up test-db-down docker-push tools sweep
+.PHONY: all quick web up deps deps-web deps-plugin fmt fmt-api fmt-web fmt-plugin lint lint-api lint-web lint-plugin check check-api check-web check-plugin sqlx-check sqlx-prepare sqlx-migrate build build-api build-web test test-api test-web test-db-up test-db-down docker-push player tools sweep
 
 # Prerequisites for a fresh clone:
 #   - Rust stable + `cargo install sqlx-cli` (for the sqlx-check / sqlx-prepare targets)
@@ -114,7 +114,14 @@ ifdef REGISTRY
 export KOBBLER_REGISTRY := $(REGISTRY)
 endif
 
-docker-push:
+# kobapp's Compose web build, served by the web image at /player/.
+KOBAPP_DIR ?= ../kobapp
+player:
+	cd $(KOBAPP_DIR) && ./gradlew :composeApp:wasmJsBrowserDistribution
+	rm -rf web/static/player
+	cp -r $(KOBAPP_DIR)/composeApp/build/dist/wasmJs/productionExecutable web/static/player
+
+docker-push: player
 	docker compose build api web
 	docker compose push api web
 	@echo ""

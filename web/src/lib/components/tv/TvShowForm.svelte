@@ -1,23 +1,23 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { onMount } from 'svelte';
-  import type { TvShow, TvSearchResult, MovieSearchResult } from '$lib/types';
-  import type { CastInput, CrewInput, KobloadQualityProfile } from '$lib/api/client';
-  import { getKobloadQualityProfiles, listMediaRoots } from '$lib/api/client';
-  import type { MediaRoot } from '$lib/types';
-  import SourceField from '$lib/components/SourceField.svelte';
-  import CoverSelector from '$lib/components/CoverSelector.svelte';
+  import type { TvShow, TvSearchResult, MovieSearchResult } from '#lib/types.js';
+  import type { CastInput, CrewInput, KobloadQualityProfile } from '#lib/api/client.js';
+  import { getKobloadQualityProfiles, listMediaRoots } from '#lib/api/client.js';
+  import type { MediaRoot } from '#lib/types.js';
+  import SourceField from '#lib/components/SourceField.svelte';
+  import CoverSelector from '#lib/components/CoverSelector.svelte';
   import CastCrewEditor, {
     type CastEntry,
     type CrewEntry
-  } from '$lib/components/shared/CastCrewEditor.svelte';
+  } from '#lib/components/shared/CastCrewEditor.svelte';
   import {
     buildVideoSourceValues,
     getVideoInitialByPriority,
     getVideoInitialSourceForField,
     buildVideoIdentifiers,
     buildVideoCoverOptions
-  } from '$lib/components/video/video-form-utils';
+  } from '#lib/components/video/video-form-utils.js';
   import { SearchSelect } from '@koblibs/ui';
 
   export interface TvShowFormData {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getAudioPlayerState, seekToGlobal } from '$lib/stores/audioplayer.svelte';
+  import { getAudioPlayerState, seekToGlobal } from '#lib/stores/audioplayer.svelte.js';
 
   interface TranscriptSegment {
     id: string;

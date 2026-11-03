@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { LivetvChannel } from '$lib/types';
+  import type { LivetvChannel } from '#lib/types.js';
   import FacetPills from '../FacetPills.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
   import { networkTint } from '../tint';
 
   interface Props {

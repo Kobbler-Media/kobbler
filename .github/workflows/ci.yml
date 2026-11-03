@@ -18,10 +18,10 @@ jobs:
     name: api (rust)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           path: kobbler
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: Kobbler-Media/koblibs
           path: koblibs
@@ -34,7 +34,7 @@ jobs:
             clang libclang-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.96"
+          toolchain: "1.99"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
@@ -60,16 +60,16 @@ jobs:
     name: web (svelte)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           path: kobbler
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: Kobbler-Media/koblibs
           path: koblibs
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
       - name: install
         working-directory: kobbler/web
         run: npm install --no-audit --no-fund
@@ -84,10 +84,10 @@ jobs:
     name: docker build (smoke test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           path: kobbler
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: Kobbler-Media/koblibs
           path: koblibs

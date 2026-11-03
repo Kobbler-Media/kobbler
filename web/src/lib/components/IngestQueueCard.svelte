@@ -1,8 +1,8 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
-  import type { IngestQueueGroup } from '$lib/types';
-  import { ingestStatusChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
+  import type { IngestQueueGroup } from '#lib/types.js';
+  import { ingestStatusChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
 
   interface Props {
     group: IngestQueueGroup;

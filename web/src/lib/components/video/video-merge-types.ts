@@ -1,4 +1,4 @@
-import type { MovieSearchResult, TvSearchResult } from '$lib/types';
+import type { MovieSearchResult, TvSearchResult } from '#lib/types.js';
 
 export type OverrideableVideoField = 'title' | 'description' | 'poster_url' | 'rating' | 'year';
 

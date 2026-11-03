@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatSize } from '$lib/utils/format';
+  import { formatSize } from '#lib/utils/format.js';
   import QualityBadge from './QualityBadge.svelte';
   import OverflowMenu from './OverflowMenu.svelte';
   import UpgradeStatusBadge from './UpgradeStatusBadge.svelte';

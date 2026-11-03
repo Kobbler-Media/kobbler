@@ -1,7 +1,7 @@
 // Browser push subscription mechanics, shared by the per-user toggle on the
 // profile page and the admin agent controls in settings.
 
-import { getVapidKey, subscribeWebPush, unsubscribeWebPush } from '$lib/api/client';
+import { getVapidKey, subscribeWebPush, unsubscribeWebPush } from '#lib/api/client.js';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);

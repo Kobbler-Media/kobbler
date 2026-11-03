@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { Modal, uid } from '@koblibs/ui';
-  import type { UnifiedChapter, JobEvent } from '$lib/types';
-  import * as api from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { on, off } from '$lib/services/eventstream.svelte';
+  import type { UnifiedChapter, JobEvent } from '#lib/types.js';
+  import * as api from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { on, off } from '#lib/services/eventstream.svelte.js';
   import ChapterEditorPlayer from './ChapterEditorPlayer.svelte';
 
   interface Props {

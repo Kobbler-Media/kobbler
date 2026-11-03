@@ -1153,6 +1153,30 @@ pub fn get_static_settings() -> Vec<SettingDocument> {
             &["meili key", "search key"],
         ),
         s(
+            "semantic_search_enabled",
+            "semantic_search_enabled",
+            "Semantic Search",
+            "Match movies, shows and books by how their artwork fits the query",
+            "/settings/search",
+            "Search & AI",
+            &[
+                "vector search",
+                "hybrid search",
+                "embeddings",
+                "siglip",
+                "poster search",
+            ],
+        ),
+        s(
+            "semantic_search_ratio",
+            "semantic_search_ratio",
+            "Semantic Ratio",
+            "Balance between keyword matches and artwork similarity",
+            "/settings/search",
+            "Search & AI",
+            &["hybrid ratio", "semantic weight"],
+        ),
+        s(
             "chat_enabled",
             "chat_enabled",
             "Chat",
@@ -1577,15 +1601,12 @@ impl JobHandler for SearchReindexHandler {
 
         // Reindex books
         if should_index_all || types.iter().any(|t| t == "book" || t == "books") {
-            let docs = search::fetch_all_book_docs(&self.pool).await.map_err(|e| {
-                error!(error = %e, "Failed to fetch books for reindex");
-                JobError::retryable(format!("Failed to fetch books: {}", e))
-            })?;
-
-            books_count = self.search.reindex_all_books(docs).await.map_err(|e| {
-                error!(error = %e, "Failed to reindex books");
-                JobError::retryable(format!("Failed to reindex books: {}", e))
-            })?;
+            books_count = search::semantic::reindex_books(self.search.as_ref(), &self.pool)
+                .await
+                .map_err(|e| {
+                    error!(error = %e, "Failed to reindex books");
+                    JobError::retryable(format!("Failed to reindex books: {}", e))
+                })?;
             info!(count = books_count, "Reindexed books");
         }
 
@@ -1639,33 +1660,23 @@ impl JobHandler for SearchReindexHandler {
 
         // Reindex movies
         if should_index_all || types.iter().any(|t| t == "movie" || t == "movies") {
-            let docs = search::fetch_all_movie_docs(&self.pool)
+            movies_count = search::semantic::reindex_movies(self.search.as_ref(), &self.pool)
                 .await
                 .map_err(|e| {
-                    error!(error = %e, "Failed to fetch movies for reindex");
-                    JobError::retryable(format!("Failed to fetch movies: {}", e))
+                    error!(error = %e, "Failed to reindex movies");
+                    JobError::retryable(format!("Failed to reindex movies: {}", e))
                 })?;
-
-            movies_count = self.search.reindex_all_movies(docs).await.map_err(|e| {
-                error!(error = %e, "Failed to reindex movies");
-                JobError::retryable(format!("Failed to reindex movies: {}", e))
-            })?;
             info!(count = movies_count, "Reindexed movies");
         }
 
         // Reindex TV shows
         if should_index_all || types.iter().any(|t| t == "tv_show" || t == "tv_shows") {
-            let docs = search::fetch_all_tv_show_docs(&self.pool)
+            tv_shows_count = search::semantic::reindex_tv_shows(self.search.as_ref(), &self.pool)
                 .await
                 .map_err(|e| {
-                    error!(error = %e, "Failed to fetch TV shows for reindex");
-                    JobError::retryable(format!("Failed to fetch TV shows: {}", e))
+                    error!(error = %e, "Failed to reindex TV shows");
+                    JobError::retryable(format!("Failed to reindex TV shows: {}", e))
                 })?;
-
-            tv_shows_count = self.search.reindex_all_tv_shows(docs).await.map_err(|e| {
-                error!(error = %e, "Failed to reindex TV shows");
-                JobError::retryable(format!("Failed to reindex TV shows: {}", e))
-            })?;
             info!(count = tv_shows_count, "Reindexed TV shows");
         }
 

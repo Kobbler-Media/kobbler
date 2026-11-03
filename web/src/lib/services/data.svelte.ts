@@ -13,10 +13,10 @@ import {
   setTimezone,
   setCastReceiverAppId,
   clearAuth
-} from '$lib/stores/auth.svelte';
-import { setDevices } from '$lib/stores/devices.svelte';
-import { closeStream } from '$lib/services/eventstream.svelte';
-import * as api from '$lib/api/client';
+} from '#lib/stores/auth.svelte.js';
+import { setDevices } from '#lib/stores/devices.svelte.js';
+import { closeStream } from '#lib/services/eventstream.svelte.js';
+import * as api from '#lib/api/client.js';
 
 const apiBase = import.meta.env.VITE_API_BASE_URL || '';
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Modal } from '@koblibs/ui';
-  import type { StreamFailurePanel } from '$lib/composables/useStreamPlayback.svelte';
+  import type { StreamFailurePanel } from '#lib/composables/useStreamPlayback.svelte.js';
 
   interface Props {
     failure: StreamFailurePanel;

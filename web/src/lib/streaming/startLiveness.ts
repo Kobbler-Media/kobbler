@@ -1,4 +1,4 @@
-import type { SessionFeed, SessionStatusResult } from '$lib/api/client';
+import type { SessionFeed, SessionStatusResult } from '#lib/api/client.js';
 
 export const FEED_IDLE_STALL_MS = 10_000;
 export const FEED_NOTE_AFTER_MS = 2_500;

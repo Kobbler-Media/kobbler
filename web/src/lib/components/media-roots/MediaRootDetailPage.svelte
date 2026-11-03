@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { MediaRoot, MediaRootFileLite } from '$lib/types';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
+  import type { MediaRoot, MediaRootFileLite } from '#lib/types.js';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
   import MediaRootInfoCard from './MediaRootInfoCard.svelte';
   import MediaRootDirectoryView from './MediaRootDirectoryView.svelte';
   import MediaRootEntityView from './MediaRootEntityView.svelte';
@@ -12,8 +12,8 @@
     bulkIgnoreMediaRootFiles,
     bulkRematchMediaRootFiles,
     type MediaRootFileSearchResult
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
 
   interface Props {
     root: MediaRoot;

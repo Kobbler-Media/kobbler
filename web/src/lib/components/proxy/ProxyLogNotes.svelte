@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EntityRef } from '$lib/api/client';
+  import type { EntityRef } from '#lib/api/client.js';
 
   interface Props {
     notes: string | null;

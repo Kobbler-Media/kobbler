@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { searchTranscript, type TranscriptSearchResult } from '$lib/api/client';
-  import { getAudioPlayerState, seekToGlobal, formatTime } from '$lib/stores/audioplayer.svelte';
+  import { searchTranscript, type TranscriptSearchResult } from '#lib/api/client.js';
+  import { getAudioPlayerState, seekToGlobal, formatTime } from '#lib/stores/audioplayer.svelte.js';
 
   let { bookId }: { bookId: string } = $props();
 

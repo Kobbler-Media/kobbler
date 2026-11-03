@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getJobConcurrency, updateJobConcurrency } from '$lib/api/client';
-  import type { JobConcurrencyItem } from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
+  import { getJobConcurrency, updateJobConcurrency } from '#lib/api/client.js';
+  import type { JobConcurrencyItem } from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
 
   let concurrencyJobs = $state<JobConcurrencyItem[]>([]);
   let loading = $state(true);

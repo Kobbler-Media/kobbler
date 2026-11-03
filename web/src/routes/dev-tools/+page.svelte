@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { showMessage } from '$lib/context/app.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import {
     getDevSnapshotStatus,
     saveDevSnapshot,
     deleteDevSnapshot,
     type DevSnapshotStatus
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
   import { onMount } from 'svelte';
 
   let status: DevSnapshotStatus | null = $state(null);

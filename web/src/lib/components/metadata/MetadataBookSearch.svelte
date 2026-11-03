@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { MetadataResult } from '$lib/api/client';
+  import type { MetadataResult } from '#lib/api/client.js';
   import { SearchSelect } from '@koblibs/ui';
   import MetadataResultCard from './MetadataResultCard.svelte';
   import MetadataMergePanel from './MetadataMergePanel.svelte';
   import { type OverrideableField, buildMergedResult } from './types';
-  import { getProviderName } from '$lib/utils/format';
+  import { getProviderName } from '#lib/utils/format.js';
 
   interface Props {
     initialTitle?: string;

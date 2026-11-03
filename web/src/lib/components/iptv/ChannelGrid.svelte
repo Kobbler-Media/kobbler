@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { IptvChannel } from '$lib/types';
+  import type { IptvChannel } from '#lib/types.js';
   import ChannelCard from './ChannelCard.svelte';
 
   interface Props {

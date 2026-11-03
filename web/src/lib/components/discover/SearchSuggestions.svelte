@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { SearchSuggestion } from '$lib/types';
-  import { suggestionLabel } from '$lib/composables/useSearchSuggestions.svelte';
+  import type { SearchSuggestion } from '#lib/types.js';
+  import { suggestionLabel } from '#lib/composables/useSearchSuggestions.svelte.js';
 
   let {
     id,

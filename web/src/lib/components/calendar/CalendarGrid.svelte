@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { CalendarItem } from '$lib/types';
-  import { getCalendar } from '$lib/api/client';
-  import { mediaTypeChip } from '$lib/utils/chip-mappings';
+  import type { CalendarItem } from '#lib/types.js';
+  import { getCalendar } from '#lib/api/client.js';
+  import { mediaTypeChip } from '#lib/utils/chip-mappings.js';
   import CalendarItemCard from './CalendarItemCard.svelte';
 
   interface Props {

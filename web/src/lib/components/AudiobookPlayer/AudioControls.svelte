@@ -9,7 +9,7 @@
     setSkipSilence,
     setNormalizeVolume,
     setNightMode
-  } from '$lib/stores/audioplayer.svelte';
+  } from '#lib/stores/audioplayer.svelte.js';
   import SleepTimer from './SleepTimer.svelte';
 
   interface Props {

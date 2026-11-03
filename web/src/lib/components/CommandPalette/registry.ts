@@ -1,7 +1,7 @@
 // Static registry for pages, commands, and sections
 // Extracted from Sidebar.svelte navigation structure
 
-import { getAuthState } from '$lib/stores/auth.svelte';
+import { getAuthState } from '#lib/stores/auth.svelte.js';
 import type { PageItem, CommandItem, SectionItem } from './types';
 
 // SVG paths for icons

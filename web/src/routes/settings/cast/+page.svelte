@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import { getSystemConfig, updateSystemConfig, type SystemConfig } from '$lib/api/client';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import { getSystemConfig, updateSystemConfig, type SystemConfig } from '#lib/api/client.js';
 
   const auth = getAuthState();
 

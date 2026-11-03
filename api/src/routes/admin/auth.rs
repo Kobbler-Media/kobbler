@@ -109,6 +109,48 @@ pub async fn login(
         .into_response()
 }
 
+#[derive(Serialize)]
+pub struct PlayerTokenResponse {
+    pub token: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: time::OffsetDateTime,
+}
+
+/// Mints the web player its own bearer session from the browser's login cookie.
+/// Cookie-only: a playback `?token=` also satisfies `AuthUser`, and must never be
+/// traded up for a full session.
+pub async fn player_token(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    let Some(cookie) = crate::routes::extract_session_cookie(&headers) else {
+        return (StatusCode::UNAUTHORIZED, "session cookie required").into_response();
+    };
+    let Some((user_id, _, _)) = crate::routes::require_auth_token(&state, &cookie).await else {
+        return (StatusCode::UNAUTHORIZED, "invalid session").into_response();
+    };
+
+    let token = generate_token(state.config.token_length);
+    let days = super::sessions::SESSION_TTL_DAYS;
+    if let Err(e) = repositories::auth_tokens::create_with_expiry_days(
+        &state.pool,
+        user_id,
+        &token,
+        "admin",
+        days,
+        Some("Web player"),
+        Some(user_id),
+    )
+    .await
+    {
+        tracing::error!(error = %e, user_id = %user_id, "failed to mint web player token");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "failed to create token").into_response();
+    }
+
+    AxumJson(PlayerTokenResponse {
+        token,
+        expires_at: time::OffsetDateTime::now_utc() + time::Duration::days(days as i64),
+    })
+    .into_response()
+}
+
 pub async fn me(State(state): State<AppState>, auth: crate::routes::AuthUser) -> impl IntoResponse {
     match repositories::users::get_by_id(&state.pool, auth.user_id).await {
         Ok(Some((id, email, role))) => {

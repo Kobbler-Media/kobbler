@@ -19,7 +19,7 @@ import type {
   TvEpisode,
   PersonDetail,
   IptvChannel
-} from '$lib/types';
+} from '#lib/types.js';
 
 export type EntityType =
   | 'book'

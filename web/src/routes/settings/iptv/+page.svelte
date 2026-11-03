@@ -1,20 +1,20 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import ProviderForm from '$lib/components/iptv/ProviderForm.svelte';
-  import UnmatchedReview from '$lib/components/iptv/UnmatchedReview.svelte';
-  import { onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import type { SystemConfig, SystemConfigUpdate } from '$lib/api/client';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import ProviderForm from '#lib/components/iptv/ProviderForm.svelte';
+  import UnmatchedReview from '#lib/components/iptv/UnmatchedReview.svelte';
+  import { onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { SystemConfig, SystemConfigUpdate } from '#lib/api/client.js';
   import type {
     IptvProvider,
     IptvChannel,
     IptvUnmatchedSource,
     IptvProgrammeWatch,
     IptvWatchMatch
-  } from '$lib/types';
+  } from '#lib/types.js';
 
   type Tab = 'providers' | 'channels' | 'unmatched' | 'watches' | 'recording';
 

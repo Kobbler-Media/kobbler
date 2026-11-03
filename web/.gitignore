@@ -24,3 +24,6 @@ vite.config.ts.timestamp-*
 
 # JASSUB worker files (copied via postinstall)
 /static/jassub
+
+# kobapp's web build, copied in by `make player`
+/static/player

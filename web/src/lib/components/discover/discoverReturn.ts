@@ -1,8 +1,8 @@
-import { discoverLibraryRoute } from '$lib/utils/entity-routes';
+import { discoverLibraryRoute } from '#lib/utils/entity-routes.js';
 
 interface Deps {
   mediaType: string;
-  navigate: (route: string, opts: { replaceState: true }) => void;
+  navigate: (route: string, opts: { replace: true }) => void;
   recheck: () => void;
   isPlaying: () => boolean;
 }
@@ -19,7 +19,7 @@ export function createDiscoverReturn(deps: Deps) {
     const route = discoverLibraryRoute(deps.mediaType, libraryId);
     if (!route || deps.isPlaying()) return false;
     redirected = true;
-    deps.navigate(route, { replaceState: true });
+    deps.navigate(route, { replace: true });
     return true;
   }
 

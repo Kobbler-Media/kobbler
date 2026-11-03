@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { IptvChannel, IptvEpgEntry } from '$lib/types';
+  import type { IptvChannel, IptvEpgEntry } from '#lib/types.js';
 
   interface Props {
     channels: IptvChannel[];

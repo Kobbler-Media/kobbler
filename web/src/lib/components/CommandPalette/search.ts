@@ -1,8 +1,8 @@
 // Search logic combining client-side and API search (using MeiliSearch federated search)
 
 import type { SearchResult, GroupedResults } from './types';
-import type { UnifiedSearchResponse, SearchHit, TranscriptSearchResult } from '$lib/api/client';
-import { searchAllTranscripts } from '$lib/api/client';
+import type { UnifiedSearchResponse, SearchHit, TranscriptSearchResult } from '#lib/api/client.js';
+import { searchAllTranscripts } from '#lib/api/client.js';
 import { searchPages, searchCommands, searchSections, icons } from './registry';
 
 // Parse prefix from query

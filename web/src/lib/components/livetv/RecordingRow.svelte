@@ -1,7 +1,7 @@
 <script lang="ts">
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import { formatSize } from '$lib/utils/format';
-  import type { LivetvRecording } from '$lib/types';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import { formatSize } from '#lib/utils/format.js';
+  import type { LivetvRecording } from '#lib/types.js';
 
   interface Props {
     recording: LivetvRecording;

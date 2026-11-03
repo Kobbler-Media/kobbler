@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import {
     getMetadataProviders,
     updateMetadataProvider,
@@ -17,8 +17,8 @@
     type MetadataProviderUpdate,
     type SystemConfig,
     type SystemConfigUpdate
-  } from '$lib/api/client';
-  import type { VideoMetadataProvider } from '$lib/types';
+  } from '#lib/api/client.js';
+  import type { VideoMetadataProvider } from '#lib/types.js';
 
   const auth = getAuthState();
 

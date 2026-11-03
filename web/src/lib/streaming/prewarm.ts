@@ -4,9 +4,9 @@ import {
   releaseStreamPrewarm,
   streamPrewarm,
   touchStreamPrewarm
-} from '$lib/api/client';
-import type { StreamOption, StreamPrewarmParams } from '$lib/api/client';
-import type { PlaybackSessionResponse } from '$lib/types';
+} from '#lib/api/client.js';
+import type { StreamOption, StreamPrewarmParams } from '#lib/api/client.js';
+import type { PlaybackSessionResponse } from '#lib/types.js';
 
 const PREWARM_DELAY_MS = 1_000;
 // The server lets an untouched prewarm go after about five minutes.

@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.entity_type AS \"entity_type!\", s.entity_id AS \"entity_id!\", s.source AS \"source!\"\n        FROM search_embedding_sources s\n        LEFT JOIN search_embeddings e\n          ON e.entity_type = s.entity_type AND e.entity_id = s.entity_id\n        WHERE e.source IS DISTINCT FROM s.source\n        ORDER BY s.entity_type, s.entity_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "entity_type!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_embedding_sources",
+            "name": "entity_type"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "entity_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "search_embedding_sources",
+            "name": "entity_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "source!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "search_embedding_sources",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "207b9c5ff619b1286c043384e2fcbc778e68339c6f4b792b9ff78dab227c792e"
+}

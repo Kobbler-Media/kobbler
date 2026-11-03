@@ -4,10 +4,10 @@
     searchEpisodeSubtitles,
     downloadSubtitle,
     downloadSubtitleToSession
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { SubtitleSearchResult, PlaybackSubtitleTrack } from '$lib/types';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { SubtitleSearchResult, PlaybackSubtitleTrack } from '#lib/types.js';
 
   interface Props {
     mediaType: 'movie' | 'episode';

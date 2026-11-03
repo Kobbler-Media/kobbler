@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LivetvGuideEntry } from '$lib/types';
+  import type { LivetvGuideEntry } from '#lib/types.js';
 
   interface Props {
     entry: LivetvGuideEntry;

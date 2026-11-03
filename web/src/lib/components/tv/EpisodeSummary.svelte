@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatCalendarDate } from '$lib/utils/format';
+  import { formatCalendarDate } from '#lib/utils/format.js';
 
   interface Props {
     number: string | number;

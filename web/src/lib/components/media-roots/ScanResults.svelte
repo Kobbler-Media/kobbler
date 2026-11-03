@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { MediaRootFile } from '$lib/types';
-  import { listMediaRootFiles, ignoreMediaRootFile } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
+  import type { MediaRootFile } from '#lib/types.js';
+  import { listMediaRootFiles, ignoreMediaRootFile } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
 
   interface Props {
     rootId: string;

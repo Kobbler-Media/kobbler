@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { MediaRoot } from '$lib/types';
-  import { mediaTypeChip, mediaRootStatusChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
-  import { formatDistanceToNow, formatDate } from '$lib/utils/format';
-  import { setDefaultMediaRoot } from '$lib/api/client';
+  import type { MediaRoot } from '#lib/types.js';
+  import { mediaTypeChip, mediaRootStatusChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import { formatDistanceToNow, formatDate } from '#lib/utils/format.js';
+  import { setDefaultMediaRoot } from '#lib/api/client.js';
 
   interface Props {
     root: MediaRoot;

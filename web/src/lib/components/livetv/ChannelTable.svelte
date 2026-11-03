@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SvelteSet } from 'svelte/reactivity';
-  import type { LivetvChannel } from '$lib/types';
+  import type { LivetvChannel } from '#lib/types.js';
   import { networkTint, typeTint, signalTint } from './tint';
 
   interface Props {

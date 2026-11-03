@@ -50,17 +50,27 @@ pub async fn update_config(
     let meili_url_changed = payload.meili_url.is_some();
     let meili_key_changed = payload.meili_master_key.is_some();
 
-    // Check if chat config changed (before payload is consumed by update)
-    let chat_changed = payload.chat_enabled.is_some()
-        || payload.chat_llm_provider.is_some()
-        || payload.chat_llm_base_url.is_some()
-        || payload.chat_llm_api_key.is_some()
-        || payload.chat_llm_model.is_some()
-        || payload.koblem_service_url.is_some();
-
     match state.runtime_config.update(payload).await {
         Ok(()) => {
             let config = state.runtime_config.get().await;
+
+            if config.semantic_search_enabled != old_config.semantic_search_enabled {
+                let description = match config.semantic_search_enabled {
+                    true => "Building artwork vectors for semantic search",
+                    false => "Removing artwork vectors from search",
+                };
+                if let Err(e) = crate::jobs::enqueue(
+                    &state.pool,
+                    state.nats.publisher(),
+                    crate::jobs::handlers::search_vectors::JOB_TYPE,
+                    serde_json::json!({}),
+                    crate::jobs::JobContext::new(description),
+                )
+                .await
+                {
+                    error!(error = %e, "Failed to enqueue search vector job");
+                }
+            }
 
             // If meili settings changed, reconfigure the search backend
             if meili_url_changed || meili_key_changed {
@@ -79,33 +89,6 @@ pub async fn update_config(
                             warn!(error = %e, "Failed to reconfigure search backend");
                             // Don't fail the config update - search will use old settings
                         }
-                    }
-                }
-            }
-
-            // If chat config changed, reconfigure chat workspace
-            if chat_changed && config.chat_enabled {
-                let meili_url = config
-                    .meili_url
-                    .as_deref()
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(&state.config.meili_url);
-                let meili_key = config
-                    .meili_master_key
-                    .as_deref()
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(&state.config.meili_master_key);
-                match meilisearch_sdk::client::Client::new(meili_url, Some(meili_key)) {
-                    Ok(client) => {
-                        if let Err(e) =
-                            crate::search::chat::setup_chat(&client, meili_url, meili_key, &config)
-                                .await
-                        {
-                            warn!(error = %e, "Failed to configure chat workspace");
-                        }
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "Failed to create MeiliSearch client for chat setup");
                     }
                 }
             }

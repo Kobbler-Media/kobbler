@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { copyText } from '$lib/context/app.svelte';
+  import { copyText } from '#lib/context/app.svelte.js';
   import {
     getSystemConfig,
     listNotificationAgents,
     type NotificationAgent,
     type SystemConfig
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
 
   const WEBHOOK_PATH = '/api/v1/chat/google_chat/webhook';
   const CONSOLE_CONFIG_URL =

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { MediaRoot } from '$lib/types';
-  import { listMediaRoots, moveBookToMediaRoot } from '$lib/api/client';
+  import type { MediaRoot } from '#lib/types.js';
+  import { listMediaRoots, moveBookToMediaRoot } from '#lib/api/client.js';
   import { Modal, SearchSelect } from '@koblibs/ui';
 
   interface Props {

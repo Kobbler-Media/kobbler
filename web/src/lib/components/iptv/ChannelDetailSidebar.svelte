@@ -1,13 +1,13 @@
 <script lang="ts">
-  import type { IptvChannel, IptvSource, IptvEpgEntry } from '$lib/types';
+  import type { IptvChannel, IptvSource, IptvEpgEntry } from '#lib/types.js';
   import {
     getIptvChannelSources,
     getIptvChannelEpg,
     getIptvFavourites,
     addIptvFavourite,
     removeIptvFavourite
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import EpgTimeline from './EpgTimeline.svelte';
   import RecordButton from './RecordButton.svelte';
 

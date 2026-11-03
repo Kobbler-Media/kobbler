@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { IptvGroup } from '$lib/types';
+  import type { IptvGroup } from '#lib/types.js';
 
   interface Props {
     groups: IptvGroup[];

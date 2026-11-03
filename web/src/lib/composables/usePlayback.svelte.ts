@@ -1,10 +1,14 @@
-import type { PlaybackSessionResponse } from '$lib/types';
-import type { ClientCapabilities } from '$lib/utils/media';
-import { detectCapabilities } from '$lib/utils/media';
-import { createPlaybackSession, createIptvSession, destroyPlaybackSession } from '$lib/api/client';
-import { showMessage } from '$lib/context/app.svelte';
+import type { PlaybackSessionResponse } from '#lib/types.js';
+import type { ClientCapabilities } from '#lib/utils/media.js';
+import { detectCapabilities } from '#lib/utils/media.js';
+import {
+  createPlaybackSession,
+  createIptvSession,
+  destroyPlaybackSession
+} from '#lib/api/client.js';
+import { showMessage } from '#lib/context/app.svelte.js';
 import { invalidate } from '$app/navigation';
-import { bumpWatchStateVersion } from '$lib/stores/watchState.svelte';
+import { bumpWatchStateVersion } from '#lib/stores/watchState.svelte.js';
 
 export function usePlayback(opts: {
   mediaType: 'movie' | 'episode' | 'live' | 'recording';

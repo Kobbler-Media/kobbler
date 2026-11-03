@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LivetvChannel, LivetvGuideChannel, LivetvGuideEntry } from '$lib/types';
+  import type { LivetvChannel, LivetvGuideChannel, LivetvGuideEntry } from '#lib/types.js';
   import EpgProgramme from './EpgProgramme.svelte';
   import { networkTint } from './tint';
 

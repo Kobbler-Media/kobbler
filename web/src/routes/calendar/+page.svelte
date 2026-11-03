@@ -1,7 +1,7 @@
 <script lang="ts">
-  import CalendarTimeline from '$lib/components/calendar/CalendarTimeline.svelte';
-  import CalendarGrid from '$lib/components/calendar/CalendarGrid.svelte';
-  import { mediaTypeChip } from '$lib/utils/chip-mappings';
+  import CalendarTimeline from '#lib/components/calendar/CalendarTimeline.svelte';
+  import CalendarGrid from '#lib/components/calendar/CalendarGrid.svelte';
+  import { mediaTypeChip } from '#lib/utils/chip-mappings.js';
 
   type ViewMode = 'timeline' | 'grid';
   type MediaFilter = 'tv' | 'movie' | 'book' | 'sport';

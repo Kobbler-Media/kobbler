@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { DeviceSummary } from '$lib/types';
+  import type { DeviceSummary } from '#lib/types.js';
   import { Modal } from '@koblibs/ui';
 
   interface Props {

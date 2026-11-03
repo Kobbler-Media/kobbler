@@ -1,10 +1,10 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { Book, SeriesSummary } from '$lib/types';
-  import type { MetadataResult } from '$lib/api/client';
+  import type { Book, SeriesSummary } from '#lib/types.js';
+  import type { MetadataResult } from '#lib/api/client.js';
   import { SearchSelect, type SearchSelectItem } from '@koblibs/ui';
   import CoverSelector from './CoverSelector.svelte';
-  import { getProviderName, getProviderColor } from '$lib/utils/format';
+  import { getProviderName, getProviderColor } from '#lib/utils/format.js';
 
   type Mode = 'add' | 'edit';
 
@@ -34,7 +34,7 @@
     description: string | null;
     cover_url: string | null;
     identifiers: Record<string, string>;
-    series_memberships?: import('$lib/types').SeriesMembership[];
+    series_memberships?: import('#lib/types.js').SeriesMembership[];
   }
 
   let {

@@ -6,7 +6,7 @@
     markRead,
     markAllRead,
     formatTimeAgo
-  } from '$lib/stores/notifications.svelte';
+  } from '#lib/stores/notifications.svelte.js';
   import { onMount } from 'svelte';
 
   const notifState = getNotificationsState();

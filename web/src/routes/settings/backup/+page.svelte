@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import {
     getBackupUrl,
     restoreBackup,
     triggerOrphanCleanup,
     type RestoreResult
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
 
   const auth = getAuthState();
 

@@ -1,7 +1,7 @@
-import type { LivetvChannel, LivetvSession } from '$lib/types';
-import { createLivetvSession, destroyLivetvSession } from '$lib/api/client';
-import { detectCapabilities } from '$lib/utils/media';
-import { preloadHls } from '$lib/components/livetv/player/liveHls';
+import type { LivetvChannel, LivetvSession } from '#lib/types.js';
+import { createLivetvSession, destroyLivetvSession } from '#lib/api/client.js';
+import { detectCapabilities } from '#lib/utils/media.js';
+import { preloadHls } from '#lib/components/livetv/player/liveHls.js';
 
 let channel = $state<LivetvChannel | null>(null);
 

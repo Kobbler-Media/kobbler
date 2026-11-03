@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getProxyLogBlobUrl, type ProxyLogEntry } from '$lib/api/client';
+  import { getProxyLogBlobUrl, type ProxyLogEntry } from '#lib/api/client.js';
   import { diffLines } from 'diff';
   import ProxyLogNotes from './ProxyLogNotes.svelte';
   import hljs from 'highlight.js/lib/core';

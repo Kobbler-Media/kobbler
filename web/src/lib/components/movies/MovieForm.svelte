@@ -1,27 +1,27 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import type { Movie, MovieSearchResult, TvSearchResult } from '$lib/types';
+  import type { Movie, MovieSearchResult, TvSearchResult } from '#lib/types.js';
   import {
     getKobloadQualityProfiles,
     listMediaRoots,
     type KobloadQualityProfile,
     type CastInput,
     type CrewInput
-  } from '$lib/api/client';
-  import type { MediaRoot } from '$lib/types';
-  import SourceField from '$lib/components/SourceField.svelte';
-  import CoverSelector from '$lib/components/CoverSelector.svelte';
+  } from '#lib/api/client.js';
+  import type { MediaRoot } from '#lib/types.js';
+  import SourceField from '#lib/components/SourceField.svelte';
+  import CoverSelector from '#lib/components/CoverSelector.svelte';
   import CastCrewEditor, {
     type CastEntry,
     type CrewEntry
-  } from '$lib/components/shared/CastCrewEditor.svelte';
+  } from '#lib/components/shared/CastCrewEditor.svelte';
   import {
     buildVideoSourceValues,
     getVideoInitialByPriority,
     getVideoInitialSourceForField,
     buildVideoIdentifiers,
     buildVideoCoverOptions
-  } from '$lib/components/video/video-form-utils';
+  } from '#lib/components/video/video-form-utils.js';
   import { SearchSelect } from '@koblibs/ui';
   export interface MovieFormData {
     title: string;

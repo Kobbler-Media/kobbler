@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { CalendarItem } from '$lib/types';
-  import { getCalendar } from '$lib/api/client';
+  import type { CalendarItem } from '#lib/types.js';
+  import { getCalendar } from '#lib/api/client.js';
   import { tick } from 'svelte';
-  import BidirectionalScroll from '$lib/components/BidirectionalScroll.svelte';
+  import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
   import CalendarItemCard from './CalendarItemCard.svelte';
 
   interface Props {

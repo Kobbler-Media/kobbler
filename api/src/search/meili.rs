@@ -6,8 +6,10 @@ use meilisearch_sdk::search::{FederatedMultiSearchResponse, FederationOptions};
 use reqwest::header::HeaderValue;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use url::Url;
 use uuid::Uuid;
 
@@ -22,8 +24,9 @@ use super::{
     IptvEpgDocument, LivetvChannelDocument, LivetvGuideDocument, MediaRootFileDocument,
     MovieDocument, PageDocument, PersonDocument, SearchHit, SeriesDocument, SettingDocument,
     TranscriptSegmentDocument, TvEpisodeDocument, TvSeasonDocument, TvShowDocument,
-    UnifiedSearchResponse, UnifiedSearchResult, indexes,
+    UnifiedSearchResponse, UnifiedSearchResult, indexes, semantic,
 };
+use semantic::SemanticQuery;
 
 /// Convert a Meilisearch facet distribution for `field` into buckets sorted by
 /// descending count (then value, for stable ordering).
@@ -47,6 +50,32 @@ fn facet_buckets(
     buckets
 }
 
+/// A hit only the vector half found, scoring under the floor. Keyword hits are
+/// never dropped: their details carry the keyword ranking rules, not `vectorSort`.
+fn is_weak_semantic_hit(details: Option<&serde_json::Map<String, serde_json::Value>>) -> bool {
+    details
+        .and_then(|d| d.get("vectorSort"))
+        .and_then(|v| v.get("similarity"))
+        .and_then(serde_json::Value::as_f64)
+        .is_some_and(|similarity| similarity < semantic::SEMANTIC_HIT_FLOOR)
+}
+
+fn titled_query<'a, Http: meilisearch_sdk::request::HttpClient>(
+    index: &'a meilisearch_sdk::indexes::Index<Http>,
+    query: &'a str,
+    semantic: Option<&'a SemanticQuery>,
+) -> meilisearch_sdk::search::SearchQuery<'a, Http> {
+    let mut search = index.search();
+    search.with_query(query);
+    if let Some(semantic) = semantic {
+        search
+            .with_hybrid(semantic::EMBEDDER, semantic.ratio)
+            .with_vector(&semantic.vector)
+            .with_show_ranking_score_details(true);
+    }
+    search.build()
+}
+
 /// Internal state that can be reconfigured.
 struct MeiliInner {
     client: Client,
@@ -59,6 +88,7 @@ struct MeiliInner {
 #[derive(Clone)]
 pub struct MeiliState {
     inner: Arc<RwLock<MeiliInner>>,
+    semantic: Arc<AtomicBool>,
 }
 
 /// Build a Meilisearch client from user-supplied settings.
@@ -89,6 +119,7 @@ impl MeiliState {
                 client: build_client(url, master_key)?,
                 url: url.to_string(),
             })),
+            semantic: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -99,6 +130,172 @@ impl MeiliState {
     pub async fn get_client(&self) -> (Client, String) {
         let inner = self.inner.read().await;
         (inner.client.clone(), inner.url.clone())
+    }
+
+    async fn federated_search(
+        &self,
+        query: &str,
+        limit: usize,
+        semantic: Option<&SemanticQuery>,
+    ) -> Result<UnifiedSearchResponse, SearchError> {
+        let (client, _url) = self.get_client().await;
+
+        // Build federated multi-search query across all indexes
+        let mut multi_search = client.multi_search();
+
+        // Create search queries for each index
+        let books_index = client.index(indexes::BOOKS);
+        let authors_index = client.index(indexes::AUTHORS);
+        let series_index = client.index(indexes::SERIES);
+        let genres_index = client.index(indexes::GENRES);
+        let pages_index = client.index(indexes::PAGES);
+        let commands_index = client.index(indexes::COMMANDS);
+        let movies_index = client.index(indexes::MOVIES);
+        let tv_shows_index = client.index(indexes::TV_SHOWS);
+        let tv_seasons_index = client.index(indexes::TV_SEASONS);
+        let tv_episodes_index = client.index(indexes::TV_EPISODES);
+        let people_index = client.index(indexes::PEOPLE);
+
+        // Add per-index search queries
+        // Note: transcript_segments excluded — too noisy for unified search (no per-query limit — federation.limit controls pagination)
+        // TV shows get a weight boost so parent entities rank above their seasons/episodes
+        // for the same query terms (seasons/episodes match show name in multiple fields)
+        let iptv_channels_index = client.index(indexes::IPTV_CHANNELS);
+        let livetv_channels_index = client.index(indexes::LIVETV_CHANNELS);
+        // IPTV_EPG and LIVETV_GUIDE are intentionally excluded from unified search —
+        // scheduled programmes create too much noise. Still searchable in the guides.
+        let settings_index = client.index(indexes::SETTINGS);
+
+        for index in [
+            &authors_index,
+            &series_index,
+            &genres_index,
+            &pages_index,
+            &commands_index,
+            &settings_index,
+            &people_index,
+            &iptv_channels_index,
+            &livetv_channels_index,
+        ] {
+            multi_search.with_search_query(index.search().with_query(query).build());
+        }
+        multi_search.with_search_query(titled_query(&books_index, query, semantic));
+        multi_search.with_search_query(titled_query(&movies_index, query, semantic));
+        multi_search
+            .with_search_query_and_weight(titled_query(&tv_shows_index, query, semantic), 1.3);
+        multi_search
+            .with_search_query_and_weight(tv_seasons_index.search().with_query(query).build(), 0.8);
+        multi_search.with_search_query_and_weight(
+            tv_episodes_index.search().with_query(query).build(),
+            0.7,
+        );
+
+        let federation = FederationOptions {
+            limit: Some(limit * 10), // enough room for all indexes
+            ..Default::default()
+        };
+
+        // Execute federated multi-search — returns a single merged+ranked hit list
+        let result: FederatedMultiSearchResponse<serde_json::Value> =
+            multi_search.with_federation(federation).execute().await?;
+
+        // Convert federated hits to SearchHit using index_uid from federation metadata
+        let mut top_hits = Vec::new();
+        let mut remaining = Vec::new();
+        let mut seen_types: HashSet<&'static str> = HashSet::new();
+
+        for hit in &result.hits {
+            if is_weak_semantic_hit(hit.ranking_score_details.as_ref()) {
+                continue;
+            }
+            let index_uid = hit
+                .federation
+                .as_ref()
+                .map(|f| f.index_uid.as_str())
+                .unwrap_or("");
+
+            let search_hit = match index_uid {
+                indexes::BOOKS => serde_json::from_value::<BookDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::Book),
+                indexes::AUTHORS => serde_json::from_value::<AuthorDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::Author),
+                indexes::SERIES => serde_json::from_value::<SeriesDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::Series),
+                indexes::GENRES => serde_json::from_value::<GenreDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::Genre),
+                indexes::PAGES => serde_json::from_value::<PageDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::Page),
+                indexes::COMMANDS => serde_json::from_value::<CommandDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::Command),
+                indexes::MOVIES => serde_json::from_value::<MovieDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::Movie),
+                indexes::TV_SHOWS => serde_json::from_value::<TvShowDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::TvShow),
+                indexes::TV_SEASONS => {
+                    serde_json::from_value::<TvSeasonDocument>(hit.result.clone())
+                        .ok()
+                        .map(SearchHit::TvSeason)
+                }
+                indexes::TV_EPISODES => {
+                    serde_json::from_value::<TvEpisodeDocument>(hit.result.clone())
+                        .ok()
+                        .map(SearchHit::TvEpisode)
+                }
+                indexes::PEOPLE => serde_json::from_value::<PersonDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::Person),
+                indexes::TRANSCRIPT_SEGMENTS => {
+                    serde_json::from_value::<TranscriptSegmentDocument>(hit.result.clone())
+                        .ok()
+                        .map(SearchHit::Transcript)
+                }
+                indexes::IPTV_CHANNELS => {
+                    serde_json::from_value::<IptvChannelDocument>(hit.result.clone())
+                        .ok()
+                        .map(SearchHit::IptvChannel)
+                }
+                indexes::IPTV_EPG => serde_json::from_value::<IptvEpgDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::IptvEpg),
+                indexes::LIVETV_CHANNELS => {
+                    serde_json::from_value::<LivetvChannelDocument>(hit.result.clone())
+                        .ok()
+                        .map(SearchHit::LivetvChannel)
+                }
+                indexes::LIVETV_GUIDE => {
+                    serde_json::from_value::<LivetvGuideDocument>(hit.result.clone())
+                        .ok()
+                        .map(SearchHit::LivetvGuide)
+                }
+                indexes::SETTINGS => serde_json::from_value::<SettingDocument>(hit.result.clone())
+                    .ok()
+                    .map(SearchHit::Setting),
+                _ => None,
+            };
+
+            if let Some(search_hit) = search_hit {
+                let type_name = search_hit.type_name();
+                if !seen_types.contains(type_name) {
+                    seen_types.insert(type_name);
+                    top_hits.push(search_hit);
+                } else {
+                    remaining.push(search_hit);
+                }
+            }
+        }
+
+        Ok(UnifiedSearchResponse {
+            top_hits,
+            remaining,
+        })
     }
 
     /// Check if a query string looks like a UUID.
@@ -462,167 +659,23 @@ impl SearchBackend for MeiliState {
         &self,
         query: &str,
         limit: usize,
+        semantic: Option<&SemanticQuery>,
     ) -> Result<UnifiedSearchResponse, SearchError> {
-        let (client, _url) = self.get_client().await;
-
         // Check if query is a UUID - skip federated search and do targeted lookup
         if let Some(uuid) = Self::is_uuid_query(query) {
             return self.uuid_lookup(&uuid, limit).await;
         }
 
-        // Build federated multi-search query across all indexes
-        let mut multi_search = client.multi_search();
-
-        // Create search queries for each index
-        let books_index = client.index(indexes::BOOKS);
-        let authors_index = client.index(indexes::AUTHORS);
-        let series_index = client.index(indexes::SERIES);
-        let genres_index = client.index(indexes::GENRES);
-        let pages_index = client.index(indexes::PAGES);
-        let commands_index = client.index(indexes::COMMANDS);
-        let movies_index = client.index(indexes::MOVIES);
-        let tv_shows_index = client.index(indexes::TV_SHOWS);
-        let tv_seasons_index = client.index(indexes::TV_SEASONS);
-        let tv_episodes_index = client.index(indexes::TV_EPISODES);
-        let people_index = client.index(indexes::PEOPLE);
-
-        // Add per-index search queries
-        // Note: transcript_segments excluded — too noisy for unified search (no per-query limit — federation.limit controls pagination)
-        // TV shows get a weight boost so parent entities rank above their seasons/episodes
-        // for the same query terms (seasons/episodes match show name in multiple fields)
-        let iptv_channels_index = client.index(indexes::IPTV_CHANNELS);
-        let livetv_channels_index = client.index(indexes::LIVETV_CHANNELS);
-        // IPTV_EPG and LIVETV_GUIDE are intentionally excluded from unified search —
-        // scheduled programmes create too much noise. Still searchable in the guides.
-        let settings_index = client.index(indexes::SETTINGS);
-
-        for index in [
-            &books_index,
-            &authors_index,
-            &series_index,
-            &genres_index,
-            &pages_index,
-            &commands_index,
-            &settings_index,
-            &movies_index,
-            &people_index,
-            &iptv_channels_index,
-            &livetv_channels_index,
-        ] {
-            multi_search.with_search_query(index.search().with_query(query).build());
+        match semantic {
+            Some(semantic) => match self.federated_search(query, limit, Some(semantic)).await {
+                Ok(response) => Ok(response),
+                Err(e) => {
+                    warn!(error = %e, "Hybrid search rejected; searching by keyword");
+                    self.federated_search(query, limit, None).await
+                }
+            },
+            None => self.federated_search(query, limit, None).await,
         }
-        multi_search
-            .with_search_query_and_weight(tv_shows_index.search().with_query(query).build(), 1.3);
-        multi_search
-            .with_search_query_and_weight(tv_seasons_index.search().with_query(query).build(), 0.8);
-        multi_search.with_search_query_and_weight(
-            tv_episodes_index.search().with_query(query).build(),
-            0.7,
-        );
-
-        let federation = FederationOptions {
-            limit: Some(limit * 10), // enough room for all indexes
-            ..Default::default()
-        };
-
-        // Execute federated multi-search — returns a single merged+ranked hit list
-        let result: FederatedMultiSearchResponse<serde_json::Value> =
-            multi_search.with_federation(federation).execute().await?;
-
-        // Convert federated hits to SearchHit using index_uid from federation metadata
-        let mut top_hits = Vec::new();
-        let mut remaining = Vec::new();
-        let mut seen_types: HashSet<&'static str> = HashSet::new();
-
-        for hit in &result.hits {
-            let index_uid = hit
-                .federation
-                .as_ref()
-                .map(|f| f.index_uid.as_str())
-                .unwrap_or("");
-
-            let search_hit = match index_uid {
-                indexes::BOOKS => serde_json::from_value::<BookDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::Book),
-                indexes::AUTHORS => serde_json::from_value::<AuthorDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::Author),
-                indexes::SERIES => serde_json::from_value::<SeriesDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::Series),
-                indexes::GENRES => serde_json::from_value::<GenreDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::Genre),
-                indexes::PAGES => serde_json::from_value::<PageDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::Page),
-                indexes::COMMANDS => serde_json::from_value::<CommandDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::Command),
-                indexes::MOVIES => serde_json::from_value::<MovieDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::Movie),
-                indexes::TV_SHOWS => serde_json::from_value::<TvShowDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::TvShow),
-                indexes::TV_SEASONS => {
-                    serde_json::from_value::<TvSeasonDocument>(hit.result.clone())
-                        .ok()
-                        .map(SearchHit::TvSeason)
-                }
-                indexes::TV_EPISODES => {
-                    serde_json::from_value::<TvEpisodeDocument>(hit.result.clone())
-                        .ok()
-                        .map(SearchHit::TvEpisode)
-                }
-                indexes::PEOPLE => serde_json::from_value::<PersonDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::Person),
-                indexes::TRANSCRIPT_SEGMENTS => {
-                    serde_json::from_value::<TranscriptSegmentDocument>(hit.result.clone())
-                        .ok()
-                        .map(SearchHit::Transcript)
-                }
-                indexes::IPTV_CHANNELS => {
-                    serde_json::from_value::<IptvChannelDocument>(hit.result.clone())
-                        .ok()
-                        .map(SearchHit::IptvChannel)
-                }
-                indexes::IPTV_EPG => serde_json::from_value::<IptvEpgDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::IptvEpg),
-                indexes::LIVETV_CHANNELS => {
-                    serde_json::from_value::<LivetvChannelDocument>(hit.result.clone())
-                        .ok()
-                        .map(SearchHit::LivetvChannel)
-                }
-                indexes::LIVETV_GUIDE => {
-                    serde_json::from_value::<LivetvGuideDocument>(hit.result.clone())
-                        .ok()
-                        .map(SearchHit::LivetvGuide)
-                }
-                indexes::SETTINGS => serde_json::from_value::<SettingDocument>(hit.result.clone())
-                    .ok()
-                    .map(SearchHit::Setting),
-                _ => None,
-            };
-
-            if let Some(search_hit) = search_hit {
-                let type_name = search_hit.type_name();
-                if !seen_types.contains(type_name) {
-                    seen_types.insert(type_name);
-                    top_hits.push(search_hit);
-                } else {
-                    remaining.push(search_hit);
-                }
-            }
-        }
-
-        Ok(UnifiedSearchResponse {
-            top_hits,
-            remaining,
-        })
     }
 
     async fn search(&self, query: &str, limit: usize) -> Result<UnifiedSearchResult, SearchError> {
@@ -2345,6 +2398,14 @@ impl SearchBackend for MeiliState {
             Some("Failed to connect to MeiliSearch".to_string())
         };
 
+        let embedded_document_count = connected.then(|| {
+            [&books_stats, &movies_stats, &tv_shows_stats]
+                .into_iter()
+                .filter_map(|stats| stats.as_ref().ok())
+                .map(|stats| stats.number_of_embedded_documents as i64)
+                .sum()
+        });
+
         SearchBackendStatus {
             backend_type: "meilisearch".to_string(),
             connected,
@@ -2358,6 +2419,7 @@ impl SearchBackend for MeiliState {
             tv_season_count: tv_seasons_stats.ok().map(|s| s.number_of_documents as i64),
             tv_episode_count: tv_episodes_stats.ok().map(|s| s.number_of_documents as i64),
             person_count: people_stats.ok().map(|s| s.number_of_documents as i64),
+            embedded_document_count,
             error,
         }
     }
@@ -2379,6 +2441,68 @@ impl SearchBackend for MeiliState {
         inner.url = url.to_string();
 
         info!(url = %url, "MeiliSearch reconfigured");
+        Ok(())
+    }
+
+    fn supports_semantic(&self) -> bool {
+        true
+    }
+
+    fn semantic_enabled(&self) -> bool {
+        self.semantic.load(Ordering::Relaxed)
+    }
+
+    fn set_semantic_enabled(&self, enabled: bool) {
+        self.semantic.store(enabled, Ordering::Relaxed);
+    }
+
+    async fn embedders_configured(&self) -> Result<bool, SearchError> {
+        let (client, _url) = self.get_client().await;
+        for uid in semantic::INDEXES {
+            if !client
+                .index(uid)
+                .get_embedders()
+                .await?
+                .contains_key(semantic::EMBEDDER)
+            {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    async fn apply_embedders(&self, enabled: bool) -> Result<(), SearchError> {
+        let (client, _url) = self.get_client().await;
+        let embedders = HashMap::from([(
+            semantic::EMBEDDER.to_string(),
+            meilisearch_sdk::settings::Embedder {
+                source: meilisearch_sdk::settings::EmbedderSource::UserProvided,
+                dimensions: Some(semantic::DIMENSIONS),
+                distribution: Some(meilisearch_sdk::settings::EmbedderDistribution {
+                    mean: semantic::DISTRIBUTION_MEAN,
+                    sigma: semantic::DISTRIBUTION_SIGMA,
+                }),
+                ..Default::default()
+            },
+        )]);
+        for uid in semantic::INDEXES {
+            let index = client.index(uid);
+            let task = match enabled {
+                true => index.set_embedders(&embedders).await?,
+                false => index.reset_embedders().await?,
+            };
+            // Generous: Meili reindexes every vector of the index before the task settles.
+            let task = task
+                .wait_for_completion(&client, None, Some(Duration::from_secs(600)))
+                .await?;
+            if task.is_failure() {
+                return Err(SearchError::Backend(format!(
+                    "Meilisearch rejected the {uid} embedder: {}",
+                    task.unwrap_failure()
+                )));
+            }
+        }
+        info!(enabled, "Search embedders applied");
         Ok(())
     }
 }

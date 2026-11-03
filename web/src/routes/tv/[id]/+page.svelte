@@ -1,24 +1,24 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import TvShowDetailPage from '$lib/components/tv/TvShowDetailPage.svelte';
-  import TvShowForm from '$lib/components/tv/TvShowForm.svelte';
-  import type { TvShowFormData } from '$lib/components/tv/TvShowForm.svelte';
-  import SeasonForm from '$lib/components/tv/SeasonForm.svelte';
-  import type { SeasonFormData } from '$lib/components/tv/SeasonForm.svelte';
-  import VideoMetadataSearchModal from '$lib/components/video/VideoMetadataSearchModal.svelte';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import * as api from '$lib/api/client';
-  import { on, off } from '$lib/services/eventstream.svelte';
-  import { getJobsState } from '$lib/stores/jobs.svelte';
-  import { watchStateVersion } from '$lib/stores/watchState.svelte';
-  import { formatEpisodeSearchTitle } from '$lib/utils/format';
-  import { unwantMessage } from '$lib/utils/want-status';
-  import type { TvShow, TvSearchResult, MovieSearchResult } from '$lib/types';
+  import TvShowDetailPage from '#lib/components/tv/TvShowDetailPage.svelte';
+  import TvShowForm from '#lib/components/tv/TvShowForm.svelte';
+  import type { TvShowFormData } from '#lib/components/tv/TvShowForm.svelte';
+  import SeasonForm from '#lib/components/tv/SeasonForm.svelte';
+  import type { SeasonFormData } from '#lib/components/tv/SeasonForm.svelte';
+  import VideoMetadataSearchModal from '#lib/components/video/VideoMetadataSearchModal.svelte';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { on, off } from '#lib/services/eventstream.svelte.js';
+  import { getJobsState } from '#lib/stores/jobs.svelte.js';
+  import { watchStateVersion } from '#lib/stores/watchState.svelte.js';
+  import { formatEpisodeSearchTitle } from '#lib/utils/format.js';
+  import { unwantMessage } from '#lib/utils/want-status.js';
+  import type { TvShow, TvSearchResult, MovieSearchResult } from '#lib/types.js';
 
   let show = $state<TvShow | null>(null);
   let loading = $state(true);
@@ -34,7 +34,7 @@
   let triggerSave = $state<(() => void) | undefined>(undefined);
   let formValid = $state(false);
 
-  const showId = $derived($page.params.id);
+  const showId = $derived(page.params.id);
 
   const releaseSearchTitle = $derived.by(() => {
     if (!releaseSearchEpisodeId || !show) return 'Episode';
@@ -51,7 +51,7 @@
     return 'Episode';
   });
   const statsState = getStatsState();
-  const pageState = $derived($page.state as { editing?: boolean });
+  const pageState = $derived(page.state as { editing?: boolean });
   const jobsState = getJobsState();
   const syncing = $derived(
     jobsState.jobs.some(
@@ -493,9 +493,11 @@
           {deleting ? 'Deleting...' : 'Delete'}
         </button>
         <div class="spacer"></div>
-        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}>
-          Cancel
-        </button>
+
+        <button type="button" class="btn btn-sec" onclick={handleEditCancel} disabled={saving}
+          >Cancel</button
+        >
+
         <button
           type="button"
           class="btn btn-primary"

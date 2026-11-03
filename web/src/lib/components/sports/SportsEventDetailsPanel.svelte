@@ -1,8 +1,8 @@
 <script lang="ts">
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import { formatCalendarDate } from '$lib/utils/format';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import { formatCalendarDate } from '#lib/utils/format.js';
   import { onMount } from 'svelte';
-  import type { TvEpisode, TvEpisodeFile, TvWatchState } from '$lib/types';
+  import type { TvEpisode, TvEpisodeFile, TvWatchState } from '#lib/types.js';
   import {
     getEpisodeFiles,
     getEpisodeWatchState,
@@ -10,17 +10,17 @@
     deleteEpisodeFile,
     rejectDownload,
     replaceFile
-  } from '$lib/api/client';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
-  import { isActivelyWanted } from '$lib/utils/want-status';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import { useStreamPlayback } from '$lib/composables/useStreamPlayback.svelte';
-  import PlaybackArea from '$lib/components/shared/PlaybackArea.svelte';
-  import WatchToggle from '$lib/components/shared/WatchToggle.svelte';
-  import FilesList from '$lib/components/shared/FilesList.svelte';
-  import StreamPlaybackOverlays from '$lib/components/StreamPlaybackOverlays.svelte';
-  import { getStatsState } from '$lib/stores/stats.svelte';
+  } from '#lib/api/client.js';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
+  import { isActivelyWanted } from '#lib/utils/want-status.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { usePlayback } from '#lib/composables/usePlayback.svelte.js';
+  import { useStreamPlayback } from '#lib/composables/useStreamPlayback.svelte.js';
+  import PlaybackArea from '#lib/components/shared/PlaybackArea.svelte';
+  import WatchToggle from '#lib/components/shared/WatchToggle.svelte';
+  import FilesList from '#lib/components/shared/FilesList.svelte';
+  import StreamPlaybackOverlays from '#lib/components/StreamPlaybackOverlays.svelte';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
 
   interface Props {
     event: TvEpisode;

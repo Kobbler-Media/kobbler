@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import type { TvEpisode } from '$lib/types';
+  import type { TvEpisode } from '#lib/types.js';
 
   interface Props {
     episodes: TvEpisode[];

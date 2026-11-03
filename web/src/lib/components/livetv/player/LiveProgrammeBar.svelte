@@ -1,5 +1,5 @@
 <script lang="ts">
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
 
   interface Props {
     title: string;

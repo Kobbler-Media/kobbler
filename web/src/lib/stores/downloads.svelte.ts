@@ -2,9 +2,9 @@
  * Downloads store for tracking kobload downloads via SSE events.
  */
 
-import type { KobloadDownloadEvent } from '$lib/types';
-import type { EnrichedDownload } from '$lib/api/client';
-import * as api from '$lib/api/client';
+import type { KobloadDownloadEvent } from '#lib/types.js';
+import type { EnrichedDownload } from '#lib/api/client.js';
+import * as api from '#lib/api/client.js';
 
 // State
 let downloads = $state.raw<EnrichedDownload[]>([]);

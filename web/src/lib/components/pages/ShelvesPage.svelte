@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { Book, ShelfSummary, LoadState } from '$lib/types';
+  import type { Book, ShelfSummary, LoadState } from '#lib/types.js';
   import { InfiniteScroll } from '@koblibs/ui';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import * as api from '$lib/api/client';
+  import * as api from '#lib/api/client.js';
 
   type SelectShelfHandler = (shelfId: string | null) => Promise<void>;
   type CreateShelfHandler = (name: string) => Promise<void>;

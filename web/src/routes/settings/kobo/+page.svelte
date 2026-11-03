@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { SearchSelect } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import {
     getSystemConfig,
     updateSystemConfig,
     type SystemConfig,
     type SystemConfigUpdate
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
 
   let systemConfig = $state<SystemConfig | null>(null);
   let systemConfigLoading = $state(true);

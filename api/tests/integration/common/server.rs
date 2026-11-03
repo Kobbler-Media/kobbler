@@ -302,23 +302,29 @@ impl TestServer {
     /// Start a test server with fresh database and Kobo proxy.
     /// Each call creates a new server on random ports.
     pub async fn start() -> Self {
-        Self::start_internal(KoboMode::Local, None, true, |_| {}).await
+        Self::start_internal(KoboMode::Local, None, true, |_| {}, None).await
     }
 
     /// Start a test server without the Kobo proxy (faster for API-only tests).
     /// Use this for tests that only need admin, library, or ingest APIs.
     pub async fn start_api_only() -> Self {
-        Self::start_internal(KoboMode::Local, None, false, |_| {}).await
+        Self::start_internal(KoboMode::Local, None, false, |_| {}, None).await
+    }
+
+    /// API-only server whose `state.search` is the given backend instead of the
+    /// SQL fallback — e.g. a `MeiliState` pointed at a wiremock.
+    pub async fn start_api_only_with_search(search: Arc<dyn SearchBackend>) -> Self {
+        Self::start_internal(KoboMode::Local, None, false, |_| {}, Some(search)).await
     }
 
     /// API-only server with the static [`Config`] adjusted before startup.
     pub async fn start_api_only_with(configure: impl FnOnce(&mut Config)) -> Self {
-        Self::start_internal(KoboMode::Local, None, false, configure).await
+        Self::start_internal(KoboMode::Local, None, false, configure, None).await
     }
 
     /// Start a test server with a specific Kobo mode and optional mock URL.
     pub async fn start_with_mode(mode: KoboMode, kobo_mock_url: Option<String>) -> Self {
-        Self::start_internal(mode, kobo_mock_url, true, |_| {}).await
+        Self::start_internal(mode, kobo_mock_url, true, |_| {}, None).await
     }
 
     /// Internal method to start a test server with configurable options.
@@ -327,6 +333,7 @@ impl TestServer {
         kobo_mock_url: Option<String>,
         include_proxy: bool,
         configure: impl FnOnce(&mut Config),
+        search: Option<Arc<dyn SearchBackend>>,
     ) -> Self {
         init_test_env().await;
 
@@ -444,7 +451,8 @@ impl TestServer {
 
         // Tests run the same backend a Meilisearch-less install runs: search_*
         // errors, so route handlers take the ILIKE path.
-        let search_backend: Arc<dyn SearchBackend> = Arc::new(SqlFallbackBackend::new());
+        let search_backend: Arc<dyn SearchBackend> =
+            search.unwrap_or_else(|| Arc::new(SqlFallbackBackend::new()));
 
         let state = create_app_state(
             pool.clone(),

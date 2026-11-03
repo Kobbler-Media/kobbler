@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { LivetvClashNotice } from '$lib/types';
+  import type { LivetvClashNotice } from '#lib/types.js';
 
   interface Props {
     notice: LivetvClashNotice;

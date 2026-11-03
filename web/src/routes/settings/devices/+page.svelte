@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import DevicesPage from '$lib/components/pages/DevicesPage.svelte';
-  import { getLibraryState } from '$lib/stores/library.svelte';
-  import { getDevicesState } from '$lib/stores/devices.svelte';
-  import { loadDevices, loadUsers, showMessage, copyText } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
+  import DevicesPage from '#lib/components/pages/DevicesPage.svelte';
+  import { getLibraryState } from '#lib/stores/library.svelte.js';
+  import { getDevicesState } from '#lib/stores/devices.svelte.js';
+  import { loadDevices, loadUsers, showMessage, copyText } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
 
   // Store state
   const library = getLibraryState();

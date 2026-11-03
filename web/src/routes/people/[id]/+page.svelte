@@ -1,20 +1,20 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import ContentPageView from '$lib/components/ContentPageView.svelte';
-  import EntityHero from '$lib/components/shared/EntityHero.svelte';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import { formatLifeDates } from '$lib/utils/format';
-  import IdentifierLinks from '$lib/components/IdentifierLinks.svelte';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import PersonForm from '$lib/components/people/PersonForm.svelte';
-  import type { PersonFormData } from '$lib/components/people/PersonForm.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import type { PersonDetail, PersonFilmographyCredit } from '$lib/types';
-  import { mediaTypeChip } from '$lib/utils/chip-mappings';
-  import IconChip from '$lib/components/shared/IconChip.svelte';
+  import ContentPageView from '#lib/components/ContentPageView.svelte';
+  import EntityHero from '#lib/components/shared/EntityHero.svelte';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import { formatLifeDates } from '#lib/utils/format.js';
+  import IdentifierLinks from '#lib/components/IdentifierLinks.svelte';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import PersonForm from '#lib/components/people/PersonForm.svelte';
+  import type { PersonFormData } from '#lib/components/people/PersonForm.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { PersonDetail, PersonFilmographyCredit } from '#lib/types.js';
+  import { mediaTypeChip } from '#lib/utils/chip-mappings.js';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
 
   let person = $state<PersonDetail | null>(null);
   let loading = $state(true);
@@ -40,10 +40,9 @@
 
   // Want/dismiss in-progress tracking
   let wantingCredits = $state<Set<string>>(new Set());
+
   let dismissingCredits = $state<Set<string>>(new Set());
-
-  const personId = $derived($page.params.id);
-
+  const personId = $derived(page.params.id);
   const effectiveAutoWantMode = $derived(localAutoWantMode ?? person?.auto_want_mode ?? 'none');
 
   const autoWantModes = [
@@ -84,6 +83,7 @@
   const libraryMovieCount = $derived(
     groupedFilmography.filter((c) => c.media_type === 'movie' && c.in_library).length
   );
+
   const libraryTvCount = $derived(
     groupedFilmography.filter((c) => c.media_type === 'tv' && c.in_library).length
   );
@@ -484,9 +484,8 @@
                     class="filter-chip"
                     class:active={creditTypeFilter === tab.value}
                     onclick={() => (creditTypeFilter = tab.value as 'all' | 'cast' | 'crew')}
+                    >{tab.label}</button
                   >
-                    {tab.label}
-                  </button>
                 {/each}
               </div>
               <div class="filter-group">
@@ -496,9 +495,8 @@
                     class="filter-chip"
                     class:active={mediaTypeFilter === tab.value}
                     onclick={() => (mediaTypeFilter = tab.value as 'all' | 'movie' | 'tv')}
+                    >{tab.label}</button
                   >
-                    {tab.label}
-                  </button>
                 {/each}
               </div>
             </div>
@@ -624,10 +622,8 @@
               type="button"
               class="show-dismissed-toggle"
               onclick={() => (showDismissed = !showDismissed)}
+              >{showDismissed ? 'Hide' : 'Show'} {dismissedCount} dismissed</button
             >
-              {showDismissed ? 'Hide' : 'Show'}
-              {dismissedCount} dismissed
-            </button>
           {/if}
         </div>
       </div>

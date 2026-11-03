@@ -43,31 +43,31 @@ RUN apt-get update && apt-get install -y \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Rust toolchain via rustup (sid's apt rust is older than our 1.95
+# Install Rust toolchain via rustup (sid's apt rust is older than our 1.99
 # rust-version requirement). Pin a known version so rebuilds are reproducible.
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
-    RUST_VERSION=1.96.0
+    RUST_VERSION=1.99.1
 RUN curl -fsSL https://sh.rustup.rs | sh -s -- \
         --default-toolchain $RUST_VERSION --profile minimal -y \
     && rustc --version \
     && cargo --version
 
-# Build chromaprint 1.6.1 from source (latest official release).
+# Build chromaprint 1.6.2 from source (latest official release).
 # Uses FFTW3 for better accuracy. Installed to /usr/local alongside FFmpeg.
-RUN curl -fsSL --retry 5 --retry-all-errors https://github.com/acoustid/chromaprint/releases/download/v1.6.1/chromaprint-1.6.1.tar.gz \
+RUN curl -fsSL --retry 5 --retry-all-errors https://github.com/acoustid/chromaprint/releases/download/v1.6.2/chromaprint-1.6.2.tar.gz \
     | tar -xz \
-    && cd chromaprint-1.6.1 \
+    && cd chromaprint-1.6.2 \
     && cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release -DBUILD_TOOLS=OFF -DBUILD_SHARED_LIBS=ON \
     && cmake --build build --parallel \
     && cmake --install build \
-    && cd / && rm -rf chromaprint-1.6.1 \
+    && cd / && rm -rf chromaprint-1.6.2 \
     && ldconfig
 
 # Chromaprint's cmake doesn't install a pkg-config file — create one manually.
 RUN test -f /usr/local/lib/pkgconfig/libchromaprint.pc || \
-    printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\nName: chromaprint\nDescription: Audio fingerprint library\nVersion: 1.6.1\nLibs: -L${libdir} -lchromaprint\nCflags: -I${includedir}\n' \
+    printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\nName: chromaprint\nDescription: Audio fingerprint library\nVersion: 1.6.2\nLibs: -L${libdir} -lchromaprint\nCflags: -I${includedir}\n' \
     > /usr/local/lib/pkgconfig/libchromaprint.pc
 
 # Make sure pkg-config sees both /usr/local and the system paths.

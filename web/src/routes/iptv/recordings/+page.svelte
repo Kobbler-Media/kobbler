@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { page } from '$app/stores';
-  import { updateUrlParams } from '$lib/utils/url-state';
+  import { page } from '$app/state';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import VideoPlayer from '$lib/components/VideoPlayer/VideoPlayer.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { usePlayback } from '$lib/composables/usePlayback.svelte';
-  import * as api from '$lib/api/client';
-  import type { IptvRecording, IptvSeriesRule, IptvChannel } from '$lib/types';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { usePlayback } from '#lib/composables/usePlayback.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import type { IptvRecording, IptvSeriesRule, IptvChannel } from '#lib/types.js';
 
   type SortValue = 'date' | 'status' | 'size';
 
@@ -21,15 +21,16 @@
 
   // URL-persisted filters
   const statusFilter = $derived(
-    VALID_STATUSES.includes($page.url.searchParams.get('status') as (typeof VALID_STATUSES)[number])
-      ? $page.url.searchParams.get('status')!
+    VALID_STATUSES.includes(page.url.searchParams.get('status') as (typeof VALID_STATUSES)[number])
+      ? page.url.searchParams.get('status')!
       : undefined
   );
+
   const sort = $derived(
     (['date', 'status', 'size'] as SortValue[]).includes(
-      $page.url.searchParams.get('sort') as SortValue
+      page.url.searchParams.get('sort') as SortValue
     )
-      ? ($page.url.searchParams.get('sort') as SortValue)
+      ? (page.url.searchParams.get('sort') as SortValue)
       : 'date'
   );
 
@@ -315,8 +316,10 @@
       </a>
       <h1>Recordings</h1>
     </div>
+
     <button class="add-btn" type="button" onclick={() => (showNewRecording = !showNewRecording)}>
       <span class="material-icons-outlined" style="font-size: 16px;">add</span>
+
       New Recording
     </button>
   </div>
@@ -396,9 +399,10 @@
           <button type="button" class="btn-sec" onclick={() => (showNewRecording = false)}
             >Cancel</button
           >
-          <button type="submit" class="btn-primary" disabled={saving}>
-            {saving ? 'Scheduling...' : 'Schedule'}
-          </button>
+
+          <button type="submit" class="btn-primary" disabled={saving}
+            >{saving ? 'Scheduling...' : 'Schedule'}</button
+          >
         </div>
       </form>
     </div>
@@ -500,8 +504,10 @@
   <div class="rules-section">
     <div class="rules-header">
       <h2>Series Rules</h2>
+
       <button class="add-btn small" type="button" onclick={() => (showNewRule = !showNewRule)}>
         <span class="material-icons-outlined" style="font-size: 14px;">add</span>
+
         Add Rule
       </button>
     </div>
@@ -553,9 +559,10 @@
             <button type="button" class="btn-sec" onclick={() => (showNewRule = false)}
               >Cancel</button
             >
-            <button type="submit" class="btn-primary" disabled={ruleSaving}>
-              {ruleSaving ? 'Creating...' : 'Create Rule'}
-            </button>
+
+            <button type="submit" class="btn-primary" disabled={ruleSaving}
+              >{ruleSaving ? 'Creating...' : 'Create Rule'}</button
+            >
           </div>
         </form>
       </div>
@@ -737,6 +744,7 @@
         <button type="button" class="btn-sec" onclick={() => (confirmDeleteRecId = null)}
           >Cancel</button
         >
+
         <button type="button" class="btn-danger" onclick={handleConfirmDeleteRecording}
           >Delete</button
         >
@@ -755,6 +763,7 @@
         <button type="button" class="btn-sec" onclick={() => (confirmDeleteRuleId = null)}
           >Cancel</button
         >
+
         <button type="button" class="btn-danger" onclick={handleConfirmDeleteRule}>Delete</button>
       </div>
     </div>

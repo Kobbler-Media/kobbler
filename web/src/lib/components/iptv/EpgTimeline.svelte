@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { IptvEpgEntry } from '$lib/types';
+  import type { IptvEpgEntry } from '#lib/types.js';
 
   interface Props {
     programs: IptvEpgEntry[];

@@ -1,4 +1,6 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import adapter from '@sveltejs/adapter-static';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -8,7 +10,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
-    plugins: [sveltekit()],
+    plugins: [
+      sveltekit({
+        preprocess: vitePreprocess(),
+        adapter: adapter({ fallback: 'index.html' })
+      })
+    ],
     resolve: {
       alias: {
         'foliate-js/view.js': path.resolve(__dirname, 'node_modules/foliate-js/view.js')

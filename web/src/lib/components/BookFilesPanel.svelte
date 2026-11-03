@@ -1,9 +1,9 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import * as api from '$lib/api/client';
-  import type { BookFileInfo, AudioFileInfo, AudioSummary } from '$lib/types';
+  import * as api from '#lib/api/client.js';
+  import type { BookFileInfo, AudioFileInfo, AudioSummary } from '#lib/types.js';
   import type { SearchSelectItem } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
   import OverflowMenu from './shared/OverflowMenu.svelte';
   import MetaLine from './shared/MetaLine.svelte';
   import MoveFileModal from './shared/MoveFileModal.svelte';

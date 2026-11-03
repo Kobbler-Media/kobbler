@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { MediaRootFile, MediaRootFileLite } from '$lib/types';
+  import type { MediaRootFile, MediaRootFileLite } from '#lib/types.js';
   import {
     addMediaRootFileToLibrary,
     ignoreMediaRootFile,
     rematchMediaRootFile
-  } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { formatSize } from '$lib/utils/format';
+  } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { formatSize } from '#lib/utils/format.js';
 
   interface Props {
     file: MediaRootFileLite;

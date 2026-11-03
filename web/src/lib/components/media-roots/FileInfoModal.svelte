@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { MediaRootFile } from '$lib/types';
-  import { formatSize } from '$lib/utils/format';
+  import type { MediaRootFile } from '#lib/types.js';
+  import { formatSize } from '#lib/utils/format.js';
 
   interface Props {
     file: MediaRootFile;

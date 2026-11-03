@@ -1,18 +1,18 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
-  import IngestQueuePage from '$lib/components/pages/IngestQueuePage.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import { getLibraryState } from '$lib/stores/library.svelte';
-  import { showMessage, loadSeries } from '$lib/context/app.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
-  import type { IngestQueueGroup, IngestQueueStatusCounts, DeviceSummary } from '$lib/types';
-  import * as api from '$lib/api/client';
-  import { on, off, onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
+  import IngestQueuePage from '#lib/components/pages/IngestQueuePage.svelte';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import { getLibraryState } from '#lib/stores/library.svelte.js';
+  import { showMessage, loadSeries } from '#lib/context/app.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
+  import type { IngestQueueGroup, IngestQueueStatusCounts, DeviceSummary } from '#lib/types.js';
+  import * as api from '#lib/api/client.js';
+  import { on, off, onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
 
   // Import the shared type
-  import type { BookFormData } from '$lib/components/ingest/types';
+  import type { BookFormData } from '#lib/components/ingest/types.js';
 
   const auth = getAuthState();
 
@@ -58,8 +58,9 @@
   };
 
   // URL state
-  const urlStatus = $derived($page.url.searchParams.get('status') || 'pending');
-  const urlSearch = $derived($page.url.searchParams.get('q') || '');
+  const urlStatus = $derived(page.url.searchParams.get('status') || 'pending');
+
+  const urlSearch = $derived(page.url.searchParams.get('q') || '');
 
   const loadQueue = async (newOffset = 0, append = false) => {
     loading = true;
@@ -98,9 +99,9 @@
 
   onMount(async () => {
     // Redirect old ?item= URLs to new dedicated route
-    const urlItem = $page.url.searchParams.get('item');
+    const urlItem = page.url.searchParams.get('item');
     if (urlItem) {
-      goto(`/ingest-queue/${urlItem}`, { replaceState: true });
+      goto(`/ingest-queue/${urlItem}`, { replace: true });
       return;
     }
 

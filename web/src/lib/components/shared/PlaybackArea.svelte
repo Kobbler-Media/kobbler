@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatDuration } from '$lib/utils/format';
+  import { formatDuration } from '#lib/utils/format.js';
 
   interface Props {
     mode?: 'file' | 'stream';

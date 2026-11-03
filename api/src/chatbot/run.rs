@@ -297,6 +297,7 @@ async fn run_one(
         auth: turn.auth,
         session_id: turn.session_id,
         context_ref,
+        user_message: &turn.user_message,
     };
     let outcome = dispatch::dispatch(&ctx, &call.name, &args).await;
     let logged: Result<&Value, &String> = match outcome.ok {

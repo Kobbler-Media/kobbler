@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { SearchSelect, MultiSearchSelect, type MultiSearchSelectItem } from '@koblibs/ui';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
   import {
     getSystemConfig,
     updateSystemConfig,
@@ -17,7 +17,7 @@
     synthesizeTts,
     type SystemConfig,
     type SystemConfigUpdate
-  } from '$lib/api/client';
+  } from '#lib/api/client.js';
 
   // Local state
   let systemConfig = $state<SystemConfig | null>(null);

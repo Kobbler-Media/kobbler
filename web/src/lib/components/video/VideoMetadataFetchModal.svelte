@@ -5,10 +5,10 @@
    * this doesn't search by title - it fetches details using known provider IDs.
    */
   import { Modal } from '@koblibs/ui';
-  import { getVideoSeasonDetails } from '$lib/api/client';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { formatCalendarDate, getProviderColor } from '$lib/utils/format';
-  import type { SeasonDetailResult } from '$lib/types';
+  import { getVideoSeasonDetails } from '#lib/api/client.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { formatCalendarDate, getProviderColor } from '#lib/utils/format.js';
+  import type { SeasonDetailResult } from '#lib/types.js';
 
   interface Props {
     showIdentifiers: Record<string, unknown>;

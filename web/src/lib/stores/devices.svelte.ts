@@ -1,7 +1,7 @@
 // Devices and activity store using Svelte 5 runes
 
-import type { DeviceSummary, ActivityEvent, UserSummary, IngestTokenSummary } from '$lib/types';
-import type { ProxyLogEntry } from '$lib/api/client';
+import type { DeviceSummary, ActivityEvent, UserSummary, IngestTokenSummary } from '#lib/types.js';
+import type { ProxyLogEntry } from '#lib/api/client.js';
 
 let devices = $state.raw<DeviceSummary[]>([]);
 let activityEvents = $state.raw<ActivityEvent[]>([]);

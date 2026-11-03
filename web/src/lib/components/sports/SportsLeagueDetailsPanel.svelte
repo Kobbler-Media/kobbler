@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { TvShow, TvSeason } from '$lib/types';
-  import { getSportsLeagueSeasons } from '$lib/api/client';
+  import type { TvShow, TvSeason } from '#lib/types.js';
+  import { getSportsLeagueSeasons } from '#lib/api/client.js';
   import { SearchSelect } from '@koblibs/ui';
   import { InfiniteScroll } from '@koblibs/ui';
   import EntityHero from '../shared/EntityHero.svelte';

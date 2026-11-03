@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { getAuthState } from '$lib/stores/auth.svelte';
-  import { showMessage } from '$lib/context/app.svelte';
-  import * as api from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { SessionSummary } from '$lib/types';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { SessionSummary } from '#lib/types.js';
 
   const auth = getAuthState();
 

@@ -1,31 +1,32 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import LibraryPage from '$lib/components/pages/LibraryPage.svelte';
-  import BookDetailsPanel from '$lib/components/BookDetailsPanel.svelte';
-  import BookForm from '$lib/components/BookForm.svelte';
-  import QuickLinkProviderModal from '$lib/components/QuickLinkProviderModal.svelte';
-  import BookEditModal, { type EditData } from '$lib/components/BookEditModal.svelte';
-  import DevicePickerModal from '$lib/components/DevicePickerModal.svelte';
+  import { page } from '$app/state';
+  import LibraryPage from '#lib/components/pages/LibraryPage.svelte';
+  import BookDetailsPanel from '#lib/components/BookDetailsPanel.svelte';
+  import BookForm from '#lib/components/BookForm.svelte';
+  import QuickLinkProviderModal from '#lib/components/QuickLinkProviderModal.svelte';
+  import BookEditModal, { type EditData } from '#lib/components/BookEditModal.svelte';
+  import DevicePickerModal from '#lib/components/DevicePickerModal.svelte';
   import { DeleteConfirmModal } from '@koblibs/ui';
-  import ReleaseSearchModal from '$lib/components/ReleaseSearchModal.svelte';
-  import AddEntityModal from '$lib/components/AddEntityModal.svelte';
+  import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
+  import AddEntityModal from '#lib/components/AddEntityModal.svelte';
   import { SearchSelect, type SearchSelectItem } from '@koblibs/ui';
   import { ExpandableSidebar } from '@koblibs/ui';
-  import SeriesSidebarContent from '$lib/components/SeriesSidebarContent.svelte';
-  import AuthorSidebarContent from '$lib/components/AuthorSidebarContent.svelte';
+  import SeriesSidebarContent from '#lib/components/SeriesSidebarContent.svelte';
+  import AuthorSidebarContent from '#lib/components/AuthorSidebarContent.svelte';
   import { MultiSelectBar } from '@koblibs/ui';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import { getLibraryState, setSelection, ensureBookInStore } from '$lib/stores/library.svelte';
-  import { getFormatFilter } from '$lib/stores/format-filter.svelte';
-  import { getDevicesState } from '$lib/stores/devices.svelte';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import { getLibraryState, setSelection, ensureBookInStore } from '#lib/stores/library.svelte.js';
+  import { getFormatFilter } from '#lib/stores/format-filter.svelte.js';
+  import { getDevicesState } from '#lib/stores/devices.svelte.js';
   import {
     getUIState,
     setShowDetails,
     setMultiSelect,
     setSearchQuery
-  } from '$lib/stores/ui.svelte';
+  } from '#lib/stores/ui.svelte.js';
+
   import {
     getNavigationState,
     pushEntity,
@@ -33,7 +34,7 @@
     clearStack,
     setLoadingEntity,
     updateCurrentEntityData
-  } from '$lib/stores/navigation.svelte';
+  } from '#lib/stores/navigation.svelte.js';
   import type {
     Book,
     SeriesSummary,
@@ -41,14 +42,16 @@
     AuthorSearchResult,
     SeriesSearchResult,
     BookFormData
-  } from '$lib/types';
+  } from '#lib/types.js';
+
   import {
     getStreamState,
     onReconnect,
     offReconnect,
     onDebounced,
     off
-  } from '$lib/services/eventstream.svelte';
+  } from '#lib/services/eventstream.svelte.js';
+
   import {
     loadLibrary,
     reloadLibraryInPlace,
@@ -58,20 +61,20 @@
     loadShelves,
     loadDevices,
     showMessage
-  } from '$lib/context/app.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
+  } from '#lib/context/app.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
   import {
     captureScrollAnchor,
     restoreScrollAnchor,
     scrollContainerToTop,
     scrollItemToTop
-  } from '$lib/utils/scroll-anchor';
-  import { getStatsState } from '$lib/stores/stats.svelte';
-  import * as api from '$lib/api/client';
-  import { searchBookReleases, queueBookRelease } from '$lib/api/client';
-  import type { MetadataResult } from '$lib/api/client';
-  import type { ProviderInfo } from '$lib/components/MetadataSearchModal.svelte';
-  import { getProviderCode, getProviderColor, getProviderName } from '$lib/utils/format';
+  } from '#lib/utils/scroll-anchor.js';
+  import { getStatsState } from '#lib/stores/stats.svelte.js';
+  import * as api from '#lib/api/client.js';
+  import { searchBookReleases, queueBookRelease } from '#lib/api/client.js';
+  import type { MetadataResult } from '#lib/api/client.js';
+  import type { ProviderInfo } from '#lib/components/MetadataSearchModal.svelte';
+  import { getProviderCode, getProviderColor, getProviderName } from '#lib/utils/format.js';
 
   // Store state
   const library = getLibraryState();
@@ -138,19 +141,23 @@
 
   // Derived navigation state
   const currentNavEntity = $derived(nav.current);
+
   const currentNavBook = $derived(
     currentNavEntity?.type === 'book' ? (currentNavEntity.data as Book | undefined) : undefined
   );
+
   const currentNavSeries = $derived(
     currentNavEntity?.type === 'series'
       ? (currentNavEntity.data as SeriesSummary | undefined)
       : undefined
   );
+
   const currentNavAuthor = $derived(
     currentNavEntity?.type === 'author'
       ? (currentNavEntity.data as AuthorSummary | undefined)
       : undefined
   );
+
   // Show nav sidebar when we have any entity in the stack (navigation mode)
   const showNavSidebar = $derived(nav.isOpen && currentNavEntity !== undefined);
   // Hide the original book details sidebar when nav sidebar is active
@@ -187,15 +194,16 @@
   const apiBase = import.meta.env.VITE_API_BASE_URL || '';
 
   // URL state sync
-  const urlSearchQuery = $derived($page.url.searchParams.get('q') || '');
-  const urlSelectedBook = $derived($page.url.searchParams.get('book'));
-  const urlAround = $derived($page.url.searchParams.get('around'));
-  const urlAroundBefore = $derived($page.url.searchParams.get('around_before'));
+  const urlSearchQuery = $derived(page.url.searchParams.get('q') || '');
+
+  const urlSelectedBook = $derived(page.url.searchParams.get('book'));
+  const urlAround = $derived(page.url.searchParams.get('around'));
+  const urlAroundBefore = $derived(page.url.searchParams.get('around_before'));
   const urlFilter = $derived(
-    ($page.url.searchParams.get('filter') as 'all' | 'recent' | 'pending' | 'synced') || 'recent'
+    (page.url.searchParams.get('filter') as 'all' | 'recent' | 'pending' | 'synced') || 'recent'
   );
   const urlOwnership = $derived(
-    ($page.url.searchParams.get('ownership') as 'all' | 'owned' | 'wanted' | 'orphaned') || 'owned'
+    (page.url.searchParams.get('ownership') as 'all' | 'owned' | 'wanted' | 'orphaned') || 'owned'
   );
 
   // Track current around value to detect changes
@@ -1168,9 +1176,11 @@
           {deleting ? 'Deleting...' : 'Delete Book'}
         </button>
         <div style="flex: 1;"></div>
-        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={loading}>
-          Cancel
-        </button>
+
+        <button class="btn-sec" type="button" onclick={handleEditCancel} disabled={loading}
+          >Cancel</button
+        >
+
         <button
           class="btn-primary"
           type="button"
@@ -1361,7 +1371,10 @@
     mode="book"
     linkMode={true}
     existingId={selectedBook.id}
-    initialSearchValues={{ title: selectedBook.title, author: selectedBook.authors?.[0]?.name }}
+    initialSearchValues={{
+      title: selectedBook.title,
+      author: selectedBook.authors?.[0]?.name
+    }}
     onComplete={() => (showLinkMetadataModal = false)}
     onResultsSelected={handleMetadataResultsSelected}
     onCancel={() => (showLinkMetadataModal = false)}

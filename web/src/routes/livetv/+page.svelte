@@ -1,33 +1,33 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { SvelteSet } from 'svelte/reactivity';
   import {
     onReconnect,
     offReconnect,
     on as onLiveEvent,
     off as offLiveEvent
-  } from '$lib/services/eventstream.svelte';
-  import ErrorBanner from '$lib/components/shared/ErrorBanner.svelte';
-  import LivetvTabs from '$lib/components/livetv/LivetvTabs.svelte';
-  import DayStepper from '$lib/components/livetv/DayStepper.svelte';
-  import FacetPills from '$lib/components/livetv/FacetPills.svelte';
-  import FacetToggles from '$lib/components/livetv/FacetToggles.svelte';
-  import EpgGrid from '$lib/components/livetv/EpgGrid.svelte';
-  import ProgrammeDetail from '$lib/components/livetv/ProgrammeDetail.svelte';
-  import { networkTint } from '$lib/components/livetv/tint';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { getLivetvState, fetchLivetvTuners } from '$lib/stores/livetv.svelte';
-  import { openLivetvChannel, preWarmLivetvChannel } from '$lib/stores/livetvPlayer.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
-  import * as api from '$lib/api/client';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
+  } from '#lib/services/eventstream.svelte.js';
+  import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import LivetvTabs from '#lib/components/livetv/LivetvTabs.svelte';
+  import DayStepper from '#lib/components/livetv/DayStepper.svelte';
+  import FacetPills from '#lib/components/livetv/FacetPills.svelte';
+  import FacetToggles from '#lib/components/livetv/FacetToggles.svelte';
+  import EpgGrid from '#lib/components/livetv/EpgGrid.svelte';
+  import ProgrammeDetail from '#lib/components/livetv/ProgrammeDetail.svelte';
+  import { networkTint } from '#lib/components/livetv/tint.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { getLivetvState, fetchLivetvTuners } from '#lib/stores/livetv.svelte.js';
+  import { openLivetvChannel, preWarmLivetvChannel } from '#lib/stores/livetvPlayer.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
+  import * as api from '#lib/api/client.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
   import type {
     LivetvChannel,
     LivetvFacets,
     LivetvGuideChannel,
     LivetvGuideEntry
-  } from '$lib/types';
+  } from '#lib/types.js';
 
   const livetv = getLivetvState();
 
@@ -217,6 +217,7 @@
     else if (value === 'radio') includeRadio = !includeRadio;
     else {
       const region = value.slice('region:'.length);
+
       if (regions.has(region)) regions.delete(region);
       else regions.add(region);
     }
@@ -233,7 +234,7 @@
   }
 
   function readUrlState() {
-    const params = $page.url.searchParams;
+    const params = page.url.searchParams;
     const date = params.get('date');
     if (date) {
       const parsed = new Date(`${date}T00:00:00`);
@@ -289,7 +290,7 @@
         <span class="material-icons-outlined">search</span>
         <input
           type="search"
-          placeholder="Search channels &amp; guide"
+          placeholder="Search channels & guide"
           value={searchInput}
           oninput={(e) => handleSearchInput(e.currentTarget.value)}
         />

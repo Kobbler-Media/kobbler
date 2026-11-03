@@ -1,5 +1,5 @@
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { getDiscoverSeason, type DiscoverEpisode } from '$lib/api/client';
+import { getDiscoverSeason, type DiscoverEpisode } from '#lib/api/client.js';
 
 export function useDiscoverSeasons(provider: string, providerId: string) {
   const episodes = new SvelteMap<number, DiscoverEpisode[]>();

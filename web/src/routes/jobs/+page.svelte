@@ -1,17 +1,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
   import { SearchSelect } from '@koblibs/ui';
-  import { updateUrlParams } from '$lib/utils/url-state';
-  import { getJobs, deleteJob, cancelJob, deleteCompletedJobs } from '$lib/api/client';
-  import { groupJobs } from '$lib/utils/job-groups';
-  import { showMessage } from '$lib/context/app.svelte';
-  import { onReconnect, offReconnect } from '$lib/services/eventstream.svelte';
-  import { onJobChange } from '$lib/stores/jobs.svelte';
-  import { entityRoute, entityTypeLabel } from '$lib/utils/entity-routes';
-  import MetaLine from '$lib/components/shared/MetaLine.svelte';
-  import type { Job } from '$lib/types';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
+  import { getJobs, deleteJob, cancelJob, deleteCompletedJobs } from '#lib/api/client.js';
+  import { groupJobs } from '#lib/utils/job-groups.js';
+  import { showMessage } from '#lib/context/app.svelte.js';
+  import { onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
+  import { onJobChange } from '#lib/stores/jobs.svelte.js';
+  import { entityRoute, entityTypeLabel } from '#lib/utils/entity-routes.js';
+  import MetaLine from '#lib/components/shared/MetaLine.svelte';
+  import type { Job } from '#lib/types.js';
 
   const jobsPageSize = 20;
 
@@ -26,9 +26,9 @@
 
   const groupedJobs = $derived(groupJobs(jobsList));
 
-  const urlJobsPage = $derived(parseInt($page.url.searchParams.get('page') || '0', 10));
-  const urlJobsStatus = $derived($page.url.searchParams.get('status') || '');
-  const urlShowRoutine = $derived($page.url.searchParams.get('routine') === '1');
+  const urlJobsPage = $derived(parseInt(page.url.searchParams.get('page') || '0', 10));
+  const urlJobsStatus = $derived(page.url.searchParams.get('status') || '');
+  const urlShowRoutine = $derived(page.url.searchParams.get('routine') === '1');
 
   const totalJobPages = $derived(Math.ceil(jobsTotal / jobsPageSize));
 

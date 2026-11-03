@@ -5,7 +5,7 @@
     setInactivityMinutes,
     formatTime,
     type SleepTimerMode
-  } from '$lib/stores/audioplayer.svelte';
+  } from '#lib/stores/audioplayer.svelte.js';
 
   const player = getAudioPlayerState();
 

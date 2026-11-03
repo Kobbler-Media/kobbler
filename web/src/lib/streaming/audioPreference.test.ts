@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PlaybackAudioTrack, PlaybackMethod } from '$lib/types';
+import type { PlaybackAudioTrack, PlaybackMethod } from '#lib/types.js';
 import { startingAudio } from './audioPreference';
 
 const track = (stream_index: number, language: string, is_default = false): PlaybackAudioTrack => ({

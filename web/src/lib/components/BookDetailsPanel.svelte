@@ -1,15 +1,15 @@
 <script lang="ts">
-  import type { Book, DeviceSummary, ReadingData, ReadingStatus } from '$lib/types';
-  import { getWantStatusOverride } from '$lib/stores/wantStatus.svelte';
+  import type { Book, DeviceSummary, ReadingData, ReadingStatus } from '#lib/types.js';
+  import { getWantStatusOverride } from '#lib/stores/wantStatus.svelte.js';
   import GenreChips from './GenreChips.svelte';
   import IdentifierLinks from './IdentifierLinks.svelte';
   import BookFilesPanel from './BookFilesPanel.svelte';
   import DualRatingStars from './DualRatingStars.svelte';
-  import * as api from '$lib/api/client';
-  import { getBookStatusBadge } from '$lib/utils/book-status';
+  import * as api from '#lib/api/client.js';
+  import { getBookStatusBadge } from '#lib/utils/book-status.js';
   import ReadingSection from './ReadingSection.svelte';
   import EntityHero from './shared/EntityHero.svelte';
-  import { formatCalendarDate, formatSize } from '$lib/utils/format';
+  import { formatCalendarDate, formatSize } from '#lib/utils/format.js';
   import SelectDevicesModal from './SelectDevicesModal.svelte';
 
   type Context = 'library' | 'monitored' | 'ingest';

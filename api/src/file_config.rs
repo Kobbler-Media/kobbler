@@ -74,6 +74,10 @@ pub struct FileConfig {
     pub meili_url: Option<String>,
     #[serde(default)]
     pub meili_master_key: Option<String>,
+    #[serde(default)]
+    pub semantic_search_enabled: bool,
+    #[serde(default = "default_semantic_search_ratio")]
+    pub semantic_search_ratio: f64,
 
     // Koblem (local LLM service)
     #[serde(default)]
@@ -302,6 +306,9 @@ fn default_skip_detect_mode() -> String {
 fn default_iptv_language_filter() -> Vec<String> {
     vec!["en".to_string()]
 }
+fn default_semantic_search_ratio() -> f64 {
+    0.5
+}
 fn default_vision_service_url() -> Option<String> {
     Some("http://siglip2:8890".to_string())
 }
@@ -360,6 +367,8 @@ impl Default for FileConfig {
             kobload_communication_mode: None,
             meili_url: None,
             meili_master_key: None,
+            semantic_search_enabled: false,
+            semantic_search_ratio: default_semantic_search_ratio(),
             koblem_service_url: None,
             koblem_api_key: None,
             chat_enabled: false,
@@ -524,6 +533,8 @@ impl FileConfig {
                     doc["meili_url"] = toml_edit::value(self.meili_url.as_deref().unwrap_or(""));
                     doc["meili_master_key"] =
                         toml_edit::value(self.meili_master_key.as_deref().unwrap_or(""));
+                    doc["semantic_search_enabled"] = toml_edit::value(self.semantic_search_enabled);
+                    doc["semantic_search_ratio"] = toml_edit::value(self.semantic_search_ratio);
                     // Koblem
                     doc["koblem_service_url"] =
                         toml_edit::value(self.koblem_service_url.as_deref().unwrap_or(""));
@@ -946,6 +957,18 @@ impl FileConfig {
             "meili_master_key = {:?}\n\n",
             self.meili_master_key.as_deref().unwrap_or("")
         ));
+        output.push_str("# Semantic search: rank movies, shows and library books by how their\n");
+        output.push_str("# artwork matches the query (\"space adventure\", \"cosy animated\").\n");
+        output.push_str("# Needs koblem_service_url; vectors are computed on koblem's GPU.\n");
+        output.push_str(&format!(
+            "semantic_search_enabled = {}\n",
+            self.semantic_search_enabled
+        ));
+        output.push_str("# 0.0 = keyword only, 1.0 = artwork similarity only\n");
+        output.push_str(&format!(
+            "semantic_search_ratio = {:?}\n\n",
+            self.semantic_search_ratio
+        ));
 
         // Chat (AI Assistant) section
         output.push_str(
@@ -1269,6 +1292,8 @@ impl FileConfig {
             }),
             meili_url,
             meili_master_key,
+            semantic_search_enabled: self.semantic_search_enabled,
+            semantic_search_ratio: self.semantic_search_ratio,
             koblem_service_url: self.koblem_service_url.as_ref().and_then(|val| {
                 if val.is_empty() {
                     None
@@ -1486,6 +1511,8 @@ impl FileConfig {
             kobload_communication_mode: config.kobload_communication_mode.clone(),
             meili_url: config.meili_url.clone(),
             meili_master_key: config.meili_master_key.clone(),
+            semantic_search_enabled: config.semantic_search_enabled,
+            semantic_search_ratio: config.semantic_search_ratio,
             koblem_service_url: config.koblem_service_url.clone(),
             koblem_api_key: config.koblem_api_key.clone(),
             chat_enabled: config.chat_enabled,

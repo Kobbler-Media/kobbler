@@ -4,8 +4,8 @@
     listBookmarks,
     deleteBookmark,
     type AudiobookBookmark
-  } from '$lib/api/client';
-  import { getAudioPlayerState, seekToGlobal } from '$lib/stores/audioplayer.svelte';
+  } from '#lib/api/client.js';
+  import { getAudioPlayerState, seekToGlobal } from '#lib/stores/audioplayer.svelte.js';
 
   interface Props {
     bookId: string;

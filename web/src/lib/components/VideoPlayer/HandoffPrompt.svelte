@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { WatchProgress } from '$lib/types';
+  import type { WatchProgress } from '#lib/types.js';
 
   interface Props {
     progress: WatchProgress;

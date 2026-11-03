@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { page } from '$app/stores';
-  import ChatLogsPage from '$lib/components/pages/ChatLogsPage.svelte';
+  import { page } from '$app/state';
+  import ChatLogsPage from '#lib/components/pages/ChatLogsPage.svelte';
   import {
     getChatLogs,
     getUsers,
     type ChatLogsQuery,
     type ChatTurnLogEntry
-  } from '$lib/api/client';
-  import { copyText } from '$lib/context/app.svelte';
-  import { updateUrlParams } from '$lib/utils/url-state';
-  import type { UserSummary } from '$lib/types';
+  } from '#lib/api/client.js';
+  import { copyText } from '#lib/context/app.svelte.js';
+  import { updateUrlParams } from '#lib/utils/url-state.js';
+  import type { UserSummary } from '#lib/types.js';
 
   const PAGE_SIZE = 50;
 
@@ -21,13 +21,13 @@
   let users = $state<UserSummary[]>([]);
 
   const filters = $derived<ChatLogsQuery>({
-    q: $page.url.searchParams.get('q') || undefined,
-    transport: $page.url.searchParams.get('transport') || undefined,
-    status: ($page.url.searchParams.get('status') as 'ok' | 'failed') || undefined,
-    stage: ($page.url.searchParams.get('stage') as 'extract' | 'resolve' | 'action') || undefined,
-    user_id: $page.url.searchParams.get('user_id') || undefined,
-    since: $page.url.searchParams.get('since') || undefined,
-    until: $page.url.searchParams.get('until') || undefined
+    q: page.url.searchParams.get('q') || undefined,
+    transport: page.url.searchParams.get('transport') || undefined,
+    status: (page.url.searchParams.get('status') as 'ok' | 'failed') || undefined,
+    stage: (page.url.searchParams.get('stage') as 'extract' | 'resolve' | 'action') || undefined,
+    user_id: page.url.searchParams.get('user_id') || undefined,
+    since: page.url.searchParams.get('since') || undefined,
+    until: page.url.searchParams.get('until') || undefined
   });
 
   const load = async (offset: number, active: ChatLogsQuery = filters) => {

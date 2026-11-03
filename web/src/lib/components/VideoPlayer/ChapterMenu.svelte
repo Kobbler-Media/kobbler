@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import type { VideoChapter, SkipSegment } from '$lib/types';
+  import type { VideoChapter, SkipSegment } from '#lib/types.js';
   import { SEGMENT_COLORS, isVisibleSkipSegment, segmentTitle } from './segments';
 
   interface Props {

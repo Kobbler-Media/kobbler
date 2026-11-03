@@ -86,17 +86,16 @@ pub fn extract_epub_text(path: &Path) -> Result<Vec<EbookTextSegment>, ExtractEr
 fn read_opf_path(archive: &mut zip::ZipArchive<std::fs::File>) -> Result<String, ExtractError> {
     let content = read_zip_entry(archive, "META-INF/container.xml")?;
     let mut reader = Reader::from_str(&content);
-    reader.config_mut().trim_text(true);
 
     loop {
         match reader.read_event() {
             Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
                 let name = e.name();
-                let tag = String::from_utf8_lossy(name.as_ref());
+                let tag = name.as_ref();
                 if tag.ends_with("rootfile") || tag == "rootfile" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"full-path" {
-                            return Ok(String::from_utf8_lossy(&attr.value).to_string());
+                        if attr.key.as_ref() == "full-path" {
+                            return Ok(crate::xml_text::attr_value(&attr));
                         }
                     }
                 }
@@ -130,7 +129,6 @@ fn read_zip_entry(
 /// Parse the OPF to extract manifest (id -> href) and spine (ordered idrefs).
 fn parse_opf(content: &str) -> Result<(HashMap<String, String>, Vec<String>), ExtractError> {
     let mut reader = Reader::from_str(content);
-    reader.config_mut().trim_text(true);
 
     let mut manifest: HashMap<String, String> = HashMap::new();
     let mut spine: Vec<String> = Vec::new();
@@ -138,7 +136,7 @@ fn parse_opf(content: &str) -> Result<(HashMap<String, String>, Vec<String>), Ex
     loop {
         match reader.read_event() {
             Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e)) => {
-                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let tag = e.name().as_ref().to_string();
                 let local = strip_ns(&tag);
 
                 if local == "item" {
@@ -146,10 +144,8 @@ fn parse_opf(content: &str) -> Result<(HashMap<String, String>, Vec<String>), Ex
                     let mut href = None;
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"id" => id = Some(String::from_utf8_lossy(&attr.value).to_string()),
-                            b"href" => {
-                                href = Some(String::from_utf8_lossy(&attr.value).to_string())
-                            }
+                            "id" => id = Some(crate::xml_text::attr_value(&attr)),
+                            "href" => href = Some(crate::xml_text::attr_value(&attr)),
                             _ => {}
                         }
                     }
@@ -162,8 +158,8 @@ fn parse_opf(content: &str) -> Result<(HashMap<String, String>, Vec<String>), Ex
                     }
                 } else if local == "itemref" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"idref" {
-                            spine.push(String::from_utf8_lossy(&attr.value).to_string());
+                        if attr.key.as_ref() == "idref" {
+                            spine.push(crate::xml_text::attr_value(&attr));
                         }
                     }
                 }
@@ -214,7 +210,6 @@ fn percent_decode(input: &str) -> String {
 /// Generates CFI-like references for each segment.
 fn extract_text_from_xhtml(content: &str, segment_index: &mut i32) -> Vec<EbookTextSegment> {
     let mut reader = Reader::from_str(content);
-    reader.config_mut().trim_text(true);
 
     let mut segments = Vec::new();
     let mut current_chapter: Option<String> = None;
@@ -228,7 +223,7 @@ fn extract_text_from_xhtml(content: &str, segment_index: &mut i32) -> Vec<EbookT
     loop {
         match reader.read_event() {
             Ok(Event::Start(ref e)) => {
-                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let tag = e.name().as_ref().to_string();
                 let local = strip_ns(&tag).to_lowercase();
 
                 if local == "body" {
@@ -263,7 +258,7 @@ fn extract_text_from_xhtml(content: &str, segment_index: &mut i32) -> Vec<EbookT
                 depth.push(local);
             }
             Ok(Event::End(ref e)) => {
-                let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let tag = e.name().as_ref().to_string();
                 let local = strip_ns(&tag).to_lowercase();
 
                 if local == "body" {
@@ -275,7 +270,7 @@ fn extract_text_from_xhtml(content: &str, segment_index: &mut i32) -> Vec<EbookT
                         && matches!(local.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6")
                     {
                         in_heading = false;
-                        let title = heading_text.trim().to_string();
+                        let title = collapse_whitespace(&heading_text);
                         if !title.is_empty() {
                             current_chapter = Some(title);
                         }
@@ -294,22 +289,23 @@ fn extract_text_from_xhtml(content: &str, segment_index: &mut i32) -> Vec<EbookT
 
                 depth.pop();
             }
-            Ok(Event::Text(ref e)) => {
-                if in_body && let Ok(decoded) = e.decode() {
-                    let text = decoded.trim();
-                    if !text.is_empty() {
-                        if in_heading {
-                            if !heading_text.is_empty() {
-                                heading_text.push(' ');
-                            }
-                            heading_text.push_str(text);
-                        }
-                        if !current_text.is_empty() {
-                            current_text.push(' ');
-                        }
-                        current_text.push_str(text);
-                    }
+            Ok(Event::Text(ref e)) if in_body => {
+                if in_heading {
+                    heading_text.push_str(e.as_ref());
                 }
+                current_text.push_str(e.as_ref());
+            }
+            Ok(Event::GeneralRef(ref e)) if in_body => {
+                if in_heading {
+                    crate::xml_text::push_ref(&mut heading_text, e);
+                }
+                crate::xml_text::push_ref(&mut current_text, e);
+            }
+            Ok(Event::Empty(_)) if in_body => {
+                if in_heading {
+                    heading_text.push(' ');
+                }
+                current_text.push(' ');
             }
             Ok(Event::Eof) => break,
             _ => {}
@@ -334,8 +330,9 @@ fn flush_segment(
     segment_index: &mut i32,
     segments: &mut Vec<EbookTextSegment>,
 ) {
-    let trimmed = text.trim().to_string();
+    let trimmed = collapse_whitespace(text);
     if trimmed.is_empty() {
+        text.clear();
         return;
     }
 
@@ -347,6 +344,10 @@ fn flush_segment(
 
     *segment_index += 1;
     text.clear();
+}
+
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Check if an HTML tag is a block-level element that should cause paragraph breaks.
@@ -438,4 +439,19 @@ pub fn extract_content_sample(
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xhtml_text_resolves_entity_references() {
+        let xhtml = "<html><body><h1>Tom &amp; Jerry</h1><p>Cats &amp; mice &#8211; forever</p></body></html>";
+        let mut index = 0;
+        let segments = extract_text_from_xhtml(xhtml, &mut index);
+        let texts: Vec<&str> = segments.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, vec!["Tom & Jerry", "Cats & mice \u{2013} forever"]);
+        assert_eq!(segments[1].chapter_title.as_deref(), Some("Tom & Jerry"));
+    }
 }

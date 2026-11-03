@@ -1,4 +1,4 @@
-import type { SkipSegment } from '$lib/types';
+import type { SkipSegment } from '#lib/types.js';
 
 export const SEGMENT_COLORS: Record<string, string> = {
   intro: 'rgba(159, 229, 176, 0.55)',
