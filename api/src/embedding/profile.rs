@@ -6,9 +6,11 @@
 //! threshold carried over unchanged silently stops firing. Consumers read
 //! [`active`] (or [`for_model`] with a stored model id) instead of bare numbers.
 //!
-//! The EG2 values below are provisional pending tuning against the
-//! chapter-confirmed credit segments and the real library; how each was reasoned
-//! from its SigLIP2 predecessor is noted on it.
+//! The EG2 values were tuned on 233 episodes (73 shows) + 15 movies against the
+//! chapter-confirmed credit segments, held out by show, and on the real library
+//! for search; the method and evidence are in the owner's
+//! RESULTS-eg2-tuning.md (2026-11-04). The live-TV values are still reasoned, not
+//! tuned: there is no ad ground truth to tune them against.
 
 use super::EMBED_MODEL;
 
@@ -42,11 +44,12 @@ pub struct ModelProfile {
     /// Image↔image cosine to the opening frames' centroid below which a credits
     /// region "breaks" into a post-credits scene.
     pub cluster_break_cosine: f64,
-    /// Raw mean pairwise image↔image cosine mapped linearly from
-    /// `[floor, ceiling]` onto the 0–1 `visual_score` band fusion's cutoffs
-    /// (0.2 / 0.5 / 0.7 / 0.9) were set on.
-    pub consistency_floor: f64,
-    pub consistency_ceiling: f64,
+    /// Knots `(raw mean pairwise image↔image cosine, visual_score)`, ascending,
+    /// mapping this model's consistency onto the 0–1 band fusion's cutoffs
+    /// (0.2 / 0.5 / 0.7 / 0.9) were set on. Piecewise-linear between knots, with
+    /// (0, 0) and (1, 1) implied at the ends, so each cutoff lands exactly on its
+    /// tuned raw value; an affine map can't, and the 0.7 one matters.
+    pub consistency_knots: &'static [(f64, f64)],
 
     // ── Live TV ad detection ────────────────────────────────────────────────
     pub ad_prompts: &'static [&'static str],
@@ -69,30 +72,37 @@ impl ModelProfile {
     /// [`cluster_consistency`](crate::skip_detect::primitives::cosine::cluster_consistency)
     /// output on the scale fusion's `visual_score` cutoffs expect.
     pub fn visual_score(&self, raw_consistency: f64) -> f64 {
-        let span = self.consistency_ceiling - self.consistency_floor;
-        if span <= 0.0 {
-            return raw_consistency.clamp(0.0, 1.0);
+        let x = raw_consistency.clamp(0.0, 1.0);
+        let mut prev = (0.0, 0.0);
+        for &knot in self
+            .consistency_knots
+            .iter()
+            .chain(std::iter::once(&(1.0, 1.0)))
+        {
+            if x <= knot.0 {
+                let span = knot.0 - prev.0;
+                if span <= 0.0 {
+                    return knot.1;
+                }
+                return prev.1 + (x - prev.0) / span * (knot.1 - prev.1);
+            }
+            prev = knot;
         }
-        ((raw_consistency - self.consistency_floor) / span).clamp(0.0, 1.0)
+        1.0
     }
 }
 
-/// Tuned against Invincible (white-on-black credits) and Scrubs 2026 (small text
-/// over an active scene) under SigLIP2. Under EG2, with no task prefix, the same
-/// set separated credits at per-episode AUC 0.998–1.0.
+/// Greedy forward/backward selection over 33 credit and 24 contrast candidates
+/// on pooled per-frame AUC (train split only), plain text: a task prefix scored
+/// worse. SigLIP2's five-and-three set reached 0.956 under EG2; this one 0.969.
 const CREDIT_PROMPTS: &[&str] = &[
     "white text on a black background",
-    "end credits of a TV show",
     "names and titles on a dark screen",
     "production company logo",
-    "credits text overlaid on a scene",
+    "a title card",
 ];
 
-const NON_CREDIT_PROMPTS: &[&str] = &[
-    "a scene from a TV show",
-    "animated characters",
-    "people in a room",
-];
+const NON_CREDIT_PROMPTS: &[&str] = &["people in a room", "an image"];
 
 const AD_PROMPTS: &[&str] = &[
     "a television advertisement",
@@ -110,44 +120,54 @@ const PROGRAMME_PROMPTS: &[&str] = &[
 
 pub const EG2: ModelProfile = ModelProfile {
     model: EMBED_MODEL,
-    // Measured on 857 frames from 4 episodes: 0.85 recall at 0 false positives at
-    // 0.04, against SigLIP2's 0.90 at 0.10, prompts untuned.
-    credit_threshold: 0.04,
-    // SigLIP2 used 0.5, five times its threshold, against credit scores of
-    // 0.15–0.80. EG2's scores sit about 10× closer together, so full confidence
-    // moves to 0.10: a region averaging just over the threshold still reads as
-    // credit text (above fusion's 0.3) rather than clamping to the floor.
-    credit_confidence_full: 0.10,
+    // Held-out (82 episodes, 29 shows): 0 misses and start/end median 0.67 / 0.14 s
+    // (p90 3.0 / 5.6), against SigLIP2's 4 misses and 0.92 / 0.16 (3.4 / 6.2) at
+    // 0.10. The loss is flat from 0.0175 to 0.0375. A per-episode normalisation
+    // (subtracting the episode's own p10/p25/median) was worse: the window is
+    // often a third credits, so its "background" includes them.
+    credit_threshold: 0.0275,
+    // EG2 region averages sit around 0.06–0.08. SigLIP2's 0.5 here would clamp
+    // every EG2 detection to the 0.3 floor, and fusion's credit-text test is
+    // strictly `> 0.3`: credit text would silently stop counting.
+    credit_confidence_full: 0.07,
     credit_prompts: CREDIT_PROMPTS,
     non_credit_prompts: NON_CREDIT_PROMPTS,
-    // Same value as SigLIP2. The 10× narrowing is the text↔image gap; this is
-    // image↔image cosine between unit vectors of one modality, which a dual
-    // encoder spreads over a similar range for "same shot" vs "new scene".
-    cluster_break_cosine: 0.5,
-    // Identity, as under SigLIP2, for the same reason.
-    consistency_floor: 0.0,
-    consistency_ceiling: 1.0,
+    // EG2 image↔image cosines are compressed upward (credit windows p10/p50/p90
+    // 0.751 / 0.773 / 0.814, scenes 0.767 / 0.815 / 0.879); 0.68 is SigLIP2's 0.5
+    // by quantile.
+    cluster_break_cosine: 0.68,
+    // Fusion cutoff ← raw EG2 consistency, measured on 246 credit windows, 225
+    // pre-credit scenes and 1,413 random windows:
+    //   0.2 ← 0.41, 0.5 ← 0.61: below every window either model produced (dead
+    //   branches); affine extrapolation.
+    //   0.7 ← 0.73: the high-variance credits veto's upper edge. The quantile map
+    //   says 0.747, which vetoes 4.9 % of real credit windows; 0.73 vetoes none
+    //   (SigLIP2 at 0.7: none either).
+    //   0.9 ← 0.88: the post-credits same-cluster veto, by quantile.
+    consistency_knots: &[(0.41, 0.2), (0.61, 0.5), (0.73, 0.7), (0.88, 0.9)],
     ad_prompts: AD_PROMPTS,
     programme_prompts: PROGRAMME_PROMPTS,
-    // SigLIP2 used a sigmoid ratio (ad ≥ 1.5× programme). Cosines are all similar
-    // positive values, so a ratio sits near 0.5 for every frame; a margin is the
-    // cosine equivalent, put just under the credit threshold because it compares
-    // best-against-best rather than averages.
+    // Not tuned (no ad ground truth). SigLIP2 used a sigmoid ratio (ad ≥ 1.5×
+    // programme); cosines are all similar positive values, so a ratio sits near
+    // 0.5 for every frame. A best-against-best margin is the cosine equivalent,
+    // set near the tuned credit threshold.
     ad_margin: 0.03,
-    // Query↔summary cosines for an asymmetric retrieval model run roughly
-    // 0.2–0.35 unrelated and 0.5–0.6 for a good match: Meili scale ≈0.66 ± 0.04.
+    // Set so EG2 behaves as SigLIP2's constants did on the same 52 natural and 15
+    // off-topic queries: the same corrected score for the median off-topic top hit
+    // and the median 20th on-topic hit, and the same off-topic pass rate at the
+    // floor. Meili's correction formula was taken from its source from memory:
+    // check one query against a live index before switching semantic search on.
     description_distribution: Distribution {
-        mean: 0.66,
-        sigma: 0.04,
+        mean: 0.815,
+        sigma: 0.0205,
     },
-    // SigLIP2's raw text→image cosines ran 0.0–0.18 (0.53 ± 0.01). EG2's
-    // cross-modal cosines run a little higher with a similarly narrow spread.
     poster_distribution: Distribution {
-        mean: 0.57,
-        sigma: 0.02,
+        mean: 0.819,
+        sigma: 0.0144,
     },
-    // On the corrected scale, so it carries over from SigLIP2.
-    semantic_hit_floor: 0.3,
+    // Tuned: summaries 0.2, posters 0.31. One floor serves both; summaries are
+    // the primary embedder, and the poster query already carries a lower weight.
+    semantic_hit_floor: 0.2,
 };
 
 pub const PROFILES: &[ModelProfile] = &[EG2];
@@ -174,15 +194,23 @@ mod tests {
     }
 
     #[test]
-    fn visual_score_maps_the_consistency_band_onto_zero_to_one() {
+    fn visual_score_puts_each_fusion_cutoff_on_its_tuned_raw_value() {
+        for (raw, cutoff) in [(0.41, 0.2), (0.61, 0.5), (0.73, 0.7), (0.88, 0.9)] {
+            assert!((EG2.visual_score(raw) - cutoff).abs() < 1e-9, "{raw}");
+        }
+        assert_eq!(EG2.visual_score(0.0), 0.0);
+        assert_eq!(EG2.visual_score(1.0), 1.0);
+        assert_eq!(EG2.visual_score(1.5), 1.0);
+        let mid = EG2.visual_score(0.67);
+        assert!(mid > 0.5 && mid < 0.7);
+    }
+
+    #[test]
+    fn no_knots_is_the_identity() {
         let p = ModelProfile {
-            consistency_floor: 0.4,
-            consistency_ceiling: 0.9,
+            consistency_knots: &[],
             ..EG2
         };
-        assert!((p.visual_score(0.65) - 0.5).abs() < 1e-9);
-        assert_eq!(p.visual_score(0.1), 0.0);
-        assert_eq!(p.visual_score(0.99), 1.0);
-        assert!((EG2.visual_score(0.42) - 0.42).abs() < 1e-9);
+        assert!((p.visual_score(0.42) - 0.42).abs() < 1e-9);
     }
 }
