@@ -2562,7 +2562,11 @@ impl SearchBackend for MeiliState {
                 )));
             }
         }
-        info!(enabled, "Search embedders applied");
+        match enabled {
+            true => info!("Search embedders declared"),
+            // Also the first step of a model change, before the new ones are declared.
+            false => info!("Search embedders removed"),
+        }
         Ok(())
     }
 }
