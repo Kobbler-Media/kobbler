@@ -2,10 +2,17 @@ pub use nats_jobs::{
     ListWatchMatchesResponse, ListWatchPatternsResponse, WatchMatchResponse,
     WatchPatternDetailResponse, WatchPatternResponse,
 };
+use std::time::Duration;
+
 use nats_jobs::{MediaWant, SearchRequest};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tracing::info;
+
+/// Kobload holds a user's resolve through a Real-Debrid rate limit or a pause on the
+/// account's adds (up to about half a minute each) rather than fail it; the client's own
+/// request timeout is 60 s.
+const STREAM_RESOLVE_TIMEOUT: Duration = Duration::from_secs(55);
 
 #[derive(Clone)]
 pub struct KobloadClient {
@@ -554,6 +561,7 @@ impl KobloadClient {
         let resp = self
             .client
             .post(&url)
+            .timeout(STREAM_RESOLVE_TIMEOUT)
             .bearer_auth(&self.api_key)
             .json(request)
             .send()

@@ -58,6 +58,8 @@ impl StreamFailure {
         let has = |needles: &[&str]| needles.iter().any(|n| text.contains(n));
         if has(&["refused this", "infringing", "blocked"]) {
             Self::Blocked
+        } else if has(&["not a video"]) {
+            Self::NotVideo
         } else if status == Some(429) || has(&["rate limit", "fair usage", "too many active"]) {
             Self::RateLimited
         } else if matches!(status, Some(401 | 403))
@@ -163,6 +165,16 @@ mod tests {
             ),
             (None, "request failed: connection refused", Unavailable),
             (Some(500), "Search failed: all indexers down", Unavailable),
+            (
+                Some(500),
+                "Debrid error: Resolved file is not a video: setup.exe (application/x-msdownload)",
+                NotVideo,
+            ),
+            (
+                Some(500),
+                "Debrid error: Failed to add magnet: Provider refused this torrent (too big for the account)",
+                Blocked,
+            ),
         ];
         for (status, detail, want) in cases {
             assert_eq!(
