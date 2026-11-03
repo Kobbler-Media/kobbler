@@ -1,20 +1,22 @@
 # Kobbler — optional GPU engines overlay.
 #
-# Three self-hosted inference services that Kobbler will use if you point it at
-# them. All of them need an NVIDIA GPU and the NVIDIA container toolkit; none of
-# them is required for a working Kobbler.
+# Self-hosted inference services that Kobbler will use if you point it at them.
+# All of them need an NVIDIA GPU and the NVIDIA container toolkit; none of them
+# is required for a working Kobbler.
 #
 #   tts-breeze        text-to-speech        (config: tts_service_url)
 #   stt-parakeet-cpp  speech-to-text        (config: stt_service_url)
-#   siglip2           image/text embeddings (config: vision_service_url)
+#   embed-vision      image (+text) embeddings (config: vision_service_url)
+#   embed-text        text embeddings          (config: text_embedding_service_url)
 #
 # Run it alongside the core stack:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 #
 # The matching defaults are already in config/kobbler.toml.example
-# (http://tts-breeze:8203, http://stt-parakeet-cpp:8023, http://siglip2:8890) —
-# services on the same compose network resolve each other by service name.
+# (http://tts-breeze:8203, http://stt-parakeet-cpp:8023, http://embed-vision:8080,
+# http://embed-text:8080) — services on the same compose network resolve each
+# other by service name.
 #
 # Each service builds from a ggml port maintained outside this repository, pinned
 # by the *_REPO / *_REF variables (override them in .env). Model weights are never baked into the images — they are
@@ -107,32 +109,33 @@ services:
       retries: 3
       start_period: 120s
 
-  # SigLIP-2 image/text embeddings, used for visual search, auto-tagging and
-  # ad/skip detection. Fetches its GGUF into the siglip2-models volume on first
-  # start; see SIGLIP2_HF_REPO in .env.example.
-  siglip2:
-    image: kobbler-siglip2:latest
-    build:
-      context: ./docker/siglip2
-      additional_contexts:
-        # Point SIGLIP2_SRC at a local siglip2.cpp checkout to build from a
-        # working tree instead of cloning SIGLIP2_REPO.
-        siglip2_src: "${SIGLIP2_SRC:-docker-image://scratch}"
-      args:
-        SIGLIP2_REPO: "${SIGLIP2_REPO:-https://github.com/dbrain/hbd-siglip2.cpp.git}"
-        SIGLIP2_REF: "${SIGLIP2_REF:-6bd2ceb}"
-        SIGLIP2_CUDA_ARCHS: "${SIGLIP2_CUDA_ARCHS:-86;89;120}"
+  # EmbeddingGemma-2 on the stock llama.cpp server image: one 768-d space for
+  # video frames, posters, summaries and search queries. Used by skip detection
+  # (credit text, post-credits), live TV ad detection and semantic search. The
+  # entrypoint fetches the GGUFs into the embed-models volume on first start
+  # (see EMBED_HF_REPO in .env.example). Use Q8_0 weights: F16 produces NaNs.
+  #
+  # embed-vision embeds images (70 vision tokens each, ~1.1 GB VRAM) and serves
+  # text too when embed-text is not running.
+  embed-vision:
+    image: "${EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}"
     init: true
     restart: unless-stopped
     ports:
-      - "${SIGLIP2_PORT:-18890}:8890"
+      - "${EMBED_VISION_PORT:-18894}:8080"
+    entrypoint: ["/bin/sh", "/embed/entrypoint.sh"]
+    command: >
+      -m /models/${EMBED_MODEL_FILE:-embeddinggemma-2-Q8_0.gguf}
+      --mmproj /models/${EMBED_MMPROJ_FILE:-mmproj-Q8_0.gguf}
+      --embeddings -ngl 99
+      --image-max-tokens 70
+      -c 8192 --parallel 4 -b 1024 -ub 1024
+      --host 0.0.0.0 --port 8080
     environment:
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
-      SIGLIP2_HF_REPO: "${SIGLIP2_HF_REPO:-dbrains/SigLIP2-So400m-Patch16-NaFlex-GGUF}"
-      SIGLIP2_QUANT: "${SIGLIP2_QUANT:-q8_0}"
-      LAZY_LOAD: "1"
-      IDLE_UNLOAD_SECONDS: "${SIGLIP2_IDLE_UNLOAD_SECONDS:-300}"
-      SIGLIP2_WORKER_ISOLATION: "${SIGLIP2_WORKER_ISOLATION:-1}"
+      EMBED_HF_REPO: "${EMBED_HF_REPO:-unsloth/embeddinggemma-2-GGUF}"
+      EMBED_MODEL_FILE: "${EMBED_MODEL_FILE:-embeddinggemma-2-Q8_0.gguf}"
+      EMBED_MMPROJ_FILE: "${EMBED_MMPROJ_FILE:-mmproj-Q8_0.gguf}"
     deploy:
       resources:
         reservations:
@@ -141,17 +144,60 @@ services:
               count: 1
               capabilities: [gpu]
     volumes:
-      - siglip2-models:/models
+      - ./docker/embed/entrypoint.sh:/embed/entrypoint.sh:ro
+      - embed-models:/models
+      # CUDA's JIT cache: without it the first request in every new container
+      # takes 5-10 s.
+      - embed-nvcache:/root/.nv
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8890/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 180s
+
+  # embed-text: text only (no mmproj, ~0.4 GB), always loaded, so search queries
+  # and zero-shot prompts never wait on a GPU cold start. Inputs are capped at
+  # 1024 tokens. Optional — without it, text goes to embed-vision. To keep it
+  # off the GPU entirely, add `--device none -t 4` to the command (~20 ms/query).
+  embed-text:
+    image: "${EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}"
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${EMBED_TEXT_PORT:-18895}:8080"
+    entrypoint: ["/bin/sh", "/embed/entrypoint.sh"]
+    command: >
+      -m /models/${EMBED_MODEL_FILE:-embeddinggemma-2-Q8_0.gguf}
+      --embeddings -ngl 99
+      -c 1024 --parallel 1 -b 1024 -ub 1024
+      --host 0.0.0.0 --port 8080
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      EMBED_HF_REPO: "${EMBED_HF_REPO:-unsloth/embeddinggemma-2-GGUF}"
+      EMBED_MODEL_FILE: "${EMBED_MODEL_FILE:-embeddinggemma-2-Q8_0.gguf}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ./docker/embed/entrypoint.sh:/embed/entrypoint.sh:ro
+      - embed-models:/models
+      - embed-nvcache:/root/.nv
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
 
 volumes:
   # Cloned voices (npy codes + sidecars) — back this up.
   breeze-voices:
   # Model caches; safe to drop, they re-download.
   parakeet-cpp-models:
-  siglip2-models:
+  embed-models:
+  embed-nvcache:

@@ -161,12 +161,13 @@ meili_url = "http://meilisearch:7700"
 # meili_master_key = ""
 
 # Semantic search ranks movies, TV shows and library books by how well their
-# poster or cover matches the query, so "space adventure" or "cosy animated
-# film" find titles whose names share none of those words. Off by default.
-# Needs Meilisearch and `koblem_service_url`: artwork and queries are embedded
-# with SigLIP2 on koblem's GPU. Keyword search carries on if koblem is down.
+# summary (and, more lightly, poster or cover) matches the query, so "a slow-burn
+# thriller about grief" finds titles whose names share none of those words. Off
+# by default. Needs Meilisearch and an embedding service (`vision_service_url`,
+# below, or koblem with `route_gpu_via_koblem`): summaries, artwork and queries
+# are embedded with EmbeddingGemma-2. Keyword search carries on if it is down.
 semantic_search_enabled = false
-# 0.0 = keyword only, 1.0 = artwork similarity only.
+# 0.0 = keyword only, 1.0 = semantic similarity only.
 semantic_search_ratio = 0.5
 
 # =============================================================================
@@ -236,11 +237,18 @@ route_gpu_via_koblem = false
 # Skip detect / vision (OPTIONAL)
 # =============================================================================
 #
-# Intro/credit detection needs the vision sidecar. `vision_service_url` is the
-# compose service name and only resolves while that optional container runs.
+# Intro/credit detection needs the embedding sidecar (docker-compose.gpu.yml).
+# The URLs are compose service names and only resolve while those optional
+# containers run. Either may point at koblem instead.
+#
+# `vision_service_url` embeds video frames and posters (EmbeddingGemma-2, GPU).
+# `text_embedding_service_url` is an always-on text embedder for search queries,
+# summaries and zero-shot prompts; leave it empty to send text to
+# `vision_service_url` as well.
 
 skip_detect_mode = "off"           # off | full
-vision_service_url = "http://siglip2:8890"
+vision_service_url = "http://embed-vision:8080"
+text_embedding_service_url = ""
 
 # =============================================================================
 # Chat — LLM assistant (OPTIONAL)

@@ -138,10 +138,11 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 That needs an NVIDIA GPU and the NVIDIA container toolkit, plus the extra settings at the bottom of
 `.env.example`. Plain `docker compose up -d` never touches it.
 
-Of the three sidecars, only `stt-parakeet-cpp` builds from a public upstream by default
-(`PARAKEET_REPO`). `tts-breeze` and `siglip2` have no public `*_REPO` default — their ggml ports
-aren't published anywhere yet — so building them needs your own `qwen3-tts.cpp` / `siglip2.cpp`
-checkout, pointed at via `*_REPO` or the local-working-tree `SIGLIP2_SRC`-style override.
+`embed-vision` and `embed-text` (EmbeddingGemma-2 embeddings for skip detection, live TV ad
+detection and semantic search) run the stock `ghcr.io/ggml-org/llama.cpp:server-cuda` image and
+download their GGUFs on first start. `stt-parakeet-cpp` builds from a public upstream by default
+(`PARAKEET_REPO`). `tts-breeze` has no public `BREEZE_REPO` default — its ggml port isn't
+published anywhere yet — so building it needs your own `qwen3-tts.cpp` checkout.
 
 ## Configuration
 
