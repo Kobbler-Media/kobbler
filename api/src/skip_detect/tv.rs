@@ -240,6 +240,14 @@ pub struct VHashPairDetail {
 /// open) and must not be aggregated together.
 const START_CLUSTER_GAP_SECS: f64 = 10.0;
 
+/// A pair shorter than this fraction of its cluster's median pair length is
+/// a sliver of shared lead-in, not a partner match for the intro.
+const SLIVER_PAIR_FRACTION: f64 = 0.25;
+
+fn matched_secs(m: &vhash::VHashMatch) -> f64 {
+    m.density * m.mean_similarity * (m.end_seconds - m.start_seconds)
+}
+
 /// Aggregated result of [`pick_winning_start_cluster`].
 struct ClusterPick {
     start_seconds: f64,
@@ -251,8 +259,8 @@ struct ClusterPick {
 
 /// Group `pairs` into clusters (a pair joins the running cluster when its
 /// start is within `gap_secs` of the previous start, or when it overlaps the
-/// cluster's span), then return the cluster maximising
-/// `Σ density × mean_similarity`. Picked endpoints are the second-earliest
+/// cluster's span), then return the cluster with the most matched seconds,
+/// `Σ density × mean_similarity × length`. Picked endpoints are the second-earliest
 /// start and `median(end)` over the **winning cluster only** — guaranteeing both come
 /// from pairs that agree on the same content, instead of being synthesised
 /// from independent statistics across unrelated pairs (which previously
@@ -287,11 +295,11 @@ fn pick_winning_start_cluster(pairs: &[vhash::VHashMatch], gap_secs: f64) -> Opt
             clusters.push((vec![m], m.end_seconds));
         }
     }
-    // `reduce` with strict `>` keeps the earlier cluster on a tie — clusters
-    // were appended in start-ascending order above, so we naturally prefer
-    // the earliest equally-strong intro candidate.
-    let score =
-        |c: &[&vhash::VHashMatch]| -> f64 { c.iter().map(|m| m.density * m.mean_similarity).sum() };
+    // Length counts: a network ident or title card is shared by more
+    // partners than the titles are (IASIP S15), so a count-like score hands
+    // it the intro. `reduce` with strict `>` keeps the earlier cluster on a
+    // tie — clusters were appended in start-ascending order above.
+    let score = |c: &[&vhash::VHashMatch]| -> f64 { c.iter().map(|m| matched_secs(m)).sum() };
     let winner = clusters
         .into_iter()
         .map(|(c, _)| c)
@@ -302,6 +310,19 @@ fn pick_winning_start_cluster(pairs: &[vhash::VHashMatch], gap_secs: f64) -> Opt
                 best
             }
         })?;
+    // A sliver of shared lead-in (3x01 has no intro, yet matches 3x05's black
+    // opening for 5.6s) sits inside the cluster's span but is not a partner
+    // for the intro, and as the earliest start it would pick the start.
+    let mut lengths: Vec<f64> = winner
+        .iter()
+        .map(|m| m.end_seconds - m.start_seconds)
+        .collect();
+    lengths.sort_by(|a, b| a.total_cmp(b));
+    let floor = lengths[lengths.len() / 2] * SLIVER_PAIR_FRACTION;
+    let winner: Vec<&vhash::VHashMatch> = winner
+        .into_iter()
+        .filter(|m| m.end_seconds - m.start_seconds >= floor)
+        .collect();
     let mut starts: Vec<f64> = winner.iter().map(|m| m.start_seconds).collect();
     let mut ends: Vec<f64> = winner.iter().map(|m| m.end_seconds).collect();
     starts.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -454,7 +475,7 @@ pub fn find_per_episode_vhash(
 }
 
 /// Cluster pairwise matches by midpoint proximity.
-/// Returns only the matches in the largest cluster. Prevents distant false
+/// Returns only the matches in the heaviest cluster. Prevents distant false
 /// matches from contaminating the aggregation of the real intro region.
 fn cluster_matches(
     matches: &[(vhash::VHashMatch, usize, vhash::VHashMatch)],
@@ -484,7 +505,14 @@ fn cluster_matches(
     }
     clusters.push(current_cluster);
 
-    let best = clusters.into_iter().max_by_key(|c| c.len()).unwrap();
+    // By matched seconds, not pair count: a recurring act-break eyecatch is
+    // shared by more partners than the opening (Death Note) but is a tenth
+    // of its length. `max_by` keeps the last maximum; ties are not expected.
+    let weight = |c: &[usize]| -> f64 { c.iter().map(|&i| matched_secs(&matches[i].0)).sum() };
+    let best = clusters
+        .into_iter()
+        .max_by(|a, b| weight(a).total_cmp(&weight(b)))
+        .unwrap();
     best.iter().map(|&i| &matches[i]).collect()
 }
 
@@ -637,6 +665,77 @@ mod tests {
             "end should stay at 94.26; got {}",
             pick.end_seconds
         );
+    }
+
+    #[test]
+    fn pick_cluster_iasip_s15e04_full_titles_beat_the_network_ident() {
+        // It's Always Sunny S15E04's intro pairs. Four partners share the
+        // ~11s FX ident + "11:00 AM" time card at the top of the file; three
+        // share the 20s title sequence at 117s, which the theme's chroma match
+        // confirms. Scored without length, four short pairs outweighed three
+        // full ones and the ident became a second "intro".
+        let pairs = vec![
+            m(2.02, 13.57, 1.00, 0.99),    // vs 6
+            m(2.02, 13.57, 1.00, 0.99),    // vs 7
+            m(5.94, 13.24, 0.95, 0.88),    // vs 4
+            m(5.94, 13.24, 0.95, 0.89),    // vs 5
+            m(117.59, 137.57, 0.93, 0.95), // vs 0
+            m(117.59, 137.57, 1.00, 0.97), // vs 1
+            m(117.59, 137.57, 0.95, 0.93), // vs 2
+        ];
+        let pick = pick_winning_start_cluster(&pairs, START_CLUSTER_GAP_SECS).unwrap();
+        assert!(
+            (pick.start_seconds - 117.59).abs() < 0.01,
+            "the title sequence wins; got {}..{}",
+            pick.start_seconds,
+            pick.end_seconds
+        );
+        assert_eq!(pick.pair_count, 3);
+    }
+
+    #[test]
+    fn pick_cluster_leftovers_s3e05_start_ignores_a_sliver_pair() {
+        // The Leftovers 3x05 pairs. 3x01 has no intro; its only "match" is
+        // 5.6s of the black lead-in, yet as the earliest start it decided the
+        // second-earliest pick (3.25, inside the black). The black runs to
+        // 7.51s and the titles open there, which the full-length pairs say.
+        let pairs = vec![
+            m(0.00, 5.59, 1.00, 1.00),   // vs 0 (3x01, no intro)
+            m(3.25, 99.93, 0.93, 0.99),  // vs 7
+            m(7.59, 101.60, 0.87, 0.99), // vs 5
+            m(8.93, 99.93, 0.90, 1.00),  // vs 6
+            m(12.93, 95.60, 0.83, 0.98), // vs 1
+            m(12.93, 98.93, 0.87, 0.99), // vs 2
+            m(34.91, 99.60, 0.99, 0.99), // vs 3
+        ];
+        let pick = pick_winning_start_cluster(&pairs, START_CLUSTER_GAP_SECS).unwrap();
+        assert!(
+            (pick.start_seconds - 7.59).abs() < 0.01,
+            "start must come from intro-length pairs; got {}",
+            pick.start_seconds
+        );
+        assert!((pick.end_seconds - 99.60).abs() < 0.5);
+        assert_eq!(pick.pair_count, 6, "the sliver is not a partner");
+    }
+
+    #[test]
+    fn cluster_matches_death_note_bumper_does_not_outvote_the_opening() {
+        // Death Note 1x21: 16 partners share the 80s opening, 18 share the
+        // ~10s "How to use it" eyecatch at the act break. Picking the
+        // midpoint cluster by pair count handed the eyecatch to the intro
+        // pass, so its density landed on the chroma-matched opening.
+        let mut matches = Vec::new();
+        for _ in 0..16 {
+            let o = m(0.0, 80.91, 0.97, 0.97);
+            matches.push((o.clone(), 0, o));
+        }
+        for _ in 0..18 {
+            let b = m(780.24, 789.91, 1.00, 0.97);
+            matches.push((b.clone(), 0, b));
+        }
+        let kept = cluster_matches(&matches);
+        assert_eq!(kept.len(), 16);
+        assert!(kept.iter().all(|k| k.0.start_seconds == 0.0));
     }
 
     /// Real vHash descriptors for The Leftovers S3E02–E08 title sequences
