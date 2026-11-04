@@ -9,6 +9,11 @@ use std::collections::HashMap;
 /// Frames per second the matching pipeline expects descriptors to be sampled at.
 pub const VHASH_FPS: f64 = 3.0;
 
+/// How far a matched pair's b−a offset may sit from the run's median offset
+/// and still bound the b side. Re-cut montages drift by a few seconds within
+/// one run; strays from another shift sit minutes away.
+const RHS_OFFSET_TOLERANCE_SECS: f64 = 10.0;
+
 /// Tight similarity threshold for shift voting (higher bar for alignment discovery).
 const VOTE_SIMILARITY: f64 = 0.80;
 
@@ -387,12 +392,23 @@ pub fn find_visual_matches(
         .iter()
         .filter(|(a, _, _)| *a >= best_start && *a <= best_end + frame_interval)
         .collect();
+    // Each a-frame took its best b-frame over every candidate shift, so a
+    // black or flat frame can land on a look-alike far away at another
+    // shift. The run is contiguous in a, but those strays would stretch b's
+    // span by minutes (VisionQuest 1x07: 102–376 for a 10 s card), so b's
+    // bounds come only from pairs near the run's typical offset.
+    let mut offsets: Vec<f64> = run_pairs.iter().map(|(a, b, _)| b - a).collect();
+    offsets.sort_by(|x, y| x.total_cmp(y));
+    let typical = offsets.get(offsets.len() / 2).copied().unwrap_or(0.0);
+    let on_run = |a: f64, b: f64| ((b - a) - typical).abs() <= RHS_OFFSET_TOLERANCE_SECS;
     let rhs_start = run_pairs
         .iter()
+        .filter(|(a, b, _)| on_run(*a, *b))
         .map(|(_, b, _)| *b)
         .fold(f64::MAX, f64::min);
     let rhs_end = run_pairs
         .iter()
+        .filter(|(a, b, _)| on_run(*a, *b))
         .map(|(_, b, _)| *b)
         .fold(f64::MIN, f64::max);
     let mean_similarity = if run_pairs.is_empty() {
@@ -501,6 +517,30 @@ fn find_best_ordered_run(
 #[allow(clippy::needless_range_loop)]
 mod tests {
     use super::*;
+
+    /// VisionQuest 1x02's title card (652.9–667.6) against 1x07's, which runs
+    /// 366.6–376.3. The card's black lead-in also matches black frames far
+    /// earlier in 1x07 at another candidate shift, and those set 1x07's span
+    /// to 102–376: a 274 s "match" that outweighed every real partner of
+    /// 1x07's card and handed its intro to a scene at 522.9.
+    #[test]
+    fn visionquest_rhs_span_follows_the_run_not_a_stray_black_frame() {
+        let d02 = crate::skip_detect::vhash::deserialize_descriptors(include_bytes!(
+            "../../../tests/fixtures/vhash/visionquest_s1e02_card.bin"
+        ))
+        .expect("decode e02 fixture");
+        let d07 = crate::skip_detect::vhash::deserialize_descriptors(include_bytes!(
+            "../../../tests/fixtures/vhash/visionquest_s1e07_card.bin"
+        ))
+        .expect("decode e07 fixture");
+        let m = find_visual_matches(&d02, &d07, 5.0, 0.7).expect("the cards match");
+        assert!(
+            (365.0..=368.0).contains(&m.rhs.start_seconds) && m.rhs.end_seconds <= 378.0,
+            "1x07 side {}..{}",
+            m.rhs.start_seconds,
+            m.rhs.end_seconds
+        );
+    }
 
     fn make_descriptor(timestamp: f64, values: &[u8]) -> FrameDescriptor {
         let values = values.to_vec();

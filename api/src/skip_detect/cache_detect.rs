@@ -415,6 +415,7 @@ pub async fn detect_season_from_cache_with_chapters(
         // non-overlapping ones compete in fusion with hard-reject culling
         // dead-on-arrival regions.
         let mut pushed_intro = 0;
+        let mut vhash_overruled = false;
         if let Some(intro) = per_ep_intro.get(&ep_idx) {
             diag.intro_chromaprint = Some(MatchDiag {
                 start_seconds: intro.start_seconds,
@@ -460,6 +461,11 @@ pub async fn detect_season_from_cache_with_chapters(
                 vhash_extended = span;
                 skip_start |= confirmed_start;
                 skip_end |= confirmed_end;
+                vhash_overruled = chapter_overrules_vhash(
+                    (start, end),
+                    (vm.start_seconds, vm.end_seconds),
+                    chapter_spans.intro,
+                );
             }
             let refined = refine_candidate(
                 SegmentType::Intro,
@@ -485,6 +491,13 @@ pub async fn detect_season_from_cache_with_chapters(
                 diag.notes.push(format!(
                     "intro vhash has only {} pair(s) (<{min_vhash_pairs}) — dropped",
                     vhash_match.pair_count
+                ));
+            } else if vhash_overruled {
+                // The chapter sided with audio against this span; merging it
+                // back in as its own candidate would undo that.
+                diag.notes.push(format!(
+                    "intro vhash at {:.1}..{:.1}s overruled by the chapter — dropped",
+                    vhash_match.start_seconds, vhash_match.end_seconds
                 ));
             } else if vhash_dur < MIN_VHASH_ONLY_INTRO_DURATION {
                 // Under 10s, a vhash match alone is almost always a network
@@ -2273,6 +2286,19 @@ fn score_chapter_agreement(chapters: &ChapterSpans, candidates: &mut [Candidate]
     }
 }
 
+/// A chapter took the audio boundary over a video boundary that disagreed
+/// with it, on either axis.
+fn chapter_overrules_vhash(
+    chroma: (f64, f64),
+    vhash: (f64, f64),
+    chapter: Option<(f64, f64)>,
+) -> bool {
+    let (span, confirmed_start, confirmed_end) =
+        arbitrate_with_chapter(chroma, chroma, vhash, chapter);
+    (confirmed_start && span.0 == chroma.0 && chroma.0 != vhash.0)
+        || (confirmed_end && span.1 == chroma.1 && chroma.1 != vhash.1)
+}
+
 /// Where audio and vhash disagree on a boundary by more than
 /// [`CHAPTER_ARBITRATION_MIN_SPLIT_SECS`], a chapter boundary within
 /// [`CHAPTER_CONFIRM_SECS`] of exactly one of them picks that one. Scrubs
@@ -3327,6 +3353,27 @@ mod chapter_evidence_tests {
         );
         assert_eq!(span, (177.3, 189.6));
         assert!(start && end);
+    }
+
+    /// One-Punch Man 3x12: audio starts the opening at 101.1, video at 96.6
+    /// (two partners share the last 5 s of the cold open), the Opening
+    /// chapter at 100. The chapter rules the video start out, so the
+    /// video-only candidate must not merge it back in.
+    #[test]
+    fn one_punch_man_s3e12_chapter_overrules_the_video_start() {
+        let chroma = (101.06, 190.79);
+        let vhash = (96.6, 191.27);
+        let chapter = Some((100.0, 189.0));
+        let (span, start, _) = arbitrate_with_chapter((96.6, 191.27), chroma, vhash, chapter);
+        assert_eq!(span.0, 101.06);
+        assert!(start);
+        assert!(chapter_overrules_vhash(chroma, vhash, chapter));
+        // Scrubs: the chapter sides with video, which stays.
+        assert!(!chapter_overrules_vhash(
+            (184.5, 197.7),
+            (177.3, 189.6),
+            Some((177.051, 189.021))
+        ));
     }
 
     /// Rick and Morty 9x07: chroma and vhash agree on 92.1/92.9–123.3/124.2,
