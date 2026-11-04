@@ -1004,17 +1004,21 @@ where
     Ok(id)
 }
 
+/// Available files of a season, in episode order: season skip detection reads
+/// them in this order and its cross-episode tie-breaks depend on it.
 pub async fn list_file_ids_by_season<'e, E>(exec: E, season_id: Uuid) -> Result<Vec<Uuid>>
 where
     E: Executor<'e, Database = Postgres>,
 {
     let rows = sqlx::query_scalar!(
         r#"
-        SELECT DISTINCT tef.id
+        SELECT tef.id
         FROM tv_episode_files tef
         JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id
         JOIN tv_episodes e ON e.id = tefe.episode_id
         WHERE e.season_id = $1 AND tef.available = TRUE
+        GROUP BY tef.id
+        ORDER BY MIN(e.episode_sort_order), tef.id
         "#,
         season_id,
     )

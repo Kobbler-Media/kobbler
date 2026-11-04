@@ -150,6 +150,7 @@ mod session_restore_test;
 mod sessions_test;
 mod sidecar_pipeline_test;
 mod skip_detect_gate_test;
+mod skip_detect_order_test;
 mod skip_detect_test;
 mod smoke_test;
 mod source_failures_test;

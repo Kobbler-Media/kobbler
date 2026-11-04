@@ -1102,6 +1102,7 @@ pub async fn season_episode_files(
         LEFT JOIN tv_episode_files f ON f.id = j.episode_file_id
         WHERE e.season_id = (SELECT season_id FROM tv_episodes WHERE id = $1)
         GROUP BY e.id
+        ORDER BY e.episode_sort_order, e.id
         "#,
         episode_id,
     )
