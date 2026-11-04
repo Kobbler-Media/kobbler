@@ -980,6 +980,21 @@ async fn load_chapter_segments_movie(
         .collect()
 }
 
+/// Chapter-derived segments that still get a row: those of a type detection
+/// found nothing for. A detected segment supersedes the chapter of its type —
+/// the upsert loop deletes that chapter row — and writing it back afterwards
+/// left two segments of one type, which the player shows as two markers.
+fn chapter_segments_to_persist<'a>(
+    detected: &'a [DetectedSegment],
+    chapter_segs: &'a [crate::ffmpeg::persist::ChapterSkipSegment],
+) -> impl Iterator<Item = &'a crate::ffmpeg::persist::ChapterSkipSegment> + 'a {
+    chapter_segs.iter().filter(move |cs| {
+        !detected
+            .iter()
+            .any(|d| d.source != "chapter" && d.segment_type.as_str() == cs.segment_type)
+    })
+}
+
 async fn persist_episode_segments(
     pool: &PgPool,
     file_id: Uuid,
@@ -1038,7 +1053,7 @@ async fn persist_episode_segments(
     }
 
     let mut chapter_saved = 0usize;
-    for cs in chapter_segs {
+    for cs in chapter_segments_to_persist(segments, chapter_segs) {
         if let Err(e) = episode_skip_segments::upsert(
             pool,
             file_id,
@@ -1108,7 +1123,7 @@ async fn persist_movie_segments(
     }
 
     let mut chapter_saved = 0usize;
-    for cs in chapter_segs {
+    for cs in chapter_segments_to_persist(segments, chapter_segs) {
         if let Err(e) = movie_skip_segments::upsert(
             pool,
             file_id,
@@ -1313,5 +1328,40 @@ mod tests {
         m.artefacts.chromaprint = None;
         write_tv_file_manifest(&storage, file_id, &m);
         assert!(!sibling_ready(&storage, file_id, true));
+    }
+
+    /// VisionQuest 1x01 as the player received it: the file's "Credits"
+    /// chapter (2922.3–3201.5) beside the detected roll (3024.9–3201.5). The
+    /// detected row deleted the chapter row and the chapter pass wrote it
+    /// straight back, so the player drew two credits markers; 456 files in the
+    /// library carried a chapter intro beside a detected one the same way.
+    #[test]
+    fn detected_segment_supersedes_the_chapter_of_its_type() {
+        use crate::ffmpeg::persist::ChapterSkipSegment;
+        use crate::skip_detect::SegmentType;
+        let detected = [DetectedSegment {
+            segment_type: SegmentType::Credits,
+            start_seconds: 3024.92,
+            end_seconds: 3201.5,
+            confidence: 0.95,
+            veto_score: 0.0,
+            source: "audio+dhash+visual+text".into(),
+        }];
+        let chapters = [
+            ChapterSkipSegment {
+                segment_type: "credits".into(),
+                start_seconds: 2922.333,
+                end_seconds: 3201.5,
+            },
+            ChapterSkipSegment {
+                segment_type: "recap".into(),
+                start_seconds: 1.0,
+                end_seconds: 102.8,
+            },
+        ];
+        let kept: Vec<&str> = chapter_segments_to_persist(&detected, &chapters)
+            .map(|c| c.segment_type.as_str())
+            .collect();
+        assert_eq!(kept, vec!["recap"]);
     }
 }
