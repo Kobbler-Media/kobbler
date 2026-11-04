@@ -73,6 +73,42 @@ pub fn score_candidates_with_rejections(candidates: Vec<Candidate>) -> FusionOut
         }
     }
 
+    // One intro per file. The player has a single "Skip intro"; a second one
+    // is a recurring bumper that vhash matched across the season (Death
+    // Note's act-break eyecatch, a network ident), never a second opening.
+    let best_intro = segments
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.segment_type == SegmentType::Intro)
+        .max_by(|(ia, a), (ib, b)| {
+            a.effective_confidence()
+                .total_cmp(&b.effective_confidence())
+                .then_with(|| b.start_seconds.total_cmp(&a.start_seconds))
+                .then_with(|| ib.cmp(ia))
+        })
+        .map(|(i, _)| i);
+    if let Some(best) = best_intro {
+        let mut kept = Vec::with_capacity(segments.len());
+        for (i, seg) in segments.into_iter().enumerate() {
+            if seg.segment_type != SegmentType::Intro || i == best {
+                kept.push(seg);
+                continue;
+            }
+            rejected.push(RejectedCandidate {
+                candidate: Candidate {
+                    segment_type: seg.segment_type,
+                    start_seconds: seg.start_seconds,
+                    end_seconds: seg.end_seconds,
+                    signals: CandidateSignals::default(),
+                    file_duration: None,
+                },
+                reason: "second intro (a stronger intro was kept)".into(),
+                scored: Some(seg),
+            });
+        }
+        segments = kept;
+    }
+
     // Remove orphaned post-credits scenes (no surviving credits segment).
     // Demote them to rejected so the audit trail still shows they existed.
     let has_credits = segments
@@ -966,5 +1002,52 @@ mod tests {
         }];
         let results = score_candidates(candidates);
         assert_eq!(results.len(), 0, "Post-credits > 120s should be rejected");
+    }
+
+    /// Death Note 1x22: the 80s opening (audio + vhash) and the ~12s "How to
+    /// use it" eyecatch at the act break (vhash only) both scored as intros,
+    /// and the player offered "Skip intro" ten minutes in.
+    #[test]
+    fn death_note_s1e22_keeps_one_intro() {
+        let intro = |start: f64, end: f64, signals: CandidateSignals| Candidate {
+            segment_type: SegmentType::Intro,
+            start_seconds: start,
+            end_seconds: end,
+            file_duration: Some(1375.3),
+            signals,
+        };
+        let outcome = score_candidates_with_rejections(vec![
+            intro(
+                0.42,
+                79.4,
+                CandidateSignals {
+                    chromaprint_score: Some(0.99),
+                    dhash_score: Some(0.97),
+                    ..Default::default()
+                },
+            ),
+            intro(
+                596.9,
+                609.2,
+                CandidateSignals {
+                    dhash_score: Some(0.75),
+                    ..Default::default()
+                },
+            ),
+        ]);
+        let intros: Vec<(f64, f64)> = outcome
+            .segments
+            .iter()
+            .filter(|s| s.segment_type == SegmentType::Intro)
+            .map(|s| (s.start_seconds, s.end_seconds))
+            .collect();
+        assert_eq!(intros, vec![(0.42, 79.4)]);
+        assert!(
+            outcome
+                .rejected
+                .iter()
+                .any(|r| r.candidate.start_seconds == 596.9),
+            "the eyecatch stays in the audit trail"
+        );
     }
 }
