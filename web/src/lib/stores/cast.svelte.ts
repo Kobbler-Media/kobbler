@@ -131,8 +131,8 @@ export function endCastSession(): void {
 /**
  * Load media on the Cast receiver.
  */
-export function castLoadMedia(payload: InitSessionPayload): void {
-  loadMedia(payload);
+export function castLoadMedia(payload: InitSessionPayload, positionSeconds: number): void {
+  loadMedia(payload, positionSeconds);
 }
 
 /**

@@ -396,3 +396,24 @@ async fn playback_token_authenticates_iptv_direct_play_route() {
 
     assert_ne!(resp.status, StatusCode::UNAUTHORIZED);
 }
+
+/// The Cast receiver shows a cast book's cover, and a playback token is all it holds.
+#[tokio::test]
+async fn playback_token_fetches_a_book_cover() {
+    let server = TestServer::start_api_only().await;
+    let book_id = create_book(&server, "Treehouse").await;
+    upload_cover(&server, book_id, test_jpeg_image()).await;
+    let token = mint_playback_token(&server).await;
+    let path = format!("/api/v1/library/books/{book_id}/cover");
+
+    server
+        .api_client()
+        .get(&with_token(&path, &token))
+        .await
+        .assert_ok();
+    server
+        .api_client()
+        .get(&with_token(&path, "not-a-token"))
+        .await
+        .assert_status(StatusCode::UNAUTHORIZED);
+}

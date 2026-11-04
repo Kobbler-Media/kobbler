@@ -7,7 +7,6 @@ use axum::Json;
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use base64::Engine;
 use serde::Deserialize;
 use serde_json::json;
 use tokio_stream::StreamExt;
@@ -18,7 +17,7 @@ use crate::AppState;
 use crate::http;
 use crate::repositories::{audiobook_files, user_voice_presets};
 use crate::routes::AuthUser;
-use crate::tts::{self, TtsBackend, TtsParams};
+use crate::tts::{self, TtsBackend, TtsParams, timeline};
 
 /// Default TTS service URL when none is configured (Docker compose service name).
 const DEFAULT_TTS_URL: &str = "http://tts:8880";
@@ -183,25 +182,22 @@ pub struct SynthesizeRequest {
     pub speed: Option<f64>,
 }
 
-/// POST /api/v1/admin/tts/synthesize
-///
-/// Splits text into sentences, synthesizes each via the TTS service,
-/// and streams results back as NDJSON with per-sentence audio chunks.
-///
-/// Parameter fallback chain: request -> active preset -> admin default -> hardcoded default.
-pub async fn synthesize(
-    State(state): State<AppState>,
-    auth: AuthUser,
-    Json(req): Json<SynthesizeRequest>,
-) -> impl IntoResponse {
+/// The read a synthesize or cast request asks for, with voice and parameters
+/// settled. Parameter fallback chain: request -> active preset -> admin default ->
+/// hardcoded default.
+pub(super) async fn plan_synthesis(
+    state: &AppState,
+    user_id: Uuid,
+    req: SynthesizeRequest,
+) -> Result<timeline::Plan, Response> {
     let config = state.runtime_config.get().await;
 
     if !config.tts_enabled {
-        return (
+        return Err((
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({"error": "TTS is not enabled"})),
         )
-            .into_response();
+            .into_response());
     }
 
     // effective_tts_url redirects to koblem when routing is enabled.
@@ -211,11 +207,11 @@ pub async fn synthesize(
         .unwrap_or_else(|| DEFAULT_TTS_URL.to_string());
 
     if req.text.is_empty() || req.text.len() > 50000 {
-        return (
+        return Err((
             StatusCode::BAD_REQUEST,
             Json(json!({"error": "Text must be 1-50000 characters"})),
         )
-            .into_response();
+            .into_response());
     }
 
     // Reader text arrives carrying the EPUB source file's own line wrapping —
@@ -226,8 +222,7 @@ pub async fn synthesize(
     let text = tts::normalize_for_synthesis(&req.text);
 
     // Load user's active preset for fallback values
-    let active_preset = match user_voice_presets::get_active_preset(&state.pool, auth.user_id).await
-    {
+    let active_preset = match user_voice_presets::get_active_preset(&state.pool, user_id).await {
         Ok(p) => p,
         Err(e) => {
             error!(error = %e, "Failed to load active voice preset");
@@ -299,7 +294,7 @@ pub async fn synthesize(
     let voice_preset = if let Some(uuid_str) = voice.strip_prefix("preset-")
         && let Ok(preset_id) = Uuid::parse_str(uuid_str)
     {
-        match user_voice_presets::get_preset(&state.pool, preset_id, auth.user_id).await {
+        match user_voice_presets::get_preset(&state.pool, preset_id, user_id).await {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, preset_id = %preset_id, "Failed to load voice preset");
@@ -315,7 +310,7 @@ pub async fn synthesize(
     {
         let clip_path = std::path::PathBuf::from(&*state.config.storage_root)
             .join("voices")
-            .join(auth.user_id.to_string())
+            .join(user_id.to_string())
             .join(format!("{}.wav", preset.id));
 
         let voice_name = format!("preset-{}", preset.id);
@@ -329,11 +324,11 @@ pub async fn synthesize(
         .await
         {
             error!(error = %e, "Failed to ensure voice is registered");
-            return (
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({"error": "Failed to register voice clip with TTS service"})),
             )
-                .into_response();
+                .into_response());
         }
     }
 
@@ -387,13 +382,12 @@ pub async fn synthesize(
         voice
     };
 
-    // Alignment-capable engine (breeze) + koblem-with-api-key →
-    // paragraph-streaming path with word-level forced alignment, routed to that
-    // engine's aligned-generate endpoint. Falls through to the per-sentence path
-    // on any other backend (chatterbox/kokoro/openai) or when koblem isn't
-    // configured. When koblem is unset, kobbler talks to `tts_service_url`
-    // directly so turning koblem off doesn't break TTS — it just loses
-    // streaming + FA.
+    // Alignment-capable engine (breeze) + koblem-with-api-key → paragraph
+    // streaming with word-level forced alignment, routed to that engine's
+    // aligned-generate endpoint. Any other backend (chatterbox/kokoro/openai), or
+    // koblem unconfigured, renders per sentence: kobbler then talks to
+    // `tts_service_url` directly so turning koblem off doesn't break TTS — it
+    // just loses streaming + FA.
     let use_paragraph_stream = backend.supports_alignment()
         && config
             .koblem_service_url
@@ -404,234 +398,101 @@ pub async fn synthesize(
             .as_deref()
             .is_some_and(|s| !s.is_empty());
 
-    if use_paragraph_stream {
-        let koblem_url = config.koblem_service_url.clone().unwrap();
-        let koblem_api_key = config.koblem_api_key.clone().unwrap();
-
+    let route = if use_paragraph_stream {
         if text.is_empty() {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "No text to synthesize"})),
-            )
-                .into_response();
+            return Err(bad_request("No text to synthesize"));
         }
-
         // Clients send whatever they have — a page, a chapter — and the
         // chunking policy lives here, in one place, rather than being guessed
         // at differently by each of them. Splitting was once done by the
         // caller, per sentence, which is what made a truncated paragraph
         // desync every later highlight; these passages are sentence-aligned
         // and carry their own offsets, so a failure costs one passage.
-        return paragraph_stream_response(text, koblem_url, koblem_api_key, voice, params);
-    }
-
-    let sentences = tts::split_sentences(&text);
-
-    if sentences.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "No sentences found in text"})),
-        )
-            .into_response();
-    }
-
-    let (tx, rx) = tokio::sync::mpsc::channel::<String>(32);
-    let gpu_lock = state.gpu_lock.clone();
-    gpu_lock.set_enabled(config.gpu_preempt_tts);
-    gpu_lock.set_service_urls(
-        config.stt_service_url.clone(),
-        config.tts_service_url.clone(),
-        config.vision_service_url.clone(),
-    );
-
-    tokio::spawn(async move {
-        for (idx, sentence) in sentences.iter().enumerate() {
-            // Check if client disconnected before starting expensive synthesis
-            if tx.is_closed() {
-                break;
-            }
-            let _gpu_guard = gpu_lock.acquire_for_tts().await;
-            if tx.is_closed() {
-                break;
-            }
-            // Only matters when TTS is routed through koblem: tier-2 keeps
-            // mp3, the keyless tier-1 fallback is clamped to wav.
-            let endpoint = tts::SpeechEndpoint::resolve(via_koblem, koblem_api_key.as_deref());
-            match tts::synthesize_sentence(
-                &service_url,
-                backend,
-                endpoint,
-                sentence,
-                &voice,
-                &params,
-            )
-            .await
-            {
-                Ok(audio) => {
-                    let audio_b64 = base64::engine::general_purpose::STANDARD.encode(&audio.bytes);
-
-                    let line = serde_json::to_string(&json!({
-                        "type": "sentence",
-                        "index": idx,
-                        "text": sentence,
-                        "audio_b64": audio_b64,
-                        // Per sentence because each one is its own render, and
-                        // the client must label what it plays rather than what
-                        // it asked for.
-                        "speed": audio.speed_applied,
-                    }))
-                    .unwrap_or_default();
-
-                    if tx.send(format!("{line}\n")).await.is_err() {
-                        break; // Client disconnected
-                    }
-                }
-                Err(e) => {
-                    error!(idx, error = %e, "TTS sentence synthesis failed");
-                    continue;
-                }
-            }
+        timeline::Route::Passages {
+            passages: tts::split_passages(&text),
+            koblem_url: config.koblem_service_url.clone().unwrap_or_default(),
+            koblem_api_key: koblem_api_key.unwrap_or_default(),
         }
+    } else {
+        let sentences = tts::split_sentences(&text);
+        if sentences.is_empty() {
+            return Err(bad_request("No sentences found in text"));
+        }
+        let gpu_lock = state.gpu_lock.clone();
+        gpu_lock.set_enabled(config.gpu_preempt_tts);
+        gpu_lock.set_service_urls(
+            config.stt_service_url.clone(),
+            config.tts_service_url.clone(),
+            config.vision_service_url.clone(),
+        );
+        timeline::Route::Sentences {
+            sentences,
+            service_url,
+            backend,
+            via_koblem,
+            koblem_api_key,
+            gpu_lock,
+        }
+    };
 
-        let done = serde_json::to_string(&json!({
-            "type": "done",
-        }))
-        .unwrap_or_default();
-        let _ = tx.send(format!("{done}\n")).await;
-    });
-
-    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-    axum::response::Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "application/x-ndjson")
-        .header("x-content-type-options", "nosniff")
-        .header("x-accel-buffering", "no")
-        .body(axum::body::Body::from_stream(
-            stream.map(Ok::<_, std::convert::Infallible>),
-        ))
-        .unwrap()
-        .into_response()
+    Ok(timeline::Plan {
+        voice,
+        params,
+        route,
+    })
 }
 
-/// Build the read-along NDJSON response for a whole passage.
+fn bad_request(message: &str) -> Response {
+    (StatusCode::BAD_REQUEST, Json(json!({"error": message}))).into_response()
+}
+
+/// POST /api/v1/admin/tts/synthesize
 ///
-/// The text is cut into request-sized passages by [`tts::split_passages`] and
-/// each one is synthesised in turn, sequentially — the audio has to arrive in
-/// order, and the GPU serialises the renders anyway. Sizes ramp: a short first
-/// request so the aligner has something to publish almost immediately, then
-/// long ones, which by the time the listener reaches them have had a whole
-/// passage's playback to be aligned in.
-///
-/// Each passage is one `paragraph_index`, and the offsets on `paragraph_start`
-/// globalise it: `word_offset` is where its words begin in the whole text and
-/// `audio_offset_ms` is where its audio begins in the whole read. Word indices
-/// inside `alignment_*` and `chunk` stay LOCAL to their passage — clients add
-/// the offset.
-///
-/// Envelope (shared with koblem's playground via the koblibs `FaEvent` shape):
-/// - `{"type":"paragraph_start","index":0,"text":"...","word_offset":0,"audio_offset_ms":0,"sample_rate":24000,"speed":1.0}`
-/// - `{"type":"audio","paragraph_index":0,"pcm_b64":"..."}` (24 kHz s16le mono)
-/// - `{"type":"chunk","paragraph_index":0,"index":0,"chunks_total":4,"word_offset":0,"word_count":31,"audio_offset_ms":0,"text":"..."}`
-/// - `{"type":"alignment_partial","paragraph_index":0,"audio_seen_ms":M,"words":[...]}`
-/// - `{"type":"alignment_final","paragraph_index":0,"audio_total_ms":M,"words":[...]}`
-/// - `{"type":"done"}`
-///
-/// `chunk` is the engine's own sentence boundary, stamped with where it starts.
-/// It needs no aligner, so it arrives while the first alignment is still being
-/// computed and keeps arriving when alignment is off entirely — it is what lets
-/// a reader highlight a block and turn the page without word timings.
-///
-/// `paragraph_start` is emitted once the upstream response lands rather than
-/// immediately, because `speed` is on it: an engine that refuses the requested
-/// rate renders at 1.0 instead, and the client must label the audio it is about
-/// to receive rather than the rate it asked for. Both the audio and the word
-/// timings are already in that rendered timebase — clients must NOT rescale.
-///
-/// ⚠️ An `alignment_partial` carries only the PREFIX the voice has reached. The
-/// prefix itself is monotonic (the engine clamps it to a high-water mark), but
-/// a word's TIMINGS are re-estimated on every pass and do change. `word_index`
-/// is absolute within its paragraph and stable, so clients overwrite by
-/// `word_index` — never append, which would duplicate the passage.
-fn paragraph_stream_response(
-    text: String,
-    koblem_url: String,
-    koblem_api_key: String,
-    voice: String,
-    params: TtsParams,
+/// Streams the read back as NDJSON with its audio inline — see
+/// [`timeline`] for the envelope.
+pub async fn synthesize(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(req): Json<SynthesizeRequest>,
 ) -> Response {
+    let plan = match plan_synthesis(&state, auth.user_id, req).await {
+        Ok(plan) => plan,
+        Err(response) => return response,
+    };
     let (tx, rx) = tokio::sync::mpsc::channel::<String>(32);
+    tokio::spawn(async move { timeline::run(plan, &mut NdjsonSink(tx)).await });
+    ndjson(tokio_stream::wrappers::ReceiverStream::new(rx).map(Ok::<_, std::convert::Infallible>))
+}
 
-    tokio::spawn(async move {
-        let passages = tts::split_passages(&text);
-        let mut ctx = PassageCtx::default();
-        // 24 kHz s16le mono: 48 bytes per millisecond. Counted rather than
-        // taken from the aligner's totals because the offsets have to be right
-        // with the aligner off.
-        let mut pcm_bytes: u64 = 0;
+struct NdjsonSink(tokio::sync::mpsc::Sender<String>);
 
-        'passages: for (index, passage) in passages.iter().enumerate() {
-            ctx.index = index as u32;
-            ctx.audio_offset_ms = (pcm_bytes / 48) as u32;
-            let stream = tts::synthesize_paragraph_stream(
-                &koblem_url,
-                &koblem_api_key,
-                passage,
-                &voice,
-                &params,
-            );
-            tokio::pin!(stream);
+impl timeline::Sink for NdjsonSink {
+    fn alive(&self) -> bool {
+        !self.0.is_closed()
+    }
 
-            while let Some(event) = stream.next().await {
-                if tx.is_closed() {
-                    break 'passages;
-                }
-                // The read is a continuous timeline even though it arrives as
-                // several renders, so the audio already sent is what the next
-                // passage's offsets are measured from.
-                if let Ok(tts::TtsStreamEvent::Audio { ref pcm }) = event {
-                    pcm_bytes += pcm.len() as u64;
-                }
-                let (value, last) = match passage_line(passage, &ctx, event) {
-                    PassageLine::Skip => continue,
-                    PassageLine::Send(value) => (value, false),
-                    PassageLine::Fail(value) => (value, true),
-                };
-                let line = serde_json::to_string(&value).unwrap_or_default();
-                if tx.send(format!("{line}\n")).await.is_err() || last {
-                    break 'passages;
-                }
-            }
+    async fn ready(&mut self) -> bool {
+        self.alive()
+    }
 
-            ctx.word_offset += tts::word_count(passage) as u32;
-        }
+    async fn emit(&mut self, item: timeline::Item) -> bool {
+        let line = serde_json::to_string(&item.into_wire()).unwrap_or_default();
+        self.0.send(format!("{line}\n")).await.is_ok()
+    }
+}
 
-        let done = serde_json::to_string(&json!({"type": "done"})).unwrap_or_default();
-        let _ = tx.send(format!("{done}\n")).await;
-    });
-
-    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
-    axum::response::Response::builder()
+pub(super) fn ndjson<S, B>(stream: S) -> Response
+where
+    S: futures_util::Stream<Item = Result<B, std::convert::Infallible>> + Send + 'static,
+    B: Into<axum::body::Bytes> + 'static,
+{
+    Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/x-ndjson")
         .header("x-content-type-options", "nosniff")
         .header("x-accel-buffering", "no")
-        .body(axum::body::Body::from_stream(
-            stream.map(Ok::<_, std::convert::Infallible>),
-        ))
+        .body(axum::body::Body::from_stream(stream))
         .unwrap()
-        .into_response()
-}
-
-/// Where the passage being streamed sits in the whole read. The read is one
-/// continuous timeline even though it arrives as several renders, and these are
-/// what make a passage's local word indices and timings addressable in it.
-#[derive(Debug, Default, Clone, Copy)]
-struct PassageCtx {
-    index: u32,
-    /// Words in every passage before this one.
-    word_offset: u32,
-    /// Milliseconds of audio emitted before this passage started.
-    audio_offset_ms: u32,
 }
 
 // =============================================================================
@@ -1902,140 +1763,6 @@ pub async fn create_preset_clip_from_audiobook(
     .await
 }
 
-enum PassageLine {
-    /// Nothing the client needs to hear about.
-    Skip,
-    Send(serde_json::Value),
-    /// Sent, and then the passage is over.
-    Fail(serde_json::Value),
-}
-
-fn passage_line(
-    text: &str,
-    ctx: &PassageCtx,
-    event: Result<tts::TtsStreamEvent, tts::TtsError>,
-) -> PassageLine {
-    match event {
-        Ok(tts::TtsStreamEvent::Started { speed_applied }) => PassageLine::Send(json!({
-            "type": "paragraph_start",
-            "index": ctx.index,
-            "text": text,
-            "word_offset": ctx.word_offset,
-            "audio_offset_ms": ctx.audio_offset_ms,
-            "sample_rate": 24_000,
-            "speed": speed_applied,
-        })),
-        Ok(tts::TtsStreamEvent::Audio { pcm }) => PassageLine::Send(json!({
-            "type": "audio",
-            "paragraph_index": ctx.index,
-            "pcm_b64": base64::engine::general_purpose::STANDARD.encode(&pcm),
-        })),
-        // Sentence boundary the engine reached, with no aligner involved. Its
-        // offsets are globalised here — unlike the word indices on an
-        // `alignment_*`, which stay local to the paragraph — because it is the
-        // event a client without alignment steers the whole read by, and making
-        // it self-contained keeps that path from having to stitch anything.
-        Ok(tts::TtsStreamEvent::Chunk {
-            index,
-            chunks_total,
-            word_offset,
-            word_count,
-            audio_offset_ms,
-            text: chunk_text,
-        }) => PassageLine::Send(json!({
-            "type": "chunk",
-            "paragraph_index": ctx.index,
-            "index": index,
-            "chunks_total": chunks_total,
-            "word_offset": ctx.word_offset + word_offset,
-            "word_count": word_count,
-            "audio_offset_ms": ctx.audio_offset_ms + audio_offset_ms,
-            "text": chunk_text,
-        })),
-        Ok(tts::TtsStreamEvent::AlignmentPartial {
-            audio_seen_ms,
-            words,
-        }) => PassageLine::Send(json!({
-            "type": "alignment_partial",
-            "paragraph_index": ctx.index,
-            "audio_seen_ms": audio_seen_ms,
-            "words": words,
-        })),
-        Ok(tts::TtsStreamEvent::AlignmentFinal {
-            audio_total_ms,
-            words,
-        }) => PassageLine::Send(json!({
-            "type": "alignment_final",
-            "paragraph_index": ctx.index,
-            "audio_total_ms": audio_total_ms,
-            "words": words,
-        })),
-        // Abandoned part way. The stream closes cleanly with real audio behind
-        // it, so silence here reads as a finished chapter and the reader turns
-        // the page on the half it never heard. Reported before `truncated`
-        // because a cancelled render is usually truncated as well, and the
-        // cancel is the thing that explains it.
-        //
-        // Fatal to the read, not just to this passage: whatever abandoned it —
-        // a lost client, a pre-empted GPU — is still true for the passage after
-        // it, and continuing would paper a gap over with audio that carries on
-        // as if nothing was missed.
-        Ok(tts::TtsStreamEvent::Done {
-            cancelled: true, ..
-        }) => {
-            error!("TTS abandoned the passage part way");
-            PassageLine::Fail(json!({
-                "type": "error",
-                "paragraph_index": ctx.index,
-                "message": "TTS stopped part way through the passage",
-            }))
-        }
-        Ok(tts::TtsStreamEvent::Done {
-            truncated: false, ..
-        }) => PassageLine::Skip,
-        Ok(tts::TtsStreamEvent::Done {
-            truncated: true, ..
-        }) => {
-            // A short mid-sentence clip that plays fine — the reader would just stop
-            // early with no explanation. Not fatal: the audio already streamed is
-            // still worth playing out.
-            error!("TTS truncated the passage; long-form should prevent this");
-            PassageLine::Send(json!({
-                "type": "error",
-                "paragraph_index": ctx.index,
-                "message": "TTS stopped early — the passage was truncated mid-sentence",
-            }))
-        }
-        // Every error ends the read, not just the passage it landed on. A
-        // severed body, a refused auth and an unreachable service alike mean no
-        // further audio is coming, and the passage after this one would be
-        // asking the same service the same question. A client told otherwise
-        // reads the failure as a gap and moves on to the next chapter — which,
-        // with TTS down, walks the whole book at network speed.
-        Err(e) => {
-            let message = match &e {
-                tts::TtsError::ServiceError {
-                    status: 401 | 403, ..
-                } => {
-                    error!("koblem rejected the TTS stream auth — check koblem_api_key");
-                    "koblem rejected the request — verify koblem_api_key in Search settings"
-                        .to_string()
-                }
-                _ => {
-                    error!(error = %e, "TTS passage stream failed");
-                    e.to_string()
-                }
-            };
-            PassageLine::Fail(json!({
-                "type": "error",
-                "paragraph_index": ctx.index,
-                "message": message,
-                "fatal": true,
-            }))
-        }
-    }
-}
-
 fn sanitize_for_filename(s: &str) -> String {
     s.chars()
         .map(|c| match c {
@@ -2043,138 +1770,4 @@ fn sanitize_for_filename(s: &str) -> String {
             _ => c,
         })
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn fatal_of(line: &PassageLine) -> Option<bool> {
-        match line {
-            PassageLine::Skip => None,
-            PassageLine::Send(v) | PassageLine::Fail(v) => Some(v["fatal"] == json!(true)),
-        }
-    }
-
-    #[test]
-    fn a_broken_upstream_ends_the_passage() {
-        for e in [
-            tts::TtsError::Unavailable("no koblem".into()),
-            tts::TtsError::ServiceError {
-                status: 500,
-                body: String::new(),
-            },
-            tts::TtsError::ServiceError {
-                status: 401,
-                body: String::new(),
-            },
-        ] {
-            let line = passage_line("hello", &PassageCtx::default(), Err(e));
-            assert!(
-                matches!(line, PassageLine::Fail(_)),
-                "a dead upstream was reported as something to carry on from",
-            );
-            assert_eq!(fatal_of(&line), Some(true));
-        }
-    }
-
-    #[test]
-    fn a_truncated_passage_is_still_worth_playing_out() {
-        let line = passage_line(
-            "hello",
-            &PassageCtx::default(),
-            Ok(tts::TtsStreamEvent::Done {
-                truncated: true,
-                cancelled: false,
-            }),
-        );
-        assert!(matches!(line, PassageLine::Send(_)));
-        assert_eq!(fatal_of(&line), Some(false));
-    }
-
-    /// The failure this exists for: an abandoned render closes its stream the
-    /// way a finished one does, so saying nothing lets the reader auto-advance
-    /// past the half of the chapter it never heard. It ends the read as well —
-    /// whatever abandoned this passage is still true for the next one.
-    #[test]
-    fn an_abandoned_passage_says_so_and_ends_the_read() {
-        let line = passage_line(
-            "hello",
-            &PassageCtx::default(),
-            Ok(tts::TtsStreamEvent::Done {
-                truncated: false,
-                cancelled: true,
-            }),
-        );
-        assert!(matches!(line, PassageLine::Fail(_)));
-        assert_eq!(fatal_of(&line), Some(false));
-    }
-
-    /// The offsets are the only thing making several renders into one read:
-    /// a client adds them to the paragraph-local indices the aligner reports.
-    #[test]
-    fn a_later_passage_reports_where_it_sits_in_the_read() {
-        let ctx = PassageCtx {
-            index: 2,
-            word_offset: 520,
-            audio_offset_ms: 187_000,
-        };
-        let line = passage_line(
-            "the third passage",
-            &ctx,
-            Ok(tts::TtsStreamEvent::Started { speed_applied: 1.0 }),
-        );
-        let PassageLine::Send(v) = line else {
-            panic!("paragraph_start was not sent");
-        };
-        assert_eq!(v["index"], json!(2));
-        assert_eq!(v["word_offset"], json!(520));
-        assert_eq!(v["audio_offset_ms"], json!(187_000));
-        assert_eq!(v["text"], json!("the third passage"));
-    }
-
-    /// A chunk anchor is what a reader without alignment steers by, so it is
-    /// globalised where the alignment word indices are not.
-    #[test]
-    fn a_chunk_anchor_is_globalised_against_the_whole_read() {
-        let ctx = PassageCtx {
-            index: 1,
-            word_offset: 120,
-            audio_offset_ms: 44_000,
-        };
-        let line = passage_line(
-            "unused",
-            &ctx,
-            Ok(tts::TtsStreamEvent::Chunk {
-                index: 3,
-                chunks_total: 5,
-                word_offset: 90,
-                word_count: 31,
-                audio_offset_ms: 25_500,
-                text: "A sentence or three.".to_string(),
-            }),
-        );
-        let PassageLine::Send(v) = line else {
-            panic!("chunk was not sent");
-        };
-        assert_eq!(v["type"], json!("chunk"));
-        assert_eq!(v["paragraph_index"], json!(1));
-        assert_eq!(v["word_offset"], json!(210));
-        assert_eq!(v["audio_offset_ms"], json!(69_500));
-        // Local to the chunk, not the read — a count, not a position.
-        assert_eq!(v["word_count"], json!(31));
-    }
-
-    #[test]
-    fn a_clean_finish_says_nothing() {
-        let line = passage_line(
-            "hello",
-            &PassageCtx::default(),
-            Ok(tts::TtsStreamEvent::Done {
-                truncated: false,
-                cancelled: false,
-            }),
-        );
-        assert!(matches!(line, PassageLine::Skip));
-    }
 }

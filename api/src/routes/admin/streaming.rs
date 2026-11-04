@@ -312,6 +312,13 @@ pub struct SwitchAudioRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct SubtitleQuery {
+    /// Seconds into the title the player's timeline begins at.
+    #[serde(default)]
+    pub offset: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct StreamPlaylistQuery {
     /// Seek generation cache buster.
     #[serde(default)]
@@ -636,7 +643,10 @@ pub(crate) async fn open_file_session(
             video_codec: video_codec.clone(),
             target_encoder,
             burn_in_subtitle,
-            scale: None,
+            scale: primary_scale(
+                (file_meta.video_width, file_meta.video_height),
+                req.capabilities.max_height,
+            ),
             target_bitrate_kbps: req.max_bitrate_kbps,
             duration_seconds: duration,
             initial_generation: 0,
@@ -895,8 +905,12 @@ pub(crate) async fn open_file_session(
 
     // Compute ABR variants for VideoTranscode sessions with enough resolution
     let variants = if decision.method == PlaybackMethod::VideoTranscode {
-        let mut variant_specs =
-            variant::compute_variants(file_meta.video_width, file_meta.video_height);
+        let (out_w, out_h) = variant::output_resolution(
+            file_meta.video_width,
+            file_meta.video_height,
+            req.capabilities.max_height,
+        );
+        let mut variant_specs = variant::compute_variants(out_w, out_h);
         if let Some(max_br) = req.max_bitrate_kbps {
             variant_specs = variant::filter_by_max_bitrate(variant_specs, max_br);
         }
@@ -952,6 +966,7 @@ pub(crate) async fn open_file_session(
         provider_id: None,
         variants,
         max_bitrate_kbps: req.max_bitrate_kbps,
+        max_height: req.capabilities.max_height,
         keyframes,
         error: None,
         pending_segment: None,
@@ -1451,7 +1466,8 @@ pub async fn master_playlist(
     if session.is_abr() {
         // ABR: list primary (high quality) first, then lower variants.
         // hls.js picks based on bandwidth — order determines tie-breaking.
-        let primary = variant::primary_variant_spec(src_w, src_h);
+        let (out_w, out_h) = variant::output_resolution(src_w, src_h, session.max_height);
+        let primary = variant::primary_variant_spec(out_w, out_h);
         // When max_bitrate_kbps is set, the primary is bitrate-capped —
         // advertise the capped bandwidth so hls.js makes correct decisions.
         let primary_bw = if let Some(max_br) = session.max_bitrate_kbps {
@@ -3679,7 +3695,10 @@ async fn start_ffmpeg_for_session(
     let (scale, target_bitrate_kbps) = match variant_spec {
         Some(spec) => (Some((spec.width, spec.height)), spec.target_bitrate_kbps),
         // Primary stream: apply session's max_bitrate_kbps if set
-        None => (None, session.max_bitrate_kbps),
+        None => (
+            primary_scale(session.source_resolution, session.max_height),
+            session.max_bitrate_kbps,
+        ),
     };
 
     let args = TranscodeArgs {
@@ -3704,6 +3723,11 @@ async fn start_ffmpeg_for_session(
     };
 
     transcode::TranscodeProcess::start(args).await
+}
+
+fn primary_scale((w, h): (u32, u32), max_height: Option<u32>) -> Option<(u32, u32)> {
+    let out = variant::output_resolution(w, h, max_height);
+    (out != (w, h)).then_some(out)
 }
 
 /// Lazy-start FFmpeg for an ABR variant if not already running.
@@ -3972,6 +3996,7 @@ async fn serve_range(
 pub async fn serve_subtitle(
     State(state): State<AppState>,
     Path((session_id, track_filename)): Path<(String, String)>,
+    axum::extract::Query(query): axum::extract::Query<SubtitleQuery>,
 ) -> impl IntoResponse {
     let session_id = match Uuid::parse_str(&session_id) {
         Ok(id) => id,
@@ -4058,13 +4083,18 @@ pub async fn serve_subtitle(
 
     // Determine if we need VTT conversion
     let requested_vtt = track_filename.ends_with(".vtt");
-    let is_srt = sub_file.codec == "srt";
+    let is_srt = matches!(sub_file.codec.as_str(), "srt" | "subrip" | "mov_text");
+    let is_vtt = matches!(sub_file.codec.as_str(), "webvtt" | "vtt");
 
-    if requested_vtt && is_srt {
-        // Convert SRT to VTT on the fly
+    if requested_vtt && (is_srt || is_vtt) {
         match tokio::fs::read_to_string(&serve_path).await {
-            Ok(srt_content) => {
-                let vtt_content = subtitle::srt_to_vtt(&srt_content);
+            Ok(content) => {
+                let vtt = if is_srt {
+                    subtitle::srt_to_vtt(&content)
+                } else {
+                    content
+                };
+                let vtt_content = subtitle::shift_vtt(&vtt, query.offset.unwrap_or(0.0));
                 Response::builder()
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, "text/vtt; charset=utf-8")

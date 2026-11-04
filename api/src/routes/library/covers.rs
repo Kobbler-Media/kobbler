@@ -33,11 +33,18 @@ pub async fn cover(
         .or_else(|| extract_bearer(&headers))
         .or_else(|| extract_session_cookie(&headers));
 
-    if let Some(token) = token {
-        if require_admin_token(&state, &token).await.is_none() {
-            return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    // A playback token too: the Cast receiver shows a cast book's cover and holds no login.
+    let allowed = match token {
+        Some(token) => {
+            require_admin_token(&state, &token).await.is_some()
+                || matches!(
+                    crate::repositories::playback_tokens::validate(&state.pool, &token).await,
+                    Ok(Some(_))
+                )
         }
-    } else {
+        None => false,
+    };
+    if !allowed {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
 

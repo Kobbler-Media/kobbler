@@ -148,6 +148,8 @@ pub struct ClientCapabilities {
     /// `None` is taken as yes; only a client that says no is sent a deinterlaced encode.
     #[serde(default)]
     pub supports_interlaced: Option<bool>,
+    #[serde(default)]
+    pub max_height: Option<u32>,
 }
 
 impl Default for ClientCapabilities {
@@ -158,6 +160,7 @@ impl Default for ClientCapabilities {
             audio_codecs: vec!["aac".to_string()],
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
+            max_height: None,
         }
     }
 }
@@ -195,7 +198,11 @@ pub fn decide(
     server_preferred_codecs: &[&str],
 ) -> PlaybackDecision {
     let deinterlace = file.interlaced && capabilities.supports_interlaced == Some(false);
+    let fits = capabilities
+        .max_height
+        .is_none_or(|max| file.video_height <= max);
     let video_supported = !deinterlace
+        && fits
         && capabilities
             .video_codecs
             .iter()
@@ -710,6 +717,7 @@ mod tests {
             audio_codecs: vec!["aac".to_string(), "opus".to_string(), "flac".to_string()],
             containers: vec!["mp4".to_string(), "webm".to_string()],
             supports_interlaced: None,
+            max_height: None,
         }
     }
 
@@ -719,6 +727,7 @@ mod tests {
             audio_codecs: vec!["aac".to_string()],
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
+            max_height: None,
         }
     }
 
@@ -728,6 +737,7 @@ mod tests {
             audio_codecs: vec!["aac".to_string(), "opus".to_string(), "flac".to_string()],
             containers: vec!["mp4".to_string(), "webm".to_string()],
             supports_interlaced: None,
+            max_height: None,
         }
     }
 
@@ -742,6 +752,7 @@ mod tests {
             audio_codecs: vec!["ac3".to_string(), "aac".to_string()],
             containers: vec!["mp4".to_string(), "mkv".to_string(), "ts".to_string()],
             supports_interlaced: Some(true),
+            max_height: None,
         };
         assert!(is_container_compatible("mpegts", &caps.containers));
         assert!(is_container_compatible("ts", &caps.containers));
@@ -805,6 +816,29 @@ mod tests {
                 decision.deinterlace,
                 method == PlaybackMethod::VideoTranscode,
                 "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_picture_taller_than_the_client_can_show_is_transcoded() {
+        let cases = [
+            (1080, None, PlaybackMethod::DirectPlay),
+            (1080, Some(1080), PlaybackMethod::DirectPlay),
+            (2160, Some(1080), PlaybackMethod::VideoTranscode),
+            (2160, None, PlaybackMethod::DirectPlay),
+        ];
+        for (height, max_height, method) in cases {
+            let (mut file, audio) = mp4_h264_aac();
+            file.video_height = height;
+            let caps = ClientCapabilities {
+                max_height,
+                ..safari_caps()
+            };
+            let decision = decide(&file, &audio, &[], &caps, ViewerPrefs::default(), H264_ONLY);
+            assert_eq!(
+                decision.method, method,
+                "height={height} max={max_height:?}"
             );
         }
     }
@@ -1670,6 +1704,7 @@ mod tests {
             audio_codecs: vec!["aac".to_string(), "eac3".to_string()],
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
+            max_height: None,
         };
         let d = decide(
             &file,
@@ -1709,6 +1744,7 @@ mod tests {
             audio_codecs: vec!["aac".to_string()],
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
+            max_height: None,
         };
         let d = decide(
             &file,
@@ -1759,6 +1795,7 @@ mod tests {
             audio_codecs: vec!["aac".to_string()],
             containers: vec!["mkv".to_string()],
             supports_interlaced: None,
+            max_height: None,
         };
         let d = decide(
             &file,

@@ -191,6 +191,7 @@ pub(super) async fn open(
             is_live: false,
             provider_id: None,
             max_bitrate_kbps: None,
+            max_height: None,
             keyframes: None,
             error: None,
             pending_segment: None,

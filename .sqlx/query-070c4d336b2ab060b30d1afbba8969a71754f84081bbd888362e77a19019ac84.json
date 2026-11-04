@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(BOOL_OR(config_tag = $2), FALSE) AS \"current!\", COUNT(*) AS \"segments!\"\n        FROM audiobook_transcripts\n        WHERE audiobook_file_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "current!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "segments!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "070c4d336b2ab060b30d1afbba8969a71754f84081bbd888362e77a19019ac84"
+}

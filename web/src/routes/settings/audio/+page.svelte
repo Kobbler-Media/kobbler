@@ -3,10 +3,10 @@
   import { SearchSelect, MultiSearchSelect, type MultiSearchSelectItem } from '@koblibs/ui';
   import { showMessage } from '#lib/context/app.svelte.js';
   import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import TranscriptRefresh from './TranscriptRefresh.svelte';
   import {
     getSystemConfig,
     updateSystemConfig,
-    bulkTranscribeAudiobooks,
     bulkChapterDetect,
     bulkRedetectChapters,
     bulkEbookExtract,
@@ -24,7 +24,6 @@
   let systemConfigLoading = $state(true);
   let systemConfigError = $state<string | null>(null);
   let systemConfigSaving = $state(false);
-  let bulkTranscribing = $state(false);
   let bulkDetecting = $state(false);
   let bulkRedetectingSilence = $state(false);
   let bulkExtracting = $state(false);
@@ -261,22 +260,6 @@
     cleanupTestAudio();
   }
 
-  const handleBulkTranscribe = async () => {
-    bulkTranscribing = true;
-    try {
-      const result = await bulkTranscribeAudiobooks();
-      showMessage(`Queued ${result.queued} transcription job${result.queued !== 1 ? 's' : ''}`);
-    } catch (e) {
-      if (e instanceof Error && e.message.includes('409')) {
-        showMessage('Transcription is disabled — set mode to Auto or Manual first');
-      } else {
-        showMessage('Failed to queue transcription jobs');
-      }
-    } finally {
-      bulkTranscribing = false;
-    }
-  };
-
   const handleBulkChapterDetect = async () => {
     bulkDetecting = true;
     try {
@@ -451,15 +434,8 @@
               >
             </label>
           </div>
+          <TranscriptRefresh transcriptionOff={systemConfig.transcript_mode === 'off'} />
           <div class="bulk-actions">
-            <button
-              type="button"
-              class="btn-action"
-              disabled={bulkTranscribing || systemConfig.transcript_mode === 'off'}
-              onclick={handleBulkTranscribe}
-            >
-              {bulkTranscribing ? 'Queuing...' : 'Transcribe All'}
-            </button>
             <button
               type="button"
               class="btn-action"

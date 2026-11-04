@@ -2451,3 +2451,22 @@ export type LivetvOnNow = {
   tuner_notice: LivetvClashNotice | null;
   groups: LivetvOnNowGroup[];
 };
+
+export interface TranscriptBacklogTotals {
+  books: number;
+  files: number;
+  hours: number;
+}
+
+export interface TranscriptRefreshJob {
+  id: string;
+  status: string;
+  progress: number | null;
+  result: { batches?: number; remaining_hours?: number } | null;
+}
+
+export interface TranscriptBacklog {
+  missing: TranscriptBacklogTotals;
+  outdated: TranscriptBacklogTotals;
+  refresh_job: TranscriptRefreshJob | null;
+}

@@ -1,9 +1,10 @@
 //! Transcribe backfill job handler.
 //!
-//! Scheduled job that finds audiobooks with untranscribed or stale-config
-//! files and enqueues audiobook_transcribe jobs for them, a bounded batch at a
-//! time.
+//! Scheduled job that finds audiobooks with untranscribed files and enqueues
+//! audiobook_transcribe jobs for them, a bounded batch at a time. Files whose
+//! transcript is merely outdated wait for a user-started `transcribe_refresh`.
 
+use super::transcribe_batch::enqueue_batch;
 use crate::RuntimeConfigManager;
 use crate::enrichment_config::stt_config_tag;
 use crate::jobs::worker::JobHandler;
@@ -18,10 +19,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use uuid::Uuid;
-
-/// Audio enqueued per run. The next run waits for the queue to drain, so with
-/// the 30-minute schedule this bounds the GPU share a re-transcription takes.
-const BATCH_AUDIO_HOURS: f64 = 24.0;
 
 pub struct TranscribeBackfillHandler {
     pool: PgPool,
@@ -75,60 +72,13 @@ impl JobHandler for TranscribeBackfillHandler {
         let config = self.runtime_config.get().await;
         let current_tag = stt_config_tag(&config);
 
-        let stale = audiobook_transcripts::stale_books(&self.pool, &current_tag)
+        let stale = audiobook_transcripts::stale_books(&self.pool, &current_tag, false)
             .await
             .map_err(|e| JobError::ExecutionFailed(format!("DB error: {e}")))?;
 
         let found = stale.len();
-        let mut budget_seconds = BATCH_AUDIO_HOURS * 3600.0;
-        let mut enqueued = 0usize;
-        let mut skipped_failed = 0usize;
-
-        for book in &stale {
-            nats_jobs::check_cancelled(&cancel)?;
-            if budget_seconds <= 0.0 {
-                break;
-            }
-            if crate::jobs::recent_failure_count(
-                &self.pool,
-                "audiobook_transcribe",
-                "book_id",
-                &book.id.to_string(),
-                24,
-            )
-            .await
-            .unwrap_or(0)
-                >= 3
-            {
-                skipped_failed += 1;
-                continue;
-            }
-
-            let display = crate::jobs::fetch_job_display(&self.pool, "book", book.id).await;
-            let context = crate::jobs::JobContext::for_entity(
-                "book",
-                book.id,
-                format!("Transcribe backfill — {}", book.title),
-            )
-            .with_display_opt(display);
-            match crate::jobs::enqueue_routine(
-                &self.pool,
-                &self.publisher,
-                "audiobook_transcribe",
-                json!({"book_id": book.id}),
-                context,
-            )
-            .await
-            {
-                Ok(_) => {
-                    enqueued += 1;
-                    budget_seconds -= book.seconds;
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, book_id = %book.id, "Failed to enqueue transcribe backfill");
-                }
-            }
-        }
+        let batch = enqueue_batch(&self.pool, &self.publisher, &stale, false, &cancel).await?;
+        let (enqueued, skipped_failed) = (batch.enqueued, batch.skipped_failed);
 
         info!(
             found,

@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH pending AS (\n            SELECT af.book_id, COALESCE(af.duration_seconds, 0) AS seconds,\n                   EXISTS (\n                       SELECT 1 FROM audiobook_transcripts at\n                       WHERE at.audiobook_file_id = af.id\n                   ) AS outdated\n            FROM audiobook_files af\n            WHERE af.available = TRUE\n              AND EXISTS (\n                  SELECT 1 FROM media_root_files mrf\n                  WHERE (mrf.file_path = af.file_path OR mrf.file_path = af.source_path)\n                    AND mrf.available = TRUE\n              )\n              AND NOT EXISTS (\n                  SELECT 1 FROM audiobook_transcripts at\n                  WHERE at.audiobook_file_id = af.id AND at.config_tag = $1\n              )\n        )\n        SELECT\n            COUNT(DISTINCT book_id) FILTER (WHERE NOT outdated) AS \"missing_books!\",\n            COUNT(*) FILTER (WHERE NOT outdated) AS \"missing_files!\",\n            COALESCE(SUM(seconds) FILTER (WHERE NOT outdated), 0) AS \"missing_seconds!\",\n            COUNT(DISTINCT book_id) FILTER (WHERE outdated) AS \"outdated_books!\",\n            COUNT(*) FILTER (WHERE outdated) AS \"outdated_files!\",\n            COALESCE(SUM(seconds) FILTER (WHERE outdated), 0) AS \"outdated_seconds!\"\n        FROM pending\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "missing_books!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "missing_files!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "missing_seconds!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "outdated_books!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "outdated_files!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "outdated_seconds!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "7781caa9727f67bb607482f1b6c5183a3920c9e96da08ccbd24db7c1697619e7"
+}

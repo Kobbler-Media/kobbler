@@ -1645,6 +1645,7 @@ mod tests {
             audio_codecs: ["aac", "ac3", "eac3", "mp3"].map(str::to_string).to_vec(),
             containers: ["mp4", "mkv", "ts"].map(str::to_string).to_vec(),
             supports_interlaced: None,
+            max_height: None,
         }
     }
 
@@ -1724,6 +1725,7 @@ mod tests {
             audio_codecs: vec!["aac".into()],
             containers: vec!["mp4".into()],
             supports_interlaced: None,
+            max_height: None,
         };
         assert_eq!(
             decide_mode(&tuner_facts("h264", "aac", true), &browser),

@@ -53,6 +53,15 @@ pub trait MetadataProvider: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// `Ok(None)` when the provider has no such book or cannot look books up by id.
+    async fn fetch_by_id(
+        &self,
+        external_id: &str,
+    ) -> Result<Option<MetadataResult>, ProviderError> {
+        let _ = external_id;
+        Ok(None)
+    }
+
     /// Fetch cover image bytes from a URL
     async fn fetch_cover(&self, url: &str) -> Result<Vec<u8>, ProviderError>;
 }
@@ -83,6 +92,9 @@ pub enum ProviderError {
 
     #[error("Provider rate limited")]
     RateLimited,
+
+    #[error("Unknown or disabled provider: {0}")]
+    UnknownProvider(String),
 
     #[error("Provider error: {0}")]
     Other(String),
@@ -474,11 +486,55 @@ impl ProviderRegistry {
         let factory = self
             .factories
             .get(provider_type)
-            .ok_or_else(|| ProviderError::Other(format!("Unknown provider: {}", provider_type)))?;
+            .ok_or_else(|| ProviderError::UnknownProvider(provider_type.to_string()))?;
 
         // Create a provider with empty config just for cover fetching
         let provider = factory.create(self.http_client.clone(), &serde_json::json!({}));
         provider.fetch_cover(url).await
+    }
+
+    pub async fn fetch_by_id(
+        &self,
+        provider_type: &str,
+        external_id: &str,
+    ) -> Result<Option<MetadataResult>, ProviderError> {
+        let unknown = || ProviderError::UnknownProvider(provider_type.to_string());
+        let factory = self.factories.get(provider_type).ok_or_else(unknown)?;
+        let stored = self
+            .get_enabled_providers()
+            .await
+            .into_iter()
+            .find(|p| p.provider_type == provider_type)
+            .ok_or_else(unknown)?;
+
+        let cache_key = format!("id:{external_id}");
+        if let Ok(Some(cached)) = self.cache.get(provider_type, &cache_key).await
+            && let Some(hit) = cached.into_iter().next()
+        {
+            return Ok(Some(hit));
+        }
+
+        self.cooldown.wait_if_needed(provider_type).await;
+        let provider = factory.create(self.http_client.clone(), &stored.config);
+        match provider.fetch_by_id(external_id).await {
+            Ok(found) => {
+                self.cooldown.reset(provider_type);
+                if let Some(result) = &found
+                    && let Err(e) = self
+                        .cache
+                        .set(provider_type, &cache_key, std::slice::from_ref(result))
+                        .await
+                {
+                    tracing::warn!("Failed to cache {provider_type} book {external_id}: {e}");
+                }
+                Ok(found)
+            }
+            Err(ProviderError::RateLimited) => {
+                self.cooldown.set_cooldown(provider_type, 10);
+                Err(ProviderError::RateLimited)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// A book's edition titles from Hardcover, cached for a week. With `fetch`

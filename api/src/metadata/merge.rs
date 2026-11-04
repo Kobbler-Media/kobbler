@@ -25,24 +25,9 @@ pub fn merge_by_priority(results: &[MetadataResult]) -> Option<MetadataResult> {
     let mut merged = results[0].clone();
     merged.provider = "merged".to_string();
 
-    // ALWAYS aggregate identifiers from ALL sources
     let mut all_identifiers: Map<String, Value> = Map::new();
     for result in results {
-        // Add provider-specific external_id
-        if let Some(ref ext_id) = result.external_id {
-            all_identifiers.insert(result.provider.clone(), Value::String(ext_id.clone()));
-        }
-        // Add ISBN if present (fallback for providers that don't use identifiers field)
-        if let Some(ref isbn) = result.isbn {
-            let key = if isbn.len() == 13 { "isbn13" } else { "isbn10" };
-            all_identifiers.insert(key.to_string(), Value::String(isbn.clone()));
-        }
-        // Merge any identifiers already extracted by the provider (ISBN-10, ISBN-13, ASIN, etc.)
-        if let Some(obj) = result.identifiers.as_object() {
-            for (key, value) in obj {
-                all_identifiers.insert(key.clone(), value.clone());
-            }
-        }
+        all_identifiers.extend(result.all_identifiers());
     }
     merged.identifiers = Value::Object(all_identifiers);
 

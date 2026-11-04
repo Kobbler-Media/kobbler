@@ -3,6 +3,8 @@
 //! Sends the file path to `{service_url}/v1/audio/transcriptions` so the STT
 //! service reads directly from the shared filesystem (zero-copy).
 
+mod utterances;
+
 use serde::Deserialize;
 use std::path::Path;
 use tracing::{debug, info};
@@ -65,6 +67,16 @@ struct SttResponse {
     text: String,
     #[serde(default)]
     segments: Option<Vec<SttSegment>>,
+    #[serde(default)]
+    words: Vec<SttWord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SttWord {
+    start: f64,
+    end: f64,
+    #[serde(alias = "word")]
+    text: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,7 +113,10 @@ pub async fn transcribe_audio(
     let form = reqwest::multipart::Form::new()
         .text("file_path", file_path_str.into_owned())
         .text("model", "whisper-1")
-        .text("response_format", "verbose_json");
+        .text("response_format", "verbose_json")
+        // Parakeet's spelling (koblem passes it through); a server that does not know it
+        // answers with segments only, which are stored as they come.
+        .text("timestamp_granularity", "word");
 
     let client = crate::http::builder()
         .timeout(std::time::Duration::from_secs(3600))
@@ -146,7 +161,18 @@ pub async fn transcribe_audio(
         TranscribeError::ParseError(format!("{}: {}", e, &body[..200.min(body.len())]))
     })?;
 
-    let segments: Vec<TranscribedSegment> = if let Some(segs) = parsed.segments {
+    let segments: Vec<TranscribedSegment> = if !parsed.words.is_empty() {
+        let words: Vec<utterances::TimedWord> = parsed
+            .words
+            .into_iter()
+            .map(|w| utterances::TimedWord {
+                start: w.start,
+                end: w.end,
+                text: w.text,
+            })
+            .collect();
+        utterances::from_words(&words)
+    } else if let Some(segs) = parsed.segments {
         segs.into_iter()
             .enumerate()
             .map(|(i, seg)| TranscribedSegment {

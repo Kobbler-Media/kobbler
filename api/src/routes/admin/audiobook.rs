@@ -24,19 +24,33 @@ use crate::reader_pack;
 use crate::repositories::audiobook_chapters::ChapterInput;
 use crate::repositories::{
     audiobook_bookmarks, audiobook_chapters, audiobook_files, audiobook_transcripts, books,
-    cross_format_sync, devices, ebook_segments, entitlements, reading_states, user_book_data,
+    cross_format_sync, devices, ebook_segments, entitlements, job_status, reading_states,
+    user_book_data,
 };
 use crate::routes::{AuthUser, PlaybackAuth};
+use crate::streaming::byte_range;
 
 // =============================================================================
 // Audio File Streaming
 // =============================================================================
 
 /// Serve an audio file with HTTP Range support for seeking.
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioContainer {
+    Mp4,
+}
+
+#[derive(Deserialize)]
+pub struct StreamAudioQuery {
+    container: Option<AudioContainer>,
+}
+
 pub async fn stream_audio(
     State(state): State<AppState>,
     _auth: PlaybackAuth,
     Path((book_id, file_id)): Path<(String, String)>,
+    Query(query): Query<StreamAudioQuery>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
     let book_id = match Uuid::parse_str(&book_id) {
@@ -78,6 +92,21 @@ pub async fn stream_audio(
         }
     };
 
+    if matches!(query.container, Some(AudioContainer::Mp4))
+        && file_info.format.eq_ignore_ascii_case("mp3")
+    {
+        match crate::audio::virtual_mp4::prepare(&state.config.storage_root, file_id, &full_path)
+            .await
+        {
+            Ok(mp4) => {
+                return byte_range::spliced_response(mp4.parts(file), "audio/mp4", &headers).await;
+            }
+            Err(e) => {
+                warn!(error = %e, path = %full_path.display(), "serving mp3 as-is, no mp4 index");
+            }
+        }
+    }
+
     let file_size = match file.metadata().await {
         Ok(m) => m.len(),
         Err(e) => {
@@ -86,9 +115,13 @@ pub async fn stream_audio(
         }
     };
 
-    let content_type = audio_content_type(&file_info.format);
-
-    crate::streaming::byte_range::file_response(file, file_size, content_type, &headers).await
+    byte_range::file_response(
+        file,
+        file_size,
+        audio_content_type(&file_info.format),
+        &headers,
+    )
+    .await
 }
 
 /// Map book file format to audio MIME type.
@@ -961,9 +994,17 @@ pub async fn extract_ebook_text(
     (StatusCode::ACCEPTED, Json(json!({"status": "enqueued"}))).into_response()
 }
 
-/// Queue transcription for every audiobook without a transcript from the
-/// current STT config, skipping books already queued. Unlike the backfill this
-/// queues the whole library at once; the job still skips up-to-date files.
+fn refresh_job_json(job: &jobs::JobStatusRow) -> serde_json::Value {
+    json!({
+        "id": job.id,
+        "status": job.status,
+        "progress": job.progress,
+        "result": job.result,
+    })
+}
+
+/// Start re-transcribing every audiobook file without a transcript from the
+/// current STT config — outdated ones included — a day of audio at a time.
 /// POST /api/v1/admin/books/bulk-transcribe
 pub async fn bulk_transcribe(State(state): State<AppState>, _auth: AuthUser) -> impl IntoResponse {
     let config = state.runtime_config.get().await;
@@ -975,38 +1016,61 @@ pub async fn bulk_transcribe(State(state): State<AppState>, _auth: AuthUser) -> 
             .into_response();
     }
 
-    let tag = stt_config_tag(&config);
-    let stale = match audiobook_transcripts::stale_books(&state.pool, &tag).await {
-        Ok(r) => r,
+    match job_status::latest_active_of_type(&state.pool, "transcribe_refresh").await {
+        Ok(Some(job)) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({"error": "Already running", "job": refresh_job_json(&job)})),
+            )
+                .into_response();
+        }
+        Ok(None) => {}
         Err(e) => {
-            error!(error = %e, "Failed to query books for bulk transcribe");
+            error!(error = %e, "Failed to look up transcript refresh job");
             return (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response();
         }
-    };
-
-    let mut queued = 0u64;
-    for book in &stale {
-        if let Ok(true) = jobs::has_active_job(
-            &state.pool,
-            "audiobook_transcribe",
-            "book_id",
-            &book.id.to_string(),
-        )
-        .await
-        {
-            continue;
-        }
-        jobs::enqueue_audiobook_transcribe(
-            &state.pool,
-            state.nats.publisher(),
-            book.id,
-            &book.title,
-        )
-        .await;
-        queued += 1;
     }
 
-    (StatusCode::OK, Json(json!({"queued": queued}))).into_response()
+    let context = JobContext::new("Re-transcribe audiobook library");
+    match jobs::enqueue(
+        &state.pool,
+        state.nats.publisher(),
+        "transcribe_refresh",
+        json!({}),
+        context,
+    )
+    .await
+    {
+        Ok(job_id) => (StatusCode::ACCEPTED, Json(json!({"job_id": job_id}))).into_response(),
+        Err(e) => {
+            error!(error = %e, "Failed to enqueue transcript refresh");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to enqueue").into_response()
+        }
+    }
+}
+
+/// Audio still to transcribe under the current STT config, and the
+/// re-transcription run working through it, if any.
+/// GET /api/v1/admin/books/transcript-backlog
+pub async fn transcript_backlog(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+) -> impl IntoResponse {
+    let tag = stt_config_tag(&state.runtime_config.get().await);
+    let backlog = audiobook_transcripts::backlog(&state.pool, &tag).await;
+    let job = job_status::latest_active_of_type(&state.pool, "transcribe_refresh").await;
+    match (backlog, job) {
+        (Ok(backlog), Ok(job)) => Json(json!({
+            "missing": backlog.missing,
+            "outdated": backlog.outdated,
+            "refresh_job": job.as_ref().map(refresh_job_json),
+        }))
+        .into_response(),
+        (Err(e), _) | (_, Err(e)) => {
+            error!(error = %e, "Failed to read transcript backlog");
+            (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response()
+        }
+    }
 }
 
 /// Bulk chapter detection for all books with transcripts.

@@ -1,5 +1,6 @@
 //! Audiobook transcript segment CRUD operations.
 
+use serde::Serialize;
 use sqlx::{Executor, Postgres};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -123,28 +124,37 @@ where
     Ok(rows)
 }
 
-/// Check if a transcript with a specific config tag exists for an audiobook file.
-pub async fn has_transcript_with_tag<'e, E>(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TranscriptState {
+    Current,
+    Outdated,
+    Missing,
+}
+
+pub async fn transcript_state<'e, E>(
     exec: E,
     audiobook_file_id: Uuid,
     config_tag: &str,
-) -> Result<bool>
+) -> Result<TranscriptState>
 where
     E: Executor<'e, Database = Postgres>,
 {
-    let row = sqlx::query_scalar!(
+    let row = sqlx::query!(
         r#"
-        SELECT EXISTS(
-            SELECT 1 FROM audiobook_transcripts
-            WHERE audiobook_file_id = $1 AND config_tag = $2
-        ) AS "exists!"
+        SELECT COALESCE(BOOL_OR(config_tag = $2), FALSE) AS "current!", COUNT(*) AS "segments!"
+        FROM audiobook_transcripts
+        WHERE audiobook_file_id = $1
         "#,
         audiobook_file_id,
         config_tag,
     )
     .fetch_one(exec)
     .await?;
-    Ok(row)
+    Ok(match (row.current, row.segments) {
+        (true, _) => TranscriptState::Current,
+        (false, 0) => TranscriptState::Missing,
+        (false, _) => TranscriptState::Outdated,
+    })
 }
 
 /// A book with at least one available audio file lacking a `config_tag`
@@ -155,8 +165,13 @@ pub struct StaleBook {
     pub seconds: f64,
 }
 
-/// Books that need (re-)transcribing under `config_tag`.
-pub async fn stale_books<'e, E>(exec: E, config_tag: &str) -> Result<Vec<StaleBook>>
+/// Books with an available file that has no transcript at all, plus, with
+/// `include_outdated`, those whose transcript predates `config_tag`.
+pub async fn stale_books<'e, E>(
+    exec: E,
+    config_tag: &str,
+    include_outdated: bool,
+) -> Result<Vec<StaleBook>>
 where
     E: Executor<'e, Database = Postgres>,
 {
@@ -176,14 +191,83 @@ where
                   SELECT 1 FROM audiobook_transcripts at
                   WHERE at.audiobook_file_id = af.id AND at.config_tag = $1
               )
+              AND ($2 OR NOT EXISTS (
+                  SELECT 1 FROM audiobook_transcripts at
+                  WHERE at.audiobook_file_id = af.id
+              ))
             GROUP BY b.id, b.title
             ORDER BY b.id
             "#,
         config_tag,
+        include_outdated,
     )
     .fetch_all(exec)
     .await?;
     Ok(rows)
+}
+
+#[derive(Debug, Default, Serialize)]
+pub struct BacklogTotals {
+    pub books: i64,
+    pub files: i64,
+    pub hours: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TranscriptBacklog {
+    pub missing: BacklogTotals,
+    pub outdated: BacklogTotals,
+}
+
+pub async fn backlog<'e, E>(exec: E, config_tag: &str) -> Result<TranscriptBacklog>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let row = sqlx::query!(
+        r#"
+        WITH pending AS (
+            SELECT af.book_id, COALESCE(af.duration_seconds, 0) AS seconds,
+                   EXISTS (
+                       SELECT 1 FROM audiobook_transcripts at
+                       WHERE at.audiobook_file_id = af.id
+                   ) AS outdated
+            FROM audiobook_files af
+            WHERE af.available = TRUE
+              AND EXISTS (
+                  SELECT 1 FROM media_root_files mrf
+                  WHERE (mrf.file_path = af.file_path OR mrf.file_path = af.source_path)
+                    AND mrf.available = TRUE
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM audiobook_transcripts at
+                  WHERE at.audiobook_file_id = af.id AND at.config_tag = $1
+              )
+        )
+        SELECT
+            COUNT(DISTINCT book_id) FILTER (WHERE NOT outdated) AS "missing_books!",
+            COUNT(*) FILTER (WHERE NOT outdated) AS "missing_files!",
+            COALESCE(SUM(seconds) FILTER (WHERE NOT outdated), 0) AS "missing_seconds!",
+            COUNT(DISTINCT book_id) FILTER (WHERE outdated) AS "outdated_books!",
+            COUNT(*) FILTER (WHERE outdated) AS "outdated_files!",
+            COALESCE(SUM(seconds) FILTER (WHERE outdated), 0) AS "outdated_seconds!"
+        FROM pending
+        "#,
+        config_tag,
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(TranscriptBacklog {
+        missing: BacklogTotals {
+            books: row.missing_books,
+            files: row.missing_files,
+            hours: row.missing_seconds / 3600.0,
+        },
+        outdated: BacklogTotals {
+            books: row.outdated_books,
+            files: row.outdated_files,
+            hours: row.outdated_seconds / 3600.0,
+        },
+    })
 }
 
 /// Get all transcript segments for a book (across all audiobook files), ordered by file index then segment index.

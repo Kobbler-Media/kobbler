@@ -156,8 +156,7 @@ pub struct AudnexusProvider {
 }
 
 impl AudnexusProvider {
-    /// Fetch book metadata by ASIN
-    async fn fetch_book(&self, asin: &str) -> Result<BookResponse, ProviderError> {
+    async fn fetch_book(&self, asin: &str) -> Result<Option<BookResponse>, ProviderError> {
         let url = format!("{}/books/{}", self.base_url, asin);
         tracing::debug!("Audnexus book lookup: {}", url);
 
@@ -168,7 +167,7 @@ impl AudnexusProvider {
         }
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(ProviderError::Other(format!("ASIN not found: {}", asin)));
+            return Ok(None);
         }
 
         if !response.status().is_success() {
@@ -181,6 +180,7 @@ impl AudnexusProvider {
         response
             .json::<BookResponse>()
             .await
+            .map(Some)
             .map_err(|e| ProviderError::Parse(e.to_string()))
     }
 
@@ -300,7 +300,10 @@ impl MetadataProvider for AudnexusProvider {
             None => return Ok(Vec::new()),
         };
 
-        let book = self.fetch_book(&asin).await?;
+        let book = self
+            .fetch_book(&asin)
+            .await?
+            .ok_or_else(|| ProviderError::Other(format!("ASIN not found: {asin}")))?;
 
         // Also fetch chapters (non-fatal if this fails)
         let chapters = match self.fetch_chapters(&asin).await {
@@ -313,6 +316,20 @@ impl MetadataProvider for AudnexusProvider {
 
         let result = self.to_metadata_result(book, chapters);
         Ok(vec![result])
+    }
+
+    async fn fetch_by_id(
+        &self,
+        external_id: &str,
+    ) -> Result<Option<MetadataResult>, ProviderError> {
+        let asin = external_id.trim().to_uppercase();
+        if asin.is_empty() || !asin.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Ok(None);
+        }
+        Ok(self
+            .fetch_book(&asin)
+            .await?
+            .map(|book| self.to_metadata_result(book, None)))
     }
 
     async fn fetch_cover(&self, url: &str) -> Result<Vec<u8>, ProviderError> {
@@ -383,4 +400,48 @@ struct ChapterEntry {
     title: String,
     start_offset_ms: u64,
     length_ms: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn book_sample_maps_every_detail_field() {
+        let provider = AudnexusProvider {
+            client: crate::http::ProviderClient::new(reqwest::Client::new(), INFO.id),
+            base_url: String::new(),
+        };
+        let book: BookResponse = serde_json::from_value(serde_json::json!({
+            "asin": "B002V0QK4C",
+            "title": "The Hobbit",
+            "authors": [{ "asin": "B000AQ0HE6", "name": "J.R.R. Tolkien" }],
+            "narrators": [{ "name": "Rob Inglis" }],
+            "description": "Bilbo goes there and back again.",
+            "publisherName": "Recorded Books",
+            "releaseDate": "2012-09-20T00:00:00.000Z",
+            "runtimeLengthMin": 662,
+            "language": "english",
+            "image": "https://m.media-amazon.com/hobbit.jpg",
+            "genres": [{ "asin": "18580606011", "name": "Fantasy", "type": "genre" }],
+            "rating": "4.8"
+        }))
+        .unwrap();
+
+        let r = provider.to_metadata_result(book, None);
+        assert_eq!(r.external_id.as_deref(), Some("B002V0QK4C"));
+        assert_eq!(r.asin.as_deref(), Some("B002V0QK4C"));
+        assert_eq!(r.authors, ["J.R.R. Tolkien"]);
+        assert_eq!(r.narrator.as_deref(), Some("Rob Inglis"));
+        assert_eq!(r.publish_date.as_deref(), Some("2012-09-20T00:00:00.000Z"));
+        assert_eq!(r.duration_seconds, Some(662 * 60));
+        assert_eq!(r.subjects, ["Fantasy"]);
+        assert_eq!(r.rating, Some(4.8));
+        assert_eq!(
+            r.all_identifiers(),
+            *serde_json::json!({ "audnexus": "B002V0QK4C", "asin": "B002V0QK4C" })
+                .as_object()
+                .unwrap()
+        );
+    }
 }

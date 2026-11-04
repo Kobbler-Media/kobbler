@@ -56,7 +56,7 @@
   import type { ClientCapabilities } from '#lib/utils/media.js';
   import { getCastState, castLoadMedia, endCastSession } from '#lib/stores/cast.svelte.js';
   import { onStateChange, onMessage as onCastMessage, getDeviceName } from '#lib/cast/sender.js';
-  import { castCapabilities } from '#lib/cast/capabilities.js';
+  import { receiverCapabilities } from '#lib/cast/capabilities.js';
   import { createPlaybackToken, revokePlaybackToken } from '#lib/api/client.js';
   import type { InitSessionPayload } from '#lib/cast/messages.js';
   import type Hls from 'hls.js';
@@ -364,6 +364,27 @@
   /** Last known position from Cast receiver, used for resume on disconnect. */
   let lastCastPosition = 0;
 
+  // The browser's own session was decided for the browser: a file it direct-plays can
+  // be one the receiver cannot open. Debrid and live streams have no file to re-decide.
+  async function castSession(
+    capabilities: ClientCapabilities,
+    position: number
+  ): Promise<PlaybackSessionResponse | null> {
+    const mediaType = activeCreationParams.media_type;
+    if (mediaType === 'live' || isDebridSession) return null;
+    try {
+      return await createPlaybackSession({
+        media_type: mediaType,
+        file_id: activeCreationParams.file_id,
+        capabilities,
+        audio_track_index: activeAudioIndex ?? undefined,
+        start_time: position > 5 ? position : undefined
+      });
+    } catch {
+      return null;
+    }
+  }
+
   async function transferToCast() {
     if (!sessionReady || !session.session_id) return;
 
@@ -382,25 +403,33 @@
       const qualify = (url: string | null | undefined) =>
         url ? (url.startsWith('http') ? url : `${baseUrl}${url}`) : null;
 
+      const position = displayTime;
+      const capabilities = await receiverCapabilities(getDeviceName() ?? '');
+      const own = await castSession(capabilities, position);
+      const cast = own ?? session;
+      // The receiver plays from the playlist's zero, which is where a transcode began.
+      const startOffset = !cast.playlist_url ? 0 : own ? (own.start_time ?? 0) : seekOffset;
+
       const payload: InitSessionPayload = {
         baseUrl,
         token,
-        sessionId: session.session_id,
+        sessionId: cast.session_id,
         mediaId: activeMediaId ?? null,
         mediaType: activeCreationParams.media_type,
-        playlistUrl: qualify(session.playlist_url),
-        directUrl: qualify(session.direct_url),
-        method: session.playlist_url ? 'hls' : 'direct_play',
-        duration: session.duration_seconds,
-        subtitles: session.subtitles.map((s) => ({
+        playlistUrl: qualify(cast.playlist_url),
+        directUrl: qualify(cast.direct_url),
+        method: cast.playlist_url ? 'hls' : 'direct_play',
+        duration: cast.duration_seconds || session.duration_seconds,
+        subtitles: cast.subtitles.map((s) => ({
           ...s,
           url: qualify(s.url)
         })),
-        audioTracks: session.audio_tracks,
-        thumbnailsUrl: qualify(session.thumbnails_url),
-        chapters: session.chapters ?? [],
-        skipSegments: session.skip_segments ?? [],
-        capabilities: castCapabilities(getDeviceName() ?? ''),
+        audioTracks: cast.audio_tracks,
+        thumbnailsUrl: qualify(cast.thumbnails_url),
+        chapters: cast.chapters ?? [],
+        skipSegments: cast.skip_segments ?? [],
+        capabilities,
+        startOffset,
         metadata: {
           title: activeMediaInfo?.title ?? 'Kobbler',
           subtitle: activeMediaInfo?.subtitle,
@@ -410,7 +439,7 @@
         }
       };
 
-      castLoadMedia(payload);
+      castLoadMedia(payload, position);
       castingMode = true;
     } catch (err) {
       console.error('Failed to transfer to Cast:', err);

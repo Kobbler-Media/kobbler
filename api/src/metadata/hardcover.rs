@@ -354,86 +354,13 @@ impl HardcoverProvider {
         editions
             .into_iter()
             .filter_map(|edition| {
-                let book = edition.book?;
-
-                let title = book.title;
-                let mut result = MetadataResult::new("hardcover", title);
-
-                // Authors from contributions
-                result.authors = book
-                    .contributions
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|c| c.author.map(|a| a.name))
-                    .collect();
-
-                result.description = book.description;
-                result.page_count = book.pages.map(|p| p as u32);
-                result.publish_date = book.release_year.map(|y| y.to_string());
-                result.external_id = Some(book.id.to_string());
-
-                // Build identifiers
-                let mut idents = serde_json::Map::new();
-                idents.insert("hardcover".to_string(), json!(book.id.to_string()));
-                if let Some(slug) = &book.slug {
-                    idents.insert("hardcover_slug".to_string(), json!(slug));
+                let mut result = book_result(edition.book?);
+                if let Some(asin) = edition.asin {
+                    set_asin(&mut result, asin);
                 }
-
-                // Extract ASIN: prefer matched edition's ASIN, then audiobook sibling edition
-                let asin = edition.asin.or_else(|| {
-                    book.audiobook_editions
-                        .as_ref()
-                        .and_then(|eds| eds.first())
-                        .and_then(|e| e.asin.clone())
-                });
-                if let Some(ref asin) = asin {
-                    idents.insert("asin".to_string(), json!(asin));
-                    result.asin = Some(asin.clone());
+                if edition.isbn_13.is_some() || edition.isbn_10.is_some() {
+                    result.isbn = edition.isbn_13.or(edition.isbn_10);
                 }
-
-                result.identifiers = json!(idents);
-
-                // Cover image
-                result.cover_url = book.image.and_then(|i| i.url);
-
-                // ISBN from the edition that matched
-                result.isbn = edition.isbn_13.or(edition.isbn_10);
-
-                // Series info — collect all memberships
-                if let Some(book_series) = book.book_series {
-                    result.series_list = book_series
-                        .iter()
-                        .filter_map(|bs| {
-                            let series = bs.series.as_ref()?;
-                            Some(super::types::SeriesInfo {
-                                name: series.name.clone(),
-                                provider_id: Some(series.id.to_string()),
-                                index: bs.position,
-                            })
-                        })
-                        .collect();
-
-                    // Single fields: pick first entry for backward compat
-                    if let Some(first) = book_series.first() {
-                        result.series_index = first.position;
-                        if let Some(ref series) = first.series {
-                            result.series = Some(series.name.clone());
-                            result.series_provider_id = Some(series.id.to_string());
-                        }
-                    }
-                }
-
-                // Subjects from taggings
-                if let Some(taggings) = book.taggings {
-                    result.subjects = taggings
-                        .into_iter()
-                        .filter_map(|t| t.tag.map(|tag| tag.tag))
-                        .collect();
-                }
-
-                // Ratings
-                result.rating = book.rating;
-                result.rating_count = book.ratings_count.map(|c| c as i32);
 
                 // ISBN exact match → high confidence
                 let mut confidence = 0.8;
@@ -541,64 +468,7 @@ impl HardcoverProvider {
         books
             .into_iter()
             .map(|book| {
-                let title = book.title;
-                let mut result = MetadataResult::new("hardcover", title);
-
-                result.authors = book
-                    .contributions
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter_map(|c| c.author.map(|a| a.name))
-                    .collect();
-
-                result.description = book.description;
-                result.page_count = book.pages.map(|p| p as u32);
-                result.publish_date = book.release_year.map(|y| y.to_string());
-                result.external_id = Some(book.id.to_string());
-
-                let mut idents = serde_json::Map::new();
-                idents.insert("hardcover".to_string(), json!(book.id.to_string()));
-                if let Some(slug) = &book.slug {
-                    idents.insert("hardcover_slug".to_string(), json!(slug));
-                }
-                result.identifiers = json!(idents);
-
-                result.cover_url = book.image.and_then(|i| i.url);
-                result.rating = book.rating;
-                result.rating_count = book.ratings_count.map(|c| c as i32);
-
-                // Series info — collect all memberships
-                if let Some(book_series) = book.book_series {
-                    result.series_list = book_series
-                        .iter()
-                        .filter_map(|bs| {
-                            let series = bs.series.as_ref()?;
-                            Some(super::types::SeriesInfo {
-                                name: series.name.clone(),
-                                provider_id: Some(series.id.to_string()),
-                                index: bs.position,
-                            })
-                        })
-                        .collect();
-
-                    // Single fields: pick first entry for backward compat
-                    if let Some(first) = book_series.first() {
-                        result.series_index = first.position;
-                        if let Some(ref series) = first.series {
-                            result.series = Some(series.name.clone());
-                            result.series_provider_id = Some(series.id.to_string());
-                        }
-                    }
-                }
-
-                // Subjects from taggings
-                if let Some(taggings) = book.taggings {
-                    result.subjects = taggings
-                        .into_iter()
-                        .filter_map(|t| t.tag.map(|tag| tag.tag))
-                        .collect();
-                }
-
+                let mut result = book_result(book);
                 result.confidence = 1.0;
                 result
             })
@@ -811,6 +681,30 @@ impl MetadataProvider for HardcoverProvider {
         }
 
         Ok(Vec::new())
+    }
+
+    async fn fetch_by_id(
+        &self,
+        external_id: &str,
+    ) -> Result<Option<MetadataResult>, ProviderError> {
+        let api_key = self.require_api_key()?;
+        let Ok(id) = external_id.trim().parse::<i64>() else {
+            return Ok(None);
+        };
+        let response = self
+            .client
+            .post(format!("{}/v1/graphql", self.base_url))
+            .header("Authorization", format!("Bearer {api_key}"))
+            .json(&json!({ "query": BOOK_BY_ID_QUERY, "variables": { "id": id } }))
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(ProviderError::from_http_status(
+                response.status(),
+                "Hardcover book API",
+            ));
+        }
+        parse_book_by_pk(response.json().await?)
     }
 
     async fn fetch_cover(&self, url: &str) -> Result<Vec<u8>, ProviderError> {
@@ -1105,6 +999,34 @@ query AsinLookup($isbn: String!) {
 }
 "#;
 
+const BOOK_BY_ID_QUERY: &str = r#"
+query BookById($id: Int!) {
+  books_by_pk(id: $id) {
+    id
+    title
+    slug
+    description
+    image { url }
+    contributions { author { id name } }
+    book_series { position series { id name } }
+    pages
+    release_year
+    release_date
+    rating
+    ratings_count
+    taggings(limit: 10) { tag { tag } }
+    isbn_editions: editions(where: {isbn_13: {_is_null: false}}, limit: 1) {
+      isbn_13
+      isbn_10
+    }
+    audiobook_editions: editions(where: {reading_format_id: {_eq: 2}}, limit: 1) {
+      asin
+      audio_seconds
+    }
+  }
+}
+"#;
+
 const BOOK_TITLES_QUERY: &str = r#"
 query BookTitles($id: Int!) {
   books_by_pk(id: $id) {
@@ -1202,10 +1124,117 @@ struct EditionBook {
     book_series: Option<Vec<EditionBookSeries>>,
     pages: Option<i64>,
     release_year: Option<i64>,
+    release_date: Option<String>,
     rating: Option<f64>,
     ratings_count: Option<i64>,
     taggings: Option<Vec<EditionTagging>>,
+    isbn_editions: Option<Vec<IsbnEdition>>,
     audiobook_editions: Option<Vec<AudiobookEdition>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IsbnEdition {
+    isbn_13: Option<String>,
+    isbn_10: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BookByPkResponse {
+    data: Option<BookByPkData>,
+    errors: Option<Vec<GraphQLError>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BookByPkData {
+    books_by_pk: Option<EditionBook>,
+}
+
+fn set_asin(result: &mut MetadataResult, asin: String) {
+    if let Some(ids) = result.identifiers.as_object_mut() {
+        ids.insert("asin".to_string(), json!(asin));
+    }
+    result.asin = Some(asin);
+}
+
+fn book_result(book: EditionBook) -> MetadataResult {
+    let mut result = MetadataResult::new("hardcover", book.title);
+
+    result.authors = book
+        .contributions
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|c| c.author.map(|a| a.name))
+        .collect();
+    result.description = book.description;
+    result.page_count = book.pages.map(|p| p as u32);
+    result.publish_date = book
+        .release_date
+        .or_else(|| book.release_year.map(|y| y.to_string()));
+    result.external_id = Some(book.id.to_string());
+    result.cover_url = book.image.and_then(|i| i.url);
+    result.rating = book.rating;
+    result.rating_count = book.ratings_count.map(|c| c as i32);
+
+    let mut idents = serde_json::Map::new();
+    idents.insert("hardcover".to_string(), json!(book.id.to_string()));
+    if let Some(slug) = &book.slug {
+        idents.insert("hardcover_slug".to_string(), json!(slug));
+    }
+    result.identifiers = json!(idents);
+
+    if let Some(asin) = book
+        .audiobook_editions
+        .and_then(|eds| eds.into_iter().find_map(|e| e.asin))
+    {
+        set_asin(&mut result, asin);
+    }
+    result.isbn = book
+        .isbn_editions
+        .and_then(|eds| eds.into_iter().find_map(|e| e.isbn_13.or(e.isbn_10)));
+
+    if let Some(book_series) = book.book_series {
+        result.series_list = book_series
+            .iter()
+            .filter_map(|bs| {
+                let series = bs.series.as_ref()?;
+                Some(super::types::SeriesInfo {
+                    name: series.name.clone(),
+                    provider_id: Some(series.id.to_string()),
+                    index: bs.position,
+                })
+            })
+            .collect();
+
+        if let Some(first) = book_series.first() {
+            result.series_index = first.position;
+            if let Some(ref series) = first.series {
+                result.series = Some(series.name.clone());
+                result.series_provider_id = Some(series.id.to_string());
+            }
+        }
+    }
+
+    if let Some(taggings) = book.taggings {
+        result.subjects = taggings
+            .into_iter()
+            .filter_map(|t| t.tag.map(|tag| tag.tag))
+            .collect();
+    }
+
+    result
+}
+
+fn parse_book_by_pk(response: BookByPkResponse) -> Result<Option<MetadataResult>, ProviderError> {
+    if let Some(errors) = response.errors.filter(|e| !e.is_empty()) {
+        return Err(ProviderError::Other(format!(
+            "Hardcover book query failed: {errors:?}"
+        )));
+    }
+    Ok(response.data.and_then(|d| d.books_by_pk).map(|book| {
+        let mut result = book_result(book);
+        result.confidence = 1.0;
+        result
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1630,6 +1659,49 @@ mod tests {
 
         let results = provider.parse_editions_response(response);
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn book_by_pk_sample_maps_every_detail_field() {
+        let response: BookByPkResponse = serde_json::from_value(json!({ "data": { "books_by_pk": {
+            "id": 427,
+            "title": "The Final Empire",
+            "slug": "the-final-empire",
+            "description": "Ash falls.",
+            "image": { "url": "https://img.hardcover.app/427.jpg" },
+            "contributions": [{ "author": { "id": 1, "name": "Brandon Sanderson" } }],
+            "book_series": [{ "position": 1.0, "series": { "id": 9, "name": "Mistborn" } }],
+            "pages": 541,
+            "release_year": 2006,
+            "release_date": "2006-07-17",
+            "rating": 4.4,
+            "ratings_count": 1200,
+            "taggings": [{ "tag": { "tag": "Fantasy" } }],
+            "isbn_editions": [{ "isbn_13": "9780765311788", "isbn_10": "076531178X" }],
+            "audiobook_editions": [{ "asin": "B002UZMLXM", "audio_seconds": 89000 }]
+        }}}))
+        .unwrap();
+
+        let r = parse_book_by_pk(response).unwrap().unwrap();
+        assert_eq!(r.title, "The Final Empire");
+        assert_eq!(r.authors, ["Brandon Sanderson"]);
+        assert_eq!(r.description.as_deref(), Some("Ash falls."));
+        assert_eq!(r.publish_date.as_deref(), Some("2006-07-17"));
+        assert_eq!(r.isbn.as_deref(), Some("9780765311788"));
+        assert_eq!(r.series.as_deref(), Some("Mistborn"));
+        assert_eq!(r.subjects, ["Fantasy"]);
+        assert_eq!((r.rating, r.rating_count), (Some(4.4), Some(1200)));
+        assert_eq!(
+            r.identifiers,
+            json!({ "hardcover": "427", "hardcover_slug": "the-final-empire", "asin": "B002UZMLXM" })
+        );
+
+        let missing: BookByPkResponse =
+            serde_json::from_value(json!({ "data": { "books_by_pk": null } })).unwrap();
+        assert!(parse_book_by_pk(missing).unwrap().is_none());
+        let failed: BookByPkResponse =
+            serde_json::from_value(json!({ "errors": [{ "message": "boom" }] })).unwrap();
+        assert!(parse_book_by_pk(failed).is_err());
     }
 
     #[test]

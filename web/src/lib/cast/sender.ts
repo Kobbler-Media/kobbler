@@ -5,6 +5,7 @@
  * Works with both Chromecast dongles and Google TV devices.
  */
 
+import { receiverReported } from './capabilities';
 import { CAST_NAMESPACE, type CastMessage, type InitSessionPayload } from './messages';
 
 let sdkLoaded = false;
@@ -90,11 +91,13 @@ export async function initCastSdk(receiverAppId: string): Promise<boolean> {
           listener(connected, deviceName, resumed);
         }
 
+        receiverReported(null);
         // Set up message listener on new sessions
         if (connected && session) {
           session.addMessageListener(CAST_NAMESPACE, (_ns: string, msgStr: string) => {
             try {
               const msg: CastMessage = JSON.parse(msgStr);
+              if (msg.type === 'CAPABILITIES') receiverReported(msg.payload);
               for (const listener of messageListeners) {
                 listener(msg);
               }
@@ -102,6 +105,7 @@ export async function initCastSdk(receiverAppId: string): Promise<boolean> {
               // Ignore parse errors
             }
           });
+          sendMessage({ type: 'CAPABILITIES_REQUEST' });
         }
       }
     );
@@ -139,7 +143,7 @@ export function endSession(): void {
 /**
  * Send an INIT_SESSION message to the receiver and load media.
  */
-export function loadMedia(payload: InitSessionPayload): void {
+export function loadMedia(payload: InitSessionPayload, positionSeconds: number): void {
   const session = castContext?.getCurrentSession();
   if (!session) return;
 
@@ -165,6 +169,7 @@ export function loadMedia(payload: InitSessionPayload): void {
   mediaInfo.customData = { kobblerSession: payload };
 
   const request = new chrome.cast.media.LoadRequest(mediaInfo);
+  request.currentTime = Math.max(0, positionSeconds - payload.startOffset);
 
   session.loadMedia(request).then(
     () => console.log('[Cast] Media loaded'),

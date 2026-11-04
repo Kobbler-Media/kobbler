@@ -1,4 +1,5 @@
 use crate::common::*;
+use api::repositories::audiobook_transcripts::{self, TranscriptState};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -176,7 +177,7 @@ async fn test_recent_failure_count_isolates_by_payload() {
 }
 
 #[tokio::test]
-async fn test_has_transcript_with_tag() {
+async fn test_transcript_state_by_config_tag() {
     let server = TestServer::start_api_only().await;
 
     // Create a book and audiobook file
@@ -201,14 +202,10 @@ async fn test_has_transcript_with_tag() {
     .unwrap();
 
     // No transcript yet
-    let has = api::repositories::audiobook_transcripts::has_transcript_with_tag(
-        &server.pool,
-        file_id,
-        "whisper-v3",
-    )
-    .await
-    .unwrap();
-    assert!(!has);
+    let state = audiobook_transcripts::transcript_state(&server.pool, file_id, "whisper-v3")
+        .await
+        .unwrap();
+    assert_eq!(state, TranscriptState::Missing);
 
     // Insert a transcript segment with a specific config tag
     let seg_id = Uuid::now_v7();
@@ -224,25 +221,17 @@ async fn test_has_transcript_with_tag() {
     .await
     .unwrap();
 
-    // Now has transcript with that tag
-    let has = api::repositories::audiobook_transcripts::has_transcript_with_tag(
-        &server.pool,
-        file_id,
-        "whisper-v3",
-    )
-    .await
-    .unwrap();
-    assert!(has);
+    // Now current under that tag
+    let state = audiobook_transcripts::transcript_state(&server.pool, file_id, "whisper-v3")
+        .await
+        .unwrap();
+    assert_eq!(state, TranscriptState::Current);
 
-    // But not with a different tag
-    let has = api::repositories::audiobook_transcripts::has_transcript_with_tag(
-        &server.pool,
-        file_id,
-        "whisper-v4",
-    )
-    .await
-    .unwrap();
-    assert!(!has);
+    // But outdated under a different one
+    let state = audiobook_transcripts::transcript_state(&server.pool, file_id, "whisper-v4")
+        .await
+        .unwrap();
+    assert_eq!(state, TranscriptState::Outdated);
 }
 
 #[tokio::test]

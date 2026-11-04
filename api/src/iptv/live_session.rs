@@ -520,6 +520,7 @@ async fn build_session(
         source_resolution: (1920, 1080),
         variants: None,
         max_bitrate_kbps: None,
+        max_height: None,
         keyframes: None,
         error: None,
         pending_segment: None,

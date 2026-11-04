@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT b.id, b.want_status,\n               (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)\n                OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)) AS \"is_in_library!\"\n        FROM books b\n        WHERE b.ingest_status IS NULL\n          AND EXISTS (SELECT 1 FROM unnest($1::text[]) AS k(key) WHERE b.identifiers->>k.key = $2)\n        ORDER BY 3 DESC, b.created_at ASC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "want_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "want_status"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "is_in_library!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "a482aba923beda5f8a4a105dcb46231278aa91dfbdc0af43a20ac152c63afb79"
+}

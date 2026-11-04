@@ -30,6 +30,67 @@ pub fn srt_to_vtt(srt: &str) -> String {
     output
 }
 
+/// Move every cue `offset` seconds earlier, for a player whose zero is that far into the
+/// title. Cues that end before the new zero are dropped.
+pub fn shift_vtt(vtt: &str, offset: f64) -> String {
+    if offset <= 0.0 {
+        return vtt.to_string();
+    }
+    let mut out = String::with_capacity(vtt.len());
+    for block in vtt.split("\n\n") {
+        let Some(timing) = block.lines().find(|l| l.contains(" --> ")) else {
+            push_block(&mut out, block);
+            continue;
+        };
+        let (start, rest) = timing.split_once(" --> ").unwrap_or_default();
+        let (end, settings) = rest.split_once(' ').unwrap_or((rest, ""));
+        let (Some(start), Some(end)) = (parse_vtt_time(start), parse_vtt_time(end)) else {
+            push_block(&mut out, block);
+            continue;
+        };
+        if end - offset <= 0.0 {
+            continue;
+        }
+        let mut shifted = format!(
+            "{} --> {}",
+            format_vtt_time((start - offset).max(0.0)),
+            format_vtt_time(end - offset)
+        );
+        if !settings.is_empty() {
+            shifted.push(' ');
+            shifted.push_str(settings);
+        }
+        push_block(&mut out, &block.replacen(timing, &shifted, 1));
+    }
+    out
+}
+
+fn push_block(out: &mut String, block: &str) {
+    if !out.is_empty() {
+        out.push_str("\n\n");
+    }
+    out.push_str(block);
+}
+
+fn parse_vtt_time(t: &str) -> Option<f64> {
+    let mut secs = 0.0;
+    for part in t.trim().split(':') {
+        secs = secs * 60.0 + part.parse::<f64>().ok()?;
+    }
+    Some(secs)
+}
+
+fn format_vtt_time(secs: f64) -> String {
+    let ms = (secs * 1000.0).round() as u64;
+    format!(
+        "{:02}:{:02}:{:02}.{:03}",
+        ms / 3_600_000,
+        ms / 60_000 % 60,
+        ms / 1000 % 60,
+        ms % 1000
+    )
+}
+
 /// Deterministic cache path for a pre-extracted subtitle track.
 ///
 /// Used by both the media_probe job (writes) and playback session (reads).
@@ -73,6 +134,16 @@ pub fn subtitle_extension(codec: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cues_move_onto_a_timeline_that_begins_part_way_in() {
+        let vtt = "WEBVTT\n\n1\n00:00:05.000 --> 00:00:08.000\nGone\n\n2\n00:23:01.000 --> 00:23:04.500 line:90%\nStraddles\n\n3\n01:00:00.250 --> 01:00:02.000\nLater\n";
+        assert_eq!(
+            shift_vtt(vtt, 1382.0),
+            "WEBVTT\n\n2\n00:00:00.000 --> 00:00:02.500 line:90%\nStraddles\n\n3\n00:36:58.250 --> 00:37:00.000\nLater\n"
+        );
+        assert_eq!(shift_vtt(vtt, 0.0), vtt);
+    }
 
     #[test]
     fn test_srt_to_vtt_basic() {

@@ -17,3 +17,4 @@ pub mod peaky;
 pub mod probe;
 pub mod repair;
 pub mod stt;
+pub mod virtual_mp4;

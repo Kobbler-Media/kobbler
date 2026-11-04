@@ -174,6 +174,7 @@ fn stremio_capabilities() -> crate::streaming::decision::ClientCapabilities {
             "m2ts".into(),
         ],
         supports_interlaced: Some(true),
+        max_height: None,
     }
 }
 

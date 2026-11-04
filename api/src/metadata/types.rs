@@ -291,6 +291,26 @@ impl MetadataResult {
             identifiers: serde_json::Value::Null,
         }
     }
+
+    /// Keyed the way library books store them: the provider id under the provider's name.
+    pub fn all_identifiers(&self) -> serde_json::Map<String, serde_json::Value> {
+        use serde_json::Value;
+        let mut ids = serde_json::Map::new();
+        if let Some(ext_id) = &self.external_id {
+            ids.insert(self.provider.clone(), Value::String(ext_id.clone()));
+        }
+        if let Some(isbn) = &self.isbn {
+            let key = if isbn.len() == 13 { "isbn13" } else { "isbn10" };
+            ids.insert(key.to_string(), Value::String(isbn.clone()));
+        }
+        if let Some(asin) = &self.asin {
+            ids.insert("asin".to_string(), Value::String(asin.clone()));
+        }
+        if let Some(obj) = self.identifiers.as_object() {
+            ids.extend(obj.iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
+        ids
+    }
 }
 
 /// Query parameters for metadata search

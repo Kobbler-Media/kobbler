@@ -9,7 +9,7 @@ use crate::enrichment_config::stt_config_tag;
 use crate::gpu::GpuLock;
 use crate::jobs::JobResult;
 use crate::jobs::worker::JobHandler;
-use crate::repositories::audiobook_transcripts::TranscriptSegmentInput;
+use crate::repositories::audiobook_transcripts::{TranscriptSegmentInput, TranscriptState};
 use crate::repositories::{audiobook_files, audiobook_transcripts, ebook_segments};
 use crate::search::SearchBackend;
 use async_trait::async_trait;
@@ -29,6 +29,11 @@ pub struct AudiobookTranscribePayload {
     /// config tag. Background runs leave it false and skip those files.
     #[serde(default)]
     pub manual: bool,
+    /// Also redo files whose transcript is from an older STT config. Routine
+    /// runs only fill in files with no transcript: regenerating the library is
+    /// the user's call (see `transcribe_refresh`).
+    #[serde(default)]
+    pub outdated: bool,
 }
 
 pub struct AudiobookTranscribeHandler {
@@ -119,6 +124,7 @@ impl JobHandler for AudiobookTranscribeHandler {
         let total = files.len();
         let mut transcribed = 0u64;
         let mut up_to_date = 0u64;
+        let mut outdated_kept = 0u64;
         let mut segments_total = 0u64;
         // Set when a file fails with a transient error (STT down/restarting).
         // Used to decide retryable vs. permanent failure below.
@@ -127,13 +133,20 @@ impl JobHandler for AudiobookTranscribeHandler {
         for (i, file) in files.iter().enumerate() {
             nats_jobs::check_cancelled(&cancel)?;
 
-            if !payload.manual
-                && audiobook_transcripts::has_transcript_with_tag(&self.pool, file.id, &config_tag)
+            if !payload.manual {
+                match audiobook_transcripts::transcript_state(&self.pool, file.id, &config_tag)
                     .await
-                    .unwrap_or(false)
-            {
-                up_to_date += 1;
-                continue;
+                {
+                    Ok(TranscriptState::Current) => {
+                        up_to_date += 1;
+                        continue;
+                    }
+                    Ok(TranscriptState::Outdated) if !payload.outdated => {
+                        outdated_kept += 1;
+                        continue;
+                    }
+                    _ => {}
+                }
             }
 
             let file_path =
@@ -233,6 +246,7 @@ impl JobHandler for AudiobookTranscribeHandler {
             book_id = %book_id,
             transcribed,
             up_to_date,
+            outdated_kept,
             segments_total,
             "Audiobook transcription complete"
         );
@@ -288,7 +302,7 @@ impl JobHandler for AudiobookTranscribeHandler {
                 .await;
         }
 
-        if transcribed + up_to_date == 0 {
+        if transcribed + up_to_date + outdated_kept == 0 {
             let msg = format!("All {total} file(s) failed to transcribe");
             // If at least one file failed transiently (STT crash/restart
             // window), retry the whole job — the audio is fine, the service
@@ -302,6 +316,7 @@ impl JobHandler for AudiobookTranscribeHandler {
         Ok(json!({
             "transcribed": transcribed,
             "up_to_date": up_to_date,
+            "outdated_kept": outdated_kept,
             "segments_total": segments_total,
         }))
     }

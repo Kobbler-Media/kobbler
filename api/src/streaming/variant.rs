@@ -86,6 +86,13 @@ pub fn scale_to_height(src_w: u32, src_h: u32, target_h: u32) -> (u32, u32) {
     (w & !1, target_h & !1)
 }
 
+pub fn output_resolution(src_w: u32, src_h: u32, max_height: Option<u32>) -> (u32, u32) {
+    match max_height {
+        Some(max) if src_h > max => scale_to_height(src_w, src_h, max),
+        _ => (src_w, src_h),
+    }
+}
+
 /// Estimate HLS bandwidth (bits/sec) for a given target bitrate.
 pub fn estimate_bandwidth(bitrate_kbps: Option<u32>) -> u32 {
     let video_kbps = bitrate_kbps.unwrap_or(5000);
@@ -118,6 +125,15 @@ fn estimate_bandwidth_for_resolution(width: u32, height: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_is_scaled_down_only_past_the_client_height() {
+        assert_eq!(output_resolution(3840, 2160, Some(1080)), (1920, 1080));
+        assert_eq!(output_resolution(1920, 1080, Some(1080)), (1920, 1080));
+        assert_eq!(output_resolution(1280, 720, Some(1080)), (1280, 720));
+        assert_eq!(output_resolution(3840, 2160, None), (3840, 2160));
+        assert_eq!(output_resolution(0, 0, Some(1080)), (0, 0));
+    }
 
     #[test]
     fn test_compute_variants_4k() {

@@ -106,6 +106,7 @@ pub struct PlaybackSession {
     /// Client-requested maximum video bitrate in kbps.
     /// Used to filter ABR variants in the master playlist.
     pub max_bitrate_kbps: Option<u32>,
+    pub max_height: Option<u32>,
     /// Pre-computed keyframe timestamps for playlist prediction.
     /// Shared with transcode sessions for immediate playlist generation.
     pub keyframes: Option<Vec<f64>>,
@@ -214,6 +215,7 @@ impl PlaybackSession {
             is_live: false,
             provider_id: None,
             max_bitrate_kbps: None,
+            max_height: None,
             keyframes: None,
             error: None,
             pending_segment: None,

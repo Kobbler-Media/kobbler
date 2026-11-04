@@ -18,6 +18,9 @@
 //! here falls back to a 1.0 re-render rather than failing, and reports what it
 //! actually rendered at.
 
+pub mod cast;
+pub mod timeline;
+
 use std::fmt;
 use std::sync::LazyLock;
 

@@ -143,6 +143,34 @@ impl OpenLibraryProvider {
     }
 }
 
+fn work_key(external_id: &str) -> Option<String> {
+    let id = external_id
+        .trim()
+        .trim_start_matches('/')
+        .trim_start_matches("works/");
+    (!id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric()))
+        .then(|| format!("/works/{id}"))
+}
+
+/// The search index has the work's authors and ISBNs; only the work record has its description.
+fn work_result(work: WorkResponse, indexed: Option<MetadataResult>) -> MetadataResult {
+    let mut result = indexed.unwrap_or_else(|| {
+        let mut r = MetadataResult::new("openlibrary", work.title);
+        r.subjects = work.subjects;
+        r.publish_date = work.first_publish_date;
+        r.cover_url = work
+            .covers
+            .iter()
+            .find(|id| **id > 0)
+            .map(|id| format!("https://covers.openlibrary.org/b/id/{id}-L.jpg"));
+        r
+    });
+    result.external_id = Some(work.key);
+    result.description = work.description.map(WorkDescription::into_text);
+    result.confidence = 1.0;
+    result
+}
+
 #[async_trait]
 impl MetadataProvider for OpenLibraryProvider {
     fn info(&self) -> &'static ProviderInfo {
@@ -150,10 +178,6 @@ impl MetadataProvider for OpenLibraryProvider {
     }
 
     async fn search(&self, query: &MetadataQuery) -> Result<Vec<MetadataResult>, ProviderError> {
-        // Fields to request from the API (publisher and others aren't returned by default)
-        // Note: description is not available from search API - would need separate work fetch
-        const FIELDS: &str = "key,title,author_name,isbn,publisher,first_publish_year,language,subject,cover_i,number_of_pages_median";
-
         // Build search URL
         let url = if let Some(isbn) = &query.isbn {
             // ISBN search is more direct
@@ -223,6 +247,44 @@ impl MetadataProvider for OpenLibraryProvider {
         Ok(results)
     }
 
+    async fn fetch_by_id(
+        &self,
+        external_id: &str,
+    ) -> Result<Option<MetadataResult>, ProviderError> {
+        let Some(key) = work_key(external_id) else {
+            return Ok(None);
+        };
+        let response = self
+            .client
+            .get(format!("{}{key}.json", self.base_url))
+            .send()
+            .await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(ProviderError::from_http_status(
+                response.status(),
+                "Open Library works API",
+            ));
+        }
+        let work: WorkResponse = response.json().await?;
+
+        let indexed = self
+            .client
+            .get(format!(
+                "{}/search.json?q={}&fields={FIELDS}",
+                self.base_url,
+                urlencoding::encode(&format!("key:{key}"))
+            ))
+            .send()
+            .await?
+            .json::<SearchResponse>()
+            .await?;
+        let indexed = self.parse_search_response(indexed).into_iter().next();
+        Ok(Some(work_result(work, indexed)))
+    }
+
     async fn fetch_cover(&self, url: &str) -> Result<Vec<u8>, ProviderError> {
         let response = self.client.get(url).send().await?;
 
@@ -241,6 +303,36 @@ impl MetadataProvider for OpenLibraryProvider {
 // ============================================================================
 // Response Types
 // ============================================================================
+
+// Description is not in the search index; it comes from the work record.
+const FIELDS: &str = "key,title,author_name,isbn,publisher,first_publish_year,language,subject,cover_i,number_of_pages_median";
+
+#[derive(Debug, Deserialize)]
+struct WorkResponse {
+    key: String,
+    title: String,
+    description: Option<WorkDescription>,
+    #[serde(default)]
+    covers: Vec<i64>,
+    #[serde(default)]
+    subjects: Vec<String>,
+    first_publish_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum WorkDescription {
+    Text(String),
+    Typed { value: String },
+}
+
+impl WorkDescription {
+    fn into_text(self) -> String {
+        match self {
+            Self::Text(text) | Self::Typed { value: text } => text,
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct SearchResponse {
@@ -261,4 +353,78 @@ struct SearchDoc {
     subject: Option<Vec<String>>,
     cover_i: Option<i64>,
     number_of_pages_median: Option<i32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn provider() -> OpenLibraryProvider {
+        OpenLibraryProvider {
+            client: reqwest::Client::new(),
+            base_url: String::new(),
+        }
+    }
+
+    fn work() -> WorkResponse {
+        serde_json::from_value(serde_json::json!({
+            "key": "/works/OL45883W",
+            "title": "Fantastic Mr Fox",
+            "description": { "type": "/type/text", "value": "Three farmers." },
+            "covers": [-1, 6498519],
+            "subjects": ["Foxes"],
+            "first_publish_date": "1970",
+            "authors": [{ "author": { "key": "/authors/OL34184A" } }]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn work_key_accepts_bare_and_prefixed_ids() {
+        assert_eq!(work_key("OL45883W").as_deref(), Some("/works/OL45883W"));
+        assert_eq!(
+            work_key("/works/OL45883W").as_deref(),
+            Some("/works/OL45883W")
+        );
+        assert_eq!(work_key("../authors/x"), None);
+        assert_eq!(work_key(""), None);
+    }
+
+    #[test]
+    fn work_sample_merges_indexed_fields_with_description() {
+        let search: SearchResponse = serde_json::from_value(serde_json::json!({
+            "num_found": 1,
+            "docs": [{
+                "key": "/works/OL45883W",
+                "title": "Fantastic Mr Fox",
+                "author_name": ["Roald Dahl"],
+                "isbn": ["9780142410349"],
+                "first_publish_year": 1970,
+                "subject": ["Foxes", "Farmers"],
+                "cover_i": 6498519
+            }]
+        }))
+        .unwrap();
+        let indexed = provider().parse_search_response(search).into_iter().next();
+
+        let r = work_result(work(), indexed);
+        assert_eq!(r.authors, ["Roald Dahl"]);
+        assert_eq!(r.isbn.as_deref(), Some("9780142410349"));
+        assert_eq!(r.description.as_deref(), Some("Three farmers."));
+        assert_eq!(r.external_id.as_deref(), Some("/works/OL45883W"));
+        assert_eq!(r.publish_date.as_deref(), Some("1970"));
+        assert_eq!(r.subjects, ["Foxes", "Farmers"]);
+    }
+
+    #[test]
+    fn work_sample_alone_still_maps() {
+        let r = work_result(work(), None);
+        assert_eq!(r.title, "Fantastic Mr Fox");
+        assert_eq!(r.description.as_deref(), Some("Three farmers."));
+        assert_eq!(
+            r.cover_url.as_deref(),
+            Some("https://covers.openlibrary.org/b/id/6498519-L.jpg")
+        );
+        assert_eq!(r.subjects, ["Foxes"]);
+    }
 }

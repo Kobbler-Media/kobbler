@@ -8,7 +8,19 @@
     <link rel="stylesheet" href="receiver.css" />
   </head>
   <body>
-    <cast-media-player></cast-media-player>
+    <div id="art" class="art"></div>
+    <video id="media"></video>
+    <div id="idle" class="idle visible">Kobbler</div>
+    <div id="hud" class="hud">
+      <div id="hud-title" class="hud-title"></div>
+      <div id="hud-subtitle" class="hud-subtitle"></div>
+      <div class="hud-row">
+        <div id="hud-state" class="hud-state"></div>
+        <div id="hud-elapsed" class="hud-time"></div>
+        <div class="hud-bar"><div id="hud-fill" class="hud-fill"></div></div>
+        <div id="hud-total" class="hud-time"></div>
+      </div>
+    </div>
     <div id="skip-overlay" class="skip-overlay" tabindex="0" aria-hidden="true">
       <button id="skip-btn" class="skip-btn" tabindex="0">Skip</button>
     </div>

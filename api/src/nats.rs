@@ -121,6 +121,7 @@ use crate::jobs::handlers::{
     TraktImportHistoryHandler,
     TraktSyncWatchStateHandler,
     TranscribeBackfillHandler,
+    TranscribeRefreshHandler,
     TvMonitorHandler,
     TvShowEnrichHandler,
     TvWantHandler,
@@ -781,6 +782,12 @@ pub async fn start_nats_worker(
         nats_publisher.clone(),
         runtime_config.clone(),
         initial_scan_complete.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(TranscribeRefreshHandler::new(
+        pool.clone(),
+        nats_publisher.clone(),
+        runtime_config.clone(),
+        job_events.clone(),
     )));
 
     // Session cleanup handler (background directory deletion with retries)

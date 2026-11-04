@@ -15,25 +15,30 @@ const NAMESPACE = 'urn:x-cast:com.kobbler.cast';
 
 // ── State ──────────────────────────────────────────────────────
 
-let sessionState = {
-  baseUrl: '',
-  token: '',
-  sessionId: '',
-  mediaId: null,
-  mediaType: null,
-  playlistUrl: null,
-  directUrl: null,
-  method: 'hls',
-  duration: 0,
-  subtitles: [],
-  audioTracks: [],
-  thumbnailsUrl: null,
-  chapters: [],
-  skipSegments: [],
-  capabilities: null,
-  metadata: {},
-  _isDebrid: false
-};
+function freshSession() {
+  return {
+    baseUrl: '',
+    token: '',
+    sessionId: '',
+    mediaId: null,
+    mediaType: null,
+    playlistUrl: null,
+    directUrl: null,
+    method: 'hls',
+    duration: 0,
+    startOffset: 0,
+    subtitles: [],
+    audioTracks: [],
+    thumbnailsUrl: null,
+    chapters: [],
+    skipSegments: [],
+    capabilities: null,
+    metadata: {},
+    _isDebrid: false
+  };
+}
+
+let sessionState = freshSession();
 
 let thumbnailEntries = [];
 let heartbeatInterval = null;
@@ -47,6 +52,8 @@ let seekGeneration = 0;
 let audiobookState = null; // null when not in audiobook mode
 let audiobookFileIndex = 0;
 
+let ttsState = null;
+
 // Token refresh tracking
 let tokenCreatedAt = Date.now();
 const TOKEN_REFRESH_AFTER_MS = 20 * 60 * 60 * 1000; // Refresh after 20 hours
@@ -57,11 +64,23 @@ const skipOverlay = document.getElementById('skip-overlay');
 const skipBtn = document.getElementById('skip-btn');
 const thumbnailPreview = document.getElementById('thumbnail-preview');
 const chapterDisplay = document.getElementById('chapter-display');
+const artEl = document.getElementById('art');
+const idleEl = document.getElementById('idle');
+const hudEl = document.getElementById('hud');
+const hudTitle = document.getElementById('hud-title');
+const hudSubtitle = document.getElementById('hud-subtitle');
+const hudState = document.getElementById('hud-state');
+const hudElapsed = document.getElementById('hud-elapsed');
+const hudTotal = document.getElementById('hud-total');
+const hudFill = document.getElementById('hud-fill');
 
 // ── CAF Setup ──────────────────────────────────────────────────
 
 const context = cast.framework.CastReceiverContext.getInstance();
 const playerManager = context.getPlayerManager();
+// Our own element rather than <cast-media-player>, whose built-in progress bar counts from
+// the start of the playlist: a transcode made from a resume would read 0:00 at minute 23.
+playerManager.setMediaElement(document.getElementById('media'));
 
 // Custom namespace for sender communication
 context.addCustomMessageListener(NAMESPACE, (event) => {
@@ -78,6 +97,21 @@ function handleSenderMessage(msg) {
     case 'INIT_AUDIOBOOK':
       initAudiobook(msg.payload);
       break;
+    case 'INIT_TTS':
+      initTts(msg.payload);
+      break;
+    case 'TTS_STOP':
+      stopTts();
+      break;
+    case 'AUDIOBOOK_SEEK':
+      seekAudiobook(msg.payload.fileIndex, msg.payload.time);
+      break;
+    case 'AUDIOBOOK_RATE':
+      if (audiobookState) {
+        audiobookState.playbackRate = msg.payload.rate;
+        playerManager.setPlaybackRate(msg.payload.rate);
+      }
+      break;
     case 'SUBTITLE_CHANGE':
       handleSubtitleChange(msg.payload);
       break;
@@ -93,6 +127,12 @@ function handleSenderMessage(msg) {
     case 'STATUS_REQUEST':
       sendStatus();
       break;
+    case 'CAPABILITIES_REQUEST':
+      sendCapabilities();
+      break;
+    case 'TRACKS_REQUEST':
+      sendTracks();
+      break;
   }
 }
 
@@ -100,19 +140,129 @@ function sendToBroadcast(msg) {
   context.sendCustomMessage(NAMESPACE, undefined, msg);
 }
 
+// <cast-media-player> keeps its media element in a shadow root, out of reach of
+// document.querySelector, so the player manager is the only reliable source. A
+// transcode's playlist starts where it was made from, so the player's zero is
+// startOffset into the title; everything else here speaks title time.
+function playback() {
+  const state = playerManager.getPlayerState();
+  return {
+    currentTime: clockBase() + (playerManager.getCurrentTimeSec() || 0),
+    duration: playerManager.getDurationSec(),
+    active: state !== cast.framework.messages.PlayerState.IDLE,
+    playing:
+      state === cast.framework.messages.PlayerState.PLAYING ||
+      state === cast.framework.messages.PlayerState.BUFFERING
+  };
+}
+
+function clockBase() {
+  if (ttsState) return ttsState.baseMs / 1000;
+  return audiobookState ? 0 : sessionState.startOffset;
+}
+
 function sendStatus() {
-  const mediaEl = document.querySelector('video') || document.querySelector('audio');
+  const media = playback();
   sendToBroadcast({
     type: 'STATUS_RESPONSE',
     payload: {
-      currentTime: mediaEl ? mediaEl.currentTime : 0,
+      currentTime: media.currentTime,
       duration: sessionState.duration,
-      playing: mediaEl ? !mediaEl.paused : false,
-      volume: mediaEl ? mediaEl.volume : 1,
+      playing: media.playing,
       mediaId: sessionState.mediaId,
       mediaType: sessionState.mediaType,
       metadata: sessionState.metadata,
-      isAudiobook: !!audiobookState
+      isAudiobook: !!audiobookState,
+      isTts: !!ttsState
+    }
+  });
+}
+
+// ── What this device decodes ───────────────────────────────────
+
+const PROBE_HEIGHTS = [2160, 1440, 1080, 720];
+let probedCapabilities = null;
+
+function canPlay(mime, codecs, height) {
+  try {
+    return height
+      ? context.canDisplayType(mime, codecs, Math.round((height * 16) / 9), height, 30)
+      : context.canDisplayType(mime, codecs);
+  } catch {
+    return false;
+  }
+}
+
+// A device's name says nothing about its generation, so senders ask the device itself.
+// One height for every codec: the transcode it caps is H.264.
+function receiverCapabilities() {
+  if (probedCapabilities) return probedCapabilities;
+  const maxHeight =
+    PROBE_HEIGHTS.find((h) => canPlay('video/mp4', h > 1080 ? 'avc1.640033' : 'avc1.640028', h)) ||
+    720;
+  const video_codecs = ['h264'];
+  if (canPlay('video/mp4', `hvc1.1.6.${maxHeight > 1080 ? 'L150' : 'L120'}.90`, maxHeight)) {
+    video_codecs.push('hevc');
+  }
+  if (canPlay('video/mp4', 'vp09.00.40.08', maxHeight)) video_codecs.push('vp9');
+  const audio_codecs = ['aac'];
+  if (canPlay('audio/mp4', 'ac-3')) audio_codecs.push('ac3');
+  if (canPlay('audio/mp4', 'ec-3')) audio_codecs.push('eac3');
+  probedCapabilities = { video_codecs, audio_codecs, containers: ['mp4'], max_height: maxHeight };
+  return probedCapabilities;
+}
+
+function sendCapabilities() {
+  sendToBroadcast({ type: 'CAPABILITIES', payload: receiverCapabilities() });
+}
+
+// ── Tracks ─────────────────────────────────────────────────────
+
+let activeSubtitleId = null;
+
+// Only WebVTT reaches the player as text: ASS needs a renderer, bitmaps a burn-in.
+function textTracks() {
+  return (sessionState.subtitles || [])
+    .filter((s) => s.url && s.format === 'vtt')
+    .map((sub, i) => ({ id: i + 1, sub }));
+}
+
+function subtitleUrl(url) {
+  const qualified = qualify(url);
+  if (!(sessionState.startOffset > 0)) return appendToken(qualified);
+  const sep = qualified.includes('?') ? '&' : '?';
+  return appendToken(`${qualified}${sep}offset=${sessionState.startOffset}`);
+}
+
+function defaultTracks() {
+  activeSubtitleId = textTracks().find((t) => t.sub.is_default)?.id ?? null;
+  sessionState.activeAudioIndex =
+    (sessionState.audioTracks || []).find((a) => a.is_default)?.stream_index ??
+    sessionState.audioTracks?.[0]?.stream_index ??
+    null;
+}
+
+function sendTracks() {
+  if (audiobookState || !sessionState.sessionId) return;
+  sendToBroadcast({
+    type: 'TRACKS',
+    payload: {
+      subtitles: textTracks().map(({ id, sub }) => ({
+        id,
+        language: sub.language ?? null,
+        title: sub.title ?? null,
+        forced: !!sub.is_forced,
+        hearingImpaired: !!sub.is_hearing_impaired
+      })),
+      activeSubtitleId,
+      audioTracks: (sessionState.audioTracks || []).map((a) => ({
+        streamIndex: a.stream_index,
+        language: a.language ?? null,
+        title: a.title ?? null,
+        codec: a.codec ?? null,
+        channels: a.channels ?? null
+      })),
+      activeAudioIndex: sessionState.activeAudioIndex ?? null
     }
   });
 }
@@ -122,11 +272,14 @@ function sendStatus() {
 let enrichmentSource = null;
 
 function initSession(payload) {
-  sessionState = { ...payload, _isDebrid: false };
+  sessionState = { ...payload, startOffset: payload.startOffset || 0, _isDebrid: false };
   seekGeneration = 0;
   thumbnailEntries = [];
   tokenCreatedAt = Date.now();
   currentChapterIndex = -1;
+  announcedSkip = undefined;
+  defaultTracks();
+  flashHud();
 
   // Detect debrid session (session IDs from debrid start enrichment polling)
   // If no thumbnails/skip segments yet, this is likely a debrid session that needs enrichment
@@ -241,6 +394,70 @@ function startEnrichmentPolling() {
   };
 }
 
+// ── Read-Aloud Mode ────────────────────────────────────────────
+
+const TTS_POSITION_MS = 1000;
+const TTS_MAX_REOPENS = 3;
+
+// The phone highlights the word being spoken from these, so they come every second
+// rather than every five.
+function initTts(payload) {
+  cleanup();
+  sessionState = freshSession();
+  ttsState = { ...payload, baseMs: 0, reopens: 0 };
+  clearInterval(positionInterval);
+  positionInterval = setInterval(announcePosition, TTS_POSITION_MS);
+  loadTts(payload.startMs || 0);
+  flashHud();
+}
+
+// The stream has no length and cannot seek, so a read is reopened at a time instead:
+// the server starts it at the frame holding fromMs, and the player's zero is there.
+function loadTts(fromMs) {
+  ttsState.baseMs = fromMs;
+  const sep = ttsState.url.includes('?') ? '&' : '?';
+  const url = fromMs > 0 ? `${ttsState.url}${sep}from_ms=${fromMs}` : ttsState.url;
+
+  const mediaInfo = new cast.framework.messages.MediaInformation();
+  mediaInfo.contentUrl = url;
+  mediaInfo.contentId = url;
+  mediaInfo.contentType = 'audio/aac';
+  mediaInfo.streamType = cast.framework.messages.StreamType.LIVE;
+  const metadata = new cast.framework.messages.MusicTrackMediaMetadata();
+  metadata.title = ttsState.title;
+  if (ttsState.subtitle) metadata.artist = ttsState.subtitle;
+  if (ttsState.coverUrl) metadata.images = [new cast.framework.messages.Image(ttsState.coverUrl)];
+  mediaInfo.metadata = metadata;
+  artEl.style.backgroundImage = ttsState.coverUrl ? `url("${ttsState.coverUrl}")` : '';
+
+  const loadRequest = new cast.framework.messages.LoadRequestData();
+  loadRequest.media = mediaInfo;
+  loadRequest.currentTime = 0;
+  loadRequest.autoplay = true;
+  playerManager.load(loadRequest).catch((err) => {
+    console.error('[Kobbler] Read-aloud load failed:', err);
+  });
+}
+
+// A proxy resets a stream left idle through a long pause; the server still holds the
+// read, so it is picked up from where the listener was.
+function reopenTts() {
+  if (!ttsState || ttsState.reopens >= TTS_MAX_REOPENS) return;
+  ttsState.reopens++;
+  loadTts(Math.floor(playback().currentTime * 1000));
+}
+
+function stopTts() {
+  if (!ttsState) return;
+  cleanup();
+  playerManager.stop();
+}
+
+playerManager.addEventListener(cast.framework.events.EventType.ERROR, reopenTts);
+playerManager.addEventListener(cast.framework.events.EventType.PLAYING, () => {
+  if (ttsState) ttsState.reopens = 0;
+});
+
 // ── Audiobook Mode ─────────────────────────────────────────────
 
 function initAudiobook(payload) {
@@ -249,10 +466,14 @@ function initAudiobook(payload) {
 
   audiobookState = payload;
   audiobookFileIndex = payload.currentFileIndex || 0;
-  sessionState.baseUrl = payload.baseUrl;
-  sessionState.token = payload.token;
-  sessionState.chapters = payload.chapters || [];
-  sessionState.duration = payload.duration;
+  // Nothing of a title played before may follow the book: a seek would go to its transcode.
+  sessionState = {
+    ...freshSession(),
+    baseUrl: payload.baseUrl,
+    token: payload.token,
+    duration: payload.duration
+  };
+  sessionState.chapters = audiobookChapters(audiobookFileIndex);
 
   // Start position broadcasting
   clearInterval(positionInterval);
@@ -260,12 +481,48 @@ function initAudiobook(payload) {
 
   // Start chapter monitoring
   clearInterval(chapterCheckInterval);
-  if (sessionState.chapters.length > 0) {
+  if ((payload.chapters || []).length > 0) {
     chapterCheckInterval = setInterval(checkChapter, 1000);
   }
 
   // Load the current audio file via CAF
   loadAudiobookFile(audiobookFileIndex, payload.currentTime);
+  flashHud();
+}
+
+// Senders give a chapter's file and its times within that file. The web sender names
+// only the file it was on, so a chapter without a file belongs to whichever is playing.
+function audiobookChapters(fileIndex) {
+  return (audiobookState.chapters || [])
+    .filter((c) => c.fileIndex === undefined || c.fileIndex === fileIndex)
+    .map((c) => ({
+      title: c.title,
+      start_seconds: c.startSeconds ?? c.start_seconds,
+      end_seconds: c.endSeconds ?? c.end_seconds
+    }));
+}
+
+function seekAudiobook(fileIndex, time) {
+  if (!audiobookState) return;
+  if (fileIndex === audiobookFileIndex) {
+    playerManager.seek(time);
+  } else {
+    loadAudiobookFile(fileIndex, time);
+  }
+  flashHud();
+}
+
+// The book's clock across its files, where the sender says how long each one is.
+function audiobookClock(fileTime) {
+  const lengths = audiobookState.fileDurations || [];
+  if (lengths.length !== audiobookState.fileIds.length) {
+    return { currentTime: fileTime, duration: lengths[audiobookFileIndex] || 0 };
+  }
+  const before = lengths.slice(0, audiobookFileIndex).reduce((a, b) => a + b, 0);
+  return {
+    currentTime: before + fileTime,
+    duration: lengths.reduce((a, b) => a + b, 0)
+  };
 }
 
 function loadAudiobookFile(fileIndex, startTime) {
@@ -273,8 +530,10 @@ function loadAudiobookFile(fileIndex, startTime) {
 
   audiobookFileIndex = fileIndex;
   const fileId = audiobookState.fileIds[fileIndex];
+  // MP3 rewrapped in MP4 by the server: a browser's MP3 demuxer guesses where a seek
+  // lands, and the transcript runs on what it reports.
   const audioUrl = appendToken(
-    `${audiobookState.baseUrl}/api/v1/admin/books/${audiobookState.bookId}/audio/${fileId}`
+    `${audiobookState.baseUrl}/api/v1/admin/books/${audiobookState.bookId}/audio/${fileId}?container=mp4`
   );
 
   // Build CAF media info
@@ -283,9 +542,9 @@ function loadAudiobookFile(fileIndex, startTime) {
   mediaInfo.contentId = audioUrl;
   mediaInfo.contentType = 'audio/mp4';
   mediaInfo.streamType = cast.framework.messages.StreamType.BUFFERED;
-  if (audiobookState.duration > 0) {
-    mediaInfo.duration = audiobookState.duration;
-  }
+  const fileDuration = audiobookState.fileDurations?.[fileIndex];
+  if (fileDuration > 0) mediaInfo.duration = fileDuration;
+  sessionState.duration = fileDuration || 0;
 
   // Set metadata
   const metadata = new cast.framework.messages.MusicTrackMediaMetadata();
@@ -295,6 +554,9 @@ function loadAudiobookFile(fileIndex, startTime) {
   }
   metadata.trackNumber = fileIndex + 1;
   metadata.totalTracks = audiobookState.fileIds.length;
+  artEl.style.backgroundImage = audiobookState.metadata.coverUrl
+    ? `url("${appendToken(audiobookState.metadata.coverUrl)}")`
+    : '';
   if (audiobookState.metadata.coverUrl) {
     metadata.images = [
       new cast.framework.messages.Image(appendToken(audiobookState.metadata.coverUrl))
@@ -307,18 +569,15 @@ function loadAudiobookFile(fileIndex, startTime) {
   loadRequest.media = mediaInfo;
   loadRequest.currentTime = startTime || 0;
   loadRequest.autoplay = true;
+  if (audiobookState.playbackRate) loadRequest.playbackRate = audiobookState.playbackRate;
 
   playerManager.load(loadRequest).then(
     () => console.log('[Kobbler] Audiobook file loaded:', fileIndex),
     (err) => console.error('[Kobbler] Audiobook load failed:', err)
   );
 
-  // Update chapters for this file
-  if (audiobookState.chapters) {
-    sessionState.chapters = audiobookState.chapters.filter(
-      (c) => c.fileIndex === undefined || c.fileIndex === fileIndex
-    );
-  }
+  sessionState.chapters = audiobookChapters(fileIndex);
+  currentChapterIndex = -1;
 }
 
 function audiobookAdvanceFile() {
@@ -336,12 +595,13 @@ function audiobookAdvanceFile() {
   }
 }
 
-function saveAudiobookPosition(pos, dur) {
+function saveAudiobookPosition(pos) {
   if (pos <= 0 || pos === lastSavedPosition || !audiobookState) return;
   lastSavedPosition = pos;
 
   const fileId = audiobookState.fileIds[audiobookFileIndex];
-  const progress = dur > 0 ? Math.round((pos / dur) * 100) : 0;
+  const book = audiobookClock(pos);
+  const progress = book.duration > 0 ? Math.round((book.currentTime / book.duration) * 100) : 0;
 
   fetch(
     appendToken(
@@ -361,25 +621,38 @@ function saveAudiobookPosition(pos, dur) {
 
 let lastSavedPosition = -1;
 
-function broadcastPosition() {
-  // Handle both video and audiobook modes
-  const mediaEl = document.querySelector('video') || document.querySelector('audio');
-  if (!mediaEl || mediaEl.paused) return;
-  const currentTime = mediaEl.currentTime;
-  const dur = mediaEl.duration || sessionState.duration;
+function announcePosition() {
+  const media = playback();
+  if (!media.active) return null;
+  const update = {
+    currentTime: media.currentTime,
+    duration: knownDuration(media),
+    playing: media.playing
+  };
+  sendToBroadcast({ type: 'POSITION_UPDATE', payload: update });
+  return update;
+}
 
-  // Relay to sender for UI display
-  sendToBroadcast({
-    type: 'POSITION_UPDATE',
-    payload: { currentTime, duration: dur, playing: !mediaEl.paused }
-  });
+function broadcastPosition() {
+  const update = announcePosition();
+  if (!update || !update.playing) return;
 
   // Save position directly to Kobbler API (survives sender disconnect)
   if (audiobookState) {
-    saveAudiobookPosition(Math.floor(currentTime), dur);
+    saveAudiobookPosition(Math.floor(update.currentTime));
   } else {
-    savePositionToApi(Math.floor(currentTime), dur);
+    savePositionToApi(Math.floor(update.currentTime), update.duration);
   }
+}
+
+playerManager.addEventListener(cast.framework.events.EventType.PAUSE, announcePosition);
+playerManager.addEventListener(cast.framework.events.EventType.PLAYING, announcePosition);
+
+// A playlist the server is still transcoding grows as it goes, so the element only
+// knows the part written so far.
+function knownDuration(media) {
+  if (sessionState.duration > 0) return sessionState.duration;
+  return Number.isFinite(media.duration) ? media.duration : 0;
 }
 
 function savePositionToApi(pos, dur) {
@@ -396,7 +669,7 @@ function savePositionToApi(pos, dur) {
   }
 
   fetch(appendToken(url), {
-    method: 'PUT',
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ position_seconds: pos })
   }).catch(() => {});
@@ -472,12 +745,15 @@ async function playNextEpisode() {
     sessionState.directUrl = newSession.direct_url;
     sessionState.method = newSession.playlist_url ? 'hls' : 'direct_play';
     sessionState.duration = newSession.duration_seconds;
+    sessionState.startOffset = 0;
     sessionState.subtitles = newSession.subtitles || [];
     sessionState.audioTracks = newSession.audio_tracks || [];
     sessionState.thumbnailsUrl = newSession.thumbnails_url || null;
     sessionState.chapters = newSession.chapters || [];
     sessionState.skipSegments = newSession.skip_segments || [];
     sessionState._isDebrid = !!newSession._isDebrid;
+    defaultTracks();
+    announcedSkip = undefined;
 
     // Reset enrichment state
     seekGeneration = 0;
@@ -522,6 +798,11 @@ async function playNextEpisode() {
     metadata.title = nextEpisode.show_title || 'Next Episode';
     metadata.subtitle = `S${nextEpisode.season_identifier}E${nextEpisode.episode_identifier}${nextEpisode.title ? ' - ' + nextEpisode.title : ''}`;
     mediaInfo.metadata = metadata;
+    sessionState.metadata = {
+      ...sessionState.metadata,
+      title: metadata.title,
+      subtitle: metadata.subtitle
+    };
 
     const loadRequest = new cast.framework.messages.LoadRequestData();
     loadRequest.media = mediaInfo;
@@ -561,11 +842,7 @@ async function createLocalSession(fileId) {
     body: JSON.stringify({
       media_type: 'episode',
       file_id: fileId,
-      capabilities: sessionState.capabilities || {
-        video_codecs: ['h264', 'vp9'],
-        audio_codecs: ['aac', 'opus', 'mp3', 'flac'],
-        containers: ['mp4']
-      }
+      capabilities: receiverCapabilities()
     })
   });
   if (!resp.ok) return null;
@@ -605,7 +882,7 @@ async function resolveDebridNextEpisode(episodeId) {
             release_title: option.release_title,
             debrid_provider: option.debrid_provider,
             quality: option.quality,
-            capabilities: sessionState.capabilities
+            capabilities: receiverCapabilities()
           })
         }
       );
@@ -650,6 +927,13 @@ playerManager.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, (l
   if (loadRequestData.media && loadRequestData.media.contentId) {
     loadRequestData.media.contentId = appendToken(loadRequestData.media.contentId);
   }
+  if (audiobookState || ttsState) return loadRequestData;
+
+  // The playlist is EVENT-typed until the transcode finishes, which CAF reads as live.
+  loadRequestData.media.streamType = cast.framework.messages.StreamType.BUFFERED;
+  if (sessionState.duration > 0) {
+    loadRequestData.media.duration = sessionState.duration;
+  }
 
   // Set content type based on playback method
   if (sessionState.method === 'hls' && sessionState.playlistUrl) {
@@ -673,25 +957,33 @@ playerManager.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, (l
     }
   }
 
-  // Add subtitle tracks
-  if (sessionState.subtitles.length > 0) {
-    loadRequestData.media.tracks = sessionState.subtitles
-      .filter((s) => s.url && s.format !== 'burn_in')
-      .map((sub, i) => {
-        const track = new cast.framework.messages.Track(
-          i + 1,
-          cast.framework.messages.TrackType.TEXT
-        );
-        track.trackContentId = appendToken(sub.url);
-        track.trackContentType = 'text/vtt';
-        track.subtype = cast.framework.messages.TextTrackType.SUBTITLES;
-        track.name = sub.title || sub.language || `Track ${i + 1}`;
-        track.language = sub.language || 'und';
-        return track;
-      });
+  const texts = textTracks();
+  if (texts.length > 0) {
+    loadRequestData.media.tracks = texts.map(({ id, sub }) => {
+      const track = new cast.framework.messages.Track(id, cast.framework.messages.TrackType.TEXT);
+      track.trackContentId = subtitleUrl(sub.url);
+      track.trackContentType = 'text/vtt';
+      track.subtype = cast.framework.messages.TextTrackType.SUBTITLES;
+      track.name = sub.title || sub.language || `Track ${id}`;
+      track.language = sub.language || 'und';
+      return track;
+    });
+    loadRequestData.activeTrackIds = activeSubtitleId ? [activeSubtitleId] : [];
   }
 
   return loadRequestData;
+});
+
+playerManager.setMessageInterceptor(cast.framework.messages.MessageType.MEDIA_STATUS, (status) => {
+  if (ttsState && typeof status.currentTime === 'number') status.currentTime += clockBase();
+  if (audiobookState || !sessionState.sessionId) return status;
+  if (typeof status.currentTime === 'number') status.currentTime += sessionState.startOffset;
+  delete status.liveSeekableRange;
+  if (status.media) {
+    status.media.streamType = cast.framework.messages.StreamType.BUFFERED;
+    if (sessionState.duration > 0) status.media.duration = sessionState.duration;
+  }
+  return status;
 });
 
 // ── SEEK Interceptor (Generation-Based) ────────────────────────
@@ -702,12 +994,8 @@ playerManager.setMessageInterceptor(cast.framework.messages.MessageType.SEEK, as
   }
 
   const targetTime = seekData.currentTime;
-  // A seek must not resume a receiver the viewer paused. The reload below is
-  // our own machinery, not a request to play.
-  const wasPaused = playerManager.getPlayerState() === cast.framework.messages.PlayerState.PAUSED;
-
-  // Show thumbnail preview during seek
   showThumbnailAtTime(targetTime);
+  flashHud();
 
   // Direct play: native seek via range requests, no server interaction needed
   if (sessionState.method === 'direct_play') {
@@ -715,7 +1003,16 @@ playerManager.setMessageInterceptor(cast.framework.messages.MessageType.SEEK, as
     return seekData;
   }
 
-  // HLS: generation-based seek via Kobbler API
+  const handled = await seekTranscode(targetTime);
+  setTimeout(hideThumbnail, 500);
+  // null suppresses CAF's own seek: the server rebuilt the playlist from the target.
+  return handled ? null : seekData;
+});
+
+async function seekTranscode(targetTime) {
+  // A seek must not resume a receiver the viewer paused. The reload below is
+  // our own machinery, not a request to play.
+  const wasPaused = playerManager.getPlayerState() === cast.framework.messages.PlayerState.PAUSED;
   try {
     const resp = await fetch(
       appendToken(
@@ -727,43 +1024,61 @@ playerManager.setMessageInterceptor(cast.framework.messages.MessageType.SEEK, as
         body: JSON.stringify({ time_seconds: targetTime })
       }
     );
+    if (!resp.ok) return false;
 
-    if (resp.ok) {
-      const data = await resp.json();
-      seekGeneration = data.seek_generation;
+    const data = await resp.json();
+    seekGeneration = data.seek_generation;
+    sessionState.startOffset = data.start_time;
 
-      // Force reload with new generation URL via fresh LoadRequestData
-      const newUrl = appendToken(appendGeneration(sessionState.playlistUrl, seekGeneration));
-      const mediaInfo = playerManager.getMediaInformation();
-      if (mediaInfo) {
-        mediaInfo.contentUrl = newUrl;
-        mediaInfo.contentId = newUrl;
-
-        const loadRequest = new cast.framework.messages.LoadRequestData();
-        loadRequest.media = mediaInfo;
-        loadRequest.currentTime = data.start_time + (data.sub_segment_offset || 0);
-        loadRequest.autoplay = !wasPaused;
-
-        playerManager.load(loadRequest).catch((err) => {
-          console.error('[Kobbler] Seek reload failed:', err);
-        });
-      }
-
-      setTimeout(hideThumbnail, 500);
-      // Return null to suppress CAF's default seek — we're doing our own reload
-      return null;
-    }
+    reloadAt(
+      appendToken(appendGeneration(sessionState.playlistUrl, seekGeneration)),
+      data.sub_segment_offset || 0,
+      !wasPaused
+    );
+    return true;
   } catch (err) {
     console.error('[Kobbler] Seek failed:', err);
+    return false;
   }
+}
 
-  setTimeout(hideThumbnail, 500);
-  return seekData;
-});
+function reloadAt(url, currentTime, autoplay) {
+  const mediaInfo = playerManager.getMediaInformation();
+  if (!mediaInfo) return;
+  mediaInfo.contentUrl = url;
+  mediaInfo.contentId = url;
+  // Left on, the LOAD interceptor would re-initialise from the original handover.
+  delete mediaInfo.customData;
+
+  const loadRequest = new cast.framework.messages.LoadRequestData();
+  loadRequest.media = mediaInfo;
+  loadRequest.currentTime = currentTime;
+  loadRequest.autoplay = autoplay;
+  playerManager.load(loadRequest).catch((err) => {
+    console.error('[Kobbler] Reload failed:', err);
+  });
+}
+
+function seekTitle(target) {
+  if (sessionState.sessionId && sessionState.method !== 'direct_play' && !audiobookState) {
+    return seekTranscode(target);
+  }
+  playerManager.seek(target);
+}
 
 // ── Media Status Events ────────────────────────────────────────
 
-playerManager.addEventListener(cast.framework.events.EventType.MEDIA_FINISHED, () => {
+playerManager.addEventListener(cast.framework.events.EventType.MEDIA_FINISHED, (event) => {
+  // CAF also "finishes" a title it replaces with a new LOAD; only a real end may
+  // mark it watched or move on.
+  if (event.endedReason !== cast.framework.events.EndedReason.END_OF_STREAM) return;
+
+  // The read's chapter, not the session: the sender decides what is read next.
+  if (ttsState) {
+    sendToBroadcast({ type: 'TTS_FINISHED' });
+    return;
+  }
+
   // Audiobook: advance to next file
   if (audiobookState) {
     audiobookAdvanceFile();
@@ -784,15 +1099,17 @@ playerManager.addEventListener(cast.framework.events.EventType.MEDIA_FINISHED, (
 playerManager.addEventListener(cast.framework.events.EventType.PLAYER_LOAD_COMPLETE, () => {
   hideThumbnail();
   hideSkipOverlay();
+  flashHud();
+  sendTracks();
 });
 
 // ── Skip Segments ──────────────────────────────────────────────
 
 function checkSkipSegments() {
-  const mediaEl = document.querySelector('video');
-  if (!mediaEl) return;
+  const media = playback();
+  if (!media.active) return;
 
-  const t = mediaEl.currentTime;
+  const t = media.currentTime;
   const active = sessionState.skipSegments.find((s) => t >= s.start_seconds && t < s.end_seconds);
 
   if (active) {
@@ -800,7 +1117,16 @@ function checkSkipSegments() {
   } else {
     hideSkipOverlay();
   }
+
+  const skip = active ? { segmentType: active.segment_type, endSeconds: active.end_seconds } : null;
+  if (JSON.stringify(skip) !== JSON.stringify(announcedSkip)) {
+    announcedSkip = skip;
+    sendToBroadcast({ type: 'SKIP_SEGMENT', payload: skip });
+  }
 }
+
+// undefined until announced, so a sender that joins is told even when there is nothing.
+let announcedSkip = undefined;
 
 function showSkipOverlay(segment) {
   const label =
@@ -830,13 +1156,8 @@ function hideSkipOverlay() {
 // Skip button click/select handler
 skipBtn.addEventListener('click', () => {
   const skipTo = parseFloat(skipBtn.dataset.skipTo);
-  if (!isNaN(skipTo)) {
-    // Trigger a seek via the player manager
-    const mediaEl = document.querySelector('video');
-    if (mediaEl) {
-      playerManager.seek(skipTo);
-    }
-  }
+  if (isNaN(skipTo)) return;
+  seekTitle(skipTo);
 });
 
 // D-pad enter key support for Google TV
@@ -890,10 +1211,10 @@ function hideThumbnail() {
 // ── Chapter Display ────────────────────────────────────────────
 
 function checkChapter() {
-  const mediaEl = document.querySelector('video');
-  if (!mediaEl) return;
+  const media = playback();
+  if (!media.active) return;
 
-  const t = mediaEl.currentTime;
+  const t = media.currentTime;
   const idx = sessionState.chapters.findIndex((c) => t >= c.start_seconds && t < c.end_seconds);
 
   if (idx !== currentChapterIndex) {
@@ -925,23 +1246,19 @@ function showChapter(title) {
 // ── Subtitle / Audio Handling ──────────────────────────────────
 
 function handleSubtitleChange(payload) {
-  const trackId = payload.trackId;
-  if (trackId === null) {
-    // Disable subtitles
-    playerManager.getQueueManager();
-    const mediaInfo = playerManager.getMediaInformation();
-    if (mediaInfo) {
-      const editRequest = new cast.framework.messages.EditTracksInfoRequestData();
-      editRequest.activeTrackIds = [];
-      // Apply via player manager
-    }
+  activeSubtitleId = payload.trackId ?? null;
+  try {
+    playerManager.getTextTracksManager().setActiveByIds(activeSubtitleId ? [activeSubtitleId] : []);
+  } catch (err) {
+    console.error('[Kobbler] Subtitle change failed:', err);
   }
-  // For simplicity, sender manages subtitle selection via EDIT_TRACKS_INFO
+  sendTracks();
 }
 
 async function handleAudioSwitch(payload) {
   if (!sessionState.sessionId) return;
-
+  const resumeTime = playback().currentTime;
+  const wasPaused = playerManager.getPlayerState() === cast.framework.messages.PlayerState.PAUSED;
   try {
     const resp = await fetch(
       appendToken(
@@ -950,26 +1267,32 @@ async function handleAudioSwitch(payload) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          audio_stream_index: payload.streamIndex,
-          resume_time: payload.resumeTime
-        })
+        body: JSON.stringify({ audio_stream_index: payload.streamIndex, resume_time: resumeTime })
       }
     );
+    if (!resp.ok) return;
+    const data = await resp.json();
 
-    if (resp.ok) {
-      const data = await resp.json();
-      // Reload with new session data
-      if (data.playlist_url) {
-        sessionState.playlistUrl = data.playlist_url;
-        // Re-load media
-        const mediaInfo = playerManager.getMediaInformation();
-        if (mediaInfo) {
-          mediaInfo.contentUrl = appendToken(data.playlist_url);
-          mediaInfo.contentId = appendToken(data.playlist_url);
-        }
-      }
+    sessionState.activeAudioIndex = payload.streamIndex;
+    if (data.audio_tracks?.length) sessionState.audioTracks = data.audio_tracks;
+    const hls = data.method !== 'direct_play';
+    sessionState.method = hls ? 'hls' : 'direct_play';
+    if (hls) {
+      sessionState.playlistUrl = qualify(data.playlist_url);
+      seekGeneration += 1;
+    } else {
+      sessionState.directUrl = qualify(data.direct_url);
     }
+    // The new transcode starts from the resume point and calls it zero.
+    sessionState.startOffset = hls ? data.start_time || 0 : 0;
+    reloadAt(
+      appendToken(
+        hls ? appendGeneration(sessionState.playlistUrl, seekGeneration) : sessionState.directUrl
+      ),
+      Math.max(0, resumeTime - sessionState.startOffset),
+      !wasPaused
+    );
+    sendTracks();
   } catch (err) {
     console.error('[Kobbler] Audio switch failed:', err);
   }
@@ -1042,6 +1365,7 @@ function cleanup() {
   hideSkipOverlay();
   hideThumbnail();
   audiobookState = null;
+  ttsState = null;
   if (enrichmentSource) {
     enrichmentSource.close();
     enrichmentSource = null;
@@ -1057,6 +1381,12 @@ function cleanup() {
     ).catch(() => {});
   }
 }
+
+context.addEventListener(cast.framework.system.EventType.SENDER_CONNECTED, () => {
+  sendCapabilities();
+  sendTracks();
+  announcedSkip = undefined;
+});
 
 context.addEventListener(cast.framework.system.EventType.SENDER_DISCONNECTED, () => {
   if (context.getSenders().length === 0) {
@@ -1136,6 +1466,91 @@ function parseSpriteRef(ref, baseUrl) {
     h: coords[3]
   };
 }
+
+// ── On-screen transport ────────────────────────────────────────
+
+// An Android TV receiver draws its own transport from the media status, which already
+// speaks title time, and takes the remote itself; a second one would sit on top of it.
+const SYSTEM_TRANSPORT = /DeviceType\/AndroidTV/.test(navigator.userAgent);
+let hudUntil = 0;
+
+function flashHud(ms = 5000) {
+  hudUntil = Date.now() + ms;
+  renderHud();
+}
+
+function hudText() {
+  if (ttsState) return { title: ttsState.title || '', subtitle: ttsState.subtitle || '' };
+  if (audiobookState) {
+    const t = playback().currentTime;
+    const chapter = sessionState.chapters.find(
+      (c) => t >= c.start_seconds && t < c.end_seconds
+    )?.title;
+    return {
+      title: audiobookState.metadata.title || '',
+      subtitle: [audiobookState.metadata.author, chapter].filter(Boolean).join(' · ')
+    };
+  }
+  return {
+    title: sessionState.metadata?.title || '',
+    subtitle: sessionState.metadata?.subtitle || ''
+  };
+}
+
+function renderHud() {
+  const media = playback();
+  const state = playerManager.getPlayerState();
+  const PlayerState = cast.framework.messages.PlayerState;
+  idleEl.classList.toggle('visible', !media.active);
+  artEl.classList.toggle('visible', !!(audiobookState || ttsState) && media.active);
+  if (!media.active) {
+    hudEl.classList.remove('visible');
+    return;
+  }
+
+  const clock = audiobookState
+    ? audiobookClock(media.currentTime)
+    : { currentTime: media.currentTime, duration: knownDuration(media) };
+  const duration = clock.duration;
+  const text = hudText();
+  hudTitle.textContent = text.title;
+  hudSubtitle.textContent = text.subtitle;
+  hudElapsed.textContent = formatTime(clock.currentTime);
+  hudTotal.textContent = duration > 0 ? formatTime(duration) : '';
+  hudFill.style.width =
+    duration > 0 ? `${Math.min(100, (clock.currentTime / duration) * 100)}%` : '0%';
+  hudState.textContent =
+    state === PlayerState.PAUSED ? '❚❚' : state === PlayerState.BUFFERING ? '…' : '▶';
+  const show =
+    !SYSTEM_TRANSPORT &&
+    (!!audiobookState || !!ttsState || state !== PlayerState.PLAYING || Date.now() < hudUntil);
+  hudEl.classList.toggle('visible', show);
+}
+
+setInterval(renderHud, 500);
+playerManager.addEventListener(cast.framework.events.EventType.PLAYING, () => flashHud());
+playerManager.addEventListener(cast.framework.events.EventType.PAUSE, () => flashHud());
+
+// The remote's D-pad, on devices that have one.
+document.addEventListener('keydown', (e) => {
+  if (SYSTEM_TRANSPORT || e.target === skipBtn) return;
+  const media = playback();
+  if (!media.active) return;
+  flashHud();
+  if (ttsState && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return;
+  if (e.key === 'ArrowLeft') {
+    seekTitle(Math.max(0, media.currentTime - 10));
+  } else if (e.key === 'ArrowRight') {
+    const end = knownDuration(media);
+    seekTitle(end > 0 ? Math.min(end - 1, media.currentTime + 30) : media.currentTime + 30);
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    if (media.playing) playerManager.pause();
+    else playerManager.play();
+  } else {
+    return;
+  }
+  e.preventDefault();
+});
 
 // ── Utility Functions ──────────────────────────────────────────
 

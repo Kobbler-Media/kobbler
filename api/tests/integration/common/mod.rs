@@ -6,6 +6,7 @@ pub mod debrid_upstream;
 pub mod epub;
 pub mod helpers;
 pub mod kobo_mock;
+pub mod mp3;
 pub mod server;
 pub mod stremio_mock;
 pub mod want_wire;

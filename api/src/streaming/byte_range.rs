@@ -1,6 +1,8 @@
 use axum::body::Body;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use bytes::Bytes;
+use futures::StreamExt;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 use tracing::error;
@@ -71,38 +73,97 @@ pub fn content_range_start(value: &str) -> Option<u64> {
 /// A whole-file response, or the single range a `Range` header asks for. An unsatisfiable
 /// or malformed range gets the whole file.
 pub async fn file_response(
-    mut file: tokio::fs::File,
+    file: tokio::fs::File,
     file_size: u64,
     content_type: &str,
     headers: &HeaderMap,
 ) -> Response {
+    let whole = Part::File {
+        file,
+        offset: 0,
+        len: file_size,
+    };
+    spliced_response(vec![whole], content_type, headers).await
+}
+
+pub enum Part {
+    Bytes(Bytes),
+    File {
+        file: tokio::fs::File,
+        offset: u64,
+        len: u64,
+    },
+}
+
+impl Part {
+    fn len(&self) -> u64 {
+        match self {
+            Part::Bytes(b) => b.len() as u64,
+            Part::File { len, .. } => *len,
+        }
+    }
+}
+
+/// [`file_response`] over a body that is the parts laid end to end.
+pub async fn spliced_response(
+    parts: Vec<Part>,
+    content_type: &str,
+    headers: &HeaderMap,
+) -> Response {
+    let total: u64 = parts.iter().map(Part::len).sum();
     let range = headers
         .get(header::RANGE)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| parse_byte_range(v, file_size));
-    let Some(range) = range else {
-        return Response::builder()
-            .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, content_type)
-            .header(header::CONTENT_LENGTH, file_size.to_string())
-            .header(header::ACCEPT_RANGES, "bytes")
-            .body(Body::from_stream(ReaderStream::new(file)))
-            .unwrap();
-    };
-    if let Err(e) = file.seek(std::io::SeekFrom::Start(range.start)).await {
-        error!(error = %e, "failed to seek in file");
-        return (StatusCode::INTERNAL_SERVER_ERROR, "seek error").into_response();
+        .and_then(|v| parse_byte_range(v, total));
+    let (start, length) = range.map_or((0, total), |r| (r.start, r.length()));
+
+    let mut pieces = Vec::new();
+    let mut at = 0u64;
+    for part in parts {
+        let len = part.len();
+        let (from, to) = (start.max(at), (start + length).min(at + len));
+        if from < to {
+            match piece(part, from - at, to - from).await {
+                Ok(p) => pieces.push(p),
+                Err(e) => {
+                    error!(error = %e, "failed to seek in file");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "seek error").into_response();
+                }
+            }
+        }
+        at += len;
     }
-    Response::builder()
-        .status(StatusCode::PARTIAL_CONTENT)
+    let body = Body::from_stream(futures::stream::iter(pieces).flatten());
+
+    let builder = Response::builder()
         .header(header::CONTENT_TYPE, content_type)
-        .header(header::CONTENT_LENGTH, range.length().to_string())
-        .header(header::CONTENT_RANGE, range.content_range(file_size))
-        .header(header::ACCEPT_RANGES, "bytes")
-        .body(Body::from_stream(ReaderStream::new(
-            file.take(range.length()),
-        )))
-        .unwrap()
+        .header(header::CONTENT_LENGTH, length.to_string())
+        .header(header::ACCEPT_RANGES, "bytes");
+    match range {
+        Some(r) => builder
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_RANGE, r.content_range(total)),
+        None => builder.status(StatusCode::OK),
+    }
+    .body(body)
+    .unwrap()
+}
+
+type Piece = futures::stream::BoxStream<'static, std::io::Result<Bytes>>;
+
+async fn piece(part: Part, skip: u64, take: u64) -> std::io::Result<Piece> {
+    Ok(match part {
+        Part::Bytes(b) => {
+            let slice = b.slice(skip as usize..(skip + take) as usize);
+            futures::stream::once(async move { Ok(slice) }).boxed()
+        }
+        Part::File {
+            mut file, offset, ..
+        } => {
+            file.seek(std::io::SeekFrom::Start(offset + skip)).await?;
+            ReaderStream::new(file.take(take)).boxed()
+        }
+    })
 }
 
 #[cfg(test)]

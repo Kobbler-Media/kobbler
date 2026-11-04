@@ -185,7 +185,7 @@ export async function login(email: string, password: string): Promise<{ token: s
 }
 
 // Library Stats
-import type { LibraryStats } from '#lib/types.js';
+import type { LibraryStats, TranscriptBacklog } from '#lib/types.js';
 import type { MediaScope, SearchSuggestion } from '#lib/types.js';
 
 export async function getLibraryStats(format?: string): Promise<LibraryStats> {
@@ -5005,9 +5005,10 @@ export async function startMigrationImport(params: {
 
 // Audiobook API
 
-/** Get the audio stream URL for a book file (use as <audio src>). */
+// Browsers seek a VBR mp3 by estimate and then report the requested time; the server
+// serves mp3s in mp4 for this flag and leaves every other format as it is.
 export function getAudioStreamUrl(bookId: string, fileId: string): string {
-  return `/api/v1/admin/books/${bookId}/audio/${fileId}`;
+  return `/api/v1/admin/books/${bookId}/audio/${fileId}?container=mp4`;
 }
 
 /** Get chapters for an audiobook file. */
@@ -5161,8 +5162,12 @@ export async function extractEbookText(bookId: string): Promise<void> {
   });
 }
 
-/** Bulk transcribe all audiobooks without transcripts. */
-export async function bulkTranscribeAudiobooks(): Promise<{ queued: number }> {
+export async function getTranscriptBacklog(): Promise<TranscriptBacklog> {
+  return await request('/api/v1/admin/books/transcript-backlog');
+}
+
+/** Re-transcribe every missing or outdated transcript, a day of audio per batch. */
+export async function startTranscriptRefresh(): Promise<{ job_id: string }> {
   return await request('/api/v1/admin/books/bulk-transcribe', {
     method: 'POST'
   });

@@ -1,4 +1,4 @@
-//! Discover endpoints — curated trending/popular content from TMDB.
+//! Discover endpoints — curated trending/popular content, and provider detail pages.
 
 use std::collections::HashMap;
 
@@ -195,6 +195,7 @@ pub async fn get_discover_detail(
             let region = state.runtime_config.discover_region().await;
             get_video_detail(pool, &media_type, &provider, &provider_id, &region).await
         }
+        "book" => super::discover_book::get_book_detail(pool, &provider, &provider_id).await,
         _ => (
             StatusCode::BAD_REQUEST,
             Json(json!({ "error": format!("Unknown media_type: {media_type}") })),

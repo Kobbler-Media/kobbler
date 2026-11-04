@@ -113,6 +113,7 @@ use routes::admin::streaming as streaming_routes;
 use routes::admin::subtitle_providers as subtitle_provider_routes;
 use routes::admin::subtitles as subtitle_routes;
 use routes::admin::tts as tts_routes;
+use routes::admin::tts_cast as tts_cast_routes;
 use routes::admin::tv as tv_routes;
 use routes::admin::video_metadata as video_metadata_routes;
 use routes::admin::video_sync as video_sync_routes;
@@ -175,6 +176,7 @@ pub struct AppState {
     pub debrid_resolve_locks: Arc<dashmap::DashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
     /// Instant Stream: debrid sessions warmed ahead of a Play press, until claimed.
     pub stream_prewarms: Arc<routes::admin::stream_prewarm::PrewarmStore>,
+    pub tts_casts: Arc<tts::cast::CastRenders>,
     /// Set to true after the first media_root_scan completes a full scan.
     /// Backfill handlers skip their work until this is set, preventing them
     /// from queuing jobs for files that haven't been checked for deletion yet.
@@ -517,6 +519,10 @@ pub fn create_router(state: AppState) -> Router {
             post(audiobook_routes::bulk_transcribe),
         )
         .route(
+            "/api/v1/admin/books/transcript-backlog",
+            get(audiobook_routes::transcript_backlog),
+        )
+        .route(
             "/api/v1/admin/books/bulk-chapter-detect",
             post(audiobook_routes::bulk_chapter_detect),
         )
@@ -563,6 +569,15 @@ pub fn create_router(state: AppState) -> Router {
         // TTS (text-to-speech)
         .route("/api/v1/admin/tts/status", get(tts_routes::get_tts_status))
         .route("/api/v1/admin/tts/synthesize", post(tts_routes::synthesize))
+        .route("/api/v1/admin/tts/cast", post(tts_cast_routes::start))
+        .route(
+            "/api/v1/admin/tts/cast/{id}/audio",
+            get(tts_cast_routes::audio),
+        )
+        .route(
+            "/api/v1/admin/tts/cast/{id}/events",
+            get(tts_cast_routes::events),
+        )
         .route(
             "/api/v1/admin/tts/presets",
             get(tts_routes::list_presets).post(tts_routes::create_preset),
@@ -2520,6 +2535,7 @@ pub fn create_app_state(
         debrid_session_index: Arc::new(dashmap::DashMap::new()),
         debrid_resolve_locks: Arc::new(dashmap::DashMap::new()),
         stream_prewarms: Arc::default(),
+        tts_casts: Arc::default(),
         initial_scan_complete: Arc::new(AtomicBool::new(false)),
         media_root_io_gate,
         nas_health: nas_health_monitor,

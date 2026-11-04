@@ -15,7 +15,7 @@ export function castCapabilities(deviceName: string): ClientCapabilities {
   const name = (deviceName || '').toLowerCase();
 
   const video_codecs = ['h264', 'vp9'];
-  const audio_codecs = ['aac', 'opus', 'mp3', 'flac'];
+  const audio_codecs = ['aac'];
 
   // Chromecast Ultra and Google TV devices support HEVC
   if (isGoogleTV(name) || isChromecastUltra(name)) {
@@ -44,4 +44,36 @@ function isGoogleTV(name: string): boolean {
 
 function isChromecastUltra(name: string): boolean {
   return name.includes('ultra') || name.includes('chromecast ultra');
+}
+
+let reported: ClientCapabilities | null = null;
+let waiters: Array<(caps: ClientCapabilities) => void> = [];
+
+export function receiverReported(caps: ClientCapabilities | null): void {
+  reported = caps;
+  if (!caps) return;
+  waiters.forEach((resolve) => resolve(caps));
+  waiters = [];
+}
+
+/**
+ * What the connected receiver probed itself for. It answers as a sender attaches,
+ * which can be just after the handover begins.
+ */
+export function receiverCapabilities(
+  deviceName: string,
+  waitMs = 2000
+): Promise<ClientCapabilities> {
+  if (reported) return Promise.resolve(reported);
+  return new Promise((resolve) => {
+    const done = (caps: ClientCapabilities) => {
+      clearTimeout(timer);
+      resolve(caps);
+    };
+    const timer = setTimeout(() => {
+      waiters = waiters.filter((w) => w !== done);
+      resolve(castCapabilities(deviceName));
+    }, waitMs);
+    waiters.push(done);
+  });
 }

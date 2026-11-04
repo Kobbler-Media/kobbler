@@ -74,6 +74,13 @@ impl ProviderFactory for GoogleBooksFactory {
         let base_url = self
             .base_url_override
             .clone()
+            .or_else(|| {
+                config
+                    .get("base_url")
+                    .and_then(|v| v.as_str())
+                    .filter(|v| !v.is_empty())
+                    .map(String::from)
+            })
             .unwrap_or_else(|| "https://www.googleapis.com".to_string());
 
         let api_key = config
@@ -103,104 +110,104 @@ pub struct GoogleBooksProvider {
 
 impl GoogleBooksProvider {
     fn parse_response(&self, response: SearchResponse) -> Vec<MetadataResult> {
-        let items = response.items.unwrap_or_default();
-
-        items
+        response
+            .items
+            .unwrap_or_default()
             .into_iter()
             .take(10)
-            .filter_map(|item| {
-                let info = item.volume_info?;
-
-                let mut result = MetadataResult::new("googlebooks", info.title);
-
-                result.authors = info.authors.unwrap_or_default();
-                result.description = info.description;
-                result.publisher = info.publisher;
-                result.publish_date = info.published_date;
-                result.language = info.language;
-                result.page_count = info.page_count;
-                result.subjects = info.categories.unwrap_or_default();
-                result.external_id = Some(item.id);
-                result.rating = info.average_rating;
-                result.rating_count = info.ratings_count;
-
-                // Extract identifiers (ISBN-10, ISBN-13, ASIN) from industry_identifiers
-                if let Some(identifiers) = info.industry_identifiers {
-                    let mut extracted_ids = serde_json::Map::new();
-                    for id in identifiers {
-                        match id.identifier_type.as_str() {
-                            "ISBN_13" => {
-                                // Set as primary ISBN for compatibility
-                                if result.isbn.is_none() {
-                                    result.isbn = Some(id.identifier.clone());
-                                }
-                                extracted_ids.insert(
-                                    "isbn13".to_string(),
-                                    serde_json::Value::String(id.identifier),
-                                );
-                            }
-                            "ISBN_10" => {
-                                // Use ISBN-10 as fallback if no ISBN-13
-                                if result.isbn.is_none() {
-                                    result.isbn = Some(id.identifier.clone());
-                                }
-                                extracted_ids.insert(
-                                    "isbn10".to_string(),
-                                    serde_json::Value::String(id.identifier),
-                                );
-                            }
-                            "ASIN" => {
-                                extracted_ids.insert(
-                                    "asin".to_string(),
-                                    serde_json::Value::String(id.identifier),
-                                );
-                            }
-                            _ => {} // Ignore OTHER and unknown types
-                        }
-                    }
-                    if !extracted_ids.is_empty() {
-                        result.identifiers = serde_json::Value::Object(extracted_ids);
-                    }
-                }
-
-                // Get cover image (prefer larger images)
-                if let Some(links) = info.image_links {
-                    result.cover_url = links
-                        .extra_large
-                        .or(links.large)
-                        .or(links.medium)
-                        .or(links.small)
-                        .or(links.thumbnail)
-                        .or(links.small_thumbnail);
-
-                    // Google sometimes returns HTTP URLs, ensure HTTPS
-                    if let Some(ref url) = result.cover_url
-                        && url.starts_with("http://")
-                    {
-                        result.cover_url = Some(url.replacen("http://", "https://", 1));
-                    }
-                }
-
-                // Calculate confidence
-                let mut confidence = 0.4;
-                if !result.authors.is_empty() {
-                    confidence += 0.2;
-                }
-                if result.isbn.is_some() {
-                    confidence += 0.2;
-                }
-                if result.cover_url.is_some() {
-                    confidence += 0.1;
-                }
-                if result.description.is_some() {
-                    confidence += 0.1;
-                }
-                result.confidence = confidence;
-
-                Some(result)
-            })
+            .filter_map(volume_result)
             .collect()
     }
+}
+
+fn volume_result(item: VolumeItem) -> Option<MetadataResult> {
+    let info = item.volume_info?;
+
+    let mut result = MetadataResult::new("googlebooks", info.title);
+
+    result.authors = info.authors.unwrap_or_default();
+    result.description = info.description;
+    result.publisher = info.publisher;
+    result.publish_date = info.published_date;
+    result.language = info.language;
+    result.page_count = info.page_count;
+    result.subjects = info.categories.unwrap_or_default();
+    result.external_id = Some(item.id);
+    result.rating = info.average_rating;
+    result.rating_count = info.ratings_count;
+
+    // Extract identifiers (ISBN-10, ISBN-13, ASIN) from industry_identifiers
+    if let Some(identifiers) = info.industry_identifiers {
+        let mut extracted_ids = serde_json::Map::new();
+        for id in identifiers {
+            match id.identifier_type.as_str() {
+                "ISBN_13" => {
+                    // Set as primary ISBN for compatibility
+                    if result.isbn.is_none() {
+                        result.isbn = Some(id.identifier.clone());
+                    }
+                    extracted_ids.insert(
+                        "isbn13".to_string(),
+                        serde_json::Value::String(id.identifier),
+                    );
+                }
+                "ISBN_10" => {
+                    // Use ISBN-10 as fallback if no ISBN-13
+                    if result.isbn.is_none() {
+                        result.isbn = Some(id.identifier.clone());
+                    }
+                    extracted_ids.insert(
+                        "isbn10".to_string(),
+                        serde_json::Value::String(id.identifier),
+                    );
+                }
+                "ASIN" => {
+                    extracted_ids
+                        .insert("asin".to_string(), serde_json::Value::String(id.identifier));
+                }
+                _ => {} // Ignore OTHER and unknown types
+            }
+        }
+        if !extracted_ids.is_empty() {
+            result.identifiers = serde_json::Value::Object(extracted_ids);
+        }
+    }
+
+    // Get cover image (prefer larger images)
+    if let Some(links) = info.image_links {
+        result.cover_url = links
+            .extra_large
+            .or(links.large)
+            .or(links.medium)
+            .or(links.small)
+            .or(links.thumbnail)
+            .or(links.small_thumbnail);
+
+        // Google sometimes returns HTTP URLs, ensure HTTPS
+        if let Some(ref url) = result.cover_url
+            && url.starts_with("http://")
+        {
+            result.cover_url = Some(url.replacen("http://", "https://", 1));
+        }
+    }
+
+    // Calculate confidence
+    let mut confidence = 0.4;
+    if !result.authors.is_empty() {
+        confidence += 0.2;
+    }
+    if result.isbn.is_some() {
+        confidence += 0.2;
+    }
+    if result.cover_url.is_some() {
+        confidence += 0.1;
+    }
+    if result.description.is_some() {
+        confidence += 0.1;
+    }
+    result.confidence = confidence;
+
+    Some(result)
 }
 
 #[async_trait]
@@ -300,6 +307,31 @@ impl MetadataProvider for GoogleBooksProvider {
         Ok(results)
     }
 
+    async fn fetch_by_id(
+        &self,
+        external_id: &str,
+    ) -> Result<Option<MetadataResult>, ProviderError> {
+        let mut url = format!(
+            "{}/books/v1/volumes/{}",
+            self.base_url,
+            urlencoding::encode(external_id)
+        );
+        if let Some(ref key) = self.api_key {
+            url.push_str(&format!("?key={}", urlencoding::encode(key)));
+        }
+        let response = self.client.get(&url).send().await?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            return Err(ProviderError::from_http_status(
+                response.status(),
+                "Google Books volume API",
+            ));
+        }
+        Ok(volume_result(response.json().await?))
+    }
+
     async fn fetch_cover(&self, url: &str) -> Result<Vec<u8>, ProviderError> {
         let response = self.client.get(url).send().await?;
 
@@ -367,4 +399,51 @@ struct ImageLinks {
     medium: Option<String>,
     large: Option<String>,
     extra_large: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn volume_sample_maps_every_detail_field() {
+        let item: VolumeItem = serde_json::from_value(serde_json::json!({
+            "kind": "books#volume",
+            "id": "zyTCAlFPjgYC",
+            "volumeInfo": {
+                "title": "The Google Story",
+                "authors": ["David A. Vise", "Mark Malseed"],
+                "publisher": "Random House Digital, Inc.",
+                "publishedDate": "2005-11-15",
+                "description": "Inside the company.",
+                "industryIdentifiers": [
+                    { "type": "ISBN_10", "identifier": "055380457X" },
+                    { "type": "ISBN_13", "identifier": "9780553804577" }
+                ],
+                "pageCount": 207,
+                "categories": ["Business & Economics / Entrepreneurship"],
+                "averageRating": 3.5,
+                "ratingsCount": 136,
+                "imageLinks": { "thumbnail": "http://books.google.com/t.jpg" },
+                "language": "en"
+            }
+        }))
+        .unwrap();
+
+        let r = volume_result(item).unwrap();
+        assert_eq!(r.external_id.as_deref(), Some("zyTCAlFPjgYC"));
+        assert_eq!(r.title, "The Google Story");
+        assert_eq!(r.authors, ["David A. Vise", "Mark Malseed"]);
+        assert_eq!(r.publish_date.as_deref(), Some("2005-11-15"));
+        assert_eq!(r.isbn.as_deref(), Some("055380457X"));
+        assert_eq!(
+            r.cover_url.as_deref(),
+            Some("https://books.google.com/t.jpg")
+        );
+        assert_eq!((r.rating, r.rating_count), (Some(3.5), Some(136)));
+        assert_eq!(
+            r.identifiers,
+            serde_json::json!({ "isbn10": "055380457X", "isbn13": "9780553804577" })
+        );
+    }
 }

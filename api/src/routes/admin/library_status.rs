@@ -1,4 +1,4 @@
-//! Shared "do we already have this?" lookups, keyed by TMDB id.
+//! Shared "do we already have this?" lookups, keyed by provider id.
 //!
 //! Discover rows and provider search results both need to route an owned title
 //! straight to its library page instead of the provider preview page.
@@ -105,6 +105,50 @@ pub async fn batch_tv_status(
         Err(e) => {
             tracing::warn!("Failed to batch lookup TV shows: {e}");
             HashMap::new()
+        }
+    }
+}
+
+/// Audnexus ids are ASINs, which books also carry under `asin` from other sources.
+fn book_identifier_keys(provider: &str) -> Vec<String> {
+    let mut keys = vec![provider.to_string()];
+    if provider == crate::http::provider_ids::AUDNEXUS {
+        keys.push("asin".to_string());
+    }
+    keys
+}
+
+pub async fn book_status(
+    pool: &sqlx::PgPool,
+    provider: &str,
+    external_id: &str,
+) -> Option<LibraryStatus> {
+    let row = sqlx::query!(
+        r#"
+        SELECT b.id, b.want_status,
+               (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id)
+                OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id)) AS "is_in_library!"
+        FROM books b
+        WHERE b.ingest_status IS NULL
+          AND EXISTS (SELECT 1 FROM unnest($1::text[]) AS k(key) WHERE b.identifiers->>k.key = $2)
+        ORDER BY 3 DESC, b.created_at ASC
+        LIMIT 1
+        "#,
+        &book_identifier_keys(provider),
+        external_id,
+    )
+    .fetch_optional(pool)
+    .await;
+
+    match row {
+        Ok(row) => row.map(|r| LibraryStatus {
+            id: r.id,
+            want_status: Some(r.want_status),
+            is_in_library: Some(r.is_in_library),
+        }),
+        Err(e) => {
+            tracing::warn!("Failed to look up library book for {provider}/{external_id}: {e}");
+            None
         }
     }
 }

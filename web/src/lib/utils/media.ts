@@ -7,6 +7,7 @@ export type ClientCapabilities = {
   video_codecs: string[];
   audio_codecs: string[];
   containers: string[];
+  max_height?: number;
 };
 
 const VIDEO_PROBES: [string, string][] = [

@@ -40,6 +40,7 @@ declare global {
       class LoadRequest {
         constructor(mediaInfo: MediaInfo);
         mediaInfo: MediaInfo;
+        currentTime: number;
       }
     }
   }
