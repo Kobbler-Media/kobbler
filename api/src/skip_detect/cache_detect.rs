@@ -23,7 +23,8 @@ use super::primitives::boundary::BoundarySearchDirection;
 use super::primitives::cosine::cluster_consistency;
 use super::primitives::credit_scoring::{CreditText, credit_prompts, score_credit_text};
 use super::tv::{
-    EpisodeFile, chapter_override_position, find_per_episode_positions, find_per_episode_vhash,
+    EpisodeFile, SharedSpan, chapter_override_position, find_per_episode_intro_positions,
+    find_per_episode_positions_and_shared, find_per_episode_vhash,
 };
 use super::vhash::FrameDescriptor;
 use super::{
@@ -62,9 +63,29 @@ const BLACK_FRAME_COVERAGE_REJECT: f64 = 0.8;
 /// roll and the logos, not a scene.
 const POST_CREDITS_BLACK_REJECT: f64 = 0.5;
 
+/// A chapter start this close to a candidate's start agrees with it.
+const CHAPTER_AGREE_SECS: f64 = 10.0;
+/// Audio and vhash this far apart on a boundary describe different extents
+/// (a theme that plays on under the next scene), and a chapter may choose.
+const CHAPTER_ARBITRATION_MIN_SPLIT_SECS: f64 = 3.0;
+/// A chapter boundary this close to a signal's boundary confirms it.
+const CHAPTER_CONFIRM_SECS: f64 = 2.0;
+
+/// A sparse lead shorter than this is the roll's own ramp-up, not a scene.
+const MIN_SCENE_LEAD_SECS: f64 = 5.0;
+/// How far from the roll's start a fade to black may sit and still be the
+/// transition into it (vision samples at 1 fps).
+const SCENE_LEAD_FADE_TOLERANCE_SECS: f64 = 3.0;
+
 /// A post-credits gap a sibling episode matches over this much of its length
 /// is recurring footage (a promo, a preview bumper), not a scene.
 const POST_CREDITS_SHARED_REJECT: f64 = 0.5;
+/// Share of the footage after the credits that siblings must also carry for
+/// the credits to be run to the end of the file.
+const SHARED_TAIL_COVERAGE: f64 = 0.8;
+/// How far ahead of a sibling's credits start its copy of the footage may
+/// begin: credits matches land a few seconds either side of the first card.
+const PARTNER_CREDITS_TOLERANCE_SECS: f64 = 5.0;
 
 /// Minimum black-run duration that marks the transition into a credit roll on
 /// its own. Below this it is an ordinary cut or an in-scene fade.
@@ -319,11 +340,11 @@ pub async fn detect_season_from_cache_with_chapters(
     // epoll stops being polled and *every* endpoint stops answering — trivial
     // state-less handlers included — until the season finishes. That reads as
     // "kobbler is down", and the watchdog in `main.rs` then kills the process.
-    let (per_ep_intro, per_ep_credits, vhash_intro_map, vhash_credits_map) =
+    let (per_ep_intro, (per_ep_credits, credits_shared), vhash_intro_map, vhash_credits_map) =
         tokio::task::spawn_blocking(move || {
             (
-                find_per_episode_positions(&start_fps, MIN_MATCH_DURATION),
-                find_per_episode_positions(&end_fps, MIN_CREDITS_DURATION),
+                find_per_episode_intro_positions(&start_fps, MIN_MATCH_DURATION),
+                find_per_episode_positions_and_shared(&end_fps, MIN_CREDITS_DURATION),
                 find_per_episode_vhash(&intro_vhash_seqs, MIN_MATCH_DURATION),
                 find_per_episode_vhash(&credits_vhash_seqs, MIN_MATCH_DURATION),
             )
@@ -346,6 +367,28 @@ pub async fn detect_season_from_cache_with_chapters(
     // (cap at `ep_count - 1`). Same reasoning as chromaprint's min_matches_per_ep.
     let min_vhash_pairs: usize = 3.min(caches.len().saturating_sub(1));
 
+    let partner_tails: HashMap<usize, PartnerTail> = caches
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, cache)| {
+            let chroma = per_ep_credits
+                .get(&idx)
+                .map(|p| cache.duration - p.end_seconds);
+            let vhash = vhash_credits_map.get(&idx).map(|v| v.start_seconds);
+            let credits_start = match (chroma, vhash) {
+                (Some(c), Some(v)) => c.min(v),
+                (c, v) => c.or(v)?,
+            };
+            Some((
+                idx,
+                PartnerTail {
+                    duration: cache.duration,
+                    credits_start,
+                },
+            ))
+        })
+        .collect();
+
     for (ep_idx, cache) in caches.iter().enumerate() {
         let empty_chapters = Vec::new();
         let chapters = chapters_by_file
@@ -363,6 +406,7 @@ pub async fn detect_season_from_cache_with_chapters(
             ..Default::default()
         };
 
+        let chapter_spans = chapter_spans(chapters, cache.duration);
         let mut candidates: Vec<Candidate> = Vec::new();
 
         // Intro candidates — every detection method that fires produces its
@@ -390,19 +434,33 @@ pub async fn detect_season_from_cache_with_chapters(
                     })
                     .collect(),
             });
-            let (start, end) = apply_chapter_override(chapters, "intro", intro);
-            let vhash_extended = extend_with_vhash(start, end, vhash_intro_map.get(&ep_idx));
+            let (start, end) = apply_chapter_override(chapter_spans.intro, intro);
+            let vm = vhash_intro_map.get(&ep_idx);
+            let mut vhash_extended = extend_with_vhash(start, end, vm);
             // Skip boundary refinement for an axis when chroma and vhash
             // already agree there within SIGNALS_AGREE_TOLERANCE_SECS. Two
             // independent cross-episode signals converging on a point is
             // stronger evidence than a nearby black+silence.
-            let (skip_start, skip_end) = match vhash_intro_map.get(&ep_idx) {
+            let (mut skip_start, mut skip_end) = match vm {
                 Some(vm) => (
                     (intro.start_seconds - vm.start_seconds).abs() < SIGNALS_AGREE_TOLERANCE_SECS,
                     (intro.end_seconds - vm.end_seconds).abs() < SIGNALS_AGREE_TOLERANCE_SECS,
                 ),
                 None => (false, false),
             };
+            // A chapter that sides with one signal is the second signal that
+            // agrees on that boundary, so it is kept as is too.
+            if let Some(vm) = vm {
+                let (span, confirmed_start, confirmed_end) = arbitrate_with_chapter(
+                    vhash_extended,
+                    (start, end),
+                    (vm.start_seconds, vm.end_seconds),
+                    chapter_spans.intro,
+                );
+                vhash_extended = span;
+                skip_start |= confirmed_start;
+                skip_end |= confirmed_end;
+            }
             let refined = refine_candidate(
                 SegmentType::Intro,
                 vhash_extended.0,
@@ -525,8 +583,7 @@ pub async fn detect_season_from_cache_with_chapters(
                     .collect(),
             });
             let (start, end) = apply_chapter_override_flipped(
-                chapters,
-                "credits",
+                chapter_spans.credits,
                 credits,
                 cache.duration,
                 abs_start,
@@ -637,6 +694,25 @@ pub async fn detect_season_from_cache_with_chapters(
         // not two competing half-signalled copies.
         merge_overlapping_same_type(&mut candidates, cache.embeddings.as_ref());
 
+        // Tail footage this episode shares with any sibling, in absolute time.
+        // Credits pairs are in reversed-fingerprint coordinates.
+        let tail_spans = credits_shared
+            .get(&ep_idx)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let shared: Vec<(f64, f64)> = [&diag.credits_chromaprint, &diag.credits_vhash]
+            .into_iter()
+            .flatten()
+            .flat_map(|m| m.pairs.iter().map(|p| (p.lhs_start, p.lhs_end)))
+            .chain(tail_spans.iter().map(|s| {
+                (
+                    cache.duration - s.end_seconds,
+                    cache.duration - s.start_seconds,
+                )
+            }))
+            .collect();
+        let promos = shared_after_partner_credits(tail_spans, cache.duration, &partner_tails);
+
         // Vision credit-text scan over the entire baked-in embed window.
         // See `credits_window_secs` for sizing — read back via `start_time_secs`.
         if vision_healthy
@@ -646,10 +722,11 @@ pub async fn detect_season_from_cache_with_chapters(
             let scan_start = view.start_time_secs.max(0.0);
             let window = view.window(scan_start, cache.duration);
             if window.len() >= 5
-                && let Some(text) =
+                && let Some(mut text) =
                     classify_credit_text(client, &window, view.fps, scan_start, cache.duration)
                         .await
             {
+                start_roll_after_a_scene(&mut text, &cache.black_frames);
                 let (roll_start, roll_end) = text.roll();
                 apply_vision_credit_text(
                     &mut candidates,
@@ -660,11 +737,6 @@ pub async fn detect_season_from_cache_with_chapters(
                     cache.embeddings.as_ref(),
                 );
                 push_lead_credit_blocks(&mut candidates, &text, cache);
-                let shared: Vec<(f64, f64)> = [&diag.credits_chromaprint, &diag.credits_vhash]
-                    .into_iter()
-                    .flatten()
-                    .flat_map(|m| m.pairs.iter().map(|p| (p.lhs_start, p.lhs_end)))
-                    .collect();
                 push_vision_post_credits(
                     &mut candidates,
                     &text,
@@ -688,9 +760,10 @@ pub async fn detect_season_from_cache_with_chapters(
             );
             candidates.extend(post);
         }
+        run_credits_through_shared_tail(&mut candidates, &promos, cache.duration);
 
         // Chapter agreement score (same rules as V1).
-        score_chapter_agreement(chapters, &mut candidates);
+        score_chapter_agreement(&chapter_spans, &mut candidates);
 
         // Second hard-reject pass — vision's `apply_vision_credit_text` may
         // have widened a candidate's window past MAX_CREDITS_DURATION_ABS or
@@ -809,6 +882,9 @@ async fn detect_single_file_with_diag(
             vision_scan_start = Some(scan_start);
             visual_credits =
                 classify_credit_text(client, &window, view.fps, scan_start, cache.duration).await;
+            if let Some(text) = visual_credits.as_mut() {
+                start_roll_after_a_scene(text, &cache.black_frames);
+            }
             diag.vision_credit_text_raw = visual_credits.clone();
         }
     }
@@ -906,7 +982,7 @@ async fn detect_single_file_with_diag(
         candidates.extend(post);
     }
 
-    score_chapter_agreement(chapters, &mut candidates);
+    score_chapter_agreement(&chapter_spans(chapters, cache.duration), &mut candidates);
     hard_rejected.extend(filter_hard_rejects(&mut candidates, &mut diag));
     diag.candidates_pre_fusion = candidates.clone();
     let mut fusion = score_candidates_with_rejections(candidates);
@@ -1353,17 +1429,72 @@ async fn load_chapters_for_file(pool: &PgPool, file_id: Uuid) -> Vec<(f64, Optio
         .unwrap_or_default()
 }
 
+/// Intro and credits as the file's chapters mark them, validated against the
+/// file. Chapters are evidence for detection, never a verdict: a span that
+/// can't be right (Rick and Morty S8E08 marks its intro at 3675s of a 1342s
+/// file) is dropped here, and the callers only let a span move detection
+/// where a detection signal already agrees with it.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct ChapterSpans {
+    intro: Option<(f64, f64)>,
+    credits: Option<(f64, f64)>,
+}
+
+impl ChapterSpans {
+    fn get(&self, segment_type: SegmentType) -> Option<(f64, f64)> {
+        match segment_type {
+            SegmentType::Intro => self.intro,
+            SegmentType::Credits => self.credits,
+            _ => None,
+        }
+    }
+}
+
+/// Title rules are `persist`'s, so a chapter detection weighs is the chapter
+/// the file would have been given a segment for.
+fn chapter_spans(chapters: &[(f64, Option<String>)], duration: f64) -> ChapterSpans {
+    let mut sorted = chapters.to_vec();
+    sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let infos: Vec<crate::ffmpeg::probe::ChapterInfo> = sorted
+        .iter()
+        .enumerate()
+        .map(|(i, (start, title))| crate::ffmpeg::probe::ChapterInfo {
+            index: i as i32,
+            title: title.clone(),
+            start_seconds: *start,
+            end_seconds: sorted.get(i + 1).map_or(duration, |next| next.0),
+        })
+        .collect();
+    let inside = |s: f64, e: f64| s >= 0.0 && s < e && e <= duration + 1.0;
+    let mut spans = ChapterSpans::default();
+    for seg in crate::ffmpeg::persist::detect_skip_segments_from_chapter_titles(&infos) {
+        let (s, e) = (seg.start_seconds, seg.end_seconds.min(duration));
+        if !inside(s, seg.end_seconds) {
+            continue;
+        }
+        match seg.segment_type.as_str() {
+            "intro"
+                if spans.intro.is_none()
+                    && e - s >= MIN_SKIP_DURATION
+                    && e - s <= MAX_INTRO_DURATION =>
+            {
+                spans.intro = Some((s, e));
+            }
+            "credits" if spans.credits.is_none() && s >= duration * 0.5 => {
+                spans.credits = Some((s, e));
+            }
+            _ => {}
+        }
+    }
+    spans
+}
+
 fn apply_chapter_override(
-    chapters: &[(f64, Option<String>)],
-    label: &str,
+    chapter: Option<(f64, f64)>,
     pos: &super::tv::PerEpisodePosition,
 ) -> (f64, f64) {
-    let intro_chapter = chapters.iter().find(|(_, title)| match title {
-        Some(t) => matches_label(t, label),
-        None => false,
-    });
-    if let Some((chapter_start, _)) = intro_chapter
-        && let Some((s, e)) = chapter_override_position(pos, *chapter_start)
+    if let Some((chapter_start, _)) = chapter
+        && let Some((s, e)) = chapter_override_position(pos, chapter_start)
     {
         return (s, e);
     }
@@ -1371,21 +1502,13 @@ fn apply_chapter_override(
 }
 
 fn apply_chapter_override_flipped(
-    chapters: &[(f64, Option<String>)],
-    label: &str,
+    chapter: Option<(f64, f64)>,
     pos: &super::tv::PerEpisodePosition,
     duration: f64,
     abs_start: f64,
     abs_end: f64,
 ) -> (f64, f64) {
-    let ch_start = chapters
-        .iter()
-        .find(|(_, title)| match title {
-            Some(t) => matches_label(t, label),
-            None => false,
-        })
-        .map(|(s, _)| *s);
-    let Some(ch_start) = ch_start else {
+    let Some((ch_start, _)) = chapter else {
         return (abs_start, abs_end);
     };
     let delta = (abs_start - ch_start).abs();
@@ -1471,18 +1594,6 @@ fn extend_with_vhash(
         return (best_start, best_end);
     }
     extended
-}
-
-fn matches_label(title: &str, label: &str) -> bool {
-    let t = title.to_lowercase();
-    let t = t.trim();
-    match label {
-        "intro" => ["intro", "opening", "cold open", "op"]
-            .iter()
-            .any(|p| t.contains(p)),
-        "credits" => ["credits", "ending", "ed"].iter().any(|p| t.contains(p)),
-        _ => false,
-    }
 }
 
 /// Build a candidate with boundary refinement from cached silence+black intervals.
@@ -1838,6 +1949,32 @@ fn push_lead_credit_blocks(
     }
 }
 
+/// Start the roll where its credit frames turn dense when the sparse stretch
+/// ahead of that is a live scene with credits in small type over it — the
+/// Scrubs (2026) closing scenes, which are content. The scene shows as sparse
+/// text and, unlike a designed credits sequence over imagery (VisionQuest),
+/// isn't entered through a fade: no black run long enough to mark a credits
+/// transition sits at the roll's start, only the scene's own cuts.
+fn start_roll_after_a_scene(text: &mut CreditText, black_frames: &[BlackInterval]) {
+    let Some(dense) = text.roll_dense_start else {
+        return;
+    };
+    let Some(roll) = text.blocks.last_mut() else {
+        return;
+    };
+    if dense - roll.0 < MIN_SCENE_LEAD_SECS {
+        return;
+    }
+    let faded_in = black_frames.iter().any(|b| {
+        b.duration_secs >= MIN_CREDITS_BLACK_SECS
+            && b.end_secs >= roll.0 - SCENE_LEAD_FADE_TOLERANCE_SECS
+            && b.start_secs <= roll.0 + SCENE_LEAD_FADE_TOLERANCE_SECS
+    });
+    if !faded_in {
+        roll.0 = dense;
+    }
+}
+
 /// Footage between the end of the roll and the next text vision sees (a
 /// vanity card, a studio logo) or the end of the file: a post-credits scene.
 ///
@@ -1893,6 +2030,83 @@ fn push_vision_post_credits(
         },
         file_duration: Some(duration),
     });
+}
+
+/// Where a sibling's own credits start, the earlier of its credits matches.
+/// A season whose promos repeat makes the promos the audio "credits" match
+/// (Mr Inbetween S3), so the earlier one is the roll.
+#[derive(Debug, Clone, Copy)]
+struct PartnerTail {
+    duration: f64,
+    credits_start: f64,
+}
+
+/// A promo the network appends sits in the sibling's tail too; a
+/// next-episode preview (Death Note) matches its source scene, which is ahead
+/// of the sibling's credits. Only the first kind is returned, in absolute
+/// time.
+fn shared_after_partner_credits(
+    spans: &[SharedSpan],
+    duration: f64,
+    partners: &HashMap<usize, PartnerTail>,
+) -> Vec<(f64, f64)> {
+    spans
+        .iter()
+        .filter(|s| {
+            partners.get(&s.partner).is_some_and(|p| {
+                p.duration - s.partner_end_seconds
+                    >= p.credits_start - PARTNER_CREDITS_TOLERANCE_SECS
+            })
+        })
+        .map(|s| (duration - s.end_seconds, duration - s.start_seconds))
+        .collect()
+}
+
+/// Credits that stop short of the end, followed only by footage other
+/// episodes also carry (the network promos FX appends to Mr Inbetween and
+/// IASIP), run to the end: skipping them should finish the episode, not land
+/// on an ad.
+fn run_credits_through_shared_tail(
+    candidates: &mut [Candidate],
+    shared: &[(f64, f64)],
+    duration: f64,
+) {
+    let Some(roll_end) = roll_candidate(candidates).map(|c| c.end_seconds) else {
+        return;
+    };
+    let tail = duration - roll_end;
+    if tail < MIN_POST_CREDITS_DURATION {
+        return;
+    }
+    if candidates
+        .iter()
+        .any(|c| c.segment_type == SegmentType::PostCreditsScene && c.end_seconds > roll_end)
+    {
+        return;
+    }
+    let mut spans: Vec<(f64, f64)> = shared
+        .iter()
+        .map(|&(s, e)| (s.max(roll_end), e.min(duration)))
+        .filter(|(s, e)| e > s)
+        .collect();
+    spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut covered = 0.0;
+    let mut reach = roll_end;
+    for (s, e) in spans {
+        let s = s.max(reach);
+        if e > s {
+            covered += e - s;
+            reach = e;
+        }
+    }
+    if covered < tail * SHARED_TAIL_COVERAGE {
+        return;
+    }
+    for c in candidates.iter_mut() {
+        if c.segment_type == SegmentType::Credits && c.end_seconds == roll_end {
+            c.end_seconds = duration;
+        }
+    }
 }
 
 /// The roll: post-credits scenes follow it, not a credit block ahead of a
@@ -2036,49 +2250,65 @@ fn max_option(a: Option<f64>, b: Option<f64>) -> Option<f64> {
     }
 }
 
-fn score_chapter_agreement(chapters: &[(f64, Option<String>)], candidates: &mut [Candidate]) {
-    if chapters.is_empty() {
-        return;
-    }
-    // Build chapter segments (simple: pair consecutive chapters).
-    let mut chapter_segs: HashMap<String, (f64, f64)> = HashMap::new();
-    let mut sorted = chapters.to_vec();
-    sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    for (i, (start, title)) in sorted.iter().enumerate() {
-        let Some(title) = title else { continue };
-        let label = if matches_label(title, "intro") {
-            Some("intro".to_string())
-        } else if matches_label(title, "credits") {
-            Some("credits".to_string())
-        } else {
-            None
-        };
-        let Some(label) = label else { continue };
-        let end = sorted.get(i + 1).map(|next| next.0).unwrap_or(start + 90.0);
-        chapter_segs.insert(label, (*start, end));
-    }
-
+/// A chapter that agrees with a candidate's start confirms it; one that
+/// doesn't is ignored rather than counted against it — the chapter is as
+/// likely to be the wrong one (Rick and Morty S8's intro chapters run 10-30s
+/// off the theme).
+fn score_chapter_agreement(chapters: &ChapterSpans, candidates: &mut [Candidate]) {
     for candidate in candidates.iter_mut() {
-        let seg_type = candidate.segment_type.as_str();
-        let Some((ch_start, ch_end)) = chapter_segs.get(seg_type) else {
+        let Some((ch_start, ch_end)) = chapters.get(candidate.segment_type) else {
             continue;
         };
         let start_delta = (candidate.start_seconds - ch_start).abs();
+        if start_delta > CHAPTER_AGREE_SECS {
+            continue;
+        }
         let ch_duration = ch_end - ch_start;
         let det_duration = candidate.end_seconds - candidate.start_seconds;
-        let agreement = if start_delta <= 10.0 {
-            if ch_duration >= det_duration * 0.5 {
-                0.10
-            } else {
-                0.05
-            }
-        } else if start_delta <= 30.0 {
-            0.0
+        candidate.signals.chapter_agreement = Some(if ch_duration >= det_duration * 0.5 {
+            0.10
         } else {
-            -0.10
-        };
-        candidate.signals.chapter_agreement = Some(agreement);
+            0.05
+        });
     }
+}
+
+/// Where audio and vhash disagree on a boundary by more than
+/// [`CHAPTER_ARBITRATION_MIN_SPLIT_SECS`], a chapter boundary within
+/// [`CHAPTER_CONFIRM_SECS`] of exactly one of them picks that one. Scrubs
+/// (2026) S1: the picture's titles end at 189.6 (vhash) while the theme plays
+/// on under the next scene to 197.7 (chroma); the chapter ends at 189.0. The
+/// signal's boundary is kept, not the chapter's — chapters are rounded, and
+/// where both signals agree (Rick and Morty) they beat the chapter outright.
+/// Returns the span and, per axis, whether a chapter confirmed it.
+fn arbitrate_with_chapter(
+    span: (f64, f64),
+    chroma: (f64, f64),
+    vhash: (f64, f64),
+    chapter: Option<(f64, f64)>,
+) -> ((f64, f64), bool, bool) {
+    let Some(chapter) = chapter else {
+        return (span, false, false);
+    };
+    let pick = |c: f64, v: f64, ch: f64| -> Option<f64> {
+        if (c - v).abs() <= CHAPTER_ARBITRATION_MIN_SPLIT_SECS {
+            return None;
+        }
+        let near_c = (ch - c).abs() <= CHAPTER_CONFIRM_SECS;
+        let near_v = (ch - v).abs() <= CHAPTER_CONFIRM_SECS;
+        match (near_c, near_v) {
+            (true, false) => Some(c),
+            (false, true) => Some(v),
+            _ => None,
+        }
+    };
+    let start = pick(chroma.0, vhash.0, chapter.0);
+    let end = pick(chroma.1, vhash.1, chapter.1);
+    (
+        (start.unwrap_or(span.0), end.unwrap_or(span.1)),
+        start.is_some(),
+        end.is_some(),
+    )
 }
 
 #[allow(dead_code)]
@@ -2393,7 +2623,7 @@ mod leftovers_tests {
             ),
         ];
 
-        let per_ep_intro = find_per_episode_positions(&start_fps, MIN_MATCH_DURATION);
+        let per_ep_intro = find_per_episode_intro_positions(&start_fps, MIN_MATCH_DURATION);
         eprintln!(
             "intro audio matches: {} (expected 0 — soundtracks differ)",
             per_ep_intro.len()
@@ -2636,6 +2866,7 @@ mod lead_credit_block_tests {
             blocks: vec![(2922.0, 3006.0), (3135.0, 3311.0)],
             confidence: 0.95,
             after_roll: None,
+            roll_dense_start: None,
         };
         let (roll_start, roll_end) = text.roll();
         apply_vision_credit_text(
@@ -2661,7 +2892,7 @@ mod lead_credit_block_tests {
             (0.0, Some("Main".into())),
             (3131.0, Some("End Credits".into())),
         ];
-        score_chapter_agreement(&chapters, &mut candidates);
+        score_chapter_agreement(&chapter_spans(&chapters, duration), &mut candidates);
         let mut credits: Vec<(f64, f64)> = score_candidates_with_rejections(candidates)
             .segments
             .iter()
@@ -2830,6 +3061,7 @@ mod vision_post_credits_tests {
             blocks: vec![(1260.936, 1291.936)],
             confidence: 0.95,
             after_roll: Some(1327.9),
+            roll_dense_start: None,
         };
         let blacks = [black(1260.68, 1268.6), black(1291.33, 1292.21)];
         // Every partner's match stops with the crawl.
@@ -2853,6 +3085,7 @@ mod vision_post_credits_tests {
             blocks: vec![(3518.931, 3619.931)],
             confidence: 0.95,
             after_roll: None,
+            roll_dense_start: None,
         };
         push_vision_post_credits(&mut candidates, &text, &[], &[], duration);
         assert_eq!(candidates.len(), 1);
@@ -2869,10 +3102,123 @@ mod vision_post_credits_tests {
             blocks: vec![(1317.6, 1365.9)],
             confidence: 0.95,
             after_roll: Some(1386.9),
+            roll_dense_start: None,
         };
         let shared = [(1318.0, 1363.6), (1318.0, 1424.3), (1318.0, 1349.9)];
         push_vision_post_credits(&mut candidates, &text, &[], &shared, duration);
         assert_eq!(candidates.len(), 1);
+    }
+
+    /// Mr Inbetween 1x01: the roll and the production logos end at 1605.9,
+    /// then FX promos run to the end of the file. 1x03 and 1x06 carry the
+    /// same promos, each with a single partner, so the three-sibling credits
+    /// match never sees them.
+    #[test]
+    fn mr_inbetween_s1e01_credits_run_through_the_promos() {
+        let duration = 1721.632;
+        let mut candidates = vec![roll(duration, 1543.6, 1605.9)];
+        let shared = [(1543.6, 1607.6), (1605.0, 1639.8), (1640.5, 1721.5)];
+        run_credits_through_shared_tail(&mut candidates, &shared, duration);
+        assert_eq!(candidates[0].end_seconds, duration);
+    }
+
+    /// Mr Inbetween 1x06: vision saw a scene from 1455.9 to 1480.9, but it is
+    /// the first of the promos 1x01 also ends on.
+    #[test]
+    fn mr_inbetween_s1e06_promo_is_not_a_post_credits_scene() {
+        let duration = 1540.448;
+        let mut candidates = vec![roll(duration, 1393.9, 1455.9)];
+        let text = CreditText {
+            blocks: vec![(1394.94, 1455.94)],
+            confidence: 0.93,
+            after_roll: Some(1480.94),
+            roll_dense_start: None,
+        };
+        let shared = [(1393.9, 1457.6), (1459.4, 1540.4)];
+        push_vision_post_credits(&mut candidates, &text, &[], &shared, duration);
+        run_credits_through_shared_tail(&mut candidates, &shared, duration);
+        assert_eq!(
+            segments(candidates),
+            vec![(SegmentType::Credits, 1393.9, duration)]
+        );
+    }
+
+    fn span(start: f64, end: f64, partner: usize, _p_start: f64, p_end: f64) -> SharedSpan {
+        SharedSpan {
+            start_seconds: start,
+            end_seconds: end,
+            partner,
+            partner_end_seconds: p_end,
+        }
+    }
+
+    /// Mr Inbetween 1x01's tail matches 1x03 and 1x06 inside their own tails;
+    /// a next-episode preview matches its source scene, ahead of the next
+    /// episode's credits, and is not a promo.
+    #[test]
+    fn promos_are_shared_from_the_siblings_tails() {
+        let partners = HashMap::from([
+            (
+                2,
+                PartnerTail {
+                    duration: 1657.792,
+                    credits_start: 1499.6,
+                },
+            ),
+            (
+                5,
+                PartnerTail {
+                    duration: 1540.448,
+                    credits_start: 1393.9,
+                },
+            ),
+        ]);
+        let mi = [
+            span(81.75, 116.61, 2, 57.44, 92.30),
+            span(0.12, 81.13, 5, 0.0, 81.01),
+        ];
+        assert_eq!(
+            shared_after_partner_credits(&mi, 1721.632, &partners).len(),
+            2
+        );
+
+        let next = HashMap::from([(
+            9,
+            PartnerTail {
+                duration: 1377.4,
+                credits_start: 1283.2,
+            },
+        )]);
+        let preview = [span(8.0, 19.0, 9, 300.0, 311.0)];
+        assert!(shared_after_partner_credits(&preview, 1377.4, &next).is_empty());
+    }
+
+    /// Death Note 1x09: the end theme is shared, the preview and end card
+    /// after it are not, so the credits stop with the theme.
+    #[test]
+    fn death_note_s1e09_preview_is_not_run_over() {
+        let duration = 1377.4;
+        let mut candidates = vec![roll(duration, 1283.2, 1358.3)];
+        let shared = [(1287.8, 1358.3), (1287.6, 1358.5)];
+        run_credits_through_shared_tail(&mut candidates, &shared, duration);
+        assert_eq!(candidates[0].end_seconds, 1358.3);
+    }
+
+    /// A stinger is the episode's own: the credits still stop at it.
+    #[test]
+    fn credits_stop_at_a_stinger() {
+        let duration = 1333.1;
+        let mut candidates = vec![roll(duration, 1260.93, 1292.77)];
+        let text = CreditText {
+            blocks: vec![(1260.936, 1291.936)],
+            confidence: 0.95,
+            after_roll: Some(1327.9),
+            roll_dense_start: None,
+        };
+        let shared = [(1262.25, 1292.77), (1261.0, 1292.25)];
+        push_vision_post_credits(&mut candidates, &text, &[], &shared, duration);
+        run_credits_through_shared_tail(&mut candidates, &shared, duration);
+        assert_eq!(candidates[0].end_seconds, 1291.936);
     }
 
     /// A fade to black between the roll and the logos is not a scene.
@@ -2884,6 +3230,7 @@ mod vision_post_credits_tests {
             blocks: vec![(1900.0, 1960.0)],
             confidence: 0.95,
             after_roll: Some(1972.0),
+            roll_dense_start: None,
         };
         push_vision_post_credits(
             &mut candidates,
@@ -2893,5 +3240,130 @@ mod vision_post_credits_tests {
             duration,
         );
         assert_eq!(candidates.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod scene_lead_tests {
+    use super::*;
+
+    fn black(start: f64, end: f64) -> BlackInterval {
+        BlackInterval {
+            start_secs: start,
+            end_secs: end,
+            duration_secs: end - start,
+        }
+    }
+
+    /// Scrubs (2026) 1x01: vision's roll opens at 1305.9 over the closing
+    /// scene and turns dense on the dub cards at 1347.9. The only black near
+    /// the start is a 0.5s cut.
+    #[test]
+    fn scrubs_2026_s1e01_closing_scene_is_not_credits() {
+        let mut text = CreditText {
+            blocks: vec![(1305.9, 1412.9)],
+            confidence: 0.88,
+            after_roll: None,
+            roll_dense_start: Some(1347.9),
+        };
+        start_roll_after_a_scene(&mut text, &[black(1304.5, 1305.0)]);
+        assert_eq!(text.roll(), (1347.9, 1412.9));
+    }
+
+    /// VisionQuest 1x01: the name cards over imagery are as sparse as the
+    /// Scrubs scene, but the episode fades to black (2920.9–2923.0) into them.
+    #[test]
+    fn visionquest_s1e01_name_cards_after_a_fade_stay_credits() {
+        let mut text = CreditText {
+            blocks: vec![(2922.9, 3199.9)],
+            confidence: 0.85,
+            after_roll: None,
+            roll_dense_start: Some(2942.9),
+        };
+        start_roll_after_a_scene(&mut text, &[black(2920.9, 2923.0), black(2923.5, 2924.0)]);
+        assert_eq!(text.roll(), (2922.9, 3199.9));
+    }
+}
+
+#[cfg(test)]
+mod chapter_evidence_tests {
+    use super::*;
+
+    fn titled(chapters: &[(f64, &str)]) -> Vec<(f64, Option<String>)> {
+        chapters
+            .iter()
+            .map(|(s, t)| (*s, Some(t.to_string())))
+            .collect()
+    }
+
+    /// Rick and Morty S8E08's chapters put the intro at 3675.6s of a 1342s
+    /// file. Scrubs (2026) 1x01's are sound.
+    #[test]
+    fn impossible_chapters_are_not_evidence() {
+        let rm = titled(&[(0.0, "Scene 01"), (3675.6, "Intro"), (3706.4, "Scene 02")]);
+        assert_eq!(chapter_spans(&rm, 1342.3), ChapterSpans::default());
+
+        let scrubs = titled(&[
+            (0.0, "Chapter 1"),
+            (177.051, "Intro"),
+            (189.021, "Chapter 3"),
+            (1304.97, "End Credits"),
+            (1334.959, "Chapter 5"),
+        ]);
+        let spans = chapter_spans(&scrubs, 1413.6);
+        assert_eq!(spans.intro, Some((177.051, 189.021)));
+        assert_eq!(spans.credits, Some((1304.97, 1334.959)));
+    }
+
+    /// Scrubs (2026) 1x01: the titles end at 189.6 by vhash, the theme plays
+    /// on to 197.7 by chroma, and the chapter ends at 189.0.
+    #[test]
+    fn scrubs_2026_s1e01_chapter_picks_the_signal_that_ends_with_the_titles() {
+        let (span, start, end) = arbitrate_with_chapter(
+            (177.3, 197.7),
+            (184.5, 197.7),
+            (177.3, 189.6),
+            Some((177.051, 189.021)),
+        );
+        assert_eq!(span, (177.3, 189.6));
+        assert!(start && end);
+    }
+
+    /// Rick and Morty 9x07: chroma and vhash agree on 92.1/92.9–123.3/124.2,
+    /// which the frames bear out (the logo holds to 124.5); the chapter says
+    /// 94.0–122.0. Agreeing signals beat a chapter.
+    #[test]
+    fn rick_and_morty_s9e07_agreeing_signals_beat_the_chapter() {
+        let (span, start, end) = arbitrate_with_chapter(
+            (92.1, 124.2),
+            (92.1, 123.3),
+            (92.9, 124.2),
+            Some((94.0, 122.0)),
+        );
+        assert_eq!(span, (92.1, 124.2));
+        assert!(!start && !end);
+    }
+
+    /// Rick and Morty S8E04: the intro chapter starts 30s after the detected
+    /// theme. It is ignored, not held against the detection.
+    #[test]
+    fn a_contradicting_chapter_is_ignored() {
+        let mut candidates = vec![Candidate {
+            segment_type: SegmentType::Intro,
+            start_seconds: 120.9,
+            end_seconds: 153.6,
+            signals: CandidateSignals {
+                chromaprint_score: Some(0.99),
+                dhash_score: Some(0.9),
+                ..Default::default()
+            },
+            file_duration: Some(1356.1),
+        }];
+        let spans = ChapterSpans {
+            intro: Some((151.5, 182.3)),
+            credits: None,
+        };
+        score_chapter_agreement(&spans, &mut candidates);
+        assert_eq!(candidates[0].signals.chapter_agreement, None);
     }
 }

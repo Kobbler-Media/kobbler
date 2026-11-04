@@ -47,14 +47,106 @@ pub(crate) struct PairDetail {
     pub(crate) rhs_end: f64,
 }
 
-/// Pairwise intro/credits region aggregation over a set of chromaprint
-/// fingerprints. Called by `cache_detect` with cached fingerprints.
+#[cfg(test)]
 pub(crate) fn find_per_episode_positions(
     fps: &[(usize, Fingerprint)],
     min_duration: f64,
 ) -> HashMap<usize, PerEpisodePosition> {
+    per_episode_positions(fps, min_duration, false).0
+}
+
+/// Pairwise credits region aggregation over a set of chromaprint
+/// fingerprints, plus every pairwise region of each episode whatever its
+/// sibling count: footage shared with even one sibling is not unique to the
+/// episode, which is what a post-credits scene has to be.
+pub(crate) fn find_per_episode_positions_and_shared(
+    fps: &[(usize, Fingerprint)],
+    min_duration: f64,
+) -> (HashMap<usize, PerEpisodePosition>, SharedSpans) {
+    let (positions, regions) = per_episode_positions(fps, min_duration, false);
+    let shared = regions
+        .into_iter()
+        .map(|(ep, rs)| {
+            let spans = rs
+                .iter()
+                .map(|(mine, partner, theirs)| SharedSpan {
+                    start_seconds: mine.start_seconds,
+                    end_seconds: mine.end_seconds,
+                    partner: *partner,
+                    partner_end_seconds: theirs.end_seconds,
+                })
+                .collect();
+            (ep, spans)
+        })
+        .collect();
+    (positions, shared)
+}
+
+/// Pairwise intro region aggregation. An episode with only two partners
+/// is kept when those two partners also match each other at the same place:
+/// a theme shared by just three episodes of a season (IASIP S15's Ireland
+/// run). A recap matches its source scene, which is not where the other
+/// recap's source sits, so it rarely closes the triangle.
+pub(crate) fn find_per_episode_intro_positions(
+    fps: &[(usize, Fingerprint)],
+    min_duration: f64,
+) -> HashMap<usize, PerEpisodePosition> {
+    per_episode_positions(fps, min_duration, true).0
+}
+
+/// One stretch of an episode that a sibling also carries, with where the
+/// sibling's copy ends, both in the fingerprints' own coordinates.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SharedSpan {
+    pub(crate) start_seconds: f64,
+    pub(crate) end_seconds: f64,
+    pub(crate) partner: usize,
+    pub(crate) partner_end_seconds: f64,
+}
+
+/// Per episode, every span it shares with some sibling.
+pub(crate) type SharedSpans = HashMap<usize, Vec<SharedSpan>>;
+
+type EpRegions = HashMap<usize, Vec<(MatchedRegion, usize, MatchedRegion)>>;
+
+fn overlaps(a: &MatchedRegion, b: &MatchedRegion) -> bool {
+    a.start_seconds < b.end_seconds && b.start_seconds < a.end_seconds
+}
+
+/// Two of `ep`'s regions, against different partners, that overlap in `ep`
+/// and whose partners match each other on the same stretch.
+fn closed_triangle(
+    ep_regions: &EpRegions,
+    regions: &[(MatchedRegion, usize, MatchedRegion)],
+) -> Option<Vec<(MatchedRegion, usize, MatchedRegion)>> {
+    for (i, (mine_a, p, theirs_a)) in regions.iter().enumerate() {
+        for (mine_b, q, theirs_b) in &regions[i + 1..] {
+            if p == q || !overlaps(mine_a, mine_b) {
+                continue;
+            }
+            let closes = ep_regions.get(p).is_some_and(|rs| {
+                rs.iter().any(|(p_side, partner, q_side)| {
+                    partner == q && overlaps(p_side, theirs_a) && overlaps(q_side, theirs_b)
+                })
+            });
+            if closes {
+                return Some(vec![
+                    (mine_a.clone(), *p, theirs_a.clone()),
+                    (mine_b.clone(), *q, theirs_b.clone()),
+                ]);
+            }
+        }
+    }
+    None
+}
+
+fn per_episode_positions(
+    fps: &[(usize, Fingerprint)],
+    min_duration: f64,
+    accept_closed_triangles: bool,
+) -> (HashMap<usize, PerEpisodePosition>, EpRegions) {
     if fps.len() < 2 {
-        return HashMap::new();
+        return (HashMap::new(), HashMap::new());
     }
 
     // Require ≥3 siblings to agree on a match when the season has enough
@@ -66,7 +158,7 @@ pub(crate) fn find_per_episode_positions(
     let min_matches_per_ep = 3.min(fps.len() - 1);
 
     // Collect all positions per episode from pairwise matches.
-    let mut ep_regions: HashMap<usize, Vec<(MatchedRegion, usize, MatchedRegion)>> = HashMap::new();
+    let mut ep_regions: EpRegions = HashMap::new();
 
     for i in 0..fps.len() {
         for j in (i + 1)..fps.len() {
@@ -91,10 +183,19 @@ pub(crate) fn find_per_episode_positions(
 
     // Aggregate per episode: cluster overlapping matches, pick best cluster, then median.
     let mut result = HashMap::new();
-    for (ep_idx, regions) in ep_regions {
-        if regions.len() < min_matches_per_ep {
+    for (&ep_idx, regions) in &ep_regions {
+        let triangle;
+        let regions = if regions.len() >= min_matches_per_ep {
+            regions
+        } else if accept_closed_triangles
+            && min_matches_per_ep == 3
+            && let Some(t) = closed_triangle(&ep_regions, regions)
+        {
+            triangle = t;
+            &triangle
+        } else {
             continue;
-        }
+        };
 
         let pairwise: Vec<PairDetail> = regions
             .iter()
@@ -174,7 +275,7 @@ pub(crate) fn find_per_episode_positions(
         );
     }
 
-    result
+    (result, ep_regions)
 }
 
 /// Override the chromaprint position with a chapter-aligned pairwise match
@@ -1161,5 +1262,72 @@ mod tests {
             result.is_none(),
             "Should not override when no pairwise match aligns with chapter"
         );
+    }
+
+    fn iasip_s15_intro_fingerprints() -> Vec<(usize, Fingerprint)> {
+        let raw: [&[u8]; 8] = [
+            include_bytes!("../../tests/fixtures/chromaprint/iasip_s15e01_intro.bin"),
+            include_bytes!("../../tests/fixtures/chromaprint/iasip_s15e02_intro.bin"),
+            include_bytes!("../../tests/fixtures/chromaprint/iasip_s15e03_intro.bin"),
+            include_bytes!("../../tests/fixtures/chromaprint/iasip_s15e04_intro.bin"),
+            include_bytes!("../../tests/fixtures/chromaprint/iasip_s15e05_intro.bin"),
+            include_bytes!("../../tests/fixtures/chromaprint/iasip_s15e06_intro.bin"),
+            include_bytes!("../../tests/fixtures/chromaprint/iasip_s15e07_intro.bin"),
+            include_bytes!("../../tests/fixtures/chromaprint/iasip_s15e08_intro.bin"),
+        ];
+        raw.iter()
+            .enumerate()
+            .map(|(idx, bytes)| {
+                let data: Vec<u32> = bytes
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|c| u32::from_le_bytes(*c))
+                    .collect();
+                // The fixtures are the first 160 s at the file's own ~8.06 samples/s.
+                let duration_seconds = data.len() as f64 / 8.06;
+                (
+                    idx,
+                    Fingerprint {
+                        data,
+                        duration_seconds,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn iasip_s15_ireland_titles_agree_across_three_episodes() {
+        // 5x05–5x07 (the Ireland episodes) open on a variant theme that only
+        // they share, at ~84–135 s. Each has two partners, which on its own is
+        // the recap shape the 3-sibling rule exists for; the three agreeing
+        // with one another is not.
+        let res =
+            find_per_episode_intro_positions(&iasip_s15_intro_fingerprints(), MIN_MATCH_DURATION);
+        let e05 = res.get(&4).expect("5x05 titles");
+        assert!(
+            (115.0..=120.0).contains(&e05.start_seconds),
+            "5x05 start {}",
+            e05.start_seconds
+        );
+        let e07 = res.get(&6).expect("5x07 titles");
+        assert!(
+            (106.0..=110.0).contains(&e07.start_seconds) && e07.end_seconds >= 124.0,
+            "5x07 {}..{}",
+            e07.start_seconds,
+            e07.end_seconds
+        );
+        // The standard titles in 5x01–5x04 are unchanged.
+        let e01 = res.get(&0).expect("5x01 titles");
+        assert!((114.0..=118.0).contains(&e01.start_seconds));
+    }
+
+    #[test]
+    fn credits_keep_the_three_sibling_rule() {
+        // The same two-partner shape on the credits side stays dropped
+        // (Leftovers 2x01's mid-episode "credits").
+        let res = find_per_episode_positions(&iasip_s15_intro_fingerprints(), MIN_MATCH_DURATION);
+        assert!(!res.contains_key(&4), "5x05 should need three siblings");
     }
 }

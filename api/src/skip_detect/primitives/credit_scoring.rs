@@ -23,6 +23,9 @@ const MIN_CHAINED_REGION_HITS: usize = 30;
 /// Longer than logo cards ever run between two credit blocks, so what fills the
 /// gap is footage — a mid-credits scene or a preview — and must stay watchable.
 const MAX_SAME_BLOCK_GAP_SECS: f64 = 30.0;
+/// Consecutive text frames that make a roll dense: ten seconds of frames at
+/// vision's 1 fps, which credits over a scene (Scrubs 2026) never manage.
+pub const DENSE_RUN_FRAMES: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct CreditText {
@@ -34,6 +37,12 @@ pub struct CreditText {
     /// logo. What lies between the roll and it is footage.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after_roll: Option<f64>,
+    /// Where the roll's frames first read as text [`DENSE_RUN_FRAMES`] in a
+    /// row. Text in small type over a live scene clears the threshold only in
+    /// ones and twos, so a roll that starts sparse may be a scene with
+    /// credits over it; the caller decides with the picture's boundaries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub roll_dense_start: Option<f64>,
 }
 
 impl CreditText {
@@ -177,14 +186,27 @@ pub fn detect_credit_regions(
         }
     }
 
+    let blocks: Vec<(f64, f64)> = blocks
+        .into_iter()
+        .filter(|b| b.2)
+        .map(|(start, end, _)| (start, end))
+        .collect();
+    let (roll_start, roll_end) = *blocks.last()?;
+    let roll_dense_start = frame_scores
+        .iter()
+        .enumerate()
+        .filter(|(_, (t, _))| *t >= roll_start && *t <= roll_end)
+        .find(|&(i, _)| {
+            frame_scores
+                .get(i..i + DENSE_RUN_FRAMES)
+                .is_some_and(|run| run.iter().all(|(_, s)| *s >= profile.credit_threshold))
+        })
+        .map(|(_, (t, _))| *t);
     Some(CreditText {
-        blocks: blocks
-            .into_iter()
-            .filter(|b| b.2)
-            .map(|(start, end, _)| (start, end))
-            .collect(),
+        blocks,
         confidence,
         after_roll: regions.get(best_idx + 1).map(|r| r.0),
+        roll_dense_start,
     })
 }
 
@@ -245,6 +267,35 @@ mod tests {
         assert!((start - 1260.9).abs() < 1e-6 && (end - 1291.9).abs() < 1e-6);
         let after = text.after_roll.expect("text returns after the roll");
         assert!((after - 1327.9).abs() < 1e-6, "after_roll {after}");
+    }
+
+    /// Scrubs (2026) 1x01: credits in small type over the closing scene from
+    /// 1305, then the studio logos, then dub credit cards from 1347.9. Over
+    /// the scene the frames clear the threshold in ones and twos; on the
+    /// cards, frame after frame.
+    #[test]
+    fn scrubs_2026_s1e01_dense_credits_start_after_the_scene() {
+        let scores: [f64; 66] = [
+            -0.058, -0.073, -0.062, -0.068, -0.059, -0.062, -0.061, -0.070, 0.026, 0.036, 0.026,
+            0.043, -0.006, 0.005, 0.008, -0.000, 0.007, 0.012, 0.013, 0.014, 0.009, 0.035, 0.037,
+            0.019, 0.042, 0.028, 0.024, 0.033, 0.018, 0.038, 0.042, 0.028, 0.034, 0.007, 0.024,
+            0.058, 0.047, 0.036, 0.042, -0.007, -0.017, -0.018, -0.009, 0.037, 0.055, 0.008, 0.005,
+            0.052, 0.054, 0.058, 0.027, 0.081, 0.082, 0.070, 0.070, 0.067, 0.067, 0.074, 0.073,
+            0.073, 0.073, 0.089, 0.089, 0.072, 0.072, 0.073,
+        ];
+        let frames: Vec<(f64, f64)> = scores
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| (1296.9 + i as f64, s))
+            .collect();
+        let text = detect_credit_regions(&frames, 1200.0, &EG2).unwrap();
+        assert!(
+            (text.roll().0 - 1305.9).abs() < 1e-6,
+            "roll {:?}",
+            text.roll()
+        );
+        let dense = text.roll_dense_start.expect("the cards are dense");
+        assert!((dense - 1347.9).abs() < 1e-6, "dense from {dense}");
     }
 
     #[test]
