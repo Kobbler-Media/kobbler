@@ -27,9 +27,9 @@ use super::tv::{
 };
 use super::vhash::FrameDescriptor;
 use super::{
-    BoundaryMatch, Candidate, CandidateSignals, DetectedSegment, INTRO_MAX_BER,
-    MIN_CREDITS_DURATION, MIN_MATCH_DURATION, MIN_SKIP_DURATION, SegmentType,
-    earliest_credits_start, extract_duration_secs, extraction_windows,
+    BoundaryMatch, Candidate, CandidateSignals, DetectedSegment, INTRO_MAX_BER, MAX_INTRO_DURATION,
+    MIN_CREDITS_DURATION, MIN_MATCH_DURATION, MIN_POST_CREDITS_DURATION, MIN_SKIP_DURATION,
+    SegmentType, earliest_credits_start, extract_duration_secs, extraction_windows,
 };
 use crate::embedding::{EmbeddingClient, profile};
 use crate::media_cache::readers::{self, BlackGap, EmbeddingsView, SilenceGap};
@@ -57,6 +57,14 @@ const SIGNALS_AGREE_TOLERANCE_SECS: f64 = 1.0;
 /// them at near-1.0 density — without this filter the detector invents
 /// intros/credits wherever any two episodes share a ≥5s black stretch.
 const BLACK_FRAME_COVERAGE_REJECT: f64 = 0.8;
+
+/// A post-credits gap this much inside one black run is the fade between the
+/// roll and the logos, not a scene.
+const POST_CREDITS_BLACK_REJECT: f64 = 0.5;
+
+/// A post-credits gap a sibling episode matches over this much of its length
+/// is recurring footage (a promo, a preview bumper), not a scene.
+const POST_CREDITS_SHARED_REJECT: f64 = 0.5;
 
 /// Minimum black-run duration that marks the transition into a credit roll on
 /// its own. Below this it is an ordinary cut or an in-scene fade.
@@ -652,6 +660,18 @@ pub async fn detect_season_from_cache_with_chapters(
                     cache.embeddings.as_ref(),
                 );
                 push_lead_credit_blocks(&mut candidates, &text, cache);
+                let shared: Vec<(f64, f64)> = [&diag.credits_chromaprint, &diag.credits_vhash]
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|m| m.pairs.iter().map(|p| (p.lhs_start, p.lhs_end)))
+                    .collect();
+                push_vision_post_credits(
+                    &mut candidates,
+                    &text,
+                    &cache.black_frames,
+                    &shared,
+                    cache.duration,
+                );
                 diag.vision_credit_text_raw = Some(text);
             }
         }
@@ -860,6 +880,13 @@ async fn detect_single_file_with_diag(
     }
     if let Some(text) = &visual_credits {
         push_lead_credit_blocks(&mut candidates, text, cache);
+        push_vision_post_credits(
+            &mut candidates,
+            text,
+            &cache.black_frames,
+            &[],
+            cache.duration,
+        );
     }
 
     // Hard-reject before post-credits/chapter/fusion — see the season path
@@ -1424,15 +1451,25 @@ fn extend_with_vhash(
     if !vhash_wider {
         return (best_start, best_end);
     }
+    // A disjoint vhash region is other shared footage, not a wider view of
+    // this one: swapping it in put IASIP S15E06's audio-matched titles (84s)
+    // onto the FX pre-roll at 0–29s.
     let overlaps = best_start <= vm.end_seconds && vm.start_seconds <= best_end;
-    if overlaps {
-        (
-            best_start.min(vm.start_seconds),
-            best_end.max(vm.end_seconds),
-        )
-    } else {
-        (vm.start_seconds, vm.end_seconds)
+    if !overlaps {
+        return (best_start, best_end);
     }
+    let extended = (
+        best_start.min(vm.start_seconds),
+        best_end.max(vm.end_seconds),
+    );
+    // No intro is that long, so the widening is wrong, not the audio match:
+    // One-Punch Man S3's vhash runs chain the studio ident, the cold open and
+    // the opening into one 224s span, and the extended candidate was rejected
+    // outright, taking the chroma-matched opening with it.
+    if extended.1 - extended.0 > MAX_INTRO_DURATION {
+        return (best_start, best_end);
+    }
+    extended
 }
 
 fn matches_label(title: &str, label: &str) -> bool {
@@ -1725,8 +1762,13 @@ fn apply_vision_credit_text(
             }
             let prev = existing.signals.credit_text_score.unwrap_or(0.0);
             existing.signals.credit_text_score = Some(prev.max(confidence));
+            // A roll that runs to the end of the file still ends where vision
+            // last saw text: left at the audio/vhash end, VisionQuest 1x06
+            // stopped 3½ minutes into a roll vision followed to the last frame.
             if text_end < duration - 30.0 {
                 existing.end_seconds = text_end;
+            } else {
+                existing.end_seconds = existing.end_seconds.max(text_end);
             }
             // Recompute visual consistency — the window bounds may have moved.
             existing.signals.visual_score = visual_consistency_for_window(
@@ -1734,6 +1776,10 @@ fn apply_vision_credit_text(
                 existing.start_seconds,
                 existing.end_seconds,
             );
+            // The widened roll can now cover a second audio/vhash candidate
+            // for the same credits (VisionQuest's name cards and crawl), which
+            // would otherwise persist as a second marker.
+            merge_overlapping_same_type(candidates, embeddings);
         }
         None => {
             let credits_end = if text_end < duration - 30.0 {
@@ -1748,15 +1794,6 @@ fn apply_vision_credit_text(
                 duration,
                 embeddings,
             ));
-            if credits_end < duration - 30.0 {
-                candidates.push(Candidate {
-                    segment_type: SegmentType::PostCreditsScene,
-                    start_seconds: text_end,
-                    end_seconds: duration,
-                    signals: CandidateSignals::default(),
-                    file_duration: Some(duration),
-                });
-            }
         }
     }
 }
@@ -1798,6 +1835,63 @@ fn push_lead_credit_blocks(
             cache.embeddings.as_ref(),
         ));
     }
+}
+
+/// Footage between the end of the roll and the next text vision sees (a
+/// vanity card, a studio logo) or the end of the file: a post-credits scene.
+///
+/// Audio cuts can't find these on TV — the episode cache carries no audio
+/// peaks — so vision bounds the scene on both sides, and its confidence in the
+/// roll is the scene's evidence. Two shapes of footage are not scenes: a gap
+/// that is mostly black (the fade into the logos), and footage a sibling
+/// episode shares — `shared` holds this episode's cross-episode audio/vhash
+/// matches, and a network promo after the roll (IASIP S15's FX promos) is in
+/// them while a stinger, being unique to its episode, never is. The roll's
+/// credits candidate is clamped to the scene's start so skipping credits
+/// lands on it rather than past it.
+fn push_vision_post_credits(
+    candidates: &mut Vec<Candidate>,
+    text: &CreditText,
+    black_frames: &[BlackInterval],
+    shared: &[(f64, f64)],
+    duration: f64,
+) {
+    let (_, roll_end) = text.roll();
+    let end = text.after_roll.unwrap_or(duration).min(duration);
+    let len = end - roll_end;
+    if len < MIN_POST_CREDITS_DURATION {
+        return;
+    }
+    if fraction_inside_black_interval(roll_end, end, black_frames)
+        .is_some_and(|c| c >= POST_CREDITS_BLACK_REJECT)
+    {
+        return;
+    }
+    let shared_with_a_sibling = shared.iter().any(|&(s, e)| {
+        let overlap = e.min(end) - s.max(roll_end);
+        overlap >= len * POST_CREDITS_SHARED_REJECT
+    });
+    if shared_with_a_sibling {
+        return;
+    }
+    for c in candidates.iter_mut() {
+        if c.segment_type == SegmentType::Credits
+            && c.start_seconds < roll_end
+            && c.end_seconds > roll_end
+        {
+            c.end_seconds = roll_end;
+        }
+    }
+    candidates.push(Candidate {
+        segment_type: SegmentType::PostCreditsScene,
+        start_seconds: roll_end,
+        end_seconds: end,
+        signals: CandidateSignals {
+            credit_text_score: Some(text.confidence),
+            ..Default::default()
+        },
+        file_duration: Some(duration),
+    });
 }
 
 /// The roll: post-credits scenes follow it, not a credit block ahead of a
@@ -2540,6 +2634,7 @@ mod lead_credit_block_tests {
         let text = CreditText {
             blocks: vec![(2922.0, 3006.0), (3135.0, 3311.0)],
             confidence: 0.95,
+            after_roll: None,
         };
         let (roll_start, roll_end) = text.roll();
         apply_vision_credit_text(
@@ -2573,6 +2668,229 @@ mod lead_credit_block_tests {
             .map(|s| (s.start_seconds, s.end_seconds))
             .collect();
         credits.sort_by(|a, b| a.0.total_cmp(&b.0));
-        assert_eq!(credits, vec![(2922.0, 3006.0), (3134.6, 3305.6)]);
+        // The crawl ends where vision last read text, not where the audio
+        // match stopped: it runs to the last second of the file.
+        assert_eq!(credits, vec![(2922.0, 3006.0), (3134.6, 3311.0)]);
+    }
+}
+
+#[cfg(test)]
+mod season_merge_tests {
+    use super::*;
+    use crate::skip_detect::tv::{VHashMatchWithDetail, VHashPairDetail};
+
+    fn credits(start: f64, end: f64, signals: CandidateSignals, duration: f64) -> Candidate {
+        Candidate {
+            segment_type: SegmentType::Credits,
+            start_seconds: start,
+            end_seconds: end,
+            signals,
+            file_duration: Some(duration),
+        }
+    }
+
+    fn final_credits(candidates: Vec<Candidate>) -> Vec<(f64, f64)> {
+        score_candidates_with_rejections(candidates)
+            .segments
+            .iter()
+            .filter(|s| s.segment_type == SegmentType::Credits)
+            .map(|s| (s.start_seconds, s.end_seconds))
+            .collect()
+    }
+
+    /// VisionQuest 1x04: the chapter-aligned audio match covers the name
+    /// cards (2618–2697), vhash alone the crawl (2710–2836), and vision reads
+    /// credit text from 2617.9 to the last frame. One roll, one marker.
+    #[test]
+    fn visionquest_s1e04_vision_joins_name_cards_and_crawl() {
+        let duration = 2889.344;
+        let mut candidates = vec![
+            credits(
+                2618.06,
+                2696.63,
+                CandidateSignals {
+                    chromaprint_score: Some(0.93),
+                    dhash_score: Some(0.92),
+                    ..Default::default()
+                },
+                duration,
+            ),
+            credits(
+                2709.92,
+                2836.25,
+                CandidateSignals {
+                    dhash_score: Some(0.73),
+                    ..Default::default()
+                },
+                duration,
+            ),
+        ];
+        apply_vision_credit_text(&mut candidates, 2617.917, 2887.917, 0.84, duration, None);
+        assert_eq!(final_credits(candidates), vec![(2617.917, 2887.917)]);
+    }
+
+    /// VisionQuest 1x06: the chapter override narrowed the audio match to
+    /// 2968.6–3031.3; vision follows the roll to 3246.9 of a 3248.2s file.
+    #[test]
+    fn visionquest_s1e06_roll_to_the_last_frame_keeps_its_end() {
+        let duration = 3248.224;
+        let mut candidates = vec![credits(
+            2968.65,
+            3031.35,
+            CandidateSignals {
+                chromaprint_score: Some(0.95),
+                dhash_score: Some(1.0),
+                ..Default::default()
+            },
+            duration,
+        )];
+        apply_vision_credit_text(&mut candidates, 2967.917, 3246.917, 0.83, duration, None);
+        assert_eq!(final_credits(candidates), vec![(2967.917, 3246.917)]);
+    }
+
+    /// One-Punch Man S3E07: chroma finds the 90s opening at 134–224; vhash
+    /// chains the studio ident and cold open onto it (0–224). The union is
+    /// longer than any intro, so the opening must survive on its own.
+    #[test]
+    fn one_punch_man_s3e07_overlong_vhash_does_not_swallow_the_opening() {
+        let vm = VHashMatchWithDetail {
+            start_seconds: 0.0,
+            end_seconds: 224.27,
+            density: 0.98,
+            mean_similarity: 0.99,
+            pair_count: 11,
+            pairwise: Vec::<VHashPairDetail>::new(),
+        };
+        assert_eq!(
+            extend_with_vhash(134.12, 223.79, Some(&vm)),
+            (134.12, 223.79)
+        );
+    }
+
+    /// IASIP S15E06: chroma matches the titles at 83.9–103.2; vhash's
+    /// heaviest cluster is the FX pre-roll and time cards at 0–29.6.
+    #[test]
+    fn iasip_s15e06_disjoint_vhash_does_not_replace_the_titles() {
+        let vm = VHashMatchWithDetail {
+            start_seconds: 0.0,
+            end_seconds: 29.58,
+            density: 0.97,
+            mean_similarity: 0.94,
+            pair_count: 2,
+            pairwise: Vec::<VHashPairDetail>::new(),
+        };
+        assert_eq!(extend_with_vhash(83.86, 103.21, Some(&vm)), (83.86, 103.21));
+    }
+}
+
+#[cfg(test)]
+mod vision_post_credits_tests {
+    use super::*;
+
+    fn black(start: f64, end: f64) -> BlackInterval {
+        BlackInterval {
+            start_secs: start,
+            end_secs: end,
+            duration_secs: end - start,
+        }
+    }
+
+    fn roll(duration: f64, start: f64, end: f64) -> Candidate {
+        Candidate {
+            segment_type: SegmentType::Credits,
+            start_seconds: start,
+            end_seconds: end,
+            signals: CandidateSignals {
+                chromaprint_score: Some(0.99),
+                dhash_score: Some(0.84),
+                ..Default::default()
+            },
+            file_duration: Some(duration),
+        }
+    }
+
+    fn segments(candidates: Vec<Candidate>) -> Vec<(SegmentType, f64, f64)> {
+        score_candidates_with_rejections(candidates)
+            .segments
+            .iter()
+            .map(|s| (s.segment_type, s.start_seconds, s.end_seconds))
+            .collect()
+    }
+
+    /// Rick and Morty 9x01: the crawl ends at 1291.9, the stinger runs until
+    /// the vanity card at 1327.9, the file at 1333.1. No post-credits segment
+    /// was ever written for it (or for anything in the library).
+    #[test]
+    fn rick_and_morty_s9e01_stinger_is_a_post_credits_scene() {
+        let duration = 1333.1;
+        // The audio match runs a beat past vision's last text frame.
+        let mut candidates = vec![roll(duration, 1260.93, 1292.77)];
+        let text = CreditText {
+            blocks: vec![(1260.936, 1291.936)],
+            confidence: 0.95,
+            after_roll: Some(1327.9),
+        };
+        let blacks = [black(1260.68, 1268.6), black(1291.33, 1292.21)];
+        // Every partner's match stops with the crawl.
+        let shared = [(1262.25, 1292.77), (1261.0, 1292.25)];
+        push_vision_post_credits(&mut candidates, &text, &blacks, &shared, duration);
+        assert_eq!(
+            segments(candidates),
+            vec![
+                (SegmentType::Credits, 1260.93, 1291.936),
+                (SegmentType::PostCreditsScene, 1291.936, 1327.9),
+            ]
+        );
+    }
+
+    /// The Leftovers 3x01: the roll ends 2s before the file does.
+    #[test]
+    fn leftovers_s3e01_roll_to_the_end_has_no_post_credits_scene() {
+        let duration = 3622.1;
+        let mut candidates = vec![roll(duration, 3518.93, 3619.93)];
+        let text = CreditText {
+            blocks: vec![(3518.931, 3619.931)],
+            confidence: 0.95,
+            after_roll: None,
+        };
+        push_vision_post_credits(&mut candidates, &text, &[], &[], duration);
+        assert_eq!(candidates.len(), 1);
+    }
+
+    /// IASIP S15E07: after the roll (to 1365.9) the file carries FX promos
+    /// until 1386.9; S15E08 has them too, and its vhash match runs through
+    /// them.
+    #[test]
+    fn iasip_s15e07_network_promo_is_not_a_post_credits_scene() {
+        let duration = 1454.5;
+        let mut candidates = vec![roll(duration, 1317.6, 1365.9)];
+        let text = CreditText {
+            blocks: vec![(1317.6, 1365.9)],
+            confidence: 0.95,
+            after_roll: Some(1386.9),
+        };
+        let shared = [(1318.0, 1363.6), (1318.0, 1424.3), (1318.0, 1349.9)];
+        push_vision_post_credits(&mut candidates, &text, &[], &shared, duration);
+        assert_eq!(candidates.len(), 1);
+    }
+
+    /// A fade to black between the roll and the logos is not a scene.
+    #[test]
+    fn black_gap_before_the_logos_is_not_a_post_credits_scene() {
+        let duration = 2000.0;
+        let mut candidates = vec![roll(duration, 1900.0, 1960.0)];
+        let text = CreditText {
+            blocks: vec![(1900.0, 1960.0)],
+            confidence: 0.95,
+            after_roll: Some(1972.0),
+        };
+        push_vision_post_credits(
+            &mut candidates,
+            &text,
+            &[black(1960.5, 1971.5)],
+            &[],
+            duration,
+        );
+        assert_eq!(candidates.len(), 1);
     }
 }

@@ -280,6 +280,10 @@ fn compute_confidence(segment_type: &SegmentType, signals: &CandidateSignals) ->
     } else if *segment_type == SegmentType::Credits && has_credit_text {
         // Vision detected credit text overlay
         0.70
+    } else if *segment_type == SegmentType::PostCreditsScene && has_credit_text {
+        // Footage vision found between the roll it read and the next text
+        // (or the end of the file); the roll's confidence is the evidence.
+        0.70
     } else if has_audio && has_visual {
         // Audio + visual agreement
         0.85

@@ -30,6 +30,10 @@ pub struct CreditText {
     /// blocks with footage between them and the roll.
     pub blocks: Vec<(f64, f64)>,
     pub confidence: f64,
+    /// First text vision sees again after the roll — a vanity card or studio
+    /// logo. What lies between the roll and it is footage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_roll: Option<f64>,
 }
 
 impl CreditText {
@@ -180,6 +184,7 @@ pub fn detect_credit_regions(
             .map(|(start, end, _)| (start, end))
             .collect(),
         confidence,
+        after_roll: regions.get(best_idx + 1).map(|r| r.0),
     })
 }
 
@@ -214,6 +219,34 @@ mod tests {
     /// footage, a few seconds of title and studio logos, then the crawl. The
     /// episode ended where the name cards began, but the preview between them is
     /// footage — the slot a mid-credits scene takes — so it is left out of both.
+    /// Rick and Morty 9x01, last 92s as EmbeddingGemma-2 scores them: the
+    /// crawl to 1292, the post-credits scene, then the vanity card and the
+    /// Williams Street logo from 1328.
+    #[test]
+    fn rick_and_morty_s9e01_marks_where_text_returns_after_the_roll() {
+        let scores: [f64; 93] = [
+            -0.046, -0.044, -0.046, -0.053, -0.049, -0.048, -0.043, -0.039, -0.044, -0.044, -0.041,
+            -0.041, -0.045, -0.035, -0.038, -0.036, -0.034, -0.043, -0.041, -0.042, 0.071, 0.072,
+            0.068, 0.068, 0.069, 0.076, 0.082, 0.076, 0.099, 0.085, 0.076, 0.063, 0.075, 0.082,
+            0.068, 0.068, 0.074, 0.083, 0.074, 0.074, 0.067, 0.069, 0.066, 0.082, 0.091, 0.067,
+            0.069, 0.059, 0.084, 0.086, 0.089, 0.081, -0.029, -0.020, -0.039, -0.035, -0.034,
+            -0.040, -0.041, -0.034, -0.038, -0.032, -0.039, -0.030, -0.037, -0.040, -0.038, -0.049,
+            -0.044, -0.038, -0.041, -0.031, -0.047, -0.033, -0.032, -0.034, -0.035, -0.032, -0.033,
+            -0.033, -0.041, -0.037, -0.033, -0.028, -0.026, -0.028, -0.029, 0.035, -0.004, -0.015,
+            0.053, 0.055, 0.052,
+        ];
+        let frames: Vec<(f64, f64)> = scores
+            .iter()
+            .enumerate()
+            .map(|(i, &s)| (1240.9 + i as f64, s))
+            .collect();
+        let text = detect_credit_regions(&frames, 1133.0, &EG2).unwrap();
+        let (start, end) = text.roll();
+        assert!((start - 1260.9).abs() < 1e-6 && (end - 1291.9).abs() < 1e-6);
+        let after = text.after_roll.expect("text returns after the roll");
+        assert!((after - 1327.9).abs() < 1e-6, "after_roll {after}");
+    }
+
     #[test]
     fn name_cards_and_the_crawl_are_separate_blocks_around_footage() {
         let mut scores = Vec::new();
