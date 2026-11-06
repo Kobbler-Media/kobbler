@@ -401,15 +401,24 @@ where
     .await
 }
 
-pub async fn recent_books<'e, E>(
-    exec: E,
-    audiobooks_only: bool,
-) -> Result<Vec<BookRow>, sqlx::Error>
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum BookShelf {
+    Any,
+    Ebook,
+    Audiobook,
+}
+
+pub async fn recent_books<'e, E>(exec: E, shelf: BookShelf) -> Result<Vec<BookRow>, sqlx::Error>
 where
     E: Executor<'e, Database = Postgres>,
 {
-    // An audiobook bought years after the ebook is new to the audiobook shelf but not
-    // to the library, so the audio rail dates from the file, not from books.created_at.
+    // A format bought years after the book was shelved is new to that format's shelf but
+    // not to the library, so the format rails date from the file, not from books.created_at.
+    let (ebook, audiobook) = match shelf {
+        BookShelf::Any => (false, false),
+        BookShelf::Ebook => (true, false),
+        BookShelf::Audiobook => (false, true),
+    };
     sqlx::query_as!(
         BookRow,
         r#"
@@ -424,17 +433,24 @@ where
                  WHERE ba2.book_id = b.id),
                 '[]'::jsonb
             ) as "authors: serde_json::Value",
-            (CASE WHEN $1 THEN audio.added_at ELSE b.created_at END) as "added_at!"
+            (CASE WHEN $1 THEN ebook.added_at WHEN $2 THEN audio.added_at ELSE b.created_at END) as "added_at!"
         FROM books b
+        LEFT JOIN LATERAL (
+            SELECT MAX(bf.added_at) AS added_at FROM book_files bf WHERE bf.book_id = b.id
+        ) ebook ON TRUE
         LEFT JOIN LATERAL (
             SELECT MAX(af.added_at) AS added_at FROM audiobook_files af WHERE af.book_id = b.id
         ) audio ON TRUE
-        WHERE audio.added_at IS NOT NULL
-           OR (NOT $1 AND EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id))
-        ORDER BY (CASE WHEN $1 THEN audio.added_at ELSE b.created_at END) DESC
+        WHERE CASE
+            WHEN $1 THEN ebook.added_at IS NOT NULL
+            WHEN $2 THEN audio.added_at IS NOT NULL
+            ELSE ebook.added_at IS NOT NULL OR audio.added_at IS NOT NULL
+        END
+        ORDER BY (CASE WHEN $1 THEN ebook.added_at WHEN $2 THEN audio.added_at ELSE b.created_at END) DESC
         LIMIT 12
         "#,
-        audiobooks_only,
+        ebook,
+        audiobook,
     )
     .fetch_all(exec)
     .await

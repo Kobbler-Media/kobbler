@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::images::{ImageMap, endpoint_url};
+use crate::repositories::dashboard::{BookShelf, recent_books};
 use crate::routes::AuthUser;
 use crate::routes::library::helpers::book_cover_url;
 
@@ -36,6 +37,7 @@ impl IntoResponse for AppError {
 pub struct DashboardResponse {
     read_next: Vec<ReadNextItem>,
     recent_books: Vec<RecentBook>,
+    recent_ebooks: Vec<RecentBook>,
     recent_audiobooks: Vec<RecentBook>,
     recent_movies: Vec<RecentMovie>,
     recent_tv: Vec<RecentTvEntry>,
@@ -147,15 +149,17 @@ pub async fn get_dashboard(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<DashboardResponse>, AppError> {
-    let (read_next, book_rows, audiobook_rows, movie_rows, tv_rows, sport_rows) = tokio::try_join!(
-        fetch_read_next(&state, auth.user_id),
-        crate::repositories::dashboard::recent_books(&state.pool, false),
-        crate::repositories::dashboard::recent_books(&state.pool, true),
-        crate::repositories::dashboard::recent_movies(&state.pool, auth.is_kids),
-        crate::repositories::dashboard::recent_episodes(&state.pool, "tv", auth.is_kids),
-        crate::repositories::dashboard::recent_episodes(&state.pool, "sport", auth.is_kids),
-    )
-    .map_err(|e| AppError::Internal(format!("Dashboard query failed: {e}")))?;
+    let (read_next, book_rows, ebook_rows, audiobook_rows, movie_rows, tv_rows, sport_rows) =
+        tokio::try_join!(
+            fetch_read_next(&state, auth.user_id),
+            recent_books(&state.pool, BookShelf::Any),
+            recent_books(&state.pool, BookShelf::Ebook),
+            recent_books(&state.pool, BookShelf::Audiobook),
+            crate::repositories::dashboard::recent_movies(&state.pool, auth.is_kids),
+            crate::repositories::dashboard::recent_episodes(&state.pool, "tv", auth.is_kids),
+            crate::repositories::dashboard::recent_episodes(&state.pool, "sport", auth.is_kids),
+        )
+        .map_err(|e| AppError::Internal(format!("Dashboard query failed: {e}")))?;
 
     // Build typed sections
     let to_recent_book = |r: &crate::repositories::dashboard::BookRow| {
@@ -169,6 +173,7 @@ pub async fn get_dashboard(
         }
     };
     let recent_books: Vec<RecentBook> = book_rows.iter().map(to_recent_book).collect();
+    let recent_ebooks: Vec<RecentBook> = ebook_rows.iter().map(to_recent_book).collect();
     let recent_audiobooks: Vec<RecentBook> = audiobook_rows.iter().map(to_recent_book).collect();
 
     let recent_movies: Vec<RecentMovie> = movie_rows
@@ -263,6 +268,7 @@ pub async fn get_dashboard(
     Ok(Json(DashboardResponse {
         read_next,
         recent_books,
+        recent_ebooks,
         recent_audiobooks,
         recent_movies,
         recent_tv,
@@ -522,7 +528,7 @@ pub async fn fetch_home_sections(
 ) -> Result<(Vec<WatchNextItem>, Vec<RecentItem>), sqlx::Error> {
     let (watch_next, book_rows, movie_rows, tv_rows, sport_rows) = tokio::try_join!(
         fetch_watch_next(state, user_id, kids_only),
-        crate::repositories::dashboard::recent_books(&state.pool, false),
+        recent_books(&state.pool, BookShelf::Any),
         crate::repositories::dashboard::recent_movies(&state.pool, kids_only),
         crate::repositories::dashboard::recent_episodes(&state.pool, "tv", kids_only),
         crate::repositories::dashboard::recent_episodes(&state.pool, "sport", kids_only),

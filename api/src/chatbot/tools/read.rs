@@ -632,9 +632,12 @@ pub async fn recently_added(state: &AppState, args: &Value) -> ToolOutcome {
     if matches!(media_type, "any" | "book" | "audiobook") {
         // An audiobook is dated from its own file: one added to a book shelved years ago
         // is new to the listener and would never surface on the book's own age.
-        let audiobooks_only = media_type == "audiobook";
-        let label = if audiobooks_only { "audiobook" } else { "book" };
-        match dashboard::recent_books(&state.pool, audiobooks_only).await {
+        let (shelf, label) = if media_type == "audiobook" {
+            (dashboard::BookShelf::Audiobook, "audiobook")
+        } else {
+            (dashboard::BookShelf::Any, "book")
+        };
+        match dashboard::recent_books(&state.pool, shelf).await {
             Ok(rows) => items.extend(rows.into_iter().map(|r| {
                 let authors = author_names(r.authors.as_ref());
                 (

@@ -1574,6 +1574,7 @@ export type CalendarItem = {
 export type DashboardResponse = {
   read_next: ReadNextItem[];
   recent_books: RecentBook[];
+  recent_ebooks: RecentBook[];
   recent_audiobooks: RecentBook[];
   recent_movies: RecentMovie[];
   recent_tv: RecentTvEntry[];

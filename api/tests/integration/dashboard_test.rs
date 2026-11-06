@@ -895,6 +895,17 @@ async fn backdate_audiobook_file(server: &TestServer, book_id: Uuid, days: i32) 
     .unwrap();
 }
 
+async fn backdate_ebook_file(server: &TestServer, book_id: Uuid, days: i32) {
+    sqlx::query(
+        "UPDATE book_files SET added_at = NOW() - make_interval(days => $2) WHERE book_id = $1",
+    )
+    .bind(book_id)
+    .bind(days)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+}
+
 fn ids(items: &Value) -> Vec<String> {
     items
         .as_array()
@@ -905,7 +916,7 @@ fn ids(items: &Value) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn test_recent_audiobooks_excludes_ebook_only_books() {
+async fn test_recent_shelves_split_by_format() {
     let server = TestServer::start_api_only().await;
 
     let ebook = create_book(&server, "Ebook Only").await;
@@ -919,8 +930,29 @@ async fn test_recent_audiobooks_excludes_ebook_only_books() {
     assert!(recent_books.contains(&ebook.to_string()));
     assert!(recent_books.contains(&audiobook.to_string()));
 
-    let recent_audiobooks = ids(&json["recent_audiobooks"]);
-    assert_eq!(recent_audiobooks, vec![audiobook.to_string()]);
+    assert_eq!(ids(&json["recent_ebooks"]), vec![ebook.to_string()]);
+    assert_eq!(ids(&json["recent_audiobooks"]), vec![audiobook.to_string()]);
+}
+
+#[tokio::test]
+async fn test_recent_ebooks_ordered_by_ebook_added_at() {
+    let server = TestServer::start_api_only().await;
+
+    let late_ebook = create_book(&server, "Late Ebook").await;
+    add_audiobook_file(&server, late_ebook).await;
+    add_ebook_file(&server, late_ebook).await;
+    backdate_book(&server, late_ebook, 730).await;
+
+    let older_ebook = create_book(&server, "Older Ebook").await;
+    add_ebook_file(&server, older_ebook).await;
+    backdate_ebook_file(&server, older_ebook, 1).await;
+
+    let json = get_dashboard(&server).await;
+
+    assert_eq!(
+        ids(&json["recent_ebooks"]),
+        vec![late_ebook.to_string(), older_ebook.to_string()]
+    );
 }
 
 #[tokio::test]

@@ -1,0 +1,67 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            b.id,\n            b.title,\n            b.images as \"images: serde_json::Value\",\n            COALESCE(\n                (SELECT jsonb_agg(DISTINCT jsonb_build_object('name', a2.name))\n                 FROM book_authors ba2\n                 JOIN authors a2 ON a2.id = ba2.author_id\n                 WHERE ba2.book_id = b.id),\n                '[]'::jsonb\n            ) as \"authors: serde_json::Value\",\n            (CASE WHEN $1 THEN ebook.added_at WHEN $2 THEN audio.added_at ELSE b.created_at END) as \"added_at!\"\n        FROM books b\n        LEFT JOIN LATERAL (\n            SELECT MAX(bf.added_at) AS added_at FROM book_files bf WHERE bf.book_id = b.id\n        ) ebook ON TRUE\n        LEFT JOIN LATERAL (\n            SELECT MAX(af.added_at) AS added_at FROM audiobook_files af WHERE af.book_id = b.id\n        ) audio ON TRUE\n        WHERE CASE\n            WHEN $1 THEN ebook.added_at IS NOT NULL\n            WHEN $2 THEN audio.added_at IS NOT NULL\n            ELSE ebook.added_at IS NOT NULL OR audio.added_at IS NOT NULL\n        END\n        ORDER BY (CASE WHEN $1 THEN ebook.added_at WHEN $2 THEN audio.added_at ELSE b.created_at END) DESC\n        LIMIT 12\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "images: serde_json::Value",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "images"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "authors: serde_json::Value",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "added_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "5e8307f19f95706abd222fed3ef9b07f1d8932bdc143e96af72b10cc4bb52837"
+}

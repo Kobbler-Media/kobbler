@@ -26,10 +26,13 @@
 
   const loadingState = createDelayedLoading(true);
   let recentBooks = $state<RecentBook[]>([]);
+  let recentEbooks = $state<RecentBook[]>([]);
   let recentAudiobooks = $state<RecentBook[]>([]);
   // The sidebar's format filter decides which shelf "recently added" is about: an
   // audiobook added to a book shelved years ago is new here and nowhere else.
-  const shownBooks = $derived(getFormatFilter() === 'audiobook' ? recentAudiobooks : recentBooks);
+  const shownBooks = $derived(
+    { all: recentBooks, ebook: recentEbooks, audiobook: recentAudiobooks }[getFormatFilter()]
+  );
   let recentMovies = $state<RecentMovie[]>([]);
   let recentTv = $state<RecentTvEntry[]>([]);
   let recentSports = $state<RecentTvEntry[]>([]);
@@ -48,7 +51,8 @@
     await Promise.all([
       getDashboard().then((res) => {
         recentBooks = res.recent_books;
-        recentAudiobooks = res.recent_audiobooks ?? [];
+        recentEbooks = res.recent_ebooks;
+        recentAudiobooks = res.recent_audiobooks;
         recentMovies = res.recent_movies;
         recentTv = res.recent_tv;
         recentSports = res.recent_sports;
