@@ -153,6 +153,25 @@ describe('superviseStart', () => {
     expect(r.lines[r.lines.length - 1]).toBeNull();
   });
 
+  it('calls a library file that never plays stalled on a source the server can still read', async () => {
+    const readable = {
+      kind: 'status',
+      status: {
+        session_id: 's',
+        state: 'ready',
+        method: 'transcode',
+        is_live: false,
+        source_readable: true
+      }
+    } satisfies SessionStatusResult;
+    const r = run(Array.from({ length: 30 }, () => readable));
+    expect(await r.outcome).toEqual({
+      kind: 'stalled',
+      reason: 'Nothing played within 12s of the stream being ready',
+      sourceHealthy: true
+    });
+  });
+
   it('treats an unanswered status request as no news', async () => {
     const r = run([{ kind: 'unknown' }, { kind: 'unknown' }, { kind: 'missing' }]);
     expect(await r.outcome).toMatchObject({ kind: 'broken' });

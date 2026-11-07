@@ -20,6 +20,7 @@ export interface StartProbe {
   readyForMs: number | null;
   budgetMs: number;
   feed?: SessionFeed;
+  sourceReadable?: boolean;
   servedGrew?: boolean;
   downloadGrew?: boolean;
 }
@@ -55,7 +56,10 @@ export function judgeStart(p: StartProbe): StartVerdict {
   if (ready === null) return WAIT;
   if (!feed) {
     return ready >= p.budgetMs
-      ? stalled(`Nothing played within ${p.budgetMs / 1000}s of the stream being ready`, false)
+      ? stalled(
+          `Nothing played within ${p.budgetMs / 1000}s of the stream being ready`,
+          p.sourceReadable ?? false
+        )
       : WAIT;
   }
   const idle = feed.idle_ms;
@@ -112,6 +116,7 @@ export async function superviseStart(deps: SuperviseDeps): Promise<StartOutcome>
   let budget = startBudgetMs(deps.method);
   let readyAt: number | null = 0;
   let feed: SessionFeed | undefined;
+  let sourceReadable: boolean | undefined;
   try {
     for (;;) {
       await sleep(interval);
@@ -135,6 +140,7 @@ export async function superviseStart(deps: SuperviseDeps): Promise<StartOutcome>
           };
         }
         budget = startBudgetMs(status.method);
+        sourceReadable = status.source_readable;
         readyAt = status.state === 'preparing' ? null : (readyAt ?? waited);
         if (status.feed) {
           const before = feed;
@@ -150,6 +156,7 @@ export async function superviseStart(deps: SuperviseDeps): Promise<StartOutcome>
         readyForMs: readyAt === null ? null : waited - readyAt,
         budgetMs: budget,
         feed,
+        sourceReadable,
         servedGrew,
         downloadGrew
       });

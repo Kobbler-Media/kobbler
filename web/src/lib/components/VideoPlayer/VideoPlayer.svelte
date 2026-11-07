@@ -23,6 +23,8 @@
     reportStreamOutcome
   } from '#lib/api/client.js';
   import { superviseStart } from '#lib/streaming/startLiveness.js';
+  import { showsStartShell } from '#lib/streaming/startShell.js';
+  import { streamPosition } from '#lib/streaming/streamPosition.js';
   import { reconnectStep } from '#lib/streaming/reconnect.js';
   import { startingAudio } from '#lib/streaming/audioPreference.js';
   import { liveSyncRate, liveTargetLatency } from '#lib/streaming/liveLatency.js';
@@ -234,7 +236,7 @@
           videoEl.playbackRate = playbackSpeed;
           initPlayer();
           startHeartbeat();
-          watchDebridStart();
+          watchStart();
           resetHideTimer();
           if (sr.lufs != null && videoEl) {
             try {
@@ -353,11 +355,15 @@
   let castingMode = $state(false);
   const startArt = $derived(activeMediaInfo?.backdropUrl ?? activeMediaInfo?.artworkUrl);
   const showStartShell = $derived(
-    !streamStarted &&
-      !startHeld &&
-      !error &&
-      !castingMode &&
-      activeCreationParams.media_type !== 'live'
+    showsStartShell({
+      debrid: isDebridSession,
+      live: activeCreationParams.media_type === 'live',
+      sessionReady,
+      streamStarted,
+      startHeld,
+      failed: !!error,
+      casting: castingMode
+    })
   );
   let castPlaybackToken: string | null = null;
   let castUnsubscribe: (() => void) | null = null;
@@ -618,7 +624,7 @@
   // versions normalize currentTime to 0 (offset needed), others report
   // absolute PTS (offset must be 0). We detect which after each seek.
   let seekOffset = $state(untrack(() => session.start_time ?? 0));
-  let displayTime = $derived(seekOffset + currentTime);
+  let displayTime = $derived(streamPosition(seekOffset, currentTime));
   let displayBuffered = $derived(seekOffset + buffered);
   /** Effective playback time — uses Cast receiver position when casting. */
   let effectiveTime = $derived(
@@ -1664,7 +1670,7 @@
     // Bitmap subtitle burn-in requires FFmpeg restart — use the switch-audio
     // endpoint with burn_in_subtitle_index to reconfigure in-place.
     if (newTrack?.requires_transcode || currentTrack?.requires_transcode) {
-      const resumeTime = seekOffset + currentTime;
+      const resumeTime = streamPosition(seekOffset, currentTime);
       loading = true;
       error = null;
       cleanup();
@@ -1707,14 +1713,14 @@
     }
     audioSwitchedSession = session.session_id;
     pendingMethodRefinement = null;
-    void handleAudioTrackSelect(switchTo).then(watchDebridStart);
+    void handleAudioTrackSelect(switchTo).then(watchStart);
     return true;
   }
 
   async function handleAudioTrackSelect(streamIndex: number | null) {
     if (streamIndex === null || streamIndex === activeAudioIndex) return;
 
-    const resumeTime = seekOffset + currentTime;
+    const resumeTime = streamPosition(seekOffset, currentTime);
     loading = true;
     error = null;
 
@@ -1756,7 +1762,7 @@
     }
     // Legacy path for entity-based downloads (non-session) — recreate session
     // to pick up newly downloaded external subtitle from DB.
-    const resumeTime = seekOffset + currentTime;
+    const resumeTime = streamPosition(seekOffset, currentTime);
     loading = true;
     error = null;
     cleanup();
@@ -1922,9 +1928,10 @@
     startProgress = null;
   }
 
-  function watchDebridStart() {
+  function watchStart() {
     stopStartWatch();
-    if (!isDebridSession || streamStarted || startHeld || !session.session_id) return;
+    if (activeCreationParams.media_type === 'live') return;
+    if (streamStarted || startHeld || !session.session_id) return;
     const watch = new AbortController();
     startWatch = watch;
     const sessionId = session.session_id;
@@ -1949,11 +1956,11 @@
         initPlayer();
         startHeartbeat();
         startPositionSaving();
-        watchDebridStart();
+        watchStart();
         return;
       }
       failPlayback(
-        "That stream wouldn't start",
+        isDebridSession ? "That stream wouldn't start" : "Playback didn't start",
         outcome.kind === 'stalled' ? 'start_stalled' : 'session_lost'
       );
     });
@@ -2068,7 +2075,7 @@
         // re-encoded stream. Reload the playlist with the new generation so
         // cached segments from the broken generation are bypassed.
         decodeErrorRecoveryAttempted = true;
-        const at = videoEl?.currentTime ?? 0;
+        const at = streamPosition(seekOffset, videoEl?.currentTime ?? currentTime);
         console.warn(`hls.js: triggering Tier-3 decode-error recovery at t=${at.toFixed(2)}s`);
         reportPlaybackDecodeError(session.session_id, at)
           .then((result) => {
@@ -2897,7 +2904,7 @@
 
     initPlayer();
     startHeartbeat();
-    watchDebridStart();
+    watchStart();
     resetHideTimer();
 
     // Set up Web Audio for volume normalization
@@ -2992,15 +2999,21 @@
   tabindex="-1"
 >
   {#if !sessionReady}
-    <StartShell
-      title={activeMediaInfo?.title ?? ''}
-      subtitle={activeMediaInfo?.subtitle}
-      artUrl={startArt}
-      status={pendingStatus ?? 'Starting…'}
-      caching={pendingCaching}
-      onCancel={onClose}
-      onChooseRelease={onPickStream}
-    />
+    {#if showStartShell}
+      <StartShell
+        title={activeMediaInfo?.title ?? ''}
+        subtitle={activeMediaInfo?.subtitle}
+        artUrl={startArt}
+        status={pendingStatus ?? 'Starting…'}
+        caching={pendingCaching}
+        onCancel={onClose}
+        onChooseRelease={onPickStream}
+      />
+    {:else}
+      <div class="loading-overlay">
+        <span class="material-icons-outlined spinner-icon">refresh</span>
+      </div>
+    {/if}
   {:else}
     {#if showStartShell}
       <StartShell

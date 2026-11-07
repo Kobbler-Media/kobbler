@@ -4413,6 +4413,7 @@ export interface PlaybackSessionStatus {
   error?: string;
   message?: string;
   feed?: SessionFeed;
+  source_readable?: boolean;
   preferred_audio_stream_index?: number;
 }
 
