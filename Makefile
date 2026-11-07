@@ -122,6 +122,7 @@ player:
 	cp -r $(KOBAPP_DIR)/composeApp/build/dist/wasmJs/productionExecutable web/static/player
 
 docker-push: player
+	@docker image inspect kobbler-tools:latest >/dev/null 2>&1 || $(MAKE) tools
 	docker compose build api web
 	docker compose push api web
 	@echo ""
@@ -143,7 +144,8 @@ tools:
 	docker build -f docker/tools.Dockerfile -t kobbler-tools:latest .
 
 # api/Dockerfile is FROM kobbler-tools:latest, which docker compose has no way
-# to build on its own — skip `make tools` and `docker compose up --build` fails
+# to build on its own — skip `make tools` and a compose build (here or in
+# docker-push) fails
 # with a "pull access denied" error that reads like a registry auth problem.
 # This target builds it first if missing, then starts the stack.
 up:
