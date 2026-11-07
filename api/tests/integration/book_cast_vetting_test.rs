@@ -382,7 +382,10 @@ async fn seeding_voices_every_speaking_part_and_the_narrator() {
             )
         })
         .collect();
-    assert_eq!(described, [(0, "Ann's voice"), (1, "Ann, hoarse")]);
+    assert_eq!(
+        described,
+        [(0, "Female, 30s. Ann's voice"), (1, "Ann, hoarse")]
+    );
     assert!(ann.iter().all(|v| v["preset_id"] == v["design_preset_id"]
         && v["approved_at"].is_null()
         && v["has_clip"] == false));
@@ -519,10 +522,10 @@ async fn auditions_render_own_lines_then_a_take_is_approved_as_a_clone() {
     assert_eq!(
         shapes,
         [
-            (ANN_FROM_ONE_MORE, "Ann's voice", 7, false),
+            (ANN_FROM_ONE_MORE, "Female, 30s. Ann's voice", 7, false),
             (
                 "One more thing before we go,",
-                "Ann's voice Delivery: whispering.",
+                "Female, 30s. Ann's voice Delivery: whispering.",
                 7,
                 false
             ),
@@ -555,7 +558,7 @@ async fn auditions_render_own_lines_then_a_take_is_approved_as_a_clone() {
     let mint = rig.speech_requests().await.pop().unwrap();
     assert_eq!(mint["response_format"], "wav");
     assert_eq!(mint["seed"], 7);
-    assert_eq!(mint["instructions"], "Ann's voice");
+    assert_eq!(mint["instructions"], "Female, 30s. Ann's voice");
     assert_eq!(
         mint["input"], ANN_FROM_ONE_MORE,
         "the clone is the take that was heard"

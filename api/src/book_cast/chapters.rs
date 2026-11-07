@@ -41,6 +41,7 @@ pub fn group(segments: impl IntoIterator<Item = (i32, String, Option<String>)>) 
 pub struct Quote {
     pub segment_index: i32,
     pub span: Range<usize>,
+    pub said: String,
 }
 
 /// A slice of a chapter small enough for one gemma request, its quotes
@@ -75,6 +76,7 @@ pub fn windows(chapter: &Chapter, style: QuoteStyle, max_chars: usize) -> Vec<Wi
             at = span.end;
             current.quotes.push(Quote {
                 segment_index: p.segment_index,
+                said: quotes::spoken(&p.text[span.clone()]).to_string(),
                 span,
             });
         }
@@ -171,10 +173,21 @@ const NOT_DELIVERY: &[&str] = &[
     "telling",
 ];
 
-pub fn delivery(cue: &str) -> Option<String> {
+/// The model sometimes copies a hesitant line ("Uh . . .") into its cue, and the
+/// TTS would take the line's own words as a direction.
+pub fn delivery(cue: &str, said: &str) -> Option<String> {
+    let words = |s: &str| -> String {
+        s.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
     let cue = cue.trim();
-    (!cue.is_empty() && !NOT_DELIVERY.iter().any(|w| cue.eq_ignore_ascii_case(w)))
-        .then(|| cue.to_string())
+    let bare = words(cue);
+    (!bare.is_empty()
+        && bare != words(said)
+        && !NOT_DELIVERY.iter().any(|w| cue.eq_ignore_ascii_case(w)))
+    .then(|| cue.to_string())
 }
 
 /// A whole window's quotes, a short line each, plus a profile per speaker.
@@ -216,9 +229,13 @@ passage; one unnamed person who keeps coming back (the urchin, the stablemaster)
 character, not a role label. Use \
 \"unknown\" when the text does not let you tell, and \"not_speech\" for quoted text nobody \
 says aloud (a sign, a title, a written note, scare quotes). `cue` is how the line sounds, as \
-a direction to a voice actor in at most six words (\"whispered\", \"shouting, furious\", \
-\"quietly, still shaken\"), or \"\" when plain; never a speech verb or what the line does \
-(\"said\", \"asked\", \"explaining\").\n\n\
+a direction to a voice actor in a short phrase of up to fifteen words, read from the whole \
+scene (the narration around the line, what the speaker feels, who they are talking to), not \
+only the dialogue tag: \"shouting over the clash of battle, furious\", \"whispered, afraid of \
+being overheard\", \"dry and teasing, enjoying his discomfort\", \"quietly, still shaken by \
+the news\". Give most lines a cue; write \"\" only when a line truly has no colour. Never a \
+speech verb or what the line does (\"said\", \"asked\", \"explaining\"), and never the \
+line's own words.\n\n\
 Then profile every character who speaks in this passage, as this passage shows them: the other \
 names it uses for them, gender, apparent age, `role` (who they are and what they are doing \
 here), `attitude` (temperament and mood here), `relationships` (who they are close to, \
@@ -290,7 +307,22 @@ mod tests {
             ("asked quietly", Some("asked quietly")),
         ];
         for (cue, want) in cases {
-            assert_eq!(delivery(cue).as_deref(), want, "{cue:?}");
+            assert_eq!(delivery(cue, "Come here.").as_deref(), want, "{cue:?}");
+        }
+    }
+
+    #[test]
+    fn a_cue_that_repeats_the_line_is_no_cue() {
+        let cases = [
+            ("Uh . . .", "Uh . . .", None),
+            ("Well—", "Well—", None),
+            ("well", "Well!", None),
+            ("…", "No.", None),
+            ("hesitant", "Uh . . .", Some("hesitant")),
+            ("whispered", "I whispered it, didn’t I?", Some("whispered")),
+        ];
+        for (cue, said, want) in cases {
+            assert_eq!(delivery(cue, said).as_deref(), want, "{cue:?} on {said:?}");
         }
     }
 

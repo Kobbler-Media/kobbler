@@ -129,7 +129,7 @@ impl BookCastChaptersHandler {
                         .filter(|s| !is_nobody(s))
                         .map(str::to_string),
                     character_id: None,
-                    cue: said.and_then(|l| chapters::delivery(&l.cue)),
+                    cue: said.and_then(|l| chapters::delivery(&l.cue, &quote.said)),
                     source: "gemma".into(),
                     not_speech,
                 });

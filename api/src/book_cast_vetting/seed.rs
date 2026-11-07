@@ -79,9 +79,36 @@ fn pool_description((gender, age): (&str, &str)) -> String {
     format!("{who} with a natural, everyday voice, a neutral accent and a moderate pace.")
 }
 
+/// A design read with no clone behind it is all the TTS has to go on, and the
+/// model's voice line often leaves out who is speaking.
+fn design_description(bible: &Value) -> Option<String> {
+    let voice = bible["voice"]
+        .as_str()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())?;
+    let field = |k: &str| bible[k].as_str().map(str::trim).unwrap_or_default();
+    let gender = match field("gender").to_ascii_lowercase().as_str() {
+        "male" => Some("Male".to_string()),
+        "female" => Some("Female".to_string()),
+        _ => None,
+    };
+    let age = Some(field("age"))
+        .filter(|a| !a.is_empty() && !a.eq_ignore_ascii_case("unknown"))
+        .map(str::to_string);
+    let accent = Some(field("accent"))
+        .filter(|a| !a.is_empty() && !a.eq_ignore_ascii_case("neutral"))
+        .map(|a| format!("{a} accent"));
+    let who: Vec<String> = [gender, age, accent].into_iter().flatten().collect();
+    Some(if who.is_empty() {
+        voice.to_string()
+    } else {
+        format!("{}. {voice}", who.join(", "))
+    })
+}
+
 fn own_description(c: &VettingCharacter) -> String {
-    if let Some(v) = c.bible["voice"].as_str().filter(|v| !v.trim().is_empty()) {
-        return v.to_string();
+    if let Some(d) = design_description(&c.bible) {
+        return d;
     }
     if c.narrator {
         return DEFAULT_NARRATOR_VOICE.to_string();
@@ -262,6 +289,33 @@ async fn apply(tx: &mut PgConnection, book_id: Uuid, owner_id: Uuid) -> Result<V
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_design_says_who_is_speaking_before_how() {
+        let voice = "Soft-spoken and breathy.";
+        let cases = [
+            (
+                json!({"gender": "female", "age": "30s", "accent": "Scottish", "voice": voice}),
+                "Female, 30s, Scottish accent. Soft-spoken and breathy.",
+            ),
+            (
+                json!({"gender": "Male", "age": "unknown", "accent": "neutral", "voice": voice}),
+                "Male. Soft-spoken and breathy.",
+            ),
+            (
+                json!({"gender": "non-binary", "age": "", "voice": voice}),
+                "Soft-spoken and breathy.",
+            ),
+            (json!({"gender": "female", "voice": " "}), ""),
+        ];
+        for (bible, want) in cases {
+            assert_eq!(
+                design_description(&bible).unwrap_or_default(),
+                want,
+                "{bible}"
+            );
+        }
+    }
 
     #[test]
     fn pools_by_gender_and_age() {
