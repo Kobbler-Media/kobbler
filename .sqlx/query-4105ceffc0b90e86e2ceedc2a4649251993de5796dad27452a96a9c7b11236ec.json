@@ -1,0 +1,107 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT v.character_id, v.from_chapter, v.preset_id, v.design_preset_id, v.approved_at,\n                  p.name AS \"preset_name?\", (p.clip_filename IS NOT NULL) AS \"has_clip!\",\n                  d.instructions AS \"description?\"\n           FROM book_cast_voices v\n           JOIN book_cast_characters c ON c.id = v.character_id\n           LEFT JOIN user_voice_presets p ON p.id = v.preset_id\n           LEFT JOIN user_voice_presets d ON d.id = v.design_preset_id\n           WHERE c.book_id = $1\n           ORDER BY v.character_id, v.from_chapter",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "character_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_cast_voices",
+            "name": "character_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "from_chapter",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_voices",
+            "name": "from_chapter"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "preset_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_cast_voices",
+            "name": "preset_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "design_preset_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_cast_voices",
+            "name": "design_preset_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "approved_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "book_cast_voices",
+            "name": "approved_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "preset_name?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_voice_presets",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "has_clip!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "description?",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_voice_presets",
+            "name": "instructions"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      null,
+      true
+    ]
+  },
+  "hash": "4105ceffc0b90e86e2ceedc2a4649251993de5796dad27452a96a9c7b11236ec"
+}

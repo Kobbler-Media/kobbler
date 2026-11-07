@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_casts SET state = $2, error = NULL, updated_at = NOW(),\n               analysis_started_at = NOW()\n           WHERE book_id = $1 AND state IN ('casting', 'rendering', 'done', 'failed')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2b8c87cf33efcf9b70f9a34770f60a7b660dd58b3c60c4f664765f76902a29ce"
+}

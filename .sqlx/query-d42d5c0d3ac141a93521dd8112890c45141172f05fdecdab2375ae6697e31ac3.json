@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM user_voice_presets p\n           WHERE p.cast_book_id = $1\n             AND NOT EXISTS (\n                 SELECT 1 FROM book_cast_voices v\n                 WHERE v.preset_id = p.id OR v.design_preset_id = p.id\n             )\n           RETURNING p.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "user_voice_presets",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d42d5c0d3ac141a93521dd8112890c45141172f05fdecdab2375ae6697e31ac3"
+}

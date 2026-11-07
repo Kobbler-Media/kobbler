@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_cast_voices SET character_id = $2\n           WHERE character_id = $1 AND from_chapter NOT IN\n               (SELECT from_chapter FROM book_cast_voices WHERE character_id = $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7c5e3d342878319cc4fc0be40940f540fe3a9e73276170e57747ca3b3f1753e0"
+}

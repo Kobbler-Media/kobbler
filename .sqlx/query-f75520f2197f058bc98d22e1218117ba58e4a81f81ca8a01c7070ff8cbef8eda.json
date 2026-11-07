@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO book_cast_voices (character_id, from_chapter, preset_id, design_preset_id, approved_at)\n           VALUES ($1, $2, $3, $3,\n                   (SELECT max(approved_at) FROM book_cast_voices WHERE preset_id = $3))\n           ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f75520f2197f058bc98d22e1218117ba58e4a81f81ca8a01c7070ff8cbef8eda"
+}

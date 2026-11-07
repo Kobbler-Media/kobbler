@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_cast_characters s SET\n               aliases = s.aliases || ARRAY(\n                   SELECT n FROM (\n                       SELECT DISTINCT ON (lower(n)) n, i\n                       FROM unnest(array_prepend(a.name, a.aliases)) WITH ORDINALITY AS t(n, i)\n                       WHERE lower(n) <> lower(s.name)\n                         AND lower(n) <> ALL(SELECT lower(x) FROM unnest(s.aliases) x)\n                       ORDER BY lower(n), i\n                   ) names ORDER BY i\n               ),\n               bible = a.bible || s.bible,\n               edits = a.edits || s.edits || jsonb_build_object('bible',\n                   COALESCE(a.edits->'bible', '{}'::jsonb) || COALESCE(s.edits->'bible', '{}'::jsonb))\n           FROM book_cast_characters a\n           WHERE s.id = $1 AND a.id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "55c9b2324464fbd13a5eed0e3550b8597cca6fa19e5c912cd9ba878a5cbce74e"
+}

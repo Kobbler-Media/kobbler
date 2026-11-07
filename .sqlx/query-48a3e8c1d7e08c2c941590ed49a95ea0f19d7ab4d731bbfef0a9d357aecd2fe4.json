@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT chapter_index, title, first_segment, last_segment, notes\n           FROM book_cast_chapters WHERE book_id = $1 ORDER BY chapter_index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chapter_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_chapters",
+            "name": "chapter_index"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "book_cast_chapters",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "first_segment",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_chapters",
+            "name": "first_segment"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "last_segment",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_chapters",
+            "name": "last_segment"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "notes",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "book_cast_chapters",
+            "name": "notes"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "48a3e8c1d7e08c2c941590ed49a95ea0f19d7ab4d731bbfef0a9d357aecd2fe4"
+}

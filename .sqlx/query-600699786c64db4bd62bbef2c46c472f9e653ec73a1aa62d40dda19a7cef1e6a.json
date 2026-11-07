@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_casts SET state = 'done', error = NULL, audiobook_file_id = $2,\n               updated_at = NOW()\n           WHERE book_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "600699786c64db4bd62bbef2c46c472f9e653ec73a1aa62d40dda19a7cef1e6a"
+}

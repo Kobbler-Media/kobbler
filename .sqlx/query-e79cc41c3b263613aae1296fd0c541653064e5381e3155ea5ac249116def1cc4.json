@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_cast_lines SET character_id = NULL WHERE book_id = $1 AND source <> 'user'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e79cc41c3b263613aae1296fd0c541653064e5381e3155ea5ac249116def1cc4"
+}

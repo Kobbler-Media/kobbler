@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT speaker AS \"speaker!\", COUNT(*) AS \"lines!\"\n           FROM book_cast_lines\n           WHERE book_id = $1 AND character_id IS NULL AND speaker IS NOT NULL\n           GROUP BY speaker ORDER BY COUNT(*) DESC, speaker",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "speaker!",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "speaker"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "lines!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "21e09652096af25a8cc448d5505ba86599787d2f6aeeda57073f0f34fce05e62"
+}

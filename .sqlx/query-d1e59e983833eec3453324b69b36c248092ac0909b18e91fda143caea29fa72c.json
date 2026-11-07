@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_cast_voices\n           SET preset_id = COALESCE($3, design_preset_id), approved_at = NULL\n           WHERE character_id = $1 AND from_chapter = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d1e59e983833eec3453324b69b36c248092ac0909b18e91fda143caea29fa72c"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM book_cast_lines\n           WHERE book_id = $1 AND chapter_index = $2 AND source <> 'user'\n             AND (segment_index, span_start) NOT IN\n                 (SELECT * FROM unnest($3::int[], $4::int[]))",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int4Array",
+        "Int4Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1b7feeadd4049dad7692c217b98de999246476d4f658ccd1727f82a1b25bb03f"
+}

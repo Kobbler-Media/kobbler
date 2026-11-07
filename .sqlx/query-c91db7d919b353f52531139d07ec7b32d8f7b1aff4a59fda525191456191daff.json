@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT b.title,\n                  (SELECT a.name FROM book_authors ba JOIN authors a ON a.id = ba.author_id\n                   WHERE ba.book_id = b.id ORDER BY ba.author_id LIMIT 1) AS \"author?\"\n           FROM books b WHERE b.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "author?",
+        "type_info": "Text",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "c91db7d919b353f52531139d07ec7b32d8f7b1aff4a59fda525191456191daff"
+}

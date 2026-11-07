@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_casts SET updated_at = NOW() WHERE book_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5068801137d4d3a8eda602b1be4552f3fb367238059cb71ee33d1c456a6c1a43"
+}

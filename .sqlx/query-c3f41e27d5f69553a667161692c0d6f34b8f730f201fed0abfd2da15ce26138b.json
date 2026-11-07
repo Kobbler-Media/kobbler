@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_cast_characters\n           SET aliases = ARRAY(SELECT a FROM unnest(aliases) a WHERE lower(a) <> ALL($2))\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c3f41e27d5f69553a667161692c0d6f34b8f730f201fed0abfd2da15ce26138b"
+}

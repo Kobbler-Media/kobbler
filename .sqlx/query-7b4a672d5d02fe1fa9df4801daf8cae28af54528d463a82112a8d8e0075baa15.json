@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_cast_characters\n           SET bible = jsonb_strip_nulls(bible || $2 || COALESCE(edits->'bible', '{}'::jsonb))\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7b4a672d5d02fe1fa9df4801daf8cae28af54528d463a82112a8d8e0075baa15"
+}

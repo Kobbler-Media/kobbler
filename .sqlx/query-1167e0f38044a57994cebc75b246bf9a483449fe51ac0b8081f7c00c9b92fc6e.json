@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_voice_presets\n           SET clip_filename = NULL, ref_text = NULL, seed = NULL, updated_at = NOW()\n           WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1167e0f38044a57994cebc75b246bf9a483449fe51ac0b8081f7c00c9b92fc6e"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_cast_voices v\n           SET approved_at = CASE WHEN $3 THEN NOW() END\n           FROM book_cast_characters c\n           WHERE c.id = v.character_id AND c.book_id = $1 AND v.preset_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "31b20721132f1928acc11c4ed0d49fdcdec02ab5d70839e107da67108889e060"
+}

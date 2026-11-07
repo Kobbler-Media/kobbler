@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_cast_lines SET character_id = $3, speaker = $4, source = 'user'\n           WHERE book_id = $1 AND character_id IS NULL AND lower(speaker) = lower($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ef7f5b9d61c12afd69e27d882942e581a2ec75fd4c367df9a7d77e8564be9511"
+}

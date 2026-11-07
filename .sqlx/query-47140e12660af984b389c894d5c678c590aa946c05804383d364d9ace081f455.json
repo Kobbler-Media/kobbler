@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.book_file_id FROM ebook_segments e\n        JOIN book_files bf ON bf.id = e.book_file_id\n        WHERE bf.book_id = $1\n        ORDER BY e.created_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "book_file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "ebook_segments",
+            "name": "book_file_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "47140e12660af984b389c894d5c678c590aa946c05804383d364d9ace081f455"
+}

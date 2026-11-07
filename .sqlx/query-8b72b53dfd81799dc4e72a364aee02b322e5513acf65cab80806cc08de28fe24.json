@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE book_cast_characters SET\n                           aliases = $2,\n                           bible = jsonb_strip_nulls($3 || COALESCE(edits->'bible', '{}'::jsonb)),\n                           generic = NOT narrator AND COALESCE((edits->>'generic')::boolean, $4)\n                       WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "TextArray",
+        "Jsonb",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8b72b53dfd81799dc4e72a364aee02b322e5513acf65cab80806cc08de28fe24"
+}

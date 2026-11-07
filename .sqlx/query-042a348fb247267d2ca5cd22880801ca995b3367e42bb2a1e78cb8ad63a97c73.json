@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT chapter_index, duration_ms,\n                  fingerprint AS \"fingerprint: Json<Fingerprint>\", render_ms\n           FROM book_cast_renders\n           WHERE book_id = $1 ORDER BY chapter_index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chapter_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_renders",
+            "name": "chapter_index"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "duration_ms",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "book_cast_renders",
+            "name": "duration_ms"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "fingerprint: Json<Fingerprint>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "book_cast_renders",
+            "name": "fingerprint"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "render_ms",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "book_cast_renders",
+            "name": "render_ms"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "042a348fb247267d2ca5cd22880801ca995b3367e42bb2a1e78cb8ad63a97c73"
+}

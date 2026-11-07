@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO book_cast_chapters (book_id, chapter_index, title, first_segment, last_segment, notes, model)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        ON CONFLICT (book_id, chapter_index) DO UPDATE SET\n            title = EXCLUDED.title, first_segment = EXCLUDED.first_segment,\n            last_segment = EXCLUDED.last_segment, notes = EXCLUDED.notes,\n            model = EXCLUDED.model, finished_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Text",
+        "Int4",
+        "Int4",
+        "Jsonb",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0e841d1f18690a6425fa7dadf2a7365316ffd78bcf4f401028256a5fc07c64aa"
+}

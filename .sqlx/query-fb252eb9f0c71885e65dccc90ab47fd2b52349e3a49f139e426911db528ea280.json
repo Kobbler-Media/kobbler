@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM book_cast_characters WHERE book_id = $1 AND id <> ALL($2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb252eb9f0c71885e65dccc90ab47fd2b52349e3a49f139e426911db528ea280"
+}

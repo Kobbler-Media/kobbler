@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM book_casts WHERE book_id = $1 RETURNING audiobook_file_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "audiobook_file_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_casts",
+            "name": "audiobook_file_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "6d5a3aa820ca1e6a629288e42efd476a17736bb115072cf1d67be6175067cdae"
+}

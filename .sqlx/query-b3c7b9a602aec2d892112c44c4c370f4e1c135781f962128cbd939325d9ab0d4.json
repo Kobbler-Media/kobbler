@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM book_cast_voices WHERE character_id = $1 AND from_chapter = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b3c7b9a602aec2d892112c44c4c370f4e1c135781f962128cbd939325d9ab0d4"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH existing AS (\n            SELECT id FROM book_cast_characters WHERE book_id = $1 AND narrator\n        ), named AS (\n            UPDATE book_cast_characters SET narrator = TRUE, generic = FALSE, pooled = FALSE\n            WHERE book_id = $1 AND lower(name) = lower($3) AND NOT EXISTS (SELECT 1 FROM existing)\n            RETURNING id\n        )\n        INSERT INTO book_cast_characters (id, book_id, name, narrator)\n        SELECT $2, $1, $3, TRUE\n        WHERE NOT EXISTS (SELECT 1 FROM existing) AND NOT EXISTS (SELECT 1 FROM named)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8c62e24f33cf67cd7ea9940fb02f66db9adaf968d4d390d891b2973aa69562e8"
+}

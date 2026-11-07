@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT segment_index, span_start, span_end, chapter_index, speaker, character_id,\n                  cue, source\n           FROM book_cast_lines\n           WHERE book_id = $1 AND ($2::int IS NULL OR chapter_index = $2)\n           ORDER BY segment_index, span_start",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "segment_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "segment_index"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "span_start",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "span_start"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "span_end",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "span_end"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "chapter_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "chapter_index"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "speaker",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "speaker"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "character_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "character_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "cue",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "cue"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "source",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "source"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "35d50390b7f45ed3dd33bf59803cb8614fbc290240e1e9c045a9fcb4fe8c1455"
+}

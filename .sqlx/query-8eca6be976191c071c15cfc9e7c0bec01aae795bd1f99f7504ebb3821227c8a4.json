@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT chapter_index, finished_at FROM book_cast_chapters\n           WHERE book_id = $1 ORDER BY chapter_index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chapter_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "book_cast_chapters",
+            "name": "chapter_index"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "book_cast_chapters",
+            "name": "finished_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8eca6be976191c071c15cfc9e7c0bec01aae795bd1f99f7504ebb3821227c8a4"
+}
