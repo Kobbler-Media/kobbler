@@ -1,6 +1,7 @@
-//! Full-cast pass 2: the model reads a summary of each first-pass speaker,
-//! says who is who, and rechecks the lines pass 1 could not attribute. The
-//! code then tidies the names it left loose.
+//! Full-cast pass 2: the model groups the first-pass names that are one
+//! person, from a line on each; the code tidies what it left loose and casts
+//! every other name as itself; then the lines pass 1 could not attribute are
+//! rechecked a batch at a time against that cast.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -59,46 +60,30 @@ impl BookCastBibleHandler {
             .map(|s| (s.segment_index, s.text))
             .collect();
 
-        let (prompt, ids) = bible::prompt(&chapters, &lines, &paragraphs);
         let cfg = llm::config(&self.runtime_config.get().await).map_err(job_error)?;
-        let reply: bible::Reply = llm::json(
-            &cfg,
-            self.retry,
-            cancel,
-            bible::SYSTEM,
-            &prompt,
-            "cast",
-            bible::schema(),
-        )
-        .await
-        .map_err(job_error)?;
-
-        let reattributed: Vec<Reattribution> = reply
-            .lines
-            .iter()
-            .filter(|r| !is_nobody(&r.speaker))
-            .filter_map(|r| {
-                ids.get(r.id).map(|line| Reattribution {
-                    segment_index: line.segment_index,
-                    span_start: line.span_start,
-                    speaker: r.speaker.clone(),
-                })
-            })
-            .collect();
-
-        let characters: Vec<NewCharacter> = reply
-            .characters
-            .iter()
-            .map(|c| NewCharacter {
-                name: c.name.clone(),
-                aliases: c.aliases.clone(),
-                generic: c.generic,
+        let ask = llm::Ask {
+            system: bible::GROUP_SYSTEM,
+            user: &bible::group_prompt(&chapters, &lines),
+            name: "cast",
+            schema: bible::group_schema(),
+            max_tokens: bible::GROUP_MAX_TOKENS,
+        };
+        let groups: bible::Groups = llm::json(&cfg, self.retry, cancel, &ask)
+            .await
+            .map_err(job_error)?;
+        let grouped: Vec<NewCharacter> = groups
+            .people
+            .into_iter()
+            .map(|p| NewCharacter {
+                name: p.name,
+                aliases: p.names,
+                generic: p.generic,
                 bible: json!({}),
             })
             .collect();
+
         let notes: Vec<CharacterNote> = chapters.iter().flat_map(chapters::notes).collect();
         let mut names: Vec<String> = lines.iter().filter_map(|l| l.speaker.clone()).collect();
-        names.extend(reattributed.iter().map(|r| r.speaker.clone()));
         names.sort();
         names.dedup();
         let speakers: Vec<Speaker> = names
@@ -112,7 +97,37 @@ impl BookCastBibleHandler {
                 Speaker { name, generic }
             })
             .collect();
-        let mut characters = resolve::tidy(characters, &speakers);
+        let mut characters = resolve::tidy(grouped, &speakers);
+
+        let cast: Vec<String> = characters.iter().map(|c| c.name.clone()).collect();
+        let mut reattributed: Vec<Reattribution> = Vec::new();
+        let mut rechecked = 0;
+        for (prompt, ids) in bible::recheck_batches(&lines, &paragraphs, &cast) {
+            let ask = llm::Ask {
+                system: bible::RECHECK_SYSTEM,
+                user: &prompt,
+                name: "recheck",
+                schema: bible::recheck_schema(),
+                max_tokens: bible::RECHECK_MAX_TOKENS,
+            };
+            let reply: bible::Rechecks = llm::json(&cfg, self.retry, cancel, &ask)
+                .await
+                .map_err(job_error)?;
+            rechecked += ids.len();
+            reattributed.extend(
+                reply
+                    .lines
+                    .into_iter()
+                    .filter(|r| !is_nobody(&r.speaker))
+                    .filter_map(|r| {
+                        ids.get(r.id).map(|line| Reattribution {
+                            segment_index: line.segment_index,
+                            span_start: line.span_start,
+                            speaker: r.speaker,
+                        })
+                    }),
+            );
+        }
         for c in &mut characters {
             c.bible = bible::traits(c, &notes);
         }
@@ -124,7 +139,7 @@ impl BookCastBibleHandler {
         }
         Ok(json!({
             "characters": characters.len(),
-            "rechecked": ids.len(),
+            "rechecked": rechecked,
             "reattributed": reattributed.len(),
         }))
     }

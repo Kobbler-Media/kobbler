@@ -82,8 +82,11 @@ impl Resident {
         if text.contains("## Voice design for ") {
             return voices(text);
         }
-        if text.contains("First-pass speakers") {
-            return cast();
+        if text.contains("First-pass names") {
+            return groups();
+        }
+        if text.contains("Lines to recheck") {
+            return sse(&json!({"lines": [{"id": 0, "speaker": "Ann Smith"}]}).to_string());
         }
         let mut lines = Vec::new();
         let mut characters = Vec::new();
@@ -107,18 +110,16 @@ impl Resident {
     }
 }
 
-/// Loose the way the model is at book scale: the lead is cast twice and never
-/// given the first name pass 1 used, and "unknown" turns up as a person.
-fn cast() -> ResponseTemplate {
+/// Loose the way the model is at book scale: the lead is grouped twice and
+/// never given the first name pass 1 used, and "unknown" turns up as a person.
+fn groups() -> ResponseTemplate {
     sse(&json!({
-        "characters": [
-            {"name": "Ann Smith", "aliases": ["Lizzy"], "generic": false},
-            {"name": "Smith", "aliases": ["Ann Smith"], "generic": false},
-            {"name": "Tom", "aliases": [], "generic": false},
-            {"name": "Soldiers", "aliases": ["soldier"], "generic": true},
-            {"name": "unknown", "aliases": ["The Knight"], "generic": false},
+        "people": [
+            {"name": "Ann Smith", "names": ["Lizzy"], "generic": false},
+            {"name": "Smith", "names": ["Ann Smith"], "generic": false},
+            {"name": "Soldiers", "names": ["soldier"], "generic": true},
+            {"name": "unknown", "names": ["The Knight"], "generic": false},
         ],
-        "lines": [{"id": 0, "speaker": "Ann Smith"}],
     })
     .to_string())
 }
@@ -392,13 +393,22 @@ async fn analysis_attributes_casts_then_voices_the_book() {
 
     rig.run_bible().await;
 
-    let asked = rig.asked("Lines to recheck").await;
+    let asked = rig.asked("First-pass names").await;
     assert!(
-        asked.contains("### Ann (3 lines; chapter 1)\n- role: Ann's role\n\n"),
-        "each speaker is summed up once, not once a chapter: {asked}"
+        asked.contains("\n- Ann (3 lines; chapter 1; role: Ann's role)\n"),
+        "each first-pass name is one short line: {asked}"
     );
-    assert!(asked.contains("### soldier (1 line; chapter 1)\n- generic\n- role: soldier's role\n"));
+    assert!(asked.contains("\n- soldier (1 line; chapter 1; generic; role: soldier's role)\n"));
+    assert!(
+        !asked.contains("Who goes there?"),
+        "the lines to recheck are asked apart"
+    );
+    let asked = rig.asked("Lines to recheck").await;
     assert!(asked.contains("[0] chapter 1: “Who goes there?”"));
+    assert!(
+        asked.contains("Names: Ann Smith, Soldiers, Tom, guard\n"),
+        "a line is given to someone in the cast as tidied: {asked}"
+    );
     assert_eq!(rig.cast().await["state"], "voices");
 
     rig.start(json!({}))
@@ -914,7 +924,7 @@ async fn pooled_speakers_share_a_voice_by_the_gender_and_age_their_chapters_gave
 async fn cancelling_a_pass_stops_it_waiting_out_a_retry() {
     const LONG: &[Duration] = &[Duration::from_secs(600)];
     let rig = rig(Resident {
-        fail_on: "First-pass speakers",
+        fail_on: "First-pass names",
         failures: Arc::new(AtomicUsize::new(usize::MAX)),
         slow_on: None,
     })
@@ -933,7 +943,7 @@ async fn cancelling_a_pass_stops_it_waiting_out_a_retry() {
     .with_retry(LONG);
     let cancel = tokio_util::sync::CancellationToken::new();
     let stop = async {
-        rig.until_asked("First-pass speakers").await;
+        rig.until_asked("First-pass names").await;
         cancel.cancel();
     };
     let run = tokio::time::timeout(

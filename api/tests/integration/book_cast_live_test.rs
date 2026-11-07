@@ -117,8 +117,10 @@ async fn live_cast_of_a_real_book() {
     )
     .unwrap();
     let lines = book_casts::lines(&pool, book_id, None).await.unwrap();
-    let (prompt, _) = bible::prompt(&notes, &lines, &HashMap::new());
-    eprintln!("cast prompt: {} chars", prompt.len());
+    eprintln!(
+        "grouping prompt: {} chars",
+        bible::group_prompt(&notes, &lines).len()
+    );
 
     let began = Instant::now();
     let result = BookCastBibleHandler::new(

@@ -9,6 +9,7 @@ use crate::repositories::book_casts::CastChapter;
 /// Few enough that the model has room to describe each voice properly; at a
 /// whole cast per reply it wrote what people say instead of how they sound.
 pub const BATCH: usize = 6;
+pub const MAX_TOKENS: u32 = 4_096;
 /// What a batch's profiles may come to, and one character's share of it, so a
 /// request fits the resident model's context; a lead speaks in ~100 chapters.
 const BATCH_CHARS: usize = 48_000;

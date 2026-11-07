@@ -103,17 +103,16 @@ impl BookCastChaptersHandler {
             if window.quotes.is_empty() {
                 continue;
             }
-            let reply: chapters::Reply = llm::json(
-                cfg,
-                self.retry,
-                cancel,
-                chapters::SYSTEM,
-                &chapters::prompt(&window, chapter.title.as_deref(), &known),
-                "dialogue",
-                chapters::schema(),
-            )
-            .await
-            .map_err(job_error)?;
+            let ask = llm::Ask {
+                system: chapters::SYSTEM,
+                user: &chapters::prompt(&window, chapter.title.as_deref(), &known),
+                name: "dialogue",
+                schema: chapters::schema(),
+                max_tokens: chapters::MAX_TOKENS,
+            };
+            let reply: chapters::Reply = llm::json(cfg, self.retry, cancel, &ask)
+                .await
+                .map_err(job_error)?;
             let by_q: HashMap<usize, &chapters::ReplyLine> =
                 reply.lines.iter().map(|l| (l.q, l)).collect();
             for (q, quote) in window.quotes.iter().enumerate() {

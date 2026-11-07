@@ -36,22 +36,29 @@ pub fn config(config: &RuntimeConfig) -> Result<LlmConfig, LlmError> {
     })
 }
 
-/// One completion constrained to `schema`, parsed into `T`. A failure waits
-/// out each of `retry` in turn and asks again; a cancel ends the wait.
+pub struct Ask<'a> {
+    pub system: &'a str,
+    pub user: &'a str,
+    pub name: &'a str,
+    pub schema: Value,
+    /// A model repeating itself runs on to its context limit, ten minutes on
+    /// the resident model; a cap past any honest reply fails it in one.
+    pub max_tokens: u32,
+}
+
+/// One completion constrained to `ask.schema`, parsed into `T`. A failure
+/// waits out each of `retry` in turn and asks again; a cancel ends the wait.
 pub async fn json<T: DeserializeOwned>(
     cfg: &LlmConfig,
     retry: &[Duration],
     cancel: &CancellationToken,
-    system: &str,
-    user: &str,
-    name: &str,
-    schema: Value,
+    ask: &Ask<'_>,
 ) -> Result<T, LlmError> {
     let mut waits = retry.iter();
     loop {
         let result = tokio::select! {
             () = cancel.cancelled() => return Err(LlmError::Cancelled),
-            r = attempt(cfg, system, user, name, schema.clone()) => r,
+            r = attempt(cfg, ask) => r,
         };
         match result {
             Err(LlmError::Failed(e)) => match waits.next() {
@@ -69,19 +76,14 @@ pub async fn json<T: DeserializeOwned>(
     }
 }
 
-async fn attempt<T: DeserializeOwned>(
-    cfg: &LlmConfig,
-    system: &str,
-    user: &str,
-    name: &str,
-    schema: Value,
-) -> Result<T, LlmError> {
-    let messages = [ChatMessage::system(system), ChatMessage::user(user)];
+async fn attempt<T: DeserializeOwned>(cfg: &LlmConfig, ask: &Ask<'_>) -> Result<T, LlmError> {
+    let messages = [ChatMessage::system(ask.system), ChatMessage::user(ask.user)];
     let mut body = llm::request_body(cfg, &messages, &[]);
     body["temperature"] = json!(0.2);
+    body["max_tokens"] = json!(ask.max_tokens);
     body["response_format"] = json!({
         "type": "json_schema",
-        "json_schema": {"name": name, "strict": true, "schema": schema},
+        "json_schema": {"name": ask.name, "strict": true, "schema": ask.schema},
     });
     let completion = llm::complete_body(cfg, body, |_| async {})
         .await

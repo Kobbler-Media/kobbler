@@ -177,6 +177,9 @@ pub fn delivery(cue: &str) -> Option<String> {
         .then(|| cue.to_string())
 }
 
+/// A whole window's quotes, a short line each, plus a profile per speaker.
+pub const MAX_TOKENS: u32 = 16_384;
+
 pub const NOT_SPEECH: &str = "not_speech";
 pub const UNKNOWN: &str = "unknown";
 

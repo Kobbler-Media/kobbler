@@ -72,17 +72,16 @@ impl BookCastVoicesHandler {
         let mut designed = 0;
         for (batch, prompt) in voices::batches(&todo, &chapters, &opening) {
             nats_jobs::check_cancelled(cancel)?;
-            let reply: voices::Reply = llm::json(
-                &cfg,
-                self.retry,
-                cancel,
-                voices::SYSTEM,
-                &prompt,
-                "voices",
-                voices::schema(),
-            )
-            .await
-            .map_err(job_error)?;
+            let ask = llm::Ask {
+                system: voices::SYSTEM,
+                user: &prompt,
+                name: "voices",
+                schema: voices::schema(),
+                max_tokens: voices::MAX_TOKENS,
+            };
+            let reply: voices::Reply = llm::json(&cfg, self.retry, cancel, &ask)
+                .await
+                .map_err(job_error)?;
             for (c, v) in voices::pair(&batch, &reply.characters) {
                 book_casts::set_voice(&self.pool, c.id, &voices::design(v)).await?;
                 designed += 1;
