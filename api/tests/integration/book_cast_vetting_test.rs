@@ -44,7 +44,7 @@ pub(crate) struct Rig {
     pub(crate) tts: MockServer,
     pub(crate) book_id: Uuid,
     pub(crate) admin_id: Uuid,
-    lines: HashMap<String, (i32, i32)>,
+    pub(crate) lines: HashMap<String, (i32, i32)>,
 }
 
 fn quotes(text: &str) -> Vec<(i32, i32, String, String)> {
@@ -161,6 +161,7 @@ pub(crate) async fn rig() -> Rig {
                     character_id: None,
                     cue: (spoken == "One more thing before we go,").then(|| "whispering".into()),
                     source: "gemma".into(),
+                    not_speech: false,
                 });
             }
         }
@@ -277,7 +278,7 @@ impl Rig {
         resp.json()
     }
 
-    async fn character(&self, name: &str) -> Value {
+    pub(crate) async fn character(&self, name: &str) -> Value {
         self.cast().await["characters"]
             .as_array()
             .unwrap()
@@ -287,14 +288,14 @@ impl Rig {
             .unwrap_or_else(|| panic!("no character {name}"))
     }
 
-    async fn id(&self, name: &str) -> String {
+    pub(crate) async fn id(&self, name: &str) -> String {
         self.character(name).await["id"]
             .as_str()
             .unwrap()
             .to_string()
     }
 
-    async fn chapter(&self, n: i32) -> Vec<Value> {
+    pub(crate) async fn chapter(&self, n: i32) -> Vec<Value> {
         let resp = self.admin().get(&self.url(&format!("/chapters/{n}"))).await;
         resp.assert_ok();
         resp.json::<Value>()["lines"].as_array().unwrap().clone()
@@ -1049,6 +1050,11 @@ async fn vetting_routes_require_an_admin_and_a_finished_analysis() {
         (
             "POST",
             rig.url(&format!("/characters/{id}/split")),
+            json!({"name": "x"}),
+        ),
+        (
+            "POST",
+            rig.url(&format!("/characters/{id}/names/move")),
             json!({"name": "x"}),
         ),
         (

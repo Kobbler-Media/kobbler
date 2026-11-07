@@ -9,6 +9,7 @@
   import CastCharacterCard from '#lib/components/book-cast/CastCharacterCard.svelte';
   import CastChapterLines from '#lib/components/book-cast/CastChapterLines.svelte';
   import CastUnattachedSpeakers from '#lib/components/book-cast/CastUnattachedSpeakers.svelte';
+  import CastUnattributedLines from '#lib/components/book-cast/CastUnattributedLines.svelte';
   import CastRenderPanel from '#lib/components/book-cast/CastRenderPanel.svelte';
 
   const auth = getAuthState();
@@ -202,6 +203,17 @@
             <CastUnattachedSpeakers
               {bookId}
               unattached={cast.unattached}
+              characters={cast.characters}
+              onChanged={load}
+            />
+          </section>
+        {/if}
+        {#if cast.unresolved > 0}
+          <section class="panel">
+            <h2>Lines that need a speaker ({cast.unresolved})</h2>
+            <CastUnattributedLines
+              {bookId}
+              unresolved={cast.unresolved}
               characters={cast.characters}
               onChanged={load}
             />

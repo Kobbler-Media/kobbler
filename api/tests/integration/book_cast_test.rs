@@ -406,6 +406,10 @@ async fn analysis_attributes_casts_then_voices_the_book() {
     let asked = rig.asked("Lines to recheck").await;
     assert!(asked.contains("[0] chapter 1: “Who goes there?”"));
     assert!(
+        !asked.contains("CLOSED"),
+        "a quote nobody says is not rechecked: {asked}"
+    );
+    assert!(
         asked.contains("Names: Ann Smith, Soldiers, Tom, guard\n"),
         "a line is given to someone in the cast as tidied: {asked}"
     );
@@ -495,19 +499,38 @@ async fn analysis_attributes_casts_then_voices_the_book() {
         "longest lines first"
     );
     assert_eq!(cast["unresolved"], 0);
+    assert_eq!(cast["lines"], 8, "the quoted sign is not a line");
+    let resp = rig
+        .server
+        .admin_client()
+        .get(&rig.url("/lines/unattributed"))
+        .await;
+    resp.assert_ok();
+    assert_eq!(resp.json::<Value>()["lines"], json!([]));
     assert_eq!(
         speakers(&rig.chapter(0).await)[5],
         ("Who goes there?".to_string(), Some("Ann Smith".to_string())),
         "the cast pass named the speaker pass 1 could not"
     );
+    let chapter = rig.chapter(1).await;
     assert_eq!(
-        speakers(&rig.chapter(1).await),
+        speakers(&chapter),
         [
             ("Morning,".to_string(), Some("Lizzy".to_string())),
+            ("CLOSED".to_string(), None),
             ("Papers,".to_string(), Some("guard".to_string())),
         ],
-        "the quoted sign is not speech"
     );
+    let not_speech: Vec<(&Value, &Value)> = chapter
+        .iter()
+        .map(|l| (&l["not_speech"], &l["character_id"]))
+        .collect();
+    assert_eq!(
+        (not_speech[1].0, not_speech[1].1),
+        (&json!(true), &Value::Null),
+        "the quoted sign is kept, as not speech"
+    );
+    assert!(not_speech[0].0 == false && not_speech[2].0 == false);
 }
 
 #[tokio::test]

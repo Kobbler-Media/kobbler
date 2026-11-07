@@ -13,9 +13,10 @@ use super::book_cast::{fail, internal, vetting_cast};
 use super::book_cast_voices::reseed;
 use crate::AppState;
 use crate::book_cast::POOL_BELOW;
+use crate::book_cast::chapters::same_name;
 use crate::repositories::RepositoryError;
 use crate::repositories::book_cast_vetting::{
-    self as vetting, CharacterEdit, LineRef, Split, VettingCharacter,
+    self as vetting, CharacterEdit, LineRef, NameTo, Said, Split, VettingCharacter,
 };
 use crate::repositories::book_casts::BookCast;
 use crate::routes::AuthUser;
@@ -82,11 +83,14 @@ pub(super) async fn save_bible(
 #[derive(Debug, Deserialize)]
 pub struct ReassignRequest {
     pub character_id: Option<Uuid>,
+    #[serde(default)]
+    pub not_speech: bool,
 }
 
 /// PUT /api/v1/admin/books/{book_id}/cast/lines/{segment_index}/{span_start}
 ///
-/// `character_id` null, or the narrator's, makes the line narration.
+/// `character_id` null, or the narrator's, makes the line narration;
+/// `not_speech` marks a quote nobody says aloud.
 pub async fn reassign_line(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -97,27 +101,30 @@ pub async fn reassign_line(
         Ok(c) => c,
         Err(r) => return r,
     };
-    let to = match req.character_id {
-        Some(id) => match character(&state, book_id, id).await {
+    let to = match (req.character_id, req.not_speech) {
+        (Some(_), true) => {
+            return fail(
+                StatusCode::BAD_REQUEST,
+                "a line nobody says has no character",
+            );
+        }
+        (Some(id), false) => match character(&state, book_id, id).await {
             Ok(c) if c.narrator => None,
             Ok(c) => Some(c),
             Err(r) => return r,
         },
-        None => None,
+        (None, _) => None,
+    };
+    let said = match &to {
+        Some(c) => Said::By(c),
+        None if req.not_speech => Said::NotSpeech,
+        None => Said::Narration,
     };
     let line = LineRef {
         segment_index,
         span_start,
     };
-    match vetting::reassign_line(
-        &state.pool,
-        book_id,
-        &line,
-        to.as_ref().map(|c| (c.id, c.name.as_str())),
-        POOL_BELOW,
-    )
-    .await
-    {
+    match vetting::reassign_line(&state.pool, book_id, &line, said, POOL_BELOW).await {
         Ok(true) => done(&state, &cast).await,
         Ok(false) => fail(StatusCode::NOT_FOUND, "no such line"),
         Err(e) => internal(e),
@@ -223,6 +230,84 @@ pub async fn split(
             StatusCode::BAD_REQUEST,
             "every line moved has to be the character's own",
         ),
+        Err(e) => conflict_on_name(e),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MoveNameRequest {
+    pub name: String,
+    pub character_id: Option<Uuid>,
+    pub new_name: Option<String>,
+}
+
+/// POST /api/v1/admin/books/{book_id}/cast/characters/{character_id}/names/move
+///
+/// One of the character's aliases, and the lines pass 1 gave it, go to
+/// `character_id`, or to a new character called `new_name` (the alias itself
+/// when left out).
+pub async fn move_name(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((book_id, character_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<MoveNameRequest>,
+) -> Response {
+    let cast = match vetting_cast(&state, &auth, book_id).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    let from = match character(&state, book_id, character_id).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    if let Err(r) = not_narrator(&from) {
+        return r;
+    }
+    let asked = req.name.trim();
+    if same_name(&from.name, asked) {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "rename the character to another of its names before moving this one",
+        );
+    }
+    let Some(name) = from.aliases.iter().find(|a| same_name(a, asked)) else {
+        return fail(StatusCode::BAD_REQUEST, "the character has no such name");
+    };
+    let existing = match req.character_id {
+        Some(id) if id == from.id => {
+            return fail(StatusCode::BAD_REQUEST, "the name is already theirs");
+        }
+        Some(id) => match character(&state, book_id, id).await {
+            Ok(c) => match not_narrator(&c) {
+                Ok(()) => Some(c),
+                Err(r) => return r,
+            },
+            Err(r) => return r,
+        },
+        None => None,
+    };
+    let to = match &existing {
+        Some(c) => NameTo::Existing(c),
+        None => NameTo::New(
+            req.new_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .unwrap_or(name),
+        ),
+    };
+    match vetting::move_name(&state.pool, book_id, &from, name, to, POOL_BELOW).await {
+        Ok(id) => match reseed(&state, &cast).await {
+            Ok(()) => {
+                let status = if existing.is_some() {
+                    StatusCode::OK
+                } else {
+                    StatusCode::CREATED
+                };
+                (status, Json(json!({"id": id}))).into_response()
+            }
+            Err(r) => r,
+        },
         Err(e) => conflict_on_name(e),
     }
 }

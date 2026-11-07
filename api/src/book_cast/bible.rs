@@ -106,7 +106,7 @@ pub fn recheck_batches(
 ) -> Vec<(String, Vec<Recheckable>)> {
     let unknown: Vec<(&CastLine, &str, &str)> = lines
         .iter()
-        .filter(|l| l.source != "user" && l.speaker.is_none())
+        .filter(|l| l.needs_speaker() && l.speaker.is_none())
         .filter_map(|l| {
             let text = paragraphs.get(&l.segment_index)?;
             let quote = text.get(l.span_start as usize..l.span_end as usize)?;

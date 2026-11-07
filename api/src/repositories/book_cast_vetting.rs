@@ -414,24 +414,35 @@ pub(super) async fn recount(
     Ok(())
 }
 
+pub enum Said<'a> {
+    By(&'a VettingCharacter),
+    Narration,
+    NotSpeech,
+}
+
 /// A line corrected by hand keeps its speaker through any later analysis rerun.
-/// `None` makes it narration.
 pub async fn reassign_line(
     pool: &PgPool,
     book_id: Uuid,
     line: &LineRef,
-    to: Option<(Uuid, &str)>,
+    said: Said<'_>,
     pool_below: i32,
 ) -> Result<bool> {
+    let by = match said {
+        Said::By(c) => Some(c),
+        Said::Narration | Said::NotSpeech => None,
+    };
     let mut tx = pool.begin().await?;
     let done = sqlx::query!(
-        r#"UPDATE book_cast_lines SET character_id = $4, speaker = $5, source = 'user'
+        r#"UPDATE book_cast_lines
+           SET character_id = $4, speaker = $5, not_speech = $6, source = 'user'
            WHERE book_id = $1 AND segment_index = $2 AND span_start = $3"#,
         book_id,
         line.segment_index,
         line.span_start,
-        to.map(|t| t.0),
-        to.map(|t| t.1)
+        by.map(|c| c.id),
+        by.map(|c| c.name.as_str()),
+        matches!(said, Said::NotSpeech)
     )
     .execute(&mut *tx)
     .await?;
@@ -515,26 +526,8 @@ pub async fn split(
     pool_below: i32,
 ) -> Result<Option<Uuid>> {
     let mut tx = pool.begin().await?;
-    let id = Uuid::now_v7();
-    sqlx::query!(
-        "INSERT INTO book_cast_characters (id, book_id, name, aliases) VALUES ($1, $2, $3, $4)",
-        id,
-        book_id,
-        split.name,
-        split.aliases
-    )
-    .execute(&mut *tx)
-    .await?;
-    let lower: Vec<String> = split.aliases.iter().map(|a| a.to_lowercase()).collect();
-    sqlx::query!(
-        r#"UPDATE book_cast_characters
-           SET aliases = ARRAY(SELECT a FROM unnest(aliases) a WHERE lower(a) <> ALL($2))
-           WHERE id = $1"#,
-        from.id,
-        &lower
-    )
-    .execute(&mut *tx)
-    .await?;
+    let id = insert_character(&mut tx, book_id, split.name, split.aliases).await?;
+    drop_aliases(&mut tx, from.id, split.aliases).await?;
     for line in split.lines {
         let moved = sqlx::query!(
             r#"UPDATE book_cast_lines SET character_id = $5, speaker = $6, source = 'user'
@@ -556,6 +549,103 @@ pub async fn split(
     recount(&mut tx, book_id, pool_below).await?;
     tx.commit().await?;
     Ok(Some(id))
+}
+
+async fn insert_character(
+    tx: &mut sqlx::PgConnection,
+    book_id: Uuid,
+    name: &str,
+    aliases: &[String],
+) -> Result<Uuid> {
+    let id = Uuid::now_v7();
+    sqlx::query!(
+        "INSERT INTO book_cast_characters (id, book_id, name, aliases) VALUES ($1, $2, $3, $4)",
+        id,
+        book_id,
+        name,
+        aliases
+    )
+    .execute(&mut *tx)
+    .await?;
+    Ok(id)
+}
+
+async fn drop_aliases(
+    tx: &mut sqlx::PgConnection,
+    character_id: Uuid,
+    names: &[String],
+) -> Result<()> {
+    let lower: Vec<String> = names.iter().map(|a| a.to_lowercase()).collect();
+    sqlx::query!(
+        r#"UPDATE book_cast_characters
+           SET aliases = ARRAY(SELECT a FROM unnest(aliases) a WHERE lower(a) <> ALL($2))
+           WHERE id = $1"#,
+        character_id,
+        &lower
+    )
+    .execute(&mut *tx)
+    .await?;
+    Ok(())
+}
+
+async fn claim_name(tx: &mut sqlx::PgConnection, to: &VettingCharacter, name: &str) -> Result<()> {
+    let known = name.to_lowercase();
+    if to.name.to_lowercase() == known || to.aliases.iter().any(|a| a.to_lowercase() == known) {
+        return Ok(());
+    }
+    sqlx::query!(
+        "UPDATE book_cast_characters SET aliases = array_append(aliases, $2) WHERE id = $1",
+        to.id,
+        name
+    )
+    .execute(&mut *tx)
+    .await?;
+    Ok(())
+}
+
+pub enum NameTo<'a> {
+    Existing(&'a VettingCharacter),
+    New(&'a str),
+}
+
+/// One of a character's aliases goes to another character, with every line
+/// pass 1 gave that name, bar those placed by hand. The lines stay the
+/// analysis's, so the name can be moved again.
+pub async fn move_name(
+    pool: &PgPool,
+    book_id: Uuid,
+    from: &VettingCharacter,
+    name: &str,
+    to: NameTo<'_>,
+    pool_below: i32,
+) -> Result<Uuid> {
+    let mut tx = pool.begin().await?;
+    let id = match to {
+        NameTo::Existing(c) => {
+            claim_name(&mut tx, c, name).await?;
+            c.id
+        }
+        NameTo::New(new_name) => {
+            let aliases: Vec<String> = (new_name.to_lowercase() != name.to_lowercase())
+                .then(|| name.to_string())
+                .into_iter()
+                .collect();
+            insert_character(&mut tx, book_id, new_name, &aliases).await?
+        }
+    };
+    drop_aliases(&mut tx, from.id, &[name.to_string()]).await?;
+    sqlx::query!(
+        r#"UPDATE book_cast_lines SET character_id = $3
+           WHERE book_id = $1 AND lower(speaker) = lower($2) AND source <> 'user'"#,
+        book_id,
+        name,
+        id
+    )
+    .execute(&mut *tx)
+    .await?;
+    recount(&mut tx, book_id, pool_below).await?;
+    tx.commit().await?;
+    Ok(id)
 }
 
 /// Gives a speaker name no character claimed to one, lines and all.
@@ -581,17 +671,7 @@ pub async fn attach_speaker(
     if attached == 0 {
         return Ok(0);
     }
-    let known = speaker.eq_ignore_ascii_case(&to.name)
-        || to.aliases.iter().any(|a| a.eq_ignore_ascii_case(speaker));
-    if !known {
-        sqlx::query!(
-            "UPDATE book_cast_characters SET aliases = array_append(aliases, $2) WHERE id = $1",
-            to.id,
-            speaker
-        )
-        .execute(&mut *tx)
-        .await?;
-    }
+    claim_name(&mut tx, to, speaker).await?;
     recount(&mut tx, book_id, pool_below).await?;
     tx.commit().await?;
     Ok(attached)

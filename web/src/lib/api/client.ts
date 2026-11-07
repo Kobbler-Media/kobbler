@@ -6965,7 +6965,13 @@ export async function getChatLog(id: string): Promise<ChatTurnLogEntry> {
 }
 
 // Full-cast audiobooks
-import type { BookCast, BookCastLine, BookCastTake, BookCastVoice } from '#lib/types.js';
+import type {
+  BookCast,
+  BookCastLine,
+  BookCastTake,
+  BookCastUnattributedLine,
+  BookCastVoice
+} from '#lib/types.js';
 
 function castPath(bookId: string, rest = ''): string {
   return `/api/v1/admin/books/${bookId}/cast${rest}`;
@@ -7104,16 +7110,38 @@ export async function removeCastVoiceChange(
   });
 }
 
-/** `characterId: null` makes the line narration. */
+export async function getUnattributedCastLines(
+  bookId: string
+): Promise<{ lines: BookCastUnattributedLine[] }> {
+  return request(castPath(bookId, '/lines/unattributed'));
+}
+
+/** A character's id, `null` for narration, or `'not_speech'` for a quote nobody says. */
+export type CastLineSpeaker = string | null | 'not_speech';
+
 export async function reassignCastLine(
   bookId: string,
   segmentIndex: number,
   spanStart: number,
-  characterId: string | null
+  to: CastLineSpeaker
 ): Promise<void> {
+  const body =
+    to === 'not_speech' ? { character_id: null, not_speech: true } : { character_id: to };
   await request(castPath(bookId, `/lines/${segmentIndex}/${spanStart}`), {
     method: 'PUT',
-    body: JSON.stringify({ character_id: characterId })
+    body: JSON.stringify(body)
+  });
+}
+
+/** To `character_id`, or else to a new character called `new_name` (the name itself if left out). */
+export async function moveCastName(
+  bookId: string,
+  characterId: string,
+  move: { name: string; character_id?: string; new_name?: string }
+): Promise<{ id: string }> {
+  return request(castPath(bookId, `/characters/${characterId}/names/move`), {
+    method: 'POST',
+    body: JSON.stringify(move)
   });
 }
 

@@ -2492,10 +2492,16 @@ export interface BookCastArcStep {
   voice: string;
 }
 
+export interface BookCastName {
+  name: string;
+  lines: number;
+}
+
 export interface BookCastCharacter {
   id: string;
   name: string;
   aliases: string[];
+  names: BookCastName[];
   bible: Record<string, unknown> & { arc?: BookCastArcStep[] };
   line_count: number;
   pooled: boolean;
@@ -2564,8 +2570,21 @@ export interface BookCastLine {
   character_id: string | null;
   cue: string | null;
   source: 'gemma' | 'beefy' | 'user';
+  not_speech: boolean;
   text: string | null;
   voice: BookCastVoice | null;
+}
+
+export interface BookCastUnattributedLine {
+  segment_index: number;
+  span_start: number;
+  span_end: number;
+  chapter_index: number;
+  chapter_title: string | null;
+  speaker: string | null;
+  cue: string | null;
+  text: string | null;
+  paragraph: string | null;
 }
 
 export interface BookCastTake {

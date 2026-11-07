@@ -490,8 +490,16 @@ pub fn create_router(state: AppState) -> Router {
             post(admin::book_cast_edits::split),
         )
         .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/names/move",
+            post(admin::book_cast_edits::move_name),
+        )
+        .route(
             "/api/v1/admin/books/{book_id}/cast/speakers/attach",
             post(admin::book_cast_edits::attach_speaker),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/lines/unattributed",
+            get(admin::book_cast::unattributed),
         )
         .route(
             "/api/v1/admin/books/{book_id}/cast/lines/{segment_index}/{span_start}",

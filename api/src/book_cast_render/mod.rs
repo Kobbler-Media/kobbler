@@ -225,6 +225,7 @@ mod tests {
             character_id: who,
             cue: who.map(|_| "softly".to_string()),
             source: "gemma".into(),
+            not_speech: false,
         }
     }
 
@@ -233,11 +234,15 @@ mod tests {
         let ann = Uuid::now_v7();
         let a = "“Come in,” said Ann. “Sit.”";
         let b = "The fire was low. “Who?” said a voice.";
-        let c = "Night fell.";
+        let c = "Night fell. The sign read “CLOSED”.";
         let lines = [
             line(0, a, "“Come in,”", Some(ann)),
             line(0, a, "“Sit.”", Some(ann)),
             line(1, b, "“Who?”", None),
+            CastLine {
+                not_speech: true,
+                ..line(2, c, "“CLOSED”", None)
+            },
         ];
         let pieces = script([(0, a), (1, b), (2, c)], &lines);
         let shape: Vec<(&str, Option<Uuid>)> = pieces
@@ -251,7 +256,7 @@ mod tests {
                 ("said Ann.", None),
                 ("Sit.", Some(ann)),
                 (
-                    "The fire was low. “Who?” said a voice.\n\nNight fell.",
+                    "The fire was low. “Who?” said a voice.\n\nNight fell. The sign read “CLOSED”.",
                     None
                 ),
             ]

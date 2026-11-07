@@ -22,6 +22,7 @@ mod auto_completion_test;
 mod backfill_failure_test;
 mod backup_test;
 mod book_alternates_test;
+mod book_cast_attribution_test;
 mod book_cast_guards_test;
 mod book_cast_live_test;
 mod book_cast_render_edits_test;

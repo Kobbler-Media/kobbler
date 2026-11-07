@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT segment_index, span_start, span_end, chapter_index, speaker, character_id,\n                  cue, source\n           FROM book_cast_lines\n           WHERE book_id = $1 AND ($2::int IS NULL OR chapter_index = $2)\n           ORDER BY segment_index, span_start",
+  "query": "SELECT segment_index, span_start, span_end, chapter_index, speaker, character_id,\n                  cue, source, not_speech\n           FROM book_cast_lines\n           WHERE book_id = $1 AND ($2::int IS NULL OR chapter_index = $2)\n           ORDER BY segment_index, span_start",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,17 @@
             "name": "source"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "not_speech",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "book_cast_lines",
+            "name": "not_speech"
+          }
+        }
       }
     ],
     "parameters": {
@@ -106,8 +117,9 @@
       true,
       true,
       true,
+      false,
       false
     ]
   },
-  "hash": "35d50390b7f45ed3dd33bf59803cb8614fbc290240e1e9c045a9fcb4fe8c1455"
+  "hash": "e05307d257a338a1dca79dea3ebbd16732ca346bbd407d525d30e36f6d7622df"
 }

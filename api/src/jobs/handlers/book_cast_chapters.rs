@@ -117,9 +117,8 @@ impl BookCastChaptersHandler {
                 reply.lines.iter().map(|l| (l.q, l)).collect();
             for (q, quote) in window.quotes.iter().enumerate() {
                 let said = by_q.get(&q);
-                if said.is_some_and(|l| l.speaker == NOT_SPEECH) {
-                    continue;
-                }
+                let not_speech = said.is_some_and(|l| l.speaker == NOT_SPEECH);
+                let said = said.filter(|_| !not_speech);
                 lines.push(CastLine {
                     segment_index: quote.segment_index,
                     span_start: quote.span.start as i32,
@@ -132,6 +131,7 @@ impl BookCastChaptersHandler {
                     character_id: None,
                     cue: said.and_then(|l| chapters::delivery(&l.cue)),
                     source: "gemma".into(),
+                    not_speech,
                 });
             }
             remember(&mut known, &reply.characters);

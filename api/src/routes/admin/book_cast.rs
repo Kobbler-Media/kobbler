@@ -356,7 +356,23 @@ pub async fn get(
             let mut samples: Vec<&str> = own.iter().filter_map(|l| line_text(&texts, l)).collect();
             samples.sort_by_key(|t| std::cmp::Reverse(t.len()));
             samples.truncate(SAMPLES);
+            let names: Vec<Value> = std::iter::once(&c.name)
+                .chain(&c.aliases)
+                .map(|name| {
+                    let lower = name.to_lowercase();
+                    let said = own
+                        .iter()
+                        .filter(|l| {
+                            l.speaker
+                                .as_ref()
+                                .is_some_and(|s| s.to_lowercase() == lower)
+                        })
+                        .count();
+                    json!({"name": name, "lines": said})
+                })
+                .collect();
             let mut v = serde_json::to_value(&c).unwrap_or_default();
+            v["names"] = json!(names);
             v["samples"] = json!(samples);
             v["voices"] = json!(
                 voices
@@ -373,8 +389,8 @@ pub async fn get(
         "error": cast.error,
         "updated_at": cast.updated_at.format(&time::format_description::well_known::Rfc3339).ok(),
         "chapters": {"total": total, "done": times.len()},
-        "lines": lines.len(),
-        "unresolved": lines.iter().filter(|l| l.character_id.is_none()).count(),
+        "lines": lines.iter().filter(|l| l.spoken()).count(),
+        "unresolved": lines.iter().filter(|l| l.needs_speaker()).count(),
         "characters": characters,
         "unattached": unattached,
         "presets": presets,
@@ -426,6 +442,57 @@ pub async fn chapter_lines(
                 l.chapter_index
             ));
             v
+        })
+        .collect();
+    Json(json!({"lines": lines})).into_response()
+}
+
+/// GET /api/v1/admin/books/{book_id}/cast/lines/unattributed — every line in
+/// the book still waiting for a speaker, with its paragraph to judge it by.
+pub async fn unattributed(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(book_id): Path<Uuid>,
+) -> Response {
+    if let Err(e) = auth.require_admin() {
+        return e.into_response();
+    }
+    let cast = match book_casts::get(&state.pool, book_id).await {
+        Ok(Some(c)) => c,
+        Ok(None) => return fail(StatusCode::NOT_FOUND, "the book has no cast"),
+        Err(e) => return internal(e),
+    };
+    let (segments, lines, cast_chapters) = match tokio::try_join!(
+        ebook_segments::get_for_file(&state.pool, cast.book_file_id),
+        book_casts::lines(&state.pool, book_id, None),
+        book_casts::chapters(&state.pool, book_id),
+    ) {
+        Ok(v) => v,
+        Err(e) => return internal(e),
+    };
+    let texts: HashMap<i32, String> = segments
+        .into_iter()
+        .map(|s| (s.segment_index, s.text))
+        .collect();
+    let titles: HashMap<i32, Option<String>> = cast_chapters
+        .into_iter()
+        .map(|c| (c.chapter_index, c.title))
+        .collect();
+    let lines: Vec<Value> = lines
+        .iter()
+        .filter(|l| l.needs_speaker())
+        .map(|l| {
+            json!({
+                "segment_index": l.segment_index,
+                "span_start": l.span_start,
+                "span_end": l.span_end,
+                "chapter_index": l.chapter_index,
+                "chapter_title": titles.get(&l.chapter_index).cloned().flatten(),
+                "speaker": l.speaker,
+                "cue": l.cue,
+                "text": line_text(&texts, l),
+                "paragraph": texts.get(&l.segment_index),
+            })
         })
         .collect();
     Json(json!({"lines": lines})).into_response()

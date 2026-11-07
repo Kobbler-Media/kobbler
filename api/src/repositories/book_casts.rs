@@ -78,6 +78,18 @@ pub struct CastLine {
     pub character_id: Option<Uuid>,
     pub cue: Option<String>,
     pub source: String,
+    pub not_speech: bool,
+}
+
+impl CastLine {
+    pub fn spoken(&self) -> bool {
+        !self.not_speech
+    }
+
+    /// A line made narration by hand has been decided, so it waits for nobody.
+    pub fn needs_speaker(&self) -> bool {
+        self.character_id.is_none() && !self.not_speech && self.source != "user"
+    }
 }
 
 #[derive(Clone)]
@@ -312,11 +324,14 @@ pub async fn save_chapter(
         sqlx::query!(
             r#"
             INSERT INTO book_cast_lines
-                (book_id, segment_index, span_start, span_end, chapter_index, speaker, cue, source)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                (book_id, segment_index, span_start, span_end, chapter_index, speaker, cue, source,
+                 not_speech)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (book_id, segment_index, span_start) DO UPDATE SET
                 span_end = EXCLUDED.span_end, speaker = EXCLUDED.speaker, cue = EXCLUDED.cue,
-                source = EXCLUDED.source
+                source = EXCLUDED.source, not_speech = EXCLUDED.not_speech,
+                character_id = CASE WHEN EXCLUDED.not_speech THEN NULL
+                                    ELSE book_cast_lines.character_id END
             WHERE book_cast_lines.source <> 'user'
             "#,
             book_id,
@@ -326,7 +341,8 @@ pub async fn save_chapter(
             line.chapter_index,
             line.speaker,
             line.cue,
-            line.source
+            line.source,
+            line.not_speech
         )
         .execute(&mut *tx)
         .await?;
@@ -362,7 +378,7 @@ where
     Ok(sqlx::query_as!(
         CastLine,
         r#"SELECT segment_index, span_start, span_end, chapter_index, speaker, character_id,
-                  cue, source
+                  cue, source, not_speech
            FROM book_cast_lines
            WHERE book_id = $1 AND ($2::int IS NULL OR chapter_index = $2)
            ORDER BY segment_index, span_start"#,

@@ -2,6 +2,7 @@
   import * as api from '#lib/api/client.js';
   import { showMessage } from '#lib/context/app.svelte.js';
   import type { BookCastCharacter, BookCastLine } from '#lib/types.js';
+  import { firstPassName } from './castLines.js';
 
   interface Props {
     bookId: string;
@@ -60,6 +61,10 @@
     } finally {
       busy = false;
     }
+  }
+
+  function said(l: BookCastLine): api.CastLineSpeaker {
+    return l.not_speech ? 'not_speech' : l.character_id;
   }
 
   function voiceName(l: BookCastLine): string {
@@ -123,7 +128,9 @@
       </thead>
       <tbody>
         {#each lines as l (key(l))}
-          <tr class:user={l.source === 'user'}>
+          {@const character = l.character_id ? byId.get(l.character_id) : undefined}
+          {@const firstPass = firstPassName(l, character)}
+          <tr class:user={l.source === 'user'} class:not-speech={l.not_speech}>
             <td>
               <input
                 type="checkbox"
@@ -140,7 +147,7 @@
             <td>
               <select
                 aria-label="Speaker"
-                value={l.character_id ?? ''}
+                value={said(l) ?? ''}
                 disabled={busy}
                 onchange={(e) =>
                   act(() =>
@@ -155,11 +162,15 @@
                 <option value=""
                   >Narration{l.speaker && !l.character_id ? ` (“${l.speaker}”)` : ''}</option
                 >
+                <option value="not_speech">Not speech</option>
                 {#each speakers as c (c.id)}
                   <option value={c.id}>{c.name}</option>
                 {/each}
               </select>
-              <span class="source">{l.source}</span>
+              {#if character && firstPass}
+                <span class="first-pass">{character.name} ← {firstPass}</span>
+              {/if}
+              <span class="source">{l.not_speech ? 'not speech' : l.source}</span>
             </td>
             <td class="muted">{voiceName(l)}</td>
           </tr>
@@ -225,8 +236,18 @@
     background: color-mix(in srgb, var(--ring) 30%, transparent);
   }
 
+  tr.not-speech .text {
+    color: var(--muted);
+  }
+
   .text {
     width: 55%;
+  }
+
+  .first-pass {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
   }
 
   .cue {

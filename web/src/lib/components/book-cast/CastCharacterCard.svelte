@@ -3,6 +3,7 @@
   import { showMessage } from '#lib/context/app.svelte.js';
   import type { BookCastCharacter, BookCastPresetChoice } from '#lib/types.js';
   import CastVoiceStep from './CastVoiceStep.svelte';
+  import { namesLabel } from './castLines.js';
 
   interface Props {
     bookId: string;
@@ -23,9 +24,13 @@
   let changeFrom = $state(2);
   let changeWhat = $state('');
   let changeVoice = $state('');
+  let moveName = $state('');
+  let moveTo = $state('');
+  let moveNewName = $state('');
 
   let ownVoice = $derived(character.narrator || (!character.pooled && !character.generic));
   let mergeable = $derived(others.filter((o) => !o.narrator && o.id !== character.id));
+  let aliasNames = $derived(character.names.slice(1));
 
   async function act(work: () => Promise<unknown>, done?: string) {
     busy = true;
@@ -68,6 +73,18 @@
       editing = false;
     }, 'Saved');
   }
+
+  function moveAway() {
+    act(async () => {
+      await api.moveCastName(bookId, character.id, {
+        name: moveName,
+        ...(moveTo ? { character_id: moveTo } : { new_name: moveNewName.trim() || moveName })
+      });
+      moveName = '';
+      moveNewName = '';
+      moveTo = '';
+    }, 'Name moved');
+  }
 </script>
 
 <article class="character" class:narrator={character.narrator}>
@@ -89,8 +106,8 @@
     </button>
   </header>
 
-  {#if character.aliases.length > 0}
-    <p class="aliases">Also: {character.aliases.join(', ')}</p>
+  {#if !character.narrator && character.names.length > 0}
+    <p class="aliases">{namesLabel(character.names)}</p>
   {/if}
   {#if character.samples.length > 0}
     <ul class="samples">
@@ -125,6 +142,54 @@
           </button>
         {/if}
       </div>
+      {#if !character.narrator && aliasNames.length > 0}
+        <div class="row">
+          <label class="field">
+            <span>Name</span>
+            <select bind:value={moveName}>
+              <option value="">Choose a name…</option>
+              {#each aliasNames as n (n.name)}
+                <option value={n.name}>{n.name} ({n.lines})</option>
+              {/each}
+            </select>
+          </label>
+          <button
+            type="button"
+            class="btn alt small"
+            disabled={busy || !moveName}
+            onclick={() =>
+              act(async () => {
+                await api.updateCastCharacter(bookId, character.id, { name: moveName });
+                moveName = '';
+              }, 'Renamed')}
+          >
+            Make it the name
+          </button>
+          <label class="field">
+            <span>Move it and its lines to</span>
+            <select bind:value={moveTo}>
+              <option value="">A new character</option>
+              {#each mergeable as o (o.id)}
+                <option value={o.id}>{o.name}</option>
+              {/each}
+            </select>
+          </label>
+          {#if !moveTo}
+            <label class="field grow">
+              <span>New character's name</span>
+              <input bind:value={moveNewName} placeholder={moveName || 'The name itself'} />
+            </label>
+          {/if}
+          <button
+            type="button"
+            class="btn alt small"
+            disabled={busy || !moveName}
+            onclick={moveAway}
+          >
+            Move
+          </button>
+        </div>
+      {/if}
       {#if !character.narrator && mergeable.length > 0}
         <div class="row">
           <label class="field grow">
