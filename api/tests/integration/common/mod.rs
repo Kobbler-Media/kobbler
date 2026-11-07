@@ -9,6 +9,7 @@ pub mod kobo_mock;
 pub mod mp3;
 pub mod server;
 pub mod stremio_mock;
+pub mod tone;
 pub mod want_wire;
 
 pub use assertions::*;
@@ -17,4 +18,5 @@ pub use epub::*;
 pub use helpers::*;
 pub use kobo_mock::*;
 pub use server::*;
+pub use tone::*;
 pub use want_wire::*;

@@ -113,6 +113,9 @@ pub struct TtsParams {
     /// 2048 means 2048 frames here and overflows the context window, so this is
     /// clamped on the way in — see `user_voice_presets`.
     pub max_new_frames: Option<u32>,
+    /// Classifier-free guidance on `instructions`: without it Breeze barely
+    /// reacts to them.
+    pub cfg_scale: Option<f64>,
     /// Override default `mp3` for the read-aloud sentence path.
     pub response_format: Option<String>,
 }
@@ -544,6 +547,9 @@ pub async fn synthesize_sentence(
         if let Some(v) = params.max_new_frames {
             body["max_new_frames"] = json!(v);
         }
+        if let Some(v) = params.cfg_scale {
+            body["cfg_scale"] = json!(v);
+        }
     }
 
     let requested_speed = wire_speed(params)
@@ -585,13 +591,65 @@ pub async fn synthesize_sentence(
     })
 }
 
+fn paragraph_body(text: &str, voice: &str, params: &TtsParams, align: bool) -> serde_json::Value {
+    let mut body = json!({
+        "input": text,
+        "response_format": "pcm",
+        "stream_format": "sse",
+        "stream_first_batch_size": 1,
+        // The engine's own default, stated explicitly: this path always
+        // sends a whole passage and relies on internal chunking.
+        "long": true,
+    });
+    if align {
+        body["align"] = json!(true);
+        body["align_stream"] = json!("partial");
+    }
+    // Omitted rather than defaulted — there is no "default" clone.
+    if !voice.is_empty() {
+        body["voice"] = json!(voice);
+    }
+    if let Some(v) = params.temperature {
+        body["temperature"] = json!(v);
+    }
+    if let Some(v) = params.top_p {
+        body["top_p"] = json!(v);
+    }
+    if let Some(v) = params.top_k {
+        body["top_k"] = json!(v);
+    }
+    if let Some(v) = params.repetition_penalty {
+        body["repetition_penalty"] = json!(v);
+    }
+    if let Some(v) = params.seed {
+        body["seed"] = json!(v);
+    }
+    if let Some(ref v) = params.instructions
+        && !v.is_empty()
+    {
+        body["instructions"] = json!(v);
+    }
+    if let Some(ref v) = params.speaker
+        && !v.is_empty()
+    {
+        body["speaker"] = json!(v);
+    }
+    if let Some(v) = params.max_new_frames {
+        body["max_new_frames"] = json!(v);
+    }
+    if let Some(v) = params.cfg_scale {
+        body["cfg_scale"] = json!(v);
+    }
+    body
+}
+
 /// Synthesize a whole passage via koblem tier-2 with streaming PCM +
 /// interleaved word-level forced alignment. Returns a stream of
 /// `TtsStreamEvent`s that fire as bytes arrive.
 ///
 /// Wire shape: POSTs to `{koblem_url}/api/v1/tts/generate` with
-/// `stream_format="sse"`, `response_format="pcm"`, `align=true`,
-/// `align_stream="partial"`, `long=true`. The TTS server emits a
+/// `stream_format="sse"`, `response_format="pcm"`, `long=true`, and
+/// `align=true` + `align_stream="partial"` when `align`. The TTS server emits a
 /// `text/event-stream` response which koblem tier-2 forwards byte-for-byte
 /// (mpsc + bytes_stream passthrough), and this parses it into typed events.
 ///
@@ -612,6 +670,7 @@ pub fn synthesize_paragraph_stream(
     text: &str,
     voice: &str,
     params: &TtsParams,
+    align: bool,
 ) -> impl Stream<Item = Result<TtsStreamEvent, TtsError>> + Send + 'static {
     let url = format!("{}/api/v1/tts/generate", koblem_url.trim_end_matches('/'));
     let api_key = koblem_api_key.to_string();
@@ -624,49 +683,7 @@ pub fn synthesize_paragraph_stream(
         // client's 30 s total deadline would sever the body mid-passage.
         let client = http::new_streaming_client();
 
-        let mut body = json!({
-            "input": text,
-            "response_format": "pcm",
-            "stream_format": "sse",
-            "align": true,
-            "align_stream": "partial",
-            "stream_first_batch_size": 1,
-            // The engine's own default, stated explicitly: this path always
-            // sends a whole passage and relies on internal chunking.
-            "long": true,
-        });
-        // Omitted rather than defaulted — there is no "default" clone.
-        if !voice.is_empty() {
-            body["voice"] = json!(voice);
-        }
-        if let Some(v) = params.temperature {
-            body["temperature"] = json!(v);
-        }
-        if let Some(v) = params.top_p {
-            body["top_p"] = json!(v);
-        }
-        if let Some(v) = params.top_k {
-            body["top_k"] = json!(v);
-        }
-        if let Some(v) = params.repetition_penalty {
-            body["repetition_penalty"] = json!(v);
-        }
-        if let Some(v) = params.seed {
-            body["seed"] = json!(v);
-        }
-        if let Some(ref v) = params.instructions
-            && !v.is_empty()
-        {
-            body["instructions"] = json!(v);
-        }
-        if let Some(ref v) = params.speaker
-            && !v.is_empty()
-        {
-            body["speaker"] = json!(v);
-        }
-        if let Some(v) = params.max_new_frames {
-            body["max_new_frames"] = json!(v);
-        }
+        let mut body = paragraph_body(&text, &voice, &params, align);
         // koblem owns the fallback for this path and reports the outcome in
         // `x-speed-applied`.
         let requested_speed = wire_speed(&params).inspect(|v| body["speed"] = json!(v)).unwrap_or(1.0);
@@ -1469,6 +1486,32 @@ fn push_or_merge(sentences: &mut Vec<String>, chunk: &str) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_passage_asks_for_word_timings_only_when_someone_reads_along() {
+        let params = TtsParams {
+            seed: Some(7),
+            instructions: Some("whispering".into()),
+            cfg_scale: Some(4.0),
+            ..TtsParams::default()
+        };
+        for align in [true, false] {
+            let body = paragraph_body("Hello there.", "preset-x", &params, align);
+            assert_eq!(body["long"], true);
+            assert_eq!(body["response_format"], "pcm");
+            assert_eq!(body["stream_format"], "sse");
+            assert_eq!(body["seed"], 7);
+            assert_eq!(body["voice"], "preset-x");
+            assert_eq!(body["instructions"], "whispering");
+            assert_eq!(body["cfg_scale"], 4.0);
+            assert_eq!(body.get("align").is_some(), align, "align {align}");
+            assert_eq!(
+                body.get("align_stream").is_some(),
+                align,
+                "align_stream {align}"
+            );
+        }
+    }
+
     use super::*;
 
     // ── split_passages ─────────────────────────────────────────────────

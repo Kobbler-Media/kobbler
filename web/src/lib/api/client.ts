@@ -6963,3 +6963,206 @@ export async function getChatLogs(query: ChatLogsQuery = {}): Promise<ChatLogsRe
 export async function getChatLog(id: string): Promise<ChatTurnLogEntry> {
   return request(`/api/v1/admin/chat/logs/${id}`);
 }
+
+// Full-cast audiobooks
+import type { BookCast, BookCastLine, BookCastTake, BookCastVoice } from '#lib/types.js';
+
+function castPath(bookId: string, rest = ''): string {
+  return `/api/v1/admin/books/${bookId}/cast${rest}`;
+}
+
+export async function getBookCast(bookId: string): Promise<BookCast> {
+  return request(castPath(bookId));
+}
+
+/**
+ * No options resumes the analysis; `rerun` runs it again from a pass keeping
+ * everything vetted; `fresh` redoes everything from nothing.
+ */
+export async function startBookCast(
+  bookId: string,
+  options: { fresh?: boolean; rerun?: 'chapters' | 'bible' } = {}
+): Promise<{ job_id: string; job_type: string }> {
+  return request(castPath(bookId), { method: 'POST', body: JSON.stringify(options) });
+}
+
+export async function startBookCastRender(
+  bookId: string
+): Promise<{ job_id: string; job_type: string }> {
+  return request(castPath(bookId, '/render'), { method: 'POST' });
+}
+
+export async function getBookCastChapter(
+  bookId: string,
+  chapter: number
+): Promise<{ lines: BookCastLine[] }> {
+  return request(castPath(bookId, `/chapters/${chapter}`));
+}
+
+export async function approveAllCastVoices(
+  bookId: string
+): Promise<{ job_id: string; job_type: string }> {
+  return request(castPath(bookId, '/voices/approve-all'), { method: 'POST' });
+}
+
+export async function getCastAuditionLines(
+  bookId: string,
+  characterId: string,
+  fromChapter: number
+): Promise<{ voice: BookCastVoice; lines: BookCastTake[] }> {
+  return request(
+    castPath(bookId, `/characters/${characterId}/auditions?from_chapter=${fromChapter}`)
+  );
+}
+
+export interface CastTakeRequest {
+  segment_index: number;
+  span_start: number | null;
+  seed: number;
+  with_cue: boolean;
+}
+
+export async function renderCastAudition(
+  bookId: string,
+  characterId: string,
+  fromChapter: number,
+  take: CastTakeRequest,
+  signal?: AbortSignal
+): Promise<Blob> {
+  const response = await fetch(
+    `${apiBase}${castPath(bookId, `/characters/${characterId}/auditions`)}`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from_chapter: fromChapter, ...take }),
+      signal
+    }
+  );
+  if (!response.ok) {
+    const msg = await response.text().catch(() => 'audition failed');
+    throw new ApiError(response.status, msg);
+  }
+  return await response.blob();
+}
+
+type CastVoices = { voices: BookCastVoice[] };
+
+export async function approveCastVoice(
+  bookId: string,
+  characterId: string,
+  fromChapter: number,
+  take: Partial<CastTakeRequest>
+): Promise<CastVoices> {
+  return request(castPath(bookId, `/characters/${characterId}/voices/${fromChapter}/approval`), {
+    method: 'POST',
+    body: JSON.stringify(take)
+  });
+}
+
+export async function unapproveCastVoice(
+  bookId: string,
+  characterId: string,
+  fromChapter: number
+): Promise<CastVoices> {
+  return request(castPath(bookId, `/characters/${characterId}/voices/${fromChapter}/approval`), {
+    method: 'DELETE'
+  });
+}
+
+/** `preset_id: null` goes back to the designed voice. */
+export async function updateCastVoice(
+  bookId: string,
+  characterId: string,
+  fromChapter: number,
+  change: { description?: string; preset_id?: string | null }
+): Promise<CastVoices> {
+  return request(castPath(bookId, `/characters/${characterId}/voices/${fromChapter}`), {
+    method: 'PUT',
+    body: JSON.stringify(change)
+  });
+}
+
+export async function addCastVoiceChange(
+  bookId: string,
+  characterId: string,
+  step: { from_chapter: number; change: string; description: string }
+): Promise<void> {
+  await request(castPath(bookId, `/characters/${characterId}/voices`), {
+    method: 'POST',
+    body: JSON.stringify(step)
+  });
+}
+
+export async function removeCastVoiceChange(
+  bookId: string,
+  characterId: string,
+  fromChapter: number
+): Promise<void> {
+  await request(castPath(bookId, `/characters/${characterId}/voices/${fromChapter}`), {
+    method: 'DELETE'
+  });
+}
+
+/** `characterId: null` makes the line narration. */
+export async function reassignCastLine(
+  bookId: string,
+  segmentIndex: number,
+  spanStart: number,
+  characterId: string | null
+): Promise<void> {
+  await request(castPath(bookId, `/lines/${segmentIndex}/${spanStart}`), {
+    method: 'PUT',
+    body: JSON.stringify({ character_id: characterId })
+  });
+}
+
+export async function mergeCastCharacters(
+  bookId: string,
+  survivorId: string,
+  absorbId: string
+): Promise<void> {
+  await request(castPath(bookId, `/characters/${survivorId}/merge`), {
+    method: 'POST',
+    body: JSON.stringify({ absorb: absorbId })
+  });
+}
+
+export async function splitCastCharacter(
+  bookId: string,
+  characterId: string,
+  split: { name: string; aliases: string[]; lines: { segment_index: number; span_start: number }[] }
+): Promise<{ id: string }> {
+  return request(castPath(bookId, `/characters/${characterId}/split`), {
+    method: 'POST',
+    body: JSON.stringify(split)
+  });
+}
+
+export async function attachCastSpeaker(
+  bookId: string,
+  speaker: string,
+  characterId: string
+): Promise<{ attached: number }> {
+  return request(castPath(bookId, '/speakers/attach'), {
+    method: 'POST',
+    body: JSON.stringify({ speaker, character_id: characterId })
+  });
+}
+
+/** `bible` is merged into the character's; a field set to null is removed. */
+export async function updateCastCharacter(
+  bookId: string,
+  characterId: string,
+  patch: {
+    name?: string;
+    aliases?: string[];
+    bible?: Record<string, unknown>;
+    generic?: boolean;
+  }
+): Promise<void> {
+  await request(castPath(bookId, `/characters/${characterId}`), {
+    method: 'PATCH',
+    body: JSON.stringify(patch)
+  });
+}

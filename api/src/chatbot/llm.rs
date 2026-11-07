@@ -470,12 +470,16 @@ pub async fn complete<F, Fut>(
     cfg: &LlmConfig,
     messages: &[ChatMessage],
     tools: &[Value],
-    mut on_delta: F,
+    on_delta: F,
 ) -> Result<Completion, String>
 where
     F: FnMut(String) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
+    complete_body(cfg, request_body(cfg, messages, tools), on_delta).await
+}
+
+pub fn request_body(cfg: &LlmConfig, messages: &[ChatMessage], tools: &[Value]) -> Value {
     let messages = single_system(messages);
     let mut body = json!({
         "model": cfg.model,
@@ -501,7 +505,18 @@ where
             }
         }
     }
+    body
+}
 
+pub async fn complete_body<F, Fut>(
+    cfg: &LlmConfig,
+    body: Value,
+    mut on_delta: F,
+) -> Result<Completion, String>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
     let mut request = CLIENT.post(cfg.completions_url()).json(&body);
     if let Some(key) = &cfg.api_key {
         request = request.bearer_auth(key);

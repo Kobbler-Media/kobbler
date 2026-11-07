@@ -232,11 +232,6 @@ pub(super) async fn plan_synthesis(
 
     let backend = TtsBackend::from_config(&config.tts_service_type);
 
-    // Owned so the spawned sentence loop can rebuild the endpoint per iteration
-    // — `SpeechEndpoint` borrows the key, and that task outlives `config`.
-    let via_koblem = config.tts_routes_via_koblem();
-    let koblem_api_key = config.koblem_api_key.clone();
-
     // Resolve voice: request -> active preset (clip or named) -> admin default
     // -> the backend's own fallback.
     let voice = if let Some(v) = &req.voice
@@ -281,6 +276,7 @@ pub(super) async fn plan_synthesis(
             .as_ref()
             .and_then(|p| p.max_new_frames)
             .map(|v| v as u32),
+        cfg_scale: None,
         response_format: None,
     };
 
@@ -308,28 +304,16 @@ pub(super) async fn plan_synthesis(
     if let Some(ref preset) = voice_preset
         && preset.clip_filename.is_some()
     {
-        let clip_path = std::path::PathBuf::from(&*state.config.storage_root)
-            .join("voices")
-            .join(user_id.to_string())
-            .join(format!("{}.wav", preset.id));
-
-        let voice_name = format!("preset-{}", preset.id);
-        if let Err(e) = tts::ensure_voice_registered(
-            &service_url,
-            backend,
-            &voice_name,
-            &clip_path,
-            preset.ref_text.as_deref(),
-        )
-        .await
-        {
-            error!(error = %e, "Failed to ensure voice is registered");
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Failed to register voice clip with TTS service"})),
-            )
-                .into_response());
-        }
+        ensure_preset_registered(&state.config.storage_root, &service_url, backend, preset)
+            .await
+            .map_err(|e| {
+                error!(error = %e, "Failed to ensure voice is registered");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({"error": "Failed to register voice clip with TTS service"})),
+                )
+                    .into_response()
+            })?;
     }
 
     // Settle the narrator against what the engine actually has.
@@ -366,7 +350,10 @@ pub(super) async fn plan_synthesis(
             let minted = if has(tts::NARRATOR_VOICE_ID) {
                 Ok(())
             } else {
-                let endpoint = tts::SpeechEndpoint::resolve(via_koblem, koblem_api_key.as_deref());
+                let endpoint = tts::SpeechEndpoint::resolve(
+                    config.tts_routes_via_koblem(),
+                    config.koblem_api_key.as_deref(),
+                );
                 tts::mint_narrator_voice(&service_url, backend, endpoint).await
             };
             match minted {
@@ -382,64 +369,52 @@ pub(super) async fn plan_synthesis(
         voice
     };
 
-    // Alignment-capable engine (breeze) + koblem-with-api-key → paragraph
-    // streaming with word-level forced alignment, routed to that engine's
-    // aligned-generate endpoint. Any other backend (chatterbox/kokoro/openai), or
-    // koblem unconfigured, renders per sentence: kobbler then talks to
-    // `tts_service_url` directly so turning koblem off doesn't break TTS — it
-    // just loses streaming + FA.
-    let use_paragraph_stream = backend.supports_alignment()
-        && config
-            .koblem_service_url
-            .as_deref()
-            .is_some_and(|s| !s.is_empty())
-        && config
-            .koblem_api_key
-            .as_deref()
-            .is_some_and(|s| !s.is_empty());
-
-    let route = if use_paragraph_stream {
-        if text.is_empty() {
-            return Err(bad_request("No text to synthesize"));
-        }
-        // Clients send whatever they have — a page, a chapter — and the
-        // chunking policy lives here, in one place, rather than being guessed
-        // at differently by each of them. Splitting was once done by the
-        // caller, per sentence, which is what made a truncated paragraph
-        // desync every later highlight; these passages are sentence-aligned
-        // and carry their own offsets, so a failure costs one passage.
-        timeline::Route::Passages {
-            passages: tts::split_passages(&text),
-            koblem_url: config.koblem_service_url.clone().unwrap_or_default(),
-            koblem_api_key: koblem_api_key.unwrap_or_default(),
-        }
-    } else {
-        let sentences = tts::split_sentences(&text);
-        if sentences.is_empty() {
-            return Err(bad_request("No sentences found in text"));
-        }
-        let gpu_lock = state.gpu_lock.clone();
-        gpu_lock.set_enabled(config.gpu_preempt_tts);
-        gpu_lock.set_service_urls(
-            config.stt_service_url.clone(),
-            config.tts_service_url.clone(),
-            config.vision_service_url.clone(),
-        );
-        timeline::Route::Sentences {
-            sentences,
-            service_url,
-            backend,
-            via_koblem,
-            koblem_api_key,
-            gpu_lock,
-        }
-    };
+    let route = timeline::Route::for_config(&config, service_url, state.gpu_lock.clone());
+    // Clients send whatever they have — a page, a chapter — and the chunking
+    // policy lives here, in one place, rather than being guessed at
+    // differently by each of them. Splitting was once done by the caller, per
+    // sentence, which is what made a truncated paragraph desync every later
+    // highlight; these passages are sentence-aligned and carry their own
+    // offsets, so a failure costs one passage.
+    let texts = route.split(&text);
+    if texts.is_empty() {
+        return Err(bad_request(match route {
+            timeline::Route::Passages { .. } => "No text to synthesize",
+            timeline::Route::Sentences { .. } => "No sentences found in text",
+        }));
+    }
 
     Ok(timeline::Plan {
-        voice,
-        params,
+        passages: timeline::read_by(texts, timeline::Voice { id: voice, params }),
         route,
     })
+}
+
+pub fn preset_clip_path(storage_root: &str, user_id: Uuid, preset_id: Uuid) -> std::path::PathBuf {
+    std::path::PathBuf::from(storage_root)
+        .join("voices")
+        .join(user_id.to_string())
+        .join(format!("{preset_id}.wav"))
+}
+
+/// A preset's clone, re-uploaded from its clip if the engine lost it. Returns
+/// the voice id to synthesise with.
+pub async fn ensure_preset_registered(
+    storage_root: &str,
+    service_url: &str,
+    backend: TtsBackend,
+    preset: &user_voice_presets::UserVoicePreset,
+) -> Result<String, tts::TtsError> {
+    let voice_name = format!("preset-{}", preset.id);
+    tts::ensure_voice_registered(
+        service_url,
+        backend,
+        &voice_name,
+        &preset_clip_path(storage_root, preset.user_id, preset.id),
+        preset.ref_text.as_deref(),
+    )
+    .await?;
+    Ok(voice_name)
 }
 
 fn bad_request(message: &str) -> Response {
@@ -882,29 +857,67 @@ pub async fn upload_preset_clip(
     .await
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ClipError {
+    #[error("failed to read the clip: {0}")]
+    Read(#[from] std::io::Error),
+    #[error("the preset is gone")]
+    NotFound,
+    #[error("the clip is saved but the preset could not be updated: {0}")]
+    Database(#[from] crate::repositories::RepositoryError),
+}
+
+impl IntoResponse for ClipError {
+    fn into_response(self) -> Response {
+        let (status, message) = match &self {
+            ClipError::Read(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read clip"),
+            ClipError::NotFound => (StatusCode::NOT_FOUND, "Preset not found"),
+            ClipError::Database(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Clip saved but failed to update database",
+            ),
+        };
+        error!(error = %self, "preset clip not registered");
+        (status, Json(json!({"error": message}))).into_response()
+    }
+}
+
 /// Read a WAV at `clip_path`, register it with the TTS service, and persist the
 /// `clip_filename` on the preset row. Caller is responsible for verifying preset
 /// ownership and writing the WAV file beforehand. `ref_text` is engine-native
 /// ICL transcript text; ignored by chatterbox.
-async fn finalize_preset_clip(
+pub(crate) async fn finalize_preset_clip(
     state: &AppState,
     user_id: Uuid,
     preset_id: Uuid,
     clip_path: &std::path::Path,
     clip_filename: String,
     ref_text: Option<&str>,
-) -> axum::response::Response {
-    let mut wav_bytes = match tokio::fs::read(clip_path).await {
-        Ok(b) => b,
-        Err(e) => {
-            error!(error = %e, "Failed to read WAV clip");
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Failed to read clip"})),
-            )
-                .into_response();
-        }
-    };
+) -> Response {
+    match register_preset_clip(
+        state,
+        user_id,
+        preset_id,
+        clip_path,
+        clip_filename,
+        ref_text,
+    )
+    .await
+    {
+        Ok(preset) => Json(json!(preset)).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+pub(crate) async fn register_preset_clip(
+    state: &AppState,
+    user_id: Uuid,
+    preset_id: Uuid,
+    clip_path: &std::path::Path,
+    clip_filename: String,
+    ref_text: Option<&str>,
+) -> Result<user_voice_presets::UserVoicePreset, ClipError> {
+    let mut wav_bytes = tokio::fs::read(clip_path).await?;
 
     // Peak-normalise to -1 dBFS so quiet phone-mic recordings don't produce
     // quiet TTS output (breeze and chatterbox both clone the reference
@@ -967,24 +980,9 @@ async fn finalize_preset_clip(
         speed: None,
     };
 
-    match user_voice_presets::update_preset(&state.pool, preset_id, user_id, &update, &resolved)
-        .await
-    {
-        Ok(Some(preset)) => Json(json!(preset)).into_response(),
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({"error": "Preset not found"})),
-        )
-            .into_response(),
-        Err(e) => {
-            error!(error = %e, "Failed to update preset clip_filename");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": "Clip saved but failed to update database"})),
-            )
-                .into_response()
-        }
-    }
+    user_voice_presets::update_preset(&state.pool, preset_id, user_id, &update, &resolved)
+        .await?
+        .ok_or(ClipError::NotFound)
 }
 
 /// POST /api/v1/admin/tts/presets/{preset_id}/transcribe-clip
@@ -1089,21 +1087,85 @@ pub async fn preview_sample(
     _auth: AuthUser,
     Json(req): Json<PreviewSampleRequest>,
 ) -> Response {
+    let params = TtsParams {
+        speed: req.speed,
+        temperature: req.temperature,
+        top_p: req.top_p,
+        top_k: req.top_k,
+        repetition_penalty: req.repetition_penalty,
+        seed: req.seed,
+        instructions: req.instructions,
+        speaker: req.speaker,
+        max_new_frames: req.max_new_frames,
+        cfg_scale: None,
+        response_format: Some(req.response_format.unwrap_or_else(|| "mp3".to_string())),
+    };
+    match render_sample(&state, &req.text, req.voice, params).await {
+        Ok(sample) => sample.into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+pub struct Sample {
+    pub audio: tts::SentenceAudio,
+    pub format: String,
+}
+
+impl IntoResponse for Sample {
+    fn into_response(self) -> Response {
+        let content_type = match self.format.as_str() {
+            "wav" => "audio/wav",
+            "ogg" => "audio/ogg",
+            _ => "audio/mpeg",
+        };
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", content_type)
+            .header("cache-control", "no-store")
+            // What the render actually ran at, which is not necessarily the
+            // rate that was asked for.
+            .header("x-speed-applied", self.audio.speed_applied.to_string())
+            .body(axum::body::Body::from(self.audio.bytes))
+            .unwrap()
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SampleError {
+    #[error("TTS is not enabled")]
+    Disabled,
+    #[error("Text must be 1-4000 characters")]
+    Length,
+    #[error("synth failed: {0}")]
+    Synth(String),
+}
+
+impl IntoResponse for SampleError {
+    fn into_response(self) -> Response {
+        let status = match self {
+            SampleError::Disabled => StatusCode::SERVICE_UNAVAILABLE,
+            SampleError::Length => StatusCode::BAD_REQUEST,
+            SampleError::Synth(_) => StatusCode::BAD_GATEWAY,
+        };
+        (status, Json(json!({"error": self.to_string()}))).into_response()
+    }
+}
+
+/// One transient sample, as the voice page's seed audition and the full-cast
+/// auditions render it. `voice` falls back to the admin default.
+pub async fn render_sample(
+    state: &AppState,
+    text: &str,
+    voice: Option<String>,
+    mut params: TtsParams,
+) -> Result<Sample, SampleError> {
     let config = state.runtime_config.get().await;
     if !config.tts_enabled {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"error": "TTS is not enabled"})),
-        )
-            .into_response();
+        return Err(SampleError::Disabled);
     }
 
-    if req.text.is_empty() || req.text.len() > 4_000 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "Text must be 1-4000 characters"})),
-        )
-            .into_response();
+    if text.is_empty() || text.len() > 4_000 {
+        return Err(SampleError::Length);
     }
 
     let service_url = config
@@ -1112,7 +1174,7 @@ pub async fn preview_sample(
         .unwrap_or_else(|| DEFAULT_TTS_URL.to_string());
     let backend = TtsBackend::from_config(&config.tts_service_type);
 
-    let voice = req.voice.unwrap_or_else(|| {
+    let voice = voice.unwrap_or_else(|| {
         config
             .tts_default_voice
             .clone()
@@ -1125,21 +1187,10 @@ pub async fn preview_sample(
     );
     // Reported back as the content type, so it must be what was actually
     // rendered — the keyless koblem fallback cannot encode mp3.
-    let response_format = speech_endpoint
-        .container_for(req.response_format.as_deref().unwrap_or("mp3"))
+    let format = speech_endpoint
+        .container_for(params.response_format.as_deref().unwrap_or("mp3"))
         .to_string();
-    let params = TtsParams {
-        speed: req.speed,
-        temperature: req.temperature,
-        top_p: req.top_p,
-        top_k: req.top_k,
-        repetition_penalty: req.repetition_penalty,
-        seed: req.seed,
-        instructions: req.instructions,
-        speaker: req.speaker,
-        max_new_frames: req.max_new_frames,
-        response_format: Some(response_format.clone()),
-    };
+    params.response_format = Some(format.clone());
 
     let gpu_lock = state.gpu_lock.clone();
     gpu_lock.set_enabled(config.gpu_preempt_tts);
@@ -1154,35 +1205,16 @@ pub async fn preview_sample(
         &service_url,
         backend,
         speech_endpoint,
-        &req.text,
+        text,
         &voice,
         &params,
     )
     .await
     {
-        Ok(audio) => {
-            let content_type = match response_format.as_str() {
-                "wav" => "audio/wav",
-                "ogg" => "audio/ogg",
-                _ => "audio/mpeg",
-            };
-            axum::response::Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", content_type)
-                .header("cache-control", "no-store")
-                // What the render actually ran at, which is not necessarily the
-                // rate that was asked for.
-                .header("x-speed-applied", audio.speed_applied.to_string())
-                .body(axum::body::Body::from(audio.bytes))
-                .unwrap()
-        }
+        Ok(audio) => Ok(Sample { audio, format }),
         Err(e) => {
             error!(error = %e, "preview_sample synth failed");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"error": format!("synth failed: {e}")})),
-            )
-                .into_response()
+            Err(SampleError::Synth(e.to_string()))
         }
     }
 }

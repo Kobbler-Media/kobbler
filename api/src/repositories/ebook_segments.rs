@@ -160,3 +160,21 @@ where
     .await?;
     Ok(row)
 }
+
+pub async fn file_with_segments<'e, E>(exec: E, book_id: Uuid) -> Result<Option<Uuid>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT e.book_file_id FROM ebook_segments e
+        JOIN book_files bf ON bf.id = e.book_file_id
+        WHERE bf.book_id = $1
+        ORDER BY e.created_at DESC
+        LIMIT 1
+        "#,
+        book_id,
+    )
+    .fetch_optional(exec)
+    .await?)
+}

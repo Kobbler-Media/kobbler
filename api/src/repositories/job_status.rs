@@ -120,6 +120,33 @@ where
     Ok(row)
 }
 
+pub async fn latest_active_for_entity<'e, E>(
+    exec: E,
+    job_type: &str,
+    entity_id: Uuid,
+) -> Result<Option<nats_jobs::JobStatusRow>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let row = sqlx::query_as!(
+        nats_jobs::JobStatusRow,
+        r#"
+        SELECT id, job_type, status, payload, result, error, progress,
+               entity_type, entity_id, description, display, scheduled,
+               created_at, started_at, completed_at
+        FROM job_status
+        WHERE job_type = $1 AND entity_id = $2 AND status IN ('pending', 'running', 'retrying')
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+        job_type,
+        entity_id,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(row)
+}
+
 /// Get a job by ID.
 pub async fn get_by_id<'e, E>(exec: E, id: Uuid) -> Result<Option<nats_jobs::JobStatusRow>>
 where

@@ -18,6 +18,7 @@
   import WantedStatusPanel from './WantedStatusPanel.svelte';
   import MoveToMediaRootModal from './MoveToMediaRootModal.svelte';
   import SelectDevicesModal from './SelectDevicesModal.svelte';
+  import { getAuthState } from '#lib/stores/auth.svelte.js';
 
   type Context = 'library' | 'ingest';
 
@@ -54,6 +55,8 @@
     onEditChapters,
     footer
   }: Props = $props();
+
+  const auth = getAuthState();
 
   // Transcript / text extraction state
   let hasAudioTranscript = $state(false);
@@ -352,6 +355,14 @@
                 </button>
               {/if}
             {/if}
+          </div>
+        {/if}
+        {#if context === 'library' && auth.isAdmin && hasEbookSegments}
+          <div class="transcript-actions">
+            <a href="/library/books/{book.id}/cast" class="btn-action-outline">
+              <span class="material-icons-outlined">record_voice_over</span>
+              Full cast
+            </a>
           </div>
         {/if}
         {#if (book.has_audiobook && !hasAudioTranscript) || (book.formats && book.formats.length > 0 && !hasEbookSegments)}
@@ -766,6 +777,7 @@
     border: 1px solid var(--ring);
     color: var(--ink);
     cursor: pointer;
+    text-decoration: none;
     transition: all 0.15s ease;
   }
 

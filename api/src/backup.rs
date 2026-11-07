@@ -87,7 +87,6 @@ pub const TABLES_IN_ORDER: &[&str] = &[
     "chat_watches",
     // Depends on users and chat_sessions
     "chat_profile_facts",
-    "user_voice_presets",
     "user_sync_providers",
     "books",
     "movies",
@@ -117,6 +116,18 @@ pub const TABLES_IN_ORDER: &[&str] = &[
     "ebook_segments",
     // Depends on books, audiobook_files, book_files
     "cross_format_sync",
+    // Depends on books, book_files, users, audiobook_files
+    "book_casts",
+    // Depends on users, and on book_casts for a cast's own presets
+    "user_voice_presets",
+    // Depends on book_casts
+    "book_cast_chapters",
+    "book_cast_characters",
+    "book_cast_renders",
+    // Depends on book_cast_characters
+    "book_cast_lines",
+    // Depends on book_cast_characters, user_voice_presets
+    "book_cast_voices",
     // Depends on movies
     "movie_files",
     // Subtitle/audio providers and track tables (depend on movie_files, tv_episode_files)

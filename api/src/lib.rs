@@ -7,6 +7,9 @@ pub mod auth;
 pub mod auto_sync;
 pub mod backup;
 pub mod blob_storage;
+pub mod book_cast;
+pub mod book_cast_render;
+pub mod book_cast_vetting;
 pub mod chatbot;
 pub mod config;
 pub mod convert;
@@ -440,6 +443,59 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/admin/books/{book_id}/reader-pack/assets/{*asset}",
             get(admin::get_reader_pack_asset),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast",
+            get(admin::book_cast::get).post(admin::book_cast::start),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/chapters/{chapter}",
+            get(admin::book_cast::chapter_lines),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/render",
+            post(admin::book_cast_render::start),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/voices/approve-all",
+            post(admin::book_cast_voices::approve_all),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}",
+            patch(admin::book_cast_edits::update_character),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/auditions",
+            get(admin::book_cast_voices::audition_lines).post(admin::book_cast_voices::audition),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/voices",
+            post(admin::book_cast_voices::add_voice_change),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/voices/{from_chapter}",
+            put(admin::book_cast_voices::update_voice)
+                .delete(admin::book_cast_voices::remove_voice_change),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/voices/{from_chapter}/approval",
+            post(admin::book_cast_voices::approve).delete(admin::book_cast_voices::unapprove),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/merge",
+            post(admin::book_cast_edits::merge),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/split",
+            post(admin::book_cast_edits::split),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/speakers/attach",
+            post(admin::book_cast_edits::attach_speaker),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/lines/{segment_index}/{span_start}",
+            put(admin::book_cast_edits::reassign_line),
         )
         .route(
             "/api/v1/admin/books/{book_id}/reader-progress",

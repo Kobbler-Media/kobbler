@@ -5,6 +5,10 @@
 pub mod audiobook;
 mod auth;
 mod backup;
+pub mod book_cast;
+pub mod book_cast_edits;
+pub mod book_cast_render;
+pub mod book_cast_voices;
 pub mod book_moves;
 pub mod calendar;
 mod cast;

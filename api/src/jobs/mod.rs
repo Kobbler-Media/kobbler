@@ -748,6 +748,32 @@ pub async fn enqueue_reader_pack(pool: &PgPool, nats: &Publisher, book_id: Uuid)
     }
 }
 
+pub async fn enqueue_book_cast(
+    pool: &PgPool,
+    nats: &Publisher,
+    job_type: &str,
+    book_id: Uuid,
+) -> JobResult<Uuid> {
+    let display = fetch_job_display(pool, "book", book_id).await;
+    let label = match job_type {
+        "book_cast_bible" => "Casting the book's characters",
+        "book_cast_voices" => "Designing the cast's voices",
+        "book_cast_render" => "Voicing the full-cast audiobook",
+        "book_cast_approve" => "Approving the cast's voices",
+        _ => "Attributing the book's dialogue",
+    };
+    let context =
+        JobContext::for_entity("book", book_id, label.to_string()).with_display_opt(display);
+    enqueue(
+        pool,
+        nats,
+        job_type,
+        serde_json::json!({"book_id": book_id}),
+        context,
+    )
+    .await
+}
+
 // =============================================================================
 // Cross-Format Sync Helpers
 // =============================================================================

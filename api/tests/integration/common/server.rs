@@ -31,7 +31,7 @@ use super::client::TestClient;
 /// serialization on the Postgres template lock.
 static ADMIN_POOL: OnceCell<DbPool> = OnceCell::const_new();
 
-async fn get_admin_pool() -> &'static DbPool {
+pub async fn get_admin_pool() -> &'static DbPool {
     ADMIN_POOL
         .get_or_init(|| async {
             let base_url = std::env::var("DATABASE_URL_TEST").unwrap_or_else(|_| {
@@ -53,7 +53,7 @@ async fn get_admin_pool() -> &'static DbPool {
 
 /// One-shot connection for CREATE/DROP DATABASE DDL.
 /// These take Postgres-level locks on the template and must not block pool connections.
-async fn admin_connect() -> sqlx::PgConnection {
+pub async fn admin_connect() -> sqlx::PgConnection {
     use sqlx::Connection;
     let base_url = std::env::var("DATABASE_URL_TEST")
         .unwrap_or_else(|_| "postgres://kobbler:kobbler@localhost:5433/kobbler_test".to_string());
@@ -196,7 +196,7 @@ async fn init_template_database() {
 /// Clean up stale test databases and templates older than 5 minutes.
 /// Only cleans up databases from OTHER test runs (not the current one).
 /// Also checks for active connections to avoid killing concurrent test runs.
-async fn cleanup_stale_databases(admin_pool: &DbPool) {
+pub async fn cleanup_stale_databases(admin_pool: &DbPool) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -223,8 +223,9 @@ async fn cleanup_stale_databases(admin_pool: &DbPool) {
         let timestamp = extract_timestamp_from_db_name(&db);
         let Some(ts) = timestamp else { continue };
 
-        // Only cleanup databases older than 5 minutes
-        if ts >= cutoff {
+        // A run's template sits idle while its tests use their clones, so age
+        // and connections alone cannot tell a finished run from a long one.
+        if ts >= cutoff || run_is_alive(&db) {
             continue;
         }
 
@@ -249,6 +250,16 @@ async fn cleanup_stale_databases(admin_pool: &DbPool) {
         .await
         .ok();
     }
+}
+
+/// Linux only: elsewhere every run looks finished, as before.
+fn run_is_alive(name: &str) -> bool {
+    let pid = if name.starts_with("kobbler_tpl_") {
+        name.split('_').nth(3)
+    } else {
+        name.split('_').nth(2)
+    };
+    pid.is_some_and(|pid| std::path::Path::new(&format!("/proc/{pid}")).exists())
 }
 
 /// Extract timestamp from database name.

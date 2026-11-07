@@ -9,37 +9,6 @@ use serde_json::{Value, json};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const RATE: usize = 24_000;
-
-fn tone(ms: usize) -> Vec<u8> {
-    let samples = RATE * ms / 1000;
-    (0..samples)
-        .flat_map(|i| {
-            let t = i as f64 / RATE as f64;
-            (((t * 440.0 * std::f64::consts::TAU).sin() * 8000.0) as i16).to_le_bytes()
-        })
-        .collect()
-}
-
-fn wav(ms: usize) -> Vec<u8> {
-    let pcm = tone(ms);
-    let mut out = Vec::with_capacity(44 + pcm.len());
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&(RATE as u32).to_le_bytes());
-    out.extend_from_slice(&(RATE as u32 * 2).to_le_bytes());
-    out.extend_from_slice(&2u16.to_le_bytes());
-    out.extend_from_slice(&16u16.to_le_bytes());
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
-    out.extend_from_slice(&pcm);
-    out
-}
-
 fn sse(events: &[Value]) -> String {
     events.iter().map(|e| format!("data: {e}\n\n")).collect()
 }
@@ -54,7 +23,7 @@ async fn paragraph_engine(deltas: usize) -> MockServer {
         })))
         .mount(&mock)
         .await;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(tone(500));
+    let b64 = base64::engine::general_purpose::STANDARD.encode(tone_pcm(500));
     let mut events = vec![json!({
         "type": "speech.audio.chunk", "index": 0, "chunks_total": 1,
         "word_offset": 0, "word_count": 4, "audio_offset_ms": 0, "text": "One two three four."
@@ -74,7 +43,7 @@ async fn sentence_engine(ms: usize) -> MockServer {
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/audio/speech"))
-        .respond_with(ResponseTemplate::new(200).set_body_raw(wav(ms), "audio/wav"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(tone_wav(ms), "audio/wav"))
         .mount(&mock)
         .await;
     mock
@@ -123,8 +92,8 @@ fn lines(body: &str) -> Vec<Value> {
 
 fn decoded_ms(aac: &[u8]) -> usize {
     assert_eq!(&aac[..2], &[0xFF, 0xF1], "not an ADTS AAC stream");
-    let pcm = kob_ffmpeg::pcm_stream::decode_to_pcm(aac.to_vec(), RATE as i32).unwrap();
-    pcm.len() / 2 * 1000 / RATE
+    let pcm = kob_ffmpeg::pcm_stream::decode_to_pcm(aac.to_vec(), TONE_RATE as i32).unwrap();
+    pcm.len() / 2 * 1000 / TONE_RATE
 }
 
 fn assert_about(actual: usize, expected: usize) {

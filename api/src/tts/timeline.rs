@@ -42,37 +42,143 @@ use base64::Engine;
 use bytes::Bytes;
 use serde_json::{Value, json};
 use tokio_stream::StreamExt;
-use tracing::error;
+use tracing::{error, warn};
+
+use std::sync::Arc;
 
 use super::{SentenceAudio, SpeechEndpoint, TtsBackend, TtsError, TtsParams, TtsStreamEvent};
 use crate::gpu::GpuLock;
+use crate::runtime_config::RuntimeConfig;
 
 /// Sample rate of the paragraph path's PCM, and of every cast stream.
 pub const PCM_SAMPLE_RATE: u32 = 24_000;
 
-/// A read whose voice, parameters and route are already settled.
-pub struct Plan {
-    pub voice: String,
+pub struct Voice {
+    pub id: String,
     pub params: TtsParams,
+}
+
+pub struct Passage {
+    pub text: String,
+    pub voice: Arc<Voice>,
+}
+
+/// One voice reading every passage.
+pub fn read_by(texts: Vec<String>, voice: Voice) -> Vec<Passage> {
+    let voice = Arc::new(voice);
+    texts
+        .into_iter()
+        .map(|text| Passage {
+            text,
+            voice: voice.clone(),
+        })
+        .collect()
+}
+
+/// A read whose passages, voices and route are already settled. On the
+/// sentence route each passage is one sentence.
+pub struct Plan {
+    pub passages: Vec<Passage>,
     pub route: Route,
 }
 
 pub enum Route {
-    /// Aligning engine via koblem: whole passages, streamed PCM, word timings.
+    /// Aligning engine via koblem: whole passages, streamed PCM, and word
+    /// timings when someone reads along.
     Passages {
-        passages: Vec<String>,
         koblem_url: String,
         koblem_api_key: String,
+        align: bool,
     },
     /// Any other engine: one buffered render per sentence.
     Sentences {
-        sentences: Vec<String>,
         service_url: String,
         backend: TtsBackend,
         via_koblem: bool,
         koblem_api_key: Option<String>,
         gpu_lock: GpuLock,
     },
+}
+
+impl Route {
+    /// Alignment-capable engine (breeze) + koblem-with-api-key → paragraph
+    /// streaming with word-level forced alignment, routed to that engine's
+    /// aligned-generate endpoint. Any other backend (chatterbox/kokoro/openai),
+    /// or koblem unconfigured, renders per sentence: kobbler then talks to
+    /// `service_url` directly so turning koblem off doesn't break TTS — it just
+    /// loses streaming + FA.
+    pub fn for_config(config: &RuntimeConfig, service_url: String, gpu_lock: GpuLock) -> Self {
+        let backend = TtsBackend::from_config(&config.tts_service_type);
+        let filled = |v: &Option<String>| v.as_deref().is_some_and(|s| !s.is_empty());
+        if backend.supports_alignment()
+            && filled(&config.koblem_service_url)
+            && filled(&config.koblem_api_key)
+        {
+            return Route::Passages {
+                koblem_url: config.koblem_service_url.clone().unwrap_or_default(),
+                koblem_api_key: config.koblem_api_key.clone().unwrap_or_default(),
+                align: true,
+            };
+        }
+        gpu_lock.set_enabled(config.gpu_preempt_tts);
+        gpu_lock.set_service_urls(
+            config.stt_service_url.clone(),
+            config.tts_service_url.clone(),
+            config.vision_service_url.clone(),
+        );
+        Route::Sentences {
+            service_url,
+            backend,
+            via_koblem: config.tts_routes_via_koblem(),
+            koblem_api_key: config.koblem_api_key.clone(),
+            gpu_lock,
+        }
+    }
+
+    /// Already-normalised text cut to what one request of this route reads.
+    /// For a render nobody reads along to: word timings cost GPU time.
+    pub fn unaligned(self) -> Self {
+        match self {
+            Route::Passages {
+                koblem_url,
+                koblem_api_key,
+                ..
+            } => Route::Passages {
+                koblem_url,
+                koblem_api_key,
+                align: false,
+            },
+            other => other,
+        }
+    }
+
+    pub fn split(&self, text: &str) -> Vec<String> {
+        match self {
+            Route::Passages { .. } => super::split_passages(text),
+            Route::Sentences { .. } => super::split_sentences(text),
+        }
+    }
+}
+
+/// A buffered sentence render as 24 kHz s16le PCM, or `None` when it would not
+/// decode and is skipped.
+pub async fn sentence_pcm(index: usize, audio: &SentenceAudio) -> Option<Vec<u8>> {
+    let bytes = audio.bytes.to_vec();
+    match tokio::task::spawn_blocking(move || {
+        kob_ffmpeg::pcm_stream::decode_to_pcm(bytes, PCM_SAMPLE_RATE as i32)
+    })
+    .await
+    {
+        Ok(Ok(pcm)) => Some(pcm),
+        Ok(Err(e)) => {
+            warn!(index, error = %e, "a rendered sentence would not decode; skipped");
+            None
+        }
+        Err(e) => {
+            error!(index, error = %e, "sentence decode task failed");
+            None
+        }
+    }
 }
 
 pub enum Item {
@@ -120,36 +226,21 @@ pub trait Sink: Send {
 }
 
 pub async fn run(plan: Plan, sink: &mut impl Sink) {
-    let Plan {
-        voice,
-        params,
-        route,
-    } = plan;
+    let Plan { passages, route } = plan;
     match route {
         Route::Passages {
-            passages,
             koblem_url,
             koblem_api_key,
-        } => {
-            run_passages(
-                &passages,
-                &koblem_url,
-                &koblem_api_key,
-                &voice,
-                &params,
-                sink,
-            )
-            .await
-        }
+            align,
+        } => run_passages(&passages, &koblem_url, &koblem_api_key, align, sink).await,
         Route::Sentences {
-            sentences,
             service_url,
             backend,
             via_koblem,
             koblem_api_key,
             gpu_lock,
         } => {
-            for (index, sentence) in sentences.into_iter().enumerate() {
+            for (index, Passage { text, voice }) in passages.into_iter().enumerate() {
                 if !sink.ready().await {
                     break;
                 }
@@ -164,18 +255,14 @@ pub async fn run(plan: Plan, sink: &mut impl Sink) {
                     &service_url,
                     backend,
                     endpoint,
-                    &sentence,
-                    &voice,
-                    &params,
+                    &text,
+                    &voice.id,
+                    &voice.params,
                 )
                 .await
                 {
                     Ok(audio) => {
-                        let item = Item::Sentence {
-                            index,
-                            text: sentence,
-                            audio,
-                        };
+                        let item = Item::Sentence { index, text, audio };
                         if !sink.emit(item).await {
                             break;
                         }
@@ -194,11 +281,10 @@ pub async fn run(plan: Plan, sink: &mut impl Sink) {
 /// then long ones, which by the time the listener reaches them have had a whole
 /// passage's playback to be aligned in.
 async fn run_passages(
-    passages: &[String],
+    passages: &[Passage],
     koblem_url: &str,
     koblem_api_key: &str,
-    voice: &str,
-    params: &TtsParams,
+    align: bool,
     sink: &mut impl Sink,
 ) {
     let mut ctx = PassageCtx::default();
@@ -212,8 +298,14 @@ async fn run_passages(
         }
         ctx.index = index as u32;
         ctx.audio_offset_ms = (pcm_bytes / 48) as u32;
-        let stream =
-            super::synthesize_paragraph_stream(koblem_url, koblem_api_key, passage, voice, params);
+        let stream = super::synthesize_paragraph_stream(
+            koblem_url,
+            koblem_api_key,
+            &passage.text,
+            &passage.voice.id,
+            &passage.voice.params,
+            align,
+        );
         tokio::pin!(stream);
 
         while let Some(event) = stream.next().await {
@@ -223,7 +315,7 @@ async fn run_passages(
             if let Ok(TtsStreamEvent::Audio { ref pcm }) = event {
                 pcm_bytes += pcm.len() as u64;
             }
-            let (item, last) = match passage_line(passage, &ctx, event) {
+            let (item, last) = match passage_line(&passage.text, &ctx, event) {
                 PassageLine::Skip => continue,
                 PassageLine::Send(item) => (item, false),
                 PassageLine::Fail(item) => (item, true),
@@ -233,7 +325,7 @@ async fn run_passages(
             }
         }
 
-        ctx.word_offset += super::word_count(passage) as u32;
+        ctx.word_offset += super::word_count(&passage.text) as u32;
     }
 }
 

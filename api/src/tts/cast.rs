@@ -14,17 +14,17 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use kob_ffmpeg::pcm_stream::{AdtsAacEncoder, AdtsFrame, decode_to_pcm};
+use kob_ffmpeg::pcm_stream::{AdtsAacEncoder, AdtsFrame};
 use serde_json::{Value, json};
 use tokio::sync::watch;
 use tokio_stream::Stream;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, warn};
+use tracing::error;
 use uuid::Uuid;
 
 use super::timeline::{self, Item, PCM_SAMPLE_RATE, Plan, Sink};
 
-const BIT_RATE: i64 = 64_000;
+pub const BIT_RATE: i64 = 64_000;
 const AHEAD_OF_LISTENER_MS: u64 = 60_000;
 const IDLE_TTL: Duration = Duration::from_secs(3 * 60 * 60);
 const FRAMES_PER_WRITE: usize = 64;
@@ -258,21 +258,8 @@ impl Sink for CastSink {
             Item::Event(value) => self.push_line(&value),
             Item::Pcm { pcm, .. } => self.push_pcm(&pcm),
             Item::Sentence { index, text, audio } => {
-                let bytes = audio.bytes.to_vec();
-                let pcm = match tokio::task::spawn_blocking(move || {
-                    decode_to_pcm(bytes, PCM_SAMPLE_RATE as i32)
-                })
-                .await
-                {
-                    Ok(Ok(pcm)) => pcm,
-                    Ok(Err(e)) => {
-                        warn!(index, error = %e, "a rendered sentence would not decode; skipped");
-                        return self.alive();
-                    }
-                    Err(e) => {
-                        error!(index, error = %e, "sentence decode task failed");
-                        return self.alive();
-                    }
+                let Some(pcm) = timeline::sentence_pcm(index, &audio).await else {
+                    return self.alive();
                 };
                 self.push_line(&json!({
                     "type": "sentence",

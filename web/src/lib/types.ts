@@ -2471,3 +2471,107 @@ export interface TranscriptBacklog {
   outdated: TranscriptBacklogTotals;
   refresh_job: TranscriptRefreshJob | null;
 }
+
+export type BookCastState =
+  'chapters' | 'bible' | 'voices' | 'casting' | 'rendering' | 'done' | 'failed';
+
+export interface BookCastVoice {
+  character_id: string;
+  from_chapter: number;
+  preset_id: string | null;
+  design_preset_id: string | null;
+  approved_at: string | null;
+  preset_name: string | null;
+  has_clip: boolean;
+  description: string | null;
+}
+
+export interface BookCastArcStep {
+  from_chapter: number;
+  change: string;
+  voice: string;
+}
+
+export interface BookCastCharacter {
+  id: string;
+  name: string;
+  aliases: string[];
+  bible: Record<string, unknown> & { arc?: BookCastArcStep[] };
+  line_count: number;
+  pooled: boolean;
+  generic: boolean;
+  narrator: boolean;
+  samples: string[];
+  voices: BookCastVoice[];
+}
+
+export interface BookCastPresetChoice {
+  id: string;
+  name: string;
+  has_clip: boolean;
+}
+
+export interface BookCastUnapproved {
+  name: string;
+  character_id: string | null;
+  from_chapter: number | null;
+  preset_id: string | null;
+  speakers: string[];
+}
+
+/** Why a rendered chapter no longer sounds as the cast reads now. */
+export interface BookCastStaleChapter {
+  chapter_index: number;
+  attribution: boolean;
+  voices: { character_id: string; name: string | null }[];
+}
+
+export interface BookCastRender {
+  chapters: { total: number; done: number; stale: number; missing: number };
+  stale: BookCastStaleChapter[];
+  unapproved: BookCastUnapproved[];
+  audiobook: { book_id: string; file_id: string } | null;
+  eta_seconds: number | null;
+}
+
+export interface BookCastApproving {
+  id: string;
+  status: string;
+  progress: number | null;
+}
+
+export interface BookCast {
+  state: BookCastState;
+  error: string | null;
+  updated_at: string | null;
+  chapters: { total: number; done: number };
+  lines: number;
+  unresolved: number;
+  characters: BookCastCharacter[];
+  unattached: { speaker: string; lines: number }[];
+  presets: BookCastPresetChoice[];
+  render: BookCastRender;
+  eta: { analysis_seconds: number | null };
+  approving: BookCastApproving | null;
+}
+
+export interface BookCastLine {
+  segment_index: number;
+  span_start: number;
+  span_end: number;
+  chapter_index: number;
+  speaker: string | null;
+  character_id: string | null;
+  cue: string | null;
+  source: 'gemma' | 'beefy' | 'user';
+  text: string | null;
+  voice: BookCastVoice | null;
+}
+
+export interface BookCastTake {
+  segment_index: number;
+  span_start: number | null;
+  chapter_index: number;
+  text: string;
+  cue: string | null;
+}

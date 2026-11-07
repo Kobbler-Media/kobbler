@@ -207,6 +207,17 @@ pub async fn delete_job(
     }
 }
 
+/// Marks the job cancelled, trips a running handler's token and purges its
+/// NATS message so a pending one is never picked up.
+pub(crate) async fn cancel(state: &AppState, job_id: Uuid) -> jobs::JobResult<Option<String>> {
+    let job_type = jobs::cancel_job(&state.pool, job_id).await?;
+    if let Some(job_type) = &job_type {
+        state.cancel_registry.cancel(job_id);
+        nats_jobs::purge_nats_job(&state.nats.client, "kobbler", job_type, job_id).await;
+    }
+    Ok(job_type)
+}
+
 /// POST /api/v1/admin/jobs/{job_id}/cancel - Cancel a pending or running job
 pub async fn cancel_job(
     State(state): State<AppState>,
@@ -217,18 +228,12 @@ pub async fn cancel_job(
         return e.into_response();
     }
 
-    match jobs::cancel_job(&state.pool, job_id).await {
-        Ok(Some(job_type)) => {
-            // Trigger cancellation token for running handlers
-            state.cancel_registry.cancel(job_id);
-            // Purge the NATS message so pending jobs aren't picked up after cancel
-            nats_jobs::purge_nats_job(&state.nats.client, "kobbler", &job_type, job_id).await;
-            Json(serde_json::json!({
-                "cancelled": true,
-                "message": format!("Job {} cancelled", job_id)
-            }))
-            .into_response()
-        }
+    match cancel(&state, job_id).await {
+        Ok(Some(_)) => Json(serde_json::json!({
+            "cancelled": true,
+            "message": format!("Job {} cancelled", job_id)
+        }))
+        .into_response(),
         Ok(None) => (
             StatusCode::CONFLICT,
             Json(serde_json::json!({"error": "Job not found or already completed"})),

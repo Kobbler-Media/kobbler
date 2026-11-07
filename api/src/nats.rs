@@ -24,6 +24,11 @@ use crate::jobs::handlers::{
     AudiobookTranscribeHandler,
     AuthorEnrichHandler,
     AuthorSyncCheckHandler,
+    BookCastApproveHandler,
+    BookCastBibleHandler,
+    BookCastChaptersHandler,
+    BookCastRenderHandler,
+    BookCastVoicesHandler,
     BookEnrichHandler,
     BookWantCheckHandler,
     BookWantHandler,
@@ -352,6 +357,32 @@ pub async fn start_nats_worker(
         nats_publisher.clone(),
         search.clone(),
         fs_semaphore.clone(),
+    )));
+
+    worker.register_handler(HandlerAdapter::new(BookCastChaptersHandler::new(
+        pool.clone(),
+        runtime_config.clone(),
+        nats_publisher.clone(),
+    )));
+
+    worker.register_handler(HandlerAdapter::new(BookCastBibleHandler::new(
+        pool.clone(),
+        runtime_config.clone(),
+        nats_publisher.clone(),
+    )));
+
+    worker.register_handler(HandlerAdapter::new(BookCastVoicesHandler::new(
+        pool.clone(),
+        runtime_config.clone(),
+        storage_root.clone(),
+    )));
+
+    worker.register_handler(HandlerAdapter::new(BookCastRenderHandler::new(
+        app_state.clone(),
+    )));
+
+    worker.register_handler(HandlerAdapter::new(BookCastApproveHandler::new(
+        app_state.clone(),
     )));
 
     worker.register_handler(HandlerAdapter::new(ReaderPackHandler::new(

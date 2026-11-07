@@ -172,13 +172,32 @@ where
     E: Executor<'e, Database = Postgres>,
 {
     let sql = format!(
-        "SELECT {SELECT_COLS} FROM user_voice_presets WHERE user_id = $1 ORDER BY name ASC"
+        "SELECT {SELECT_COLS} FROM user_voice_presets WHERE user_id = $1 AND cast_book_id IS NULL ORDER BY name ASC"
     );
     let rows = sqlx::query_as::<_, UserVoicePreset>(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(user_id)
         .fetch_all(exec)
         .await?;
     Ok(rows)
+}
+
+pub async fn presets_by_ids<'e, E>(
+    exec: E,
+    user_id: Uuid,
+    ids: &[Uuid],
+) -> Result<Vec<UserVoicePreset>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let sql =
+        format!("SELECT {SELECT_COLS} FROM user_voice_presets WHERE user_id = $1 AND id = ANY($2)");
+    Ok(
+        sqlx::query_as::<_, UserVoicePreset>(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(user_id)
+            .bind(ids)
+            .fetch_all(exec)
+            .await?,
+    )
 }
 
 /// Get a single voice preset by ID, scoped to user.
