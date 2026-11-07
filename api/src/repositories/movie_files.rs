@@ -65,6 +65,8 @@ pub struct MovieFileRow {
     pub is_hdr: bool,
     pub hdr_format: Option<String>,
     pub is_interlaced: bool,
+    pub dv_profile: Option<i16>,
+    pub dv_bl_compat_id: Option<i16>,
     pub duration_seconds: Option<f64>,
     pub container: Option<String>,
     pub overall_bitrate_kbps: Option<i32>,
@@ -314,7 +316,7 @@ where
         SELECT id, movie_id, file_path, file_size, file_fingerprint, format, quality,
                languages, subtitles, source_type, source_metadata, available, created_at,
                video_codec, video_width, video_height, video_bitrate_kbps,
-               framerate, bit_depth, is_hdr, hdr_format, is_interlaced,
+               framerate, bit_depth, is_hdr, hdr_format, is_interlaced, dv_profile, dv_bl_compat_id,
                duration_seconds, container, overall_bitrate_kbps, keyframes
         FROM movie_files
         WHERE id = $1
@@ -347,6 +349,8 @@ where
         is_hdr: r.is_hdr,
         hdr_format: r.hdr_format,
         is_interlaced: r.is_interlaced,
+        dv_profile: r.dv_profile,
+        dv_bl_compat_id: r.dv_bl_compat_id,
         duration_seconds: r.duration_seconds,
         container: r.container,
         overall_bitrate_kbps: r.overall_bitrate_kbps,
@@ -364,7 +368,7 @@ where
         SELECT id, movie_id, file_path, file_size, file_fingerprint, format, quality,
                languages, subtitles, source_type, source_metadata, available, created_at,
                video_codec, video_width, video_height, video_bitrate_kbps,
-               framerate, bit_depth, is_hdr, hdr_format, is_interlaced,
+               framerate, bit_depth, is_hdr, hdr_format, is_interlaced, dv_profile, dv_bl_compat_id,
                duration_seconds, container, overall_bitrate_kbps, keyframes
         FROM movie_files
         WHERE movie_id = $1
@@ -400,6 +404,8 @@ where
             is_hdr: r.is_hdr,
             hdr_format: r.hdr_format,
             is_interlaced: r.is_interlaced,
+            dv_profile: r.dv_profile,
+            dv_bl_compat_id: r.dv_bl_compat_id,
             duration_seconds: r.duration_seconds,
             container: r.container,
             overall_bitrate_kbps: r.overall_bitrate_kbps,
@@ -480,7 +486,7 @@ where
         SELECT id, movie_id, file_path, file_size, file_fingerprint, format, quality,
                languages, subtitles, source_type, source_metadata, available, created_at,
                video_codec, video_width, video_height, video_bitrate_kbps,
-               framerate, bit_depth, is_hdr, hdr_format, is_interlaced,
+               framerate, bit_depth, is_hdr, hdr_format, is_interlaced, dv_profile, dv_bl_compat_id,
                duration_seconds, container, overall_bitrate_kbps, keyframes
         FROM movie_files
         WHERE movie_id = $1 AND available = TRUE
@@ -515,6 +521,8 @@ where
         is_hdr: r.is_hdr,
         hdr_format: r.hdr_format,
         is_interlaced: r.is_interlaced,
+        dv_profile: r.dv_profile,
+        dv_bl_compat_id: r.dv_bl_compat_id,
         duration_seconds: r.duration_seconds,
         container: r.container,
         overall_bitrate_kbps: r.overall_bitrate_kbps,
@@ -534,6 +542,8 @@ pub struct VideoMetadataUpdate {
     pub is_hdr: bool,
     pub hdr_format: Option<String>,
     pub is_interlaced: bool,
+    pub dv_profile: Option<i16>,
+    pub dv_bl_compat_id: Option<i16>,
     pub duration_seconds: Option<f64>,
     pub container: Option<String>,
     pub overall_bitrate_kbps: Option<i32>,
@@ -563,7 +573,9 @@ where
             is_interlaced = $10,
             duration_seconds = $11,
             container = $12,
-            overall_bitrate_kbps = $13
+            overall_bitrate_kbps = $13,
+            dv_profile = $14,
+            dv_bl_compat_id = $15
         WHERE id = $1
         "#,
     )
@@ -580,6 +592,8 @@ where
     .bind(meta.duration_seconds)
     .bind(meta.container.as_deref())
     .bind(meta.overall_bitrate_kbps)
+    .bind(meta.dv_profile)
+    .bind(meta.dv_bl_compat_id)
     .execute(exec)
     .await?;
 

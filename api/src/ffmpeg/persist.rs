@@ -50,6 +50,7 @@ pub async fn persist_probe_result(
     result: &ProbeResult,
 ) -> Result<(), String> {
     let video = result.video_streams.first();
+    let dolby_vision = video.and_then(|v| v.dolby_vision);
 
     match media_type {
         "movie" => {
@@ -63,6 +64,8 @@ pub async fn persist_probe_result(
                 is_hdr: video.is_some_and(|v| v.is_hdr),
                 hdr_format: video.and_then(|v| v.hdr_format.clone()),
                 is_interlaced: video.is_some_and(|v| v.is_interlaced),
+                dv_profile: dolby_vision.map(|dv| i16::from(dv.profile)),
+                dv_bl_compat_id: dolby_vision.map(|dv| i16::from(dv.bl_signal_compatibility_id)),
                 duration_seconds: result.format.duration_seconds,
                 container: Some(result.format.format_name.clone()),
                 overall_bitrate_kbps: result.format.bit_rate_kbps,
@@ -94,6 +97,8 @@ pub async fn persist_probe_result(
                 is_hdr: video.is_some_and(|v| v.is_hdr),
                 hdr_format: video.and_then(|v| v.hdr_format.clone()),
                 is_interlaced: video.is_some_and(|v| v.is_interlaced),
+                dv_profile: dolby_vision.map(|dv| i16::from(dv.profile)),
+                dv_bl_compat_id: dolby_vision.map(|dv| i16::from(dv.bl_signal_compatibility_id)),
                 duration_seconds: result.format.duration_seconds,
                 container: Some(result.format.format_name.clone()),
                 overall_bitrate_kbps: result.format.bit_rate_kbps,

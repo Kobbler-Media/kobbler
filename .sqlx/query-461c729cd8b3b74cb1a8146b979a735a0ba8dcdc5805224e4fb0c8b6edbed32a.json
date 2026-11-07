@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, movie_id, file_path, file_size, file_fingerprint, format, quality,\n               languages, subtitles, source_type, source_metadata, available, created_at,\n               video_codec, video_width, video_height, video_bitrate_kbps,\n               framerate, bit_depth, is_hdr, hdr_format, is_interlaced,\n               duration_seconds, container, overall_bitrate_kbps, keyframes\n        FROM movie_files\n        WHERE id = $1\n        ",
+  "query": "\n        SELECT id, movie_id, file_path, file_size, file_fingerprint, format, quality,\n               languages, subtitles, source_type, source_metadata, available, created_at,\n               video_codec, video_width, video_height, video_bitrate_kbps,\n               framerate, bit_depth, is_hdr, hdr_format, is_interlaced, dv_profile, dv_bl_compat_id,\n               duration_seconds, container, overall_bitrate_kbps, keyframes\n        FROM movie_files\n        WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -247,6 +247,28 @@
       },
       {
         "ordinal": 22,
+        "name": "dv_profile",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "dv_profile"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
+        "name": "dv_bl_compat_id",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "dv_bl_compat_id"
+          }
+        }
+      },
+      {
+        "ordinal": 24,
         "name": "duration_seconds",
         "type_info": "Float8",
         "origin": {
@@ -257,7 +279,7 @@
         }
       },
       {
-        "ordinal": 23,
+        "ordinal": 25,
         "name": "container",
         "type_info": "Text",
         "origin": {
@@ -268,7 +290,7 @@
         }
       },
       {
-        "ordinal": 24,
+        "ordinal": 26,
         "name": "overall_bitrate_kbps",
         "type_info": "Int4",
         "origin": {
@@ -279,7 +301,7 @@
         }
       },
       {
-        "ordinal": 25,
+        "ordinal": 27,
         "name": "keyframes",
         "type_info": "Jsonb",
         "origin": {
@@ -321,8 +343,10 @@
       true,
       true,
       true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "82aa49e5d4a63bb0cc89ee1839d0981a90ea7aca64298b1b636084db06a993a4"
+  "hash": "461c729cd8b3b74cb1a8146b979a735a0ba8dcdc5805224e4fb0c8b6edbed32a"
 }

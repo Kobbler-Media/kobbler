@@ -145,6 +145,7 @@ pub(super) async fn run(ctx: Prepare) {
             video_width: result.probe.video_width,
             video_height: result.probe.video_height,
             interlaced: result.probe.interlaced,
+            dolby_vision_only: result.probe.dolby_vision_only,
             audio_tracks: result
                 .probe
                 .audio_tracks
@@ -181,6 +182,7 @@ pub(super) async fn run(ctx: Prepare) {
         video_width,
         video_height,
         interlaced: probe_info.interlaced,
+        dolby_vision_only: probe_info.dolby_vision_only,
     };
     let audio_metas: Vec<crate::streaming::decision::AudioTrackMeta> = probe_info
         .audio_tracks
@@ -228,6 +230,15 @@ pub(super) async fn run(ctx: Prepare) {
     // encoder is healthy; the playlist handler's estimated path works fine
     // with `transcode = None` (3 placeholder segments, serve_segment
     // block-waits for the files to appear).
+    //
+    // Stamping makes the session look ready to a seek or restart, so the gate is held
+    // from here until the transcode is attached and they queue behind it. A warm
+    // session's id is not handed out until it is claimed, so it takes the gate then.
+    let start_gate = if warm.is_none() {
+        Some(bg_state.session_gates.claim(session_id).await)
+    } else {
+        None
+    };
     {
         let total_segments = (duration / 6.0).ceil() as u32;
         if let Some(mut session) = bg_state.playback_sessions.get_mut(&session_id) {
@@ -286,6 +297,10 @@ pub(super) async fn run(ctx: Prepare) {
             _ = gate.released.cancelled() => return,
         }
     }
+    let _start_gate = match start_gate {
+        Some(held) => held,
+        None => bg_state.session_gates.claim(session_id).await,
+    };
 
     // Remux/Transcode: start FFmpeg to produce HLS segments.
     // Uses the same encoder fallback chain as the cached-file path:

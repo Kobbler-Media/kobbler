@@ -66,6 +66,8 @@ pub struct EpisodeFileRow {
     pub is_hdr: bool,
     pub hdr_format: Option<String>,
     pub is_interlaced: bool,
+    pub dv_profile: Option<i16>,
+    pub dv_bl_compat_id: Option<i16>,
     pub duration_seconds: Option<f64>,
     pub container: Option<String>,
     pub overall_bitrate_kbps: Option<i32>,
@@ -383,7 +385,7 @@ where
         SELECT id, file_path, file_size, file_fingerprint, format, quality,
                languages, subtitles, source_type, source_metadata, available, created_at,
                video_codec, video_width, video_height, video_bitrate_kbps,
-               framerate, bit_depth, is_hdr, hdr_format, is_interlaced,
+               framerate, bit_depth, is_hdr, hdr_format, is_interlaced, dv_profile, dv_bl_compat_id,
                duration_seconds, container, overall_bitrate_kbps, keyframes
         FROM tv_episode_files
         WHERE id = $1
@@ -415,6 +417,8 @@ where
         is_hdr: r.is_hdr,
         hdr_format: r.hdr_format,
         is_interlaced: r.is_interlaced,
+        dv_profile: r.dv_profile,
+        dv_bl_compat_id: r.dv_bl_compat_id,
         duration_seconds: r.duration_seconds,
         container: r.container,
         overall_bitrate_kbps: r.overall_bitrate_kbps,
@@ -454,7 +458,7 @@ where
                tef.languages, tef.subtitles, tef.source_type, tef.source_metadata,
                tef.available, tef.created_at,
                tef.video_codec, tef.video_width, tef.video_height, tef.video_bitrate_kbps,
-               tef.framerate, tef.bit_depth, tef.is_hdr, tef.hdr_format, tef.is_interlaced,
+               tef.framerate, tef.bit_depth, tef.is_hdr, tef.hdr_format, tef.is_interlaced, tef.dv_profile, tef.dv_bl_compat_id,
                tef.duration_seconds, tef.container, tef.overall_bitrate_kbps, tef.keyframes
         FROM tv_episode_files tef
         JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id
@@ -490,6 +494,8 @@ where
             is_hdr: r.is_hdr,
             hdr_format: r.hdr_format,
             is_interlaced: r.is_interlaced,
+            dv_profile: r.dv_profile,
+            dv_bl_compat_id: r.dv_bl_compat_id,
             duration_seconds: r.duration_seconds,
             container: r.container,
             overall_bitrate_kbps: r.overall_bitrate_kbps,
@@ -591,7 +597,7 @@ where
                tef.languages, tef.subtitles, tef.source_type, tef.source_metadata,
                tef.available, tef.created_at,
                tef.video_codec, tef.video_width, tef.video_height, tef.video_bitrate_kbps,
-               tef.framerate, tef.bit_depth, tef.is_hdr, tef.hdr_format, tef.is_interlaced,
+               tef.framerate, tef.bit_depth, tef.is_hdr, tef.hdr_format, tef.is_interlaced, tef.dv_profile, tef.dv_bl_compat_id,
                tef.duration_seconds, tef.container, tef.overall_bitrate_kbps, tef.keyframes
         FROM tv_episode_files tef
         JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id
@@ -626,6 +632,8 @@ where
         is_hdr: r.is_hdr,
         hdr_format: r.hdr_format,
         is_interlaced: r.is_interlaced,
+        dv_profile: r.dv_profile,
+        dv_bl_compat_id: r.dv_bl_compat_id,
         duration_seconds: r.duration_seconds,
         container: r.container,
         overall_bitrate_kbps: r.overall_bitrate_kbps,
@@ -645,6 +653,8 @@ pub struct VideoMetadataUpdate {
     pub is_hdr: bool,
     pub hdr_format: Option<String>,
     pub is_interlaced: bool,
+    pub dv_profile: Option<i16>,
+    pub dv_bl_compat_id: Option<i16>,
     pub duration_seconds: Option<f64>,
     pub container: Option<String>,
     pub overall_bitrate_kbps: Option<i32>,
@@ -673,7 +683,9 @@ where
             is_interlaced = $10,
             duration_seconds = $11,
             container = $12,
-            overall_bitrate_kbps = $13
+            overall_bitrate_kbps = $13,
+            dv_profile = $14,
+            dv_bl_compat_id = $15
         WHERE id = $1
         "#,
     )
@@ -690,6 +702,8 @@ where
     .bind(meta.duration_seconds)
     .bind(meta.container.as_deref())
     .bind(meta.overall_bitrate_kbps)
+    .bind(meta.dv_profile)
+    .bind(meta.dv_bl_compat_id)
     .execute(exec)
     .await?;
 

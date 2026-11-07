@@ -151,6 +151,7 @@ pub async fn create_live_session(
             LiveProbe {
                 video_codec,
                 interlaced,
+                dolby_vision_only,
                 audio_tracks,
             },
             live_stream,
@@ -204,6 +205,7 @@ pub async fn create_live_session(
             video_width: 1920, // Assume 1080p for live streams
             video_height: 1080,
             interlaced,
+            dolby_vision_only,
         };
 
         let preferred_codecs = state.encoder_caps.preferred_codecs();
@@ -326,6 +328,7 @@ pub async fn probe_live_stream(url: &str) -> Result<LiveProbe> {
 pub struct LiveProbe {
     pub video_codec: String,
     pub interlaced: bool,
+    pub dolby_vision_only: bool,
     pub audio_tracks: Vec<AudioTrackMeta>,
 }
 
@@ -351,6 +354,11 @@ pub fn probe_result_to_meta(result: &kob_ffmpeg::probe::ProbeResult) -> Result<L
     Ok(LiveProbe {
         video_codec: video.codec.clone(),
         interlaced: video.is_interlaced,
+        dolby_vision_only: decision::dolby_vision_only(
+            video
+                .dolby_vision
+                .map(|dv| i16::from(dv.bl_signal_compatibility_id)),
+        ),
         audio_tracks,
     })
 }

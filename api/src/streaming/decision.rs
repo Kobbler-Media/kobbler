@@ -109,6 +109,15 @@ pub struct FileMeta {
     pub video_height: u32,
     /// Field-coded (PAFF/MBAFF) source.
     pub interlaced: bool,
+    /// Dolby Vision with no backward-compatible base layer (profile 5): anything
+    /// that does not apply the RPU shows it green and purple.
+    pub dolby_vision_only: bool,
+}
+
+/// `bl_signal_compatibility_id` 0 is the only id whose base layer is not a
+/// standard SDR/HDR10/HLG picture.
+pub fn dolby_vision_only(bl_signal_compatibility_id: Option<i16>) -> bool {
+    bl_signal_compatibility_id == Some(0)
 }
 
 /// Metadata about an audio track.
@@ -150,6 +159,10 @@ pub struct ClientCapabilities {
     pub supports_interlaced: Option<bool>,
     #[serde(default)]
     pub max_height: Option<u32>,
+    /// `None` is taken as no: only a client that renders Dolby Vision itself is
+    /// sent a profile 5 stream untouched.
+    #[serde(default)]
+    pub supports_dolby_vision: Option<bool>,
 }
 
 impl Default for ClientCapabilities {
@@ -161,6 +174,7 @@ impl Default for ClientCapabilities {
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
             max_height: None,
+            supports_dolby_vision: None,
         }
     }
 }
@@ -201,8 +215,11 @@ pub fn decide(
     let fits = capabilities
         .max_height
         .is_none_or(|max| file.video_height <= max);
+    let renders_picture =
+        !file.dolby_vision_only || capabilities.supports_dolby_vision == Some(true);
     let video_supported = !deinterlace
         && fits
+        && renders_picture
         && capabilities
             .video_codecs
             .iter()
@@ -718,6 +735,7 @@ mod tests {
             containers: vec!["mp4".to_string(), "webm".to_string()],
             supports_interlaced: None,
             max_height: None,
+            supports_dolby_vision: None,
         }
     }
 
@@ -728,6 +746,7 @@ mod tests {
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
             max_height: None,
+            supports_dolby_vision: None,
         }
     }
 
@@ -738,6 +757,7 @@ mod tests {
             containers: vec!["mp4".to_string(), "webm".to_string()],
             supports_interlaced: None,
             max_height: None,
+            supports_dolby_vision: None,
         }
     }
 
@@ -753,6 +773,7 @@ mod tests {
             containers: vec!["mp4".to_string(), "mkv".to_string(), "ts".to_string()],
             supports_interlaced: Some(true),
             max_height: None,
+            supports_dolby_vision: None,
         };
         assert!(is_container_compatible("mpegts", &caps.containers));
         assert!(is_container_compatible("ts", &caps.containers));
@@ -770,6 +791,7 @@ mod tests {
             video_width: 720,
             video_height: 576,
             interlaced: true,
+            dolby_vision_only: false,
         };
         let audio = [AudioTrackMeta {
             stream_index: 0,
@@ -843,6 +865,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn dolby_vision_without_a_base_layer_is_copied_only_to_a_client_that_renders_it() {
+        let cases = [
+            (false, None, PlaybackMethod::DirectPlay),
+            (true, None, PlaybackMethod::VideoTranscode),
+            (true, Some(false), PlaybackMethod::VideoTranscode),
+            (true, Some(true), PlaybackMethod::DirectPlay),
+        ];
+        for (dolby_vision_only, supports_dolby_vision, method) in cases {
+            let (mut file, audio) = mp4_h264_aac();
+            file.dolby_vision_only = dolby_vision_only;
+            let caps = ClientCapabilities {
+                supports_dolby_vision,
+                ..safari_caps()
+            };
+            let decision = decide(&file, &audio, &[], &caps, ViewerPrefs::default(), H264_ONLY);
+            assert_eq!(
+                decision.method, method,
+                "dv_only={dolby_vision_only} supports={supports_dolby_vision:?}"
+            );
+        }
+    }
+
     fn mp4_h264_aac() -> (FileMeta, Vec<AudioTrackMeta>) {
         (
             FileMeta {
@@ -851,6 +896,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
+                dolby_vision_only: false,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -871,6 +917,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
+                dolby_vision_only: false,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -891,6 +938,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
+                dolby_vision_only: false,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -911,6 +959,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
+                dolby_vision_only: false,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -931,6 +980,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
+                dolby_vision_only: false,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -1078,6 +1128,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
+            dolby_vision_only: false,
         };
         let audio = vec![
             AudioTrackMeta {
@@ -1123,6 +1174,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
+            dolby_vision_only: false,
         };
         let audio = vec![
             AudioTrackMeta {
@@ -1538,6 +1590,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
+            dolby_vision_only: false,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1579,6 +1632,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
+            dolby_vision_only: false,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1690,6 +1744,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
+            dolby_vision_only: false,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1705,6 +1760,7 @@ mod tests {
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
             max_height: None,
+            supports_dolby_vision: None,
         };
         let d = decide(
             &file,
@@ -1730,6 +1786,7 @@ mod tests {
             video_width: 720,
             video_height: 480,
             interlaced: false,
+            dolby_vision_only: false,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1745,6 +1802,7 @@ mod tests {
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
             max_height: None,
+            supports_dolby_vision: None,
         };
         let d = decide(
             &file,
@@ -1771,6 +1829,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
+            dolby_vision_only: false,
         };
         let audio = vec![
             AudioTrackMeta {
@@ -1796,6 +1855,7 @@ mod tests {
             containers: vec!["mkv".to_string()],
             supports_interlaced: None,
             max_height: None,
+            supports_dolby_vision: None,
         };
         let d = decide(
             &file,

@@ -129,7 +129,7 @@ pub async fn ensure_loaded(state: &AppState, session_id: Uuid) {
 }
 
 fn is_loaded(state: &AppState, session_id: Uuid) -> bool {
-    state.playback_sessions.contains_key(&session_id) || state.busy_sessions.contains(&session_id)
+    state.playback_sessions.contains_key(&session_id) || state.session_gates.is_held(session_id)
 }
 
 #[cfg(test)]

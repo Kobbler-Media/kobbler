@@ -109,6 +109,7 @@ pub async fn create_export(
             video_width: meta.video_width,
             video_height: meta.video_height,
             interlaced: meta.interlaced.unwrap_or(false),
+            dolby_vision_only: meta.dolby_vision_only,
         },
         &meta.audio_metas,
         &[],
@@ -133,12 +134,14 @@ pub async fn create_export(
         .iter()
         .find(|a| a.stream_index == playable.audio_stream_index);
     let audio_bitrate_kbps = decision::suggest_audio_bitrate(audio_track);
-    if !quality.worth_making(
-        meta.video_width,
-        meta.video_height,
-        meta.overall_bitrate_kbps,
-        audio_bitrate_kbps.max(0) as u32,
-    ) {
+    if !meta.dolby_vision_only
+        && !quality.worth_making(
+            meta.video_width,
+            meta.video_height,
+            meta.overall_bitrate_kbps,
+            audio_bitrate_kbps.max(0) as u32,
+        )
+    {
         return Ok(Json(json!({ "state": "original" })).into_response());
     }
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT tef.id, tef.file_path, tef.file_size, tef.file_fingerprint, tef.format, tef.quality,\n               tef.languages, tef.subtitles, tef.source_type, tef.source_metadata,\n               tef.available, tef.created_at,\n               tef.video_codec, tef.video_width, tef.video_height, tef.video_bitrate_kbps,\n               tef.framerate, tef.bit_depth, tef.is_hdr, tef.hdr_format, tef.is_interlaced,\n               tef.duration_seconds, tef.container, tef.overall_bitrate_kbps, tef.keyframes\n        FROM tv_episode_files tef\n        JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id\n        WHERE tefe.episode_id = $1\n        ORDER BY tef.created_at DESC\n        ",
+  "query": "\n        SELECT tef.id, tef.file_path, tef.file_size, tef.file_fingerprint, tef.format, tef.quality,\n               tef.languages, tef.subtitles, tef.source_type, tef.source_metadata,\n               tef.available, tef.created_at,\n               tef.video_codec, tef.video_width, tef.video_height, tef.video_bitrate_kbps,\n               tef.framerate, tef.bit_depth, tef.is_hdr, tef.hdr_format, tef.is_interlaced, tef.dv_profile, tef.dv_bl_compat_id,\n               tef.duration_seconds, tef.container, tef.overall_bitrate_kbps, tef.keyframes\n        FROM tv_episode_files tef\n        JOIN tv_episode_file_episodes tefe ON tefe.episode_file_id = tef.id\n        WHERE tefe.episode_id = $1 AND tef.available = TRUE\n        ORDER BY tef.created_at DESC, tef.id DESC\n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -236,6 +236,28 @@
       },
       {
         "ordinal": 21,
+        "name": "dv_profile",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "dv_profile"
+          }
+        }
+      },
+      {
+        "ordinal": 22,
+        "name": "dv_bl_compat_id",
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "tv_episode_files",
+            "name": "dv_bl_compat_id"
+          }
+        }
+      },
+      {
+        "ordinal": 23,
         "name": "duration_seconds",
         "type_info": "Float8",
         "origin": {
@@ -246,7 +268,7 @@
         }
       },
       {
-        "ordinal": 22,
+        "ordinal": 24,
         "name": "container",
         "type_info": "Text",
         "origin": {
@@ -257,7 +279,7 @@
         }
       },
       {
-        "ordinal": 23,
+        "ordinal": 25,
         "name": "overall_bitrate_kbps",
         "type_info": "Int4",
         "origin": {
@@ -268,7 +290,7 @@
         }
       },
       {
-        "ordinal": 24,
+        "ordinal": 26,
         "name": "keyframes",
         "type_info": "Jsonb",
         "origin": {
@@ -309,8 +331,10 @@
       true,
       true,
       true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "d1a528efeab6668bd7a70aebbac0197a0953877a5f99339f32541e548b4204c5"
+  "hash": "d11053fb6e50b7744f94cf6d59a18a1c22a35f606565bd0b6cb09b0aa497e827"
 }

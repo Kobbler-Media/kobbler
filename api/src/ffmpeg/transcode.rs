@@ -127,6 +127,7 @@ pub struct HybridProbeInfo {
     pub video_width: u32,
     pub video_height: u32,
     pub interlaced: bool,
+    pub dolby_vision_only: bool,
     pub audio_tracks: Vec<HybridAudioTrack>,
 }
 
@@ -153,6 +154,7 @@ impl HybridProbeInfo {
         let mut video_width = 1920u32;
         let mut video_height = 1080u32;
         let mut interlaced = false;
+        let mut dolby_vision_only = false;
         let mut audio_codec = String::new();
         let mut audio_stream_index = 0i32;
         let mut audio_tracks = Vec::new();
@@ -173,6 +175,10 @@ impl HybridProbeInfo {
                         video_width = (*params).width as u32;
                         video_height = (*params).height as u32;
                         interlaced = kob_ffmpeg::interlace::codec_parameters_interlaced(params);
+                        dolby_vision_only = crate::streaming::decision::dolby_vision_only(
+                            kob_ffmpeg::dovi::DolbyVision::from_codec_parameters(params)
+                                .map(|dv| i16::from(dv.bl_signal_compatibility_id)),
+                        );
                     }
                 }
                 MediaType::Audio => {
@@ -215,6 +221,7 @@ impl HybridProbeInfo {
             video_width,
             video_height,
             interlaced,
+            dolby_vision_only,
             audio_tracks,
         }
     }

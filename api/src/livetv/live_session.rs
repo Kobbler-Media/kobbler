@@ -327,6 +327,7 @@ fn decide_mode(facts: &StreamFacts, capabilities: &ClientCapabilities) -> Mode {
         video_width: facts.width,
         video_height: facts.height,
         interlaced: facts.interlaced,
+        dolby_vision_only: false,
     };
     let audio = [AudioTrackMeta {
         stream_index: 0,
@@ -1646,6 +1647,7 @@ mod tests {
             containers: ["mp4", "mkv", "ts"].map(str::to_string).to_vec(),
             supports_interlaced: None,
             max_height: None,
+            supports_dolby_vision: None,
         }
     }
 
@@ -1726,6 +1728,7 @@ mod tests {
             containers: vec!["mp4".into()],
             supports_interlaced: None,
             max_height: None,
+            supports_dolby_vision: None,
         };
         assert_eq!(
             decide_mode(&tuner_facts("h264", "aac", true), &browser),

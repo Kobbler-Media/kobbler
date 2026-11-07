@@ -467,6 +467,7 @@ pub(crate) async fn open_file_session(
             video_width,
             video_height,
             interlaced,
+            dolby_vision_only,
             ..
         },
     ) = load_playable_file(
@@ -508,6 +509,7 @@ pub(crate) async fn open_file_session(
         video_width,
         video_height,
         interlaced: interlaced.unwrap_or(false),
+        dolby_vision_only,
     };
     let preferred_codecs = state.encoder_caps.preferred_codecs();
     let mut decision = decision::decide(
@@ -1011,6 +1013,13 @@ pub(crate) async fn open_file_session(
         session.transcode = Some(process);
     }
 
+    // Claimed before the session is visible, so the player's first seek or restart
+    // queues behind the background start instead of racing it.
+    let start_gate = if deferred_transcode.is_some() {
+        Some(state.session_gates.claim(session_id).await)
+    } else {
+        None
+    };
     state.playback_sessions.insert(session_id, session);
 
     info!(
@@ -1024,6 +1033,7 @@ pub(crate) async fn open_file_session(
     if let Some((args, deferred_keyframes)) = deferred_transcode {
         let bg_state = state.clone();
         tokio::spawn(async move {
+            let _start_gate = start_gate;
             match transcode::TranscodeProcess::start(args).await {
                 Ok(process) => {
                     if let Some(kf) = deferred_keyframes {
@@ -1416,6 +1426,23 @@ pub async fn heartbeat(
 // HLS Playlists
 // =============================================================================
 
+/// A session lifted out of the map is mid-restart: wait for it to come back rather
+/// than answer for a session that is about to exist again.
+async fn wait_out_restart(state: &AppState, session_id: Uuid) {
+    if !state.playback_sessions.contains_key(&session_id) {
+        state.session_gates.wait(session_id).await;
+    }
+}
+
+fn session_missing(state: &AppState, session_id: Uuid) -> axum::response::Response {
+    let status = if state.session_gates.is_held(session_id) {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::NOT_FOUND
+    };
+    (status, "session not found").into_response()
+}
+
 pub async fn master_playlist(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
@@ -1424,19 +1451,12 @@ pub async fn master_playlist(
         Ok(id) => id,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid session_id").into_response(),
     };
+    wait_out_restart(&state, session_id).await;
 
     let mut session = match state.playback_sessions.get_mut(&session_id) {
         Some(s) => s,
         None => {
-            return (
-                if state.busy_sessions.contains(&session_id) {
-                    StatusCode::SERVICE_UNAVAILABLE
-                } else {
-                    StatusCode::NOT_FOUND
-                },
-                "session not found",
-            )
-                .into_response();
+            return session_missing(&state, session_id);
         }
     };
     session.touch();
@@ -1538,6 +1558,7 @@ pub async fn stream_playlist(
         Ok(id) => id,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid session_id").into_response(),
     };
+    wait_out_restart(&state, session_id).await;
 
     let variant_id = query.v.clone();
 
@@ -1574,15 +1595,7 @@ pub async fn stream_playlist(
         let mut session = match state.playback_sessions.get_mut(&session_id) {
             Some(s) => s,
             None => {
-                return (
-                    if state.busy_sessions.contains(&session_id) {
-                        StatusCode::SERVICE_UNAVAILABLE
-                    } else {
-                        StatusCode::NOT_FOUND
-                    },
-                    "session not found",
-                )
-                    .into_response();
+                return session_missing(&state, session_id);
             }
         };
         if session.is_live {
@@ -1694,15 +1707,7 @@ pub async fn stream_playlist(
         let mut session = match state.playback_sessions.get_mut(&session_id) {
             Some(s) => s,
             None => {
-                return (
-                    if state.busy_sessions.contains(&session_id) {
-                        StatusCode::SERVICE_UNAVAILABLE
-                    } else {
-                        StatusCode::NOT_FOUND
-                    },
-                    "session not found",
-                )
-                    .into_response();
+                return session_missing(&state, session_id);
             }
         };
         session.touch();
@@ -1782,15 +1787,7 @@ pub async fn stream_playlist(
     let session = match state.playback_sessions.get(&session_id) {
         Some(s) => s,
         None => {
-            return (
-                if state.busy_sessions.contains(&session_id) {
-                    StatusCode::SERVICE_UNAVAILABLE
-                } else {
-                    StatusCode::NOT_FOUND
-                },
-                "session not found",
-            )
-                .into_response();
+            return session_missing(&state, session_id);
         }
     };
 
@@ -2088,6 +2085,7 @@ pub async fn serve_segment(
         Ok(id) => id,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid session_id").into_response(),
     };
+    wait_out_restart(&state, session_id).await;
 
     // Debrid sessions before probe completes have no segments yet
     {
@@ -2129,15 +2127,7 @@ pub async fn serve_segment(
         let mut session = match state.playback_sessions.get_mut(&session_id) {
             Some(s) => s,
             None => {
-                return (
-                    if state.busy_sessions.contains(&session_id) {
-                        StatusCode::SERVICE_UNAVAILABLE
-                    } else {
-                        StatusCode::NOT_FOUND
-                    },
-                    "session not found",
-                )
-                    .into_response();
+                return session_missing(&state, session_id);
             }
         };
         session.touch();
@@ -2354,15 +2344,7 @@ async fn serve_live_segment(
         let mut session = match state.playback_sessions.get_mut(&session_id) {
             Some(s) => s,
             None => {
-                return (
-                    if state.busy_sessions.contains(&session_id) {
-                        StatusCode::SERVICE_UNAVAILABLE
-                    } else {
-                        StatusCode::NOT_FOUND
-                    },
-                    "session not found",
-                )
-                    .into_response();
+                return session_missing(state, session_id);
             }
         };
         session.touch();
@@ -2534,18 +2516,9 @@ pub async fn seek(
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid session_id").into_response(),
     };
 
-    // Remove session from the map so async work (kill FFmpeg, start FFmpeg,
-    // disk I/O) doesn't hold a DashMap shard lock. Mark as "busy" so
-    // concurrent playlist/segment requests get 503 (retry) not 404 (dead).
-    state.busy_sessions.insert(session_id);
-    // Guard ensures busy flag is cleared on any exit path
-    struct BusyGuard(std::sync::Arc<dashmap::DashSet<Uuid>>, Uuid);
-    impl Drop for BusyGuard {
-        fn drop(&mut self) {
-            self.0.remove(&self.1);
-        }
-    }
-    let _busy_guard = BusyGuard(state.busy_sessions.clone(), session_id);
+    let _gate = state.session_gates.claim(session_id).await;
+    // Out of the map so the FFmpeg restart below holds no shard lock; readers wait on
+    // the gate until it is back.
     let (_, mut session) = match state.playback_sessions.remove(&session_id) {
         Some(pair) => pair,
         None => {
@@ -2803,14 +2776,7 @@ pub async fn decode_error(
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid session_id").into_response(),
     };
 
-    state.busy_sessions.insert(session_id);
-    struct BusyGuard(std::sync::Arc<dashmap::DashSet<Uuid>>, Uuid);
-    impl Drop for BusyGuard {
-        fn drop(&mut self) {
-            self.0.remove(&self.1);
-        }
-    }
-    let _busy_guard = BusyGuard(state.busy_sessions.clone(), session_id);
+    let _gate = state.session_gates.claim(session_id).await;
     let (_, mut session) = match state.playback_sessions.remove(&session_id) {
         Some(pair) => pair,
         None => return (StatusCode::NOT_FOUND, "session not found").into_response(),
@@ -3074,15 +3040,7 @@ pub async fn switch_audio(
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid session_id").into_response(),
     };
 
-    // Busy guard pattern (same as seek)
-    state.busy_sessions.insert(session_id);
-    struct BusyGuard(std::sync::Arc<dashmap::DashSet<Uuid>>, Uuid);
-    impl Drop for BusyGuard {
-        fn drop(&mut self) {
-            self.0.remove(&self.1);
-        }
-    }
-    let _busy_guard = BusyGuard(state.busy_sessions.clone(), session_id);
+    let _gate = state.session_gates.claim(session_id).await;
     let (_, mut session) = match state.playback_sessions.remove(&session_id) {
         Some(pair) => pair,
         None => {
@@ -3730,6 +3688,23 @@ fn primary_scale((w, h): (u32, u32), max_height: Option<u32>) -> Option<(u32, u3
     (out != (w, h)).then_some(out)
 }
 
+fn variant_needs_start(
+    state: &AppState,
+    session_id: Uuid,
+    variant_id: &str,
+) -> Result<bool, axum::response::Response> {
+    let mut session = state
+        .playback_sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "session not found").into_response())?;
+    let variant = session
+        .variants
+        .as_mut()
+        .and_then(|v| v.get_mut(variant_id))
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "variant not found").into_response())?;
+    Ok(variant.transcode.as_mut().is_none_or(|t| !t.is_running()))
+}
+
 /// Lazy-start FFmpeg for an ABR variant if not already running.
 ///
 /// Called on the first `stream.m3u8?v=variant_id` request for a variant.
@@ -3740,28 +3715,11 @@ async fn lazy_start_variant(
     session_id: Uuid,
     variant_id: &str,
 ) -> Result<(), axum::response::Response> {
-    // Check if the variant exists and already has a running transcode
-    let needs_start = {
-        let mut session = state
-            .playback_sessions
-            .get_mut(&session_id)
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "session not found").into_response())?;
-
-        let variant = session
-            .variants
-            .as_mut()
-            .and_then(|v| v.get_mut(variant_id))
-            .ok_or_else(|| (StatusCode::NOT_FOUND, "variant not found").into_response())?;
-
-        // Can't use is_running() in a pattern guard (needs &mut), so check separately
-        if let Some(ref mut t) = variant.transcode {
-            !t.is_running()
-        } else {
-            true
-        }
-    };
-
-    if !needs_start {
+    if !variant_needs_start(state, session_id, variant_id)? {
+        return Ok(());
+    }
+    let _gate = state.session_gates.claim(session_id).await;
+    if !variant_needs_start(state, session_id, variant_id)? {
         return Ok(());
     }
 
@@ -4269,6 +4227,13 @@ pub(crate) async fn load_playable_file(
                     video_width: probed_width,
                     video_height: probed_height,
                     interlaced: Some(probe.video_streams.first().is_some_and(|v| v.is_interlaced)),
+                    dolby_vision_only: decision::dolby_vision_only(
+                        probe
+                            .video_streams
+                            .first()
+                            .and_then(|v| v.dolby_vision)
+                            .map(|dv| i16::from(dv.bl_signal_compatibility_id)),
+                    ),
                     overall_bitrate_kbps: probe
                         .format
                         .bit_rate_kbps
@@ -4298,6 +4263,7 @@ pub(crate) struct StoredFileMeta {
     pub(crate) video_height: u32,
     /// `None` where nothing has recorded it, so a probe has to say.
     pub(crate) interlaced: Option<bool>,
+    pub(crate) dolby_vision_only: bool,
     pub(crate) overall_bitrate_kbps: Option<u32>,
 }
 
@@ -4434,6 +4400,7 @@ async fn load_movie_file_meta(
         video_width: file.video_width.unwrap_or(0) as u32,
         video_height: file.video_height.unwrap_or(0) as u32,
         interlaced: Some(file.is_interlaced),
+        dolby_vision_only: decision::dolby_vision_only(file.dv_bl_compat_id),
         overall_bitrate_kbps: file
             .overall_bitrate_kbps
             .and_then(|k| u32::try_from(k).ok()),
@@ -4497,6 +4464,7 @@ async fn load_episode_file_meta(
         video_width: file.video_width.unwrap_or(0) as u32,
         video_height: file.video_height.unwrap_or(0) as u32,
         interlaced: Some(file.is_interlaced),
+        dolby_vision_only: decision::dolby_vision_only(file.dv_bl_compat_id),
         overall_bitrate_kbps: file
             .overall_bitrate_kbps
             .and_then(|k| u32::try_from(k).ok()),
@@ -4536,6 +4504,7 @@ async fn load_recording_file_meta(
         video_width: 0,
         video_height: 0,
         interlaced: None,
+        dolby_vision_only: false,
         overall_bitrate_kbps: None,
     })
 }

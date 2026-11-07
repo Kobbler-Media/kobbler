@@ -91,6 +91,7 @@ mod tests {
                 is_hdr: false,
                 hdr_format: None,
                 is_interlaced: false,
+                dolby_vision: None,
             }],
             audio_streams: audio_codecs
                 .iter()

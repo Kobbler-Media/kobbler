@@ -14,6 +14,7 @@ pub mod persist;
 pub mod progressive;
 pub mod segment_cache;
 pub mod session;
+pub mod session_gate;
 pub mod subtitle;
 pub mod subtitle_insight;
 pub mod variant;

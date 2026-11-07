@@ -175,6 +175,7 @@ fn stremio_capabilities() -> crate::streaming::decision::ClientCapabilities {
         ],
         supports_interlaced: Some(true),
         max_height: None,
+        supports_dolby_vision: None,
     }
 }
 

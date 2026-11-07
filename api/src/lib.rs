@@ -156,9 +156,7 @@ pub struct AppState {
     /// VAAPI device for encoder fallback when primary accel is NVENC.
     /// Created once at startup to avoid concurrent `cuCtxCreate` races.
     pub vaapi_fallback_device: Option<kob_ffmpeg::hw::device::SharedHwDevice>,
-    /// Sessions temporarily removed from playback_sessions during seek operations.
-    /// Endpoints check this to return 503 (retry) instead of 404 (dead).
-    pub busy_sessions: Arc<dashmap::DashSet<uuid::Uuid>>,
+    pub session_gates: streaming::session_gate::SessionGates,
     /// Last position each user's devices saved, per show/movie. See `watch_handoff`.
     pub watch_handoffs: Arc<watch_handoff::HandoffStore>,
     pub gpu_lock: gpu::GpuLock,
@@ -2577,7 +2575,7 @@ pub fn create_app_state(
         search: search_backend,
         playback_sessions: Arc::new(dashmap::DashMap::new()),
         cue_trim_cache: Arc::new(ffmpeg::mkv_cue_cache::CueTrimCache::new()),
-        busy_sessions: Arc::new(dashmap::DashSet::new()),
+        session_gates: Default::default(),
         watch_handoffs: Arc::new(dashmap::DashMap::new()),
         hw_accel: Arc::new(hw_accel),
         encoder_caps: Arc::new(encoder_caps),

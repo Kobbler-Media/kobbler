@@ -100,9 +100,15 @@ pub(super) async fn open(
             .capabilities
             .as_ref()
             .is_some_and(|caps| caps.supports_interlaced == Some(false));
+    let dolby_vision_only = crate::streaming::decision::dolby_vision_only(
+        video
+            .and_then(|v| v.dolby_vision)
+            .map(|dv| i16::from(dv.bl_signal_compatibility_id)),
+    );
     let direct_play = !deinterlace
         && body.capabilities.as_ref().is_some_and(|caps| {
             crate::streaming::decision::is_container_compatible(&container, &caps.containers)
+                && (!dolby_vision_only || caps.supports_dolby_vision == Some(true))
         });
     let segment_dir = super::segment_dir(state, runtime, session_id);
     let (decision, transcode) = if direct_play {
@@ -120,7 +126,8 @@ pub(super) async fn open(
         )
     } else {
         info!(session_id = %session_id, file = %filename, "Playing from local cache (no debrid)");
-        let needs_transcode = deinterlace || video_codec == "hevc" || video_codec == "av1";
+        let needs_transcode =
+            deinterlace || dolby_vision_only || video_codec == "hevc" || video_codec == "av1";
         let audio_mode = if audio_track.is_some_and(|a| a.codec == "aac") {
             AudioMode::Copy
         } else {

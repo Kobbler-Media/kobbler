@@ -75,6 +75,7 @@ fn test_probe_result_to_meta_valid() {
             is_hdr: false,
             hdr_format: None,
             is_interlaced: true,
+            dolby_vision: None,
         }],
         audio_streams: vec![
             AudioStream {
