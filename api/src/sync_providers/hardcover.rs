@@ -757,7 +757,8 @@ impl HardcoverSyncProvider {
         struct UserBookData {
             book_id: i64,
             status_id: Option<i32>,
-            rating: Option<i32>,
+            // Hardcover's rating is `numeric` with half stars (5.0, 3.5); ours is whole 1-5.
+            rating: Option<f64>,
             updated_at: Option<String>,
             user_book_reads: Vec<UserBookReadData>,
         }
@@ -814,7 +815,7 @@ impl HardcoverSyncProvider {
                     book_id: ub.book_id.to_string(),
                     status_id: ub.status_id,
                     progress,
-                    rating: ub.rating,
+                    rating: ub.rating.map(|r| (r.round() as i32).clamp(1, 5)),
                     updated_at: ub.updated_at,
                     active_read_id,
                 });

@@ -531,3 +531,49 @@ async fn test_get_identifiers_and_metadata_returns_empty_for_null_metadata() {
         "Should return empty object for null provider_metadata"
     );
 }
+
+// ============================================================================
+// Pull sync: Hardcover sends ratings as numeric (half stars allowed)
+// ============================================================================
+
+#[tokio::test]
+async fn test_pull_user_books_accepts_decimal_ratings() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "me": [{ "user_books": [
+                { "book_id": 1, "status_id": 3, "rating": 5.0,
+                  "updated_at": "2026-11-07T10:35:33.544039+00:00",
+                  "user_book_reads": [{ "id": 11, "progress": 100, "finished_at": "2026-11-06" }] },
+                { "book_id": 2, "status_id": 3, "rating": 3.5,
+                  "updated_at": null, "user_book_reads": [] },
+                { "book_id": 3, "status_id": 2, "rating": null,
+                  "updated_at": null,
+                  "user_book_reads": [{ "id": 33, "progress": 2.01, "finished_at": null }] }
+            ]}]}
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let registry = SyncProviderRegistry::with_urls(
+        SyncProviderUrls::default().with_override("hardcover", mock_server.uri()),
+    );
+    let provider = registry
+        .create_provider("hardcover", "test-api-key")
+        .expect("hardcover provider should be registered");
+
+    let books = provider
+        .pull_user_books()
+        .await
+        .expect("decimal ratings must not fail the pull");
+
+    let ratings: Vec<_> = books.iter().map(|b| (b.external_id.as_str(), b.rating)).collect();
+    assert_eq!(
+        ratings,
+        vec![("1", Some(5)), ("2", Some(4)), ("3", None)],
+        "ratings round to whole stars"
+    );
+    assert_eq!(books[2].active_read_id, Some(33));
+}
