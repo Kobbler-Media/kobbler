@@ -216,6 +216,7 @@ let nextPageCallback: (() => void) | null = null;
 let getPageTextCallback: (() => string) | null = null;
 let getSpanTextCallback: ((maxWords: number) => Promise<string>) | null = null;
 let goToCfiCallback: ((cfi: string) => void) | null = null;
+let readingBookId: string | null = null;
 let pageReadyResolve: (() => void) | null = null;
 
 /** Register reader callbacks. Must be called before starting any mode. */
@@ -227,7 +228,9 @@ export function registerCallbacks(cbs: {
   getPageText: () => string;
   getSpanText?: (maxWords: number) => Promise<string>;
   goToCfi?: (cfi: string) => void;
+  bookId?: string;
 }) {
+  readingBookId = cbs.bookId ?? null;
   highlightCallback = cbs.highlight;
   highlightWordCallback = cbs.highlightWord ?? null;
   clearHighlightCallback = cbs.clearHighlight;
@@ -413,7 +416,7 @@ async function synthesizeAndPlayText(pageText: string) {
     const resp = await synthesizeTts(
       pageText,
       requestVoice(),
-      { ...(ttsParams ?? {}), speed },
+      { ...(ttsParams ?? {}), speed, bookId: readingBookId ?? undefined },
       ttsAbortController?.signal
     );
     if (!resp.ok || !resp.body) {

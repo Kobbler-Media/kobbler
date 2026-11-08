@@ -25,6 +25,7 @@ mod book_alternates_test;
 mod book_cast_attribution_test;
 mod book_cast_guards_test;
 mod book_cast_live_test;
+mod book_cast_read_along_test;
 mod book_cast_render_edits_test;
 mod book_cast_render_test;
 mod book_cast_test;

@@ -194,7 +194,8 @@
       nextPage: () => reader?.nextPage(),
       getPageText: () => reader?.getPageText() ?? '',
       getSpanText: (maxWords) => reader?.getSpanText(maxWords) ?? Promise.resolve(''),
-      goToCfi: (cfi) => reader?.goTo(cfi)
+      goToCfi: (cfi) => reader?.goTo(cfi),
+      bookId
     });
     await startTts();
   }

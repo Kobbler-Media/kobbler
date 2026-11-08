@@ -53,6 +53,7 @@ use crate::runtime_config::RuntimeConfig;
 /// Sample rate of the paragraph path's PCM, and of every cast stream.
 pub const PCM_SAMPLE_RATE: u32 = 24_000;
 
+#[derive(Clone)]
 pub struct Voice {
     pub id: String,
     pub params: TtsParams,

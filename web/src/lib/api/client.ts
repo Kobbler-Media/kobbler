@@ -5327,7 +5327,7 @@ export async function getTtsStatus(): Promise<TtsStatus> {
 export async function synthesizeTts(
   text: string,
   voice?: string,
-  params?: { temperature?: number; speed?: number },
+  params?: { temperature?: number; speed?: number; bookId?: string },
   signal?: AbortSignal
 ): Promise<Response> {
   // `speed` renders server-side, so the audio and the word timings both arrive
@@ -5341,6 +5341,8 @@ export async function synthesizeTts(
   // preset override a reader who deliberately chose 1x. Dropping it at natural
   // rate is the ENGINE hop's job, not this one.
   if (params?.speed !== undefined) body.speed = params.speed;
+  // The book's full cast, once any of its voices is approved, reads the page.
+  if (params?.bookId) body.book_id = params.bookId;
 
   const response = await fetch(`${apiBase}/api/v1/admin/tts/synthesize`, {
     method: 'POST',

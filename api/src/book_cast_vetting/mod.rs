@@ -4,6 +4,7 @@
 pub mod auditions;
 pub mod clips;
 pub mod error;
+pub mod read_along;
 pub mod seed;
 pub mod steps;
 pub mod takes;

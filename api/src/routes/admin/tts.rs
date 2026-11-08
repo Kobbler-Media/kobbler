@@ -14,6 +14,7 @@ use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::book_cast_vetting::read_along;
 use crate::http;
 use crate::repositories::{audiobook_files, user_voice_presets};
 use crate::routes::AuthUser;
@@ -180,6 +181,9 @@ pub struct SynthesizeRequest {
     /// engine refuses degrades to 1.0 rather than failing — the applied rate is
     /// reported back on the stream, never assumed.
     pub speed: Option<f64>,
+    /// The book the text is from: its full cast reads it once any voice of
+    /// the cast is approved.
+    pub book_id: Option<Uuid>,
 }
 
 /// The read a synthesize or cast request asks for, with voice and parameters
@@ -369,7 +373,7 @@ pub(super) async fn plan_synthesis(
         voice
     };
 
-    let route = timeline::Route::for_config(&config, service_url, state.gpu_lock.clone());
+    let route = timeline::Route::for_config(&config, service_url.clone(), state.gpu_lock.clone());
     // Clients send whatever they have — a page, a chapter — and the chunking
     // policy lives here, in one place, rather than being guessed at
     // differently by each of them. Splitting was once done by the caller, per
@@ -384,8 +388,20 @@ pub(super) async fn plan_synthesis(
         }));
     }
 
+    let reader = timeline::Voice { id: voice, params };
+    let cast = match req.book_id {
+        Some(book_id) => {
+            let engine = read_along::Engine {
+                storage_root: &state.config.storage_root,
+                service_url: &service_url,
+                backend,
+            };
+            read_along::passages(&state.pool, &engine, book_id, &text, reader.clone(), &route).await
+        }
+        None => None,
+    };
     Ok(timeline::Plan {
-        passages: timeline::read_by(texts, timeline::Voice { id: voice, params }),
+        passages: cast.unwrap_or_else(|| timeline::read_by(texts, reader)),
         route,
     })
 }
