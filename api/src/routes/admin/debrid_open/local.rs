@@ -202,6 +202,14 @@ pub(super) async fn open(
         })
         .collect();
 
+    let meter = DownloadMeter::new(filesize.max(0) as u64, filesize.max(0) as u64);
+    tokio::spawn(super::subtitles::name_once_head_arrives(
+        state.clone(),
+        session_id,
+        file_path.clone(),
+        meter.clone(),
+        duration,
+    ));
     state.playback_sessions.insert(
         session_id,
         PlaybackSession {
@@ -243,10 +251,7 @@ pub(super) async fn open(
             overlay_spawned_starts: std::collections::HashSet::new(),
             highest_served_segment: None,
             feed: Some(StreamFeed::new()),
-            download: Some(DownloadMeter::new(
-                filesize.max(0) as u64,
-                filesize.max(0) as u64,
-            )),
+            download: Some(meter),
             cue_gate: None,
             persisted: false,
         },

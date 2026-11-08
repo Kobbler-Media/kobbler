@@ -230,16 +230,7 @@ async fn subtitles_event(rig: &Rig, session_id: Uuid) -> Value {
     panic!("no subtitles event: {collected}");
 }
 
-#[tokio::test]
-async fn a_debrid_stream_names_its_subtitle_tracks_from_the_head_of_the_download() {
-    let rig = Rig::start(UpstreamPlan::new(source_mkv().to_vec()), "subs.mkv").await;
-    let movie = rig.movie().await;
-    let session = session_id_of(
-        &rig.resolve_with(&rig.resolve_body("subhash", movie, direct_play_caps()))
-            .await,
-    );
-
-    let event = subtitles_event(&rig, session).await;
+fn assert_named(event: &Value) {
     let subs = event["subtitles"].as_array().unwrap();
     let by_index = |i: i64| {
         subs.iter()
@@ -251,4 +242,34 @@ async fn a_debrid_stream_names_its_subtitle_tracks_from_the_head_of_the_download
     assert_eq!(by_index(2)["language"], "spa", "{event}");
     assert_eq!(by_index(3)["is_forced"], true, "{event}");
     assert_eq!(by_index(1)["is_forced"], false, "{event}");
+}
+
+#[tokio::test]
+async fn a_debrid_stream_names_its_subtitle_tracks_from_the_head_of_the_download() {
+    let rig = Rig::start(UpstreamPlan::new(source_mkv().to_vec()), "subs.mkv").await;
+    let movie = rig.movie().await;
+    let session = session_id_of(
+        &rig.resolve_with(&rig.resolve_body("subhash", movie, direct_play_caps()))
+            .await,
+    );
+
+    assert_named(&subtitles_event(&rig, session).await);
+}
+
+#[tokio::test]
+async fn a_debrid_release_replayed_from_the_cache_names_its_subtitle_tracks() {
+    let rig = Rig::start(UpstreamPlan::new(source_mkv().to_vec()), "subs.mkv").await;
+    let movie = rig.movie().await;
+    let body = rig.resolve_body("replayhash", movie, direct_play_caps());
+    let first = session_id_of(&rig.resolve_with(&body).await);
+    rig.wait_for_complete("replayhash").await;
+    rig.server
+        .admin_client()
+        .delete(&format!("/api/v1/admin/stream/{first}"))
+        .await
+        .assert_status(reqwest::StatusCode::NO_CONTENT);
+
+    let replay = session_id_of(&rig.resolve_with(&body).await);
+
+    assert_named(&subtitles_event(&rig, replay).await);
 }
