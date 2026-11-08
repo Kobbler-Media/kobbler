@@ -8,7 +8,7 @@
   import { groupJobs } from '#lib/utils/job-groups.js';
   import { showMessage } from '#lib/context/app.svelte.js';
   import { onReconnect, offReconnect } from '#lib/services/eventstream.svelte.js';
-  import { onJobChange } from '#lib/stores/jobs.svelte.js';
+  import { formatJobType, onJobChange } from '#lib/stores/jobs.svelte.js';
   import { entityRoute, entityTypeLabel } from '#lib/utils/entity-routes.js';
   import MetaLine from '#lib/components/shared/MetaLine.svelte';
   import type { Job } from '#lib/types.js';
@@ -93,13 +93,6 @@
 
   const toggleShowRoutine = () => {
     updateUrlParams({ routine: urlShowRoutine ? null : '1', page: null });
-  };
-
-  const formatJobType = (jobType: string): string => {
-    return jobType
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
   };
 
   const formatJobDate = (dateStr: string): string => {

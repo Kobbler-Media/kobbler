@@ -197,8 +197,15 @@ export async function initJobsStore() {
   }
 }
 
+// Scheduled jobs carry no description, so the notification shows this name.
+const JOB_TYPE_LABELS: Record<string, string> = {
+  hardcover_pull: 'Hardcover Reading Sync'
+};
+
 // Format job type for display
 export function formatJobType(jobType: string): string {
+  const label = JOB_TYPE_LABELS[jobType];
+  if (label) return label;
   return jobType
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
