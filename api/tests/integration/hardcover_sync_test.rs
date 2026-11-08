@@ -569,7 +569,10 @@ async fn test_pull_user_books_accepts_decimal_ratings() {
         .await
         .expect("decimal ratings must not fail the pull");
 
-    let ratings: Vec<_> = books.iter().map(|b| (b.external_id.as_str(), b.rating)).collect();
+    let ratings: Vec<_> = books
+        .iter()
+        .map(|b| (b.external_id.as_str(), b.rating))
+        .collect();
     assert_eq!(
         ratings,
         vec![("1", Some(5)), ("2", Some(4)), ("3", None)],
