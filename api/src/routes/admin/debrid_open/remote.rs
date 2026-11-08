@@ -175,6 +175,7 @@ pub(super) async fn open(
                 audio_stream_index: 0,
                 subtitle_handling: crate::streaming::decision::SubtitleHandling::None,
                 deinterlace: false,
+                tone_map_hdr: false,
             },
             transcode: None,
             segment_cache,

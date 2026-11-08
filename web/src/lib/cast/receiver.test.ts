@@ -52,7 +52,8 @@ function receiver(
   replies: Record<string, unknown> = {},
   displays: (mime: string, codecs?: string, width?: number, height?: number) => boolean = () =>
     true,
-  userAgent = 'Mozilla/5.0 (X11; Linux armv7l) CrKey/1.56.500000'
+  userAgent = 'Mozilla/5.0 (X11; Linux armv7l) CrKey/1.56.500000',
+  device: Record<string, boolean> | null = null
 ) {
   const interceptors: Record<string, Handler> = {};
   const listeners: Record<string, Handler[]> = {};
@@ -97,6 +98,7 @@ function receiver(
     sendCustomMessage: (_ns: string, _to: unknown, msg: Message) => sent.push(msg),
     addEventListener: (type: string, fn: Handler) => (contextListeners[type] ??= []).push(fn),
     canDisplayType: displays,
+    getDeviceCapabilities: () => device,
     getSenders: () => [{}],
     stop: () => {},
     start: () => {}
@@ -387,6 +389,17 @@ describe('cast receiver', () => {
       title: 'South Park',
       subtitle: 'S1E2 - Volcano'
     });
+  });
+
+  it.each([
+    [{ is_hdr_supported: false, is_dv_supported: false }, []],
+    [{ is_hdr_supported: true, is_dv_supported: false }, ['hdr10', 'hlg']],
+    [{ is_hdr_supported: true, is_dv_supported: true }, ['hdr10', 'hlg', 'dolby_vision']],
+    [null, undefined]
+  ])('tells a sender the HDR the display shows: %o', (device, hdr_formats) => {
+    const r = receiver({}, () => true, undefined, device);
+    r.connect();
+    expect((r.last('CAPABILITIES') as { hdr_formats?: string[] }).hdr_formats).toEqual(hdr_formats);
   });
 
   it('tells a sender what the device itself says it decodes, and asks for that next', async () => {

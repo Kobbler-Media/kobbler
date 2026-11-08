@@ -208,8 +208,26 @@ function receiverCapabilities() {
   const audio_codecs = ['aac'];
   if (canPlay('audio/mp4', 'ac-3')) audio_codecs.push('ac3');
   if (canPlay('audio/mp4', 'ec-3')) audio_codecs.push('eac3');
-  probedCapabilities = { video_codecs, audio_codecs, containers: ['mp4'], max_height: maxHeight };
+  const probed = { video_codecs, audio_codecs, containers: ['mp4'], max_height: maxHeight };
+  const hdr_formats = displayedHdr();
+  if (!hdr_formats) return probed;
+  probedCapabilities = { ...probed, hdr_formats };
   return probedCapabilities;
+}
+
+// Null until the receiver has started, and from firmware too old to say.
+function displayedHdr() {
+  let device;
+  try {
+    device = context.getDeviceCapabilities();
+  } catch {
+    return null;
+  }
+  if (!device) return null;
+  const formats = [];
+  if (device.is_hdr_supported) formats.push('hdr10', 'hlg');
+  if (device.is_dv_supported) formats.push('dolby_vision');
+  return formats;
 }
 
 function sendCapabilities() {

@@ -8,7 +8,16 @@ export type ClientCapabilities = {
   audio_codecs: string[];
   containers: string[];
   max_height?: number;
+  hdr_formats?: HdrFormat[];
 };
+
+export type HdrFormat = 'hdr10' | 'hlg' | 'dolby_vision';
+
+const TEN_BIT_PROBES = [
+  'video/mp4; codecs="hvc1.2.4.L153.B0"',
+  'video/mp4; codecs="vp09.02.10.10"'
+];
+const DOLBY_VISION_PROBE = 'video/mp4; codecs="dvh1.05.06"';
 
 const VIDEO_PROBES: [string, string][] = [
   ['h264', 'video/mp4; codecs="avc1.42E01E"'],
@@ -56,5 +65,17 @@ export function detectCapabilities(): ClientCapabilities {
   // We deliver everything as fMP4 via HLS
   const containers = ['mp4'];
 
-  return { video_codecs, audio_codecs, containers };
+  return { video_codecs, audio_codecs, containers, hdr_formats: detectHdrFormats() };
+}
+
+// Chromium and Safari tone-map HDR video onto an SDR display themselves; Firefox
+// shows it washed out.
+function detectHdrFormats(): HdrFormat[] {
+  const hdrDisplay =
+    typeof matchMedia !== 'undefined' && matchMedia('(dynamic-range: high)').matches;
+  const tonemaps = hdrDisplay || !/firefox/i.test(navigator.userAgent);
+  const formats: HdrFormat[] = [];
+  if (tonemaps && TEN_BIT_PROBES.some(isSupported)) formats.push('hdr10', 'hlg');
+  if (hdrDisplay && isSupported(DOLBY_VISION_PROBE)) formats.push('dolby_vision');
+  return formats;
 }

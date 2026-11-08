@@ -98,6 +98,10 @@ pub struct PlaybackDecision {
     pub subtitle_handling: SubtitleHandling,
     #[serde(default)]
     pub deinterlace: bool,
+    /// The transcode is to come out as BT.709 SDR: the client cannot display the
+    /// source's HDR.
+    #[serde(default)]
+    pub tone_map_hdr: bool,
 }
 
 /// Metadata about a file needed for the decision.
@@ -109,15 +113,110 @@ pub struct FileMeta {
     pub video_height: u32,
     /// Field-coded (PAFF/MBAFF) source.
     pub interlaced: bool,
-    /// Dolby Vision with no backward-compatible base layer (profile 5): anything
-    /// that does not apply the RPU shows it green and purple.
-    pub dolby_vision_only: bool,
+    pub dynamic_range: DynamicRange,
 }
 
-/// `bl_signal_compatibility_id` 0 is the only id whose base layer is not a
-/// standard SDR/HDR10/HLG picture.
-pub fn dolby_vision_only(bl_signal_compatibility_id: Option<i16>) -> bool {
-    bl_signal_compatibility_id == Some(0)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DynamicRange {
+    #[default]
+    Sdr,
+    Hdr10,
+    Hlg,
+    DolbyVision(BaseLayer),
+}
+
+/// What a player that ignores the Dolby Vision RPU sees. `None` (profile 5) is
+/// IPTPQc2, which without the RPU shows green and purple.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BaseLayer {
+    None,
+    Sdr,
+    Hdr10,
+    Hlg,
+}
+
+impl DynamicRange {
+    /// What a transcode carries: the RPU does not survive re-encoding.
+    fn base(self) -> BaseLayer {
+        match self {
+            Self::Sdr => BaseLayer::Sdr,
+            Self::Hdr10 => BaseLayer::Hdr10,
+            Self::Hlg => BaseLayer::Hlg,
+            Self::DolbyVision(base) => base,
+        }
+    }
+
+    pub fn dolby_vision_only(self) -> bool {
+        self == Self::DolbyVision(BaseLayer::None)
+    }
+}
+
+/// From what the probe stored. Probes label anything HDR without a PQ or HLG
+/// transfer "HDR"; it is treated as HDR10, the format such files are mastered for.
+pub fn dynamic_range(
+    is_hdr: bool,
+    hdr_format: Option<&str>,
+    dv_bl_compat_id: Option<i16>,
+) -> DynamicRange {
+    match dv_bl_compat_id {
+        Some(0) => DynamicRange::DolbyVision(BaseLayer::None),
+        Some(2) => DynamicRange::DolbyVision(BaseLayer::Sdr),
+        Some(4) => DynamicRange::DolbyVision(BaseLayer::Hlg),
+        Some(_) => DynamicRange::DolbyVision(BaseLayer::Hdr10),
+        None if !is_hdr => DynamicRange::Sdr,
+        None if hdr_format == Some("HLG") => DynamicRange::Hlg,
+        None => DynamicRange::Hdr10,
+    }
+}
+
+pub fn probed_dynamic_range(video: &kob_ffmpeg::probe::VideoStream) -> DynamicRange {
+    dynamic_range(
+        video.is_hdr,
+        video.hdr_format.as_deref(),
+        video
+            .dolby_vision
+            .map(|dv| i16::from(dv.bl_signal_compatibility_id)),
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HdrFormat {
+    Hdr10,
+    Hlg,
+    /// The player applies the RPU itself.
+    DolbyVision,
+    #[serde(other)]
+    Other,
+}
+
+impl ClientCapabilities {
+    /// `None` is a client that never said, which is sent HDR10 and HLG as they
+    /// are, as it always was, but never a base layer that needs the RPU.
+    pub fn displays(&self, range: DynamicRange) -> bool {
+        let renders_rpu = self
+            .hdr_formats
+            .as_ref()
+            .is_some_and(|f| f.contains(&HdrFormat::DolbyVision));
+        (matches!(range, DynamicRange::DolbyVision(_)) && renders_rpu)
+            || self.displays_transcode_of(range)
+    }
+
+    pub fn displays_transcode_of(&self, range: DynamicRange) -> bool {
+        let shows = |format| {
+            self.hdr_formats
+                .as_ref()
+                .is_none_or(|f| f.contains(&format))
+        };
+        match range.base() {
+            BaseLayer::None => false,
+            BaseLayer::Sdr => true,
+            BaseLayer::Hdr10 => shows(HdrFormat::Hdr10),
+            BaseLayer::Hlg => shows(HdrFormat::Hlg),
+        }
+    }
 }
 
 /// Metadata about an audio track.
@@ -159,10 +258,10 @@ pub struct ClientCapabilities {
     pub supports_interlaced: Option<bool>,
     #[serde(default)]
     pub max_height: Option<u32>,
-    /// `None` is taken as no: only a client that renders Dolby Vision itself is
-    /// sent a profile 5 stream untouched.
+    /// The HDR the client shows correctly, tone-mapping itself or on an HDR
+    /// display. `None` when it never said; an empty list is SDR only.
     #[serde(default)]
-    pub supports_dolby_vision: Option<bool>,
+    pub hdr_formats: Option<Vec<HdrFormat>>,
 }
 
 impl Default for ClientCapabilities {
@@ -174,7 +273,7 @@ impl Default for ClientCapabilities {
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
             max_height: None,
-            supports_dolby_vision: None,
+            hdr_formats: None,
         }
     }
 }
@@ -215,8 +314,7 @@ pub fn decide(
     let fits = capabilities
         .max_height
         .is_none_or(|max| file.video_height <= max);
-    let renders_picture =
-        !file.dolby_vision_only || capabilities.supports_dolby_vision == Some(true);
+    let renders_picture = capabilities.displays(file.dynamic_range);
     let video_supported = !deinterlace
         && fits
         && renders_picture
@@ -265,6 +363,7 @@ pub fn decide(
             audio_stream_index,
             subtitle_handling,
             deinterlace,
+            tone_map_hdr: false,
         }
     } else if video_supported && audio_supported {
         // Codecs fine, container needs remux (MKV → fMP4)
@@ -275,6 +374,7 @@ pub fn decide(
             audio_stream_index,
             subtitle_handling,
             deinterlace,
+            tone_map_hdr: false,
         }
     } else if video_supported {
         // Video fine, audio needs transcode
@@ -289,6 +389,7 @@ pub fn decide(
             audio_stream_index,
             subtitle_handling,
             deinterlace,
+            tone_map_hdr: false,
         }
     } else {
         // Video needs transcode (and possibly audio too)
@@ -308,6 +409,7 @@ pub fn decide(
             audio_stream_index,
             subtitle_handling,
             deinterlace,
+            tone_map_hdr: false,
         }
     };
 
@@ -325,6 +427,8 @@ pub fn decide(
         }
     }
 
+    decision.tone_map_hdr = matches!(decision.video_mode, VideoMode::Transcode { .. })
+        && !capabilities.displays_transcode_of(file.dynamic_range);
     decision
 }
 
@@ -735,7 +839,7 @@ mod tests {
             containers: vec!["mp4".to_string(), "webm".to_string()],
             supports_interlaced: None,
             max_height: None,
-            supports_dolby_vision: None,
+            hdr_formats: None,
         }
     }
 
@@ -746,7 +850,7 @@ mod tests {
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
             max_height: None,
-            supports_dolby_vision: None,
+            hdr_formats: None,
         }
     }
 
@@ -757,7 +861,7 @@ mod tests {
             containers: vec!["mp4".to_string(), "webm".to_string()],
             supports_interlaced: None,
             max_height: None,
-            supports_dolby_vision: None,
+            hdr_formats: None,
         }
     }
 
@@ -773,7 +877,7 @@ mod tests {
             containers: vec!["mp4".to_string(), "mkv".to_string(), "ts".to_string()],
             supports_interlaced: Some(true),
             max_height: None,
-            supports_dolby_vision: None,
+            hdr_formats: None,
         };
         assert!(is_container_compatible("mpegts", &caps.containers));
         assert!(is_container_compatible("ts", &caps.containers));
@@ -791,7 +895,7 @@ mod tests {
             video_width: 720,
             video_height: 576,
             interlaced: true,
-            dolby_vision_only: false,
+            dynamic_range: DynamicRange::Sdr,
         };
         let audio = [AudioTrackMeta {
             stream_index: 0,
@@ -866,26 +970,128 @@ mod tests {
     }
 
     #[test]
-    fn dolby_vision_without_a_base_layer_is_copied_only_to_a_client_that_renders_it() {
+    fn hdr_is_sent_untouched_only_to_a_client_that_displays_it() {
+        use DynamicRange::{DolbyVision, Hdr10, Hlg, Sdr};
+        use HdrFormat as F;
+        use PlaybackMethod::{DirectPlay, VideoTranscode};
+        let p5 = DolbyVision(BaseLayer::None);
+        let p8_1 = DolbyVision(BaseLayer::Hdr10);
+        let p8_4 = DolbyVision(BaseLayer::Hlg);
         let cases = [
-            (false, None, PlaybackMethod::DirectPlay),
-            (true, None, PlaybackMethod::VideoTranscode),
-            (true, Some(false), PlaybackMethod::VideoTranscode),
-            (true, Some(true), PlaybackMethod::DirectPlay),
+            (Sdr, Some(vec![]), DirectPlay, false),
+            (Hdr10, None, DirectPlay, false),
+            (Hdr10, Some(vec![]), VideoTranscode, true),
+            (Hdr10, Some(vec![F::Hlg]), VideoTranscode, true),
+            (Hdr10, Some(vec![F::Hdr10]), DirectPlay, false),
+            (Hlg, None, DirectPlay, false),
+            (Hlg, Some(vec![F::Hdr10]), VideoTranscode, true),
+            (Hlg, Some(vec![F::Hlg]), DirectPlay, false),
+            (p5, None, VideoTranscode, true),
+            (p5, Some(vec![F::Hdr10, F::Hlg]), VideoTranscode, true),
+            (p5, Some(vec![F::DolbyVision]), DirectPlay, false),
+            (p8_1, None, DirectPlay, false),
+            (p8_1, Some(vec![]), VideoTranscode, true),
+            (p8_1, Some(vec![F::Hdr10]), DirectPlay, false),
+            (p8_1, Some(vec![F::DolbyVision]), DirectPlay, false),
+            (p8_4, Some(vec![F::Hdr10]), VideoTranscode, true),
+            (p8_4, Some(vec![F::Hlg]), DirectPlay, false),
         ];
-        for (dolby_vision_only, supports_dolby_vision, method) in cases {
+        for (dynamic_range, hdr_formats, method, tone_map_hdr) in cases {
             let (mut file, audio) = mp4_h264_aac();
-            file.dolby_vision_only = dolby_vision_only;
+            file.dynamic_range = dynamic_range;
             let caps = ClientCapabilities {
-                supports_dolby_vision,
+                hdr_formats: hdr_formats.clone(),
                 ..safari_caps()
             };
             let decision = decide(&file, &audio, &[], &caps, ViewerPrefs::default(), H264_ONLY);
-            assert_eq!(
-                decision.method, method,
-                "dv_only={dolby_vision_only} supports={supports_dolby_vision:?}"
-            );
+            let case = format!("{dynamic_range:?} to {hdr_formats:?}");
+            assert_eq!(decision.method, method, "{case}");
+            assert_eq!(decision.tone_map_hdr, tone_map_hdr, "{case}");
         }
+    }
+
+    #[test]
+    fn a_transcode_forced_by_something_else_keeps_hdr_the_client_displays() {
+        let cases = [
+            (Some(vec![HdrFormat::Hdr10]), false),
+            (Some(vec![]), true),
+            (None, false),
+        ];
+        for (hdr_formats, tone_map_hdr) in cases {
+            let (mut file, audio) = mp4_h264_aac();
+            file.video_codec = "hevc".to_string();
+            file.dynamic_range = DynamicRange::Hdr10;
+            let caps = ClientCapabilities {
+                hdr_formats: hdr_formats.clone(),
+                ..firefox_caps()
+            };
+            let decision = decide(&file, &audio, &[], &caps, ViewerPrefs::default(), H264_ONLY);
+            assert_eq!(decision.method, PlaybackMethod::VideoTranscode);
+            assert_eq!(decision.tone_map_hdr, tone_map_hdr, "{hdr_formats:?}");
+        }
+    }
+
+    #[test]
+    fn dynamic_range_reads_the_stored_probe() {
+        use DynamicRange::{DolbyVision, Hdr10, Hlg, Sdr};
+        let cases = [
+            (false, None, None, Sdr),
+            (true, Some("HDR10"), None, Hdr10),
+            (true, Some("HDR"), None, Hdr10),
+            (true, Some("HLG"), None, Hlg),
+            (
+                true,
+                Some("Dolby Vision P5"),
+                Some(0),
+                DolbyVision(BaseLayer::None),
+            ),
+            (
+                true,
+                Some("Dolby Vision P8.1"),
+                Some(1),
+                DolbyVision(BaseLayer::Hdr10),
+            ),
+            (
+                true,
+                Some("Dolby Vision P8.2"),
+                Some(2),
+                DolbyVision(BaseLayer::Sdr),
+            ),
+            (
+                true,
+                Some("Dolby Vision P8.4"),
+                Some(4),
+                DolbyVision(BaseLayer::Hlg),
+            ),
+            (
+                true,
+                Some("Dolby Vision P7"),
+                Some(6),
+                DolbyVision(BaseLayer::Hdr10),
+            ),
+        ];
+        for (is_hdr, format, compat, range) in cases {
+            assert_eq!(dynamic_range(is_hdr, format, compat), range, "{format:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_hdr_formats_from_a_newer_client_are_ignored() {
+        let caps: ClientCapabilities = serde_json::from_value(serde_json::json!({
+            "video_codecs": ["hevc"],
+            "audio_codecs": ["aac"],
+            "containers": ["mp4"],
+            "hdr_formats": ["hdr10", "hdr_vivid", "dolby_vision"],
+        }))
+        .unwrap();
+        assert_eq!(
+            caps.hdr_formats,
+            Some(vec![
+                HdrFormat::Hdr10,
+                HdrFormat::Other,
+                HdrFormat::DolbyVision
+            ])
+        );
     }
 
     fn mp4_h264_aac() -> (FileMeta, Vec<AudioTrackMeta>) {
@@ -896,7 +1102,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
-                dolby_vision_only: false,
+                dynamic_range: DynamicRange::Sdr,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -917,7 +1123,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
-                dolby_vision_only: false,
+                dynamic_range: DynamicRange::Sdr,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -938,7 +1144,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
-                dolby_vision_only: false,
+                dynamic_range: DynamicRange::Sdr,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -959,7 +1165,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
-                dolby_vision_only: false,
+                dynamic_range: DynamicRange::Sdr,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -980,7 +1186,7 @@ mod tests {
                 video_width: 1920,
                 video_height: 1080,
                 interlaced: false,
-                dolby_vision_only: false,
+                dynamic_range: DynamicRange::Sdr,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -1128,7 +1334,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
-            dolby_vision_only: false,
+            dynamic_range: DynamicRange::Sdr,
         };
         let audio = vec![
             AudioTrackMeta {
@@ -1174,7 +1380,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
-            dolby_vision_only: false,
+            dynamic_range: DynamicRange::Sdr,
         };
         let audio = vec![
             AudioTrackMeta {
@@ -1590,7 +1796,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
-            dolby_vision_only: false,
+            dynamic_range: DynamicRange::Sdr,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1632,7 +1838,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
-            dolby_vision_only: false,
+            dynamic_range: DynamicRange::Sdr,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1744,7 +1950,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
-            dolby_vision_only: false,
+            dynamic_range: DynamicRange::Sdr,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1760,7 +1966,7 @@ mod tests {
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
             max_height: None,
-            supports_dolby_vision: None,
+            hdr_formats: None,
         };
         let d = decide(
             &file,
@@ -1786,7 +1992,7 @@ mod tests {
             video_width: 720,
             video_height: 480,
             interlaced: false,
-            dolby_vision_only: false,
+            dynamic_range: DynamicRange::Sdr,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1802,7 +2008,7 @@ mod tests {
             containers: vec!["mp4".to_string()],
             supports_interlaced: None,
             max_height: None,
-            supports_dolby_vision: None,
+            hdr_formats: None,
         };
         let d = decide(
             &file,
@@ -1829,7 +2035,7 @@ mod tests {
             video_width: 1920,
             video_height: 1080,
             interlaced: false,
-            dolby_vision_only: false,
+            dynamic_range: DynamicRange::Sdr,
         };
         let audio = vec![
             AudioTrackMeta {
@@ -1855,7 +2061,7 @@ mod tests {
             containers: vec!["mkv".to_string()],
             supports_interlaced: None,
             max_height: None,
-            supports_dolby_vision: None,
+            hdr_formats: None,
         };
         let d = decide(
             &file,

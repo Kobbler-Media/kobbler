@@ -467,7 +467,7 @@ pub(crate) async fn open_file_session(
             video_width,
             video_height,
             interlaced,
-            dolby_vision_only,
+            dynamic_range,
             ..
         },
     ) = load_playable_file(
@@ -509,7 +509,7 @@ pub(crate) async fn open_file_session(
         video_width,
         video_height,
         interlaced: interlaced.unwrap_or(false),
-        dolby_vision_only,
+        dynamic_range,
     };
     let preferred_codecs = state.encoder_caps.preferred_codecs();
     let mut decision = decision::decide(
@@ -655,6 +655,7 @@ pub(crate) async fn open_file_session(
             hw_device: state.hw_device.get(),
             prior_runs: Vec::new(),
             deinterlace: decision.deinterlace,
+            tone_map_hdr: decision.tone_map_hdr,
         };
 
         // Ensure segment dir exists for subtitle extraction before response
@@ -3678,6 +3679,7 @@ async fn start_ffmpeg_for_session(
         hw_device: state.hw_device.get(),
         prior_runs,
         deinterlace: session.decision.deinterlace,
+        tone_map_hdr: session.decision.tone_map_hdr,
     };
 
     transcode::TranscodeProcess::start(args).await
@@ -4227,13 +4229,11 @@ pub(crate) async fn load_playable_file(
                     video_width: probed_width,
                     video_height: probed_height,
                     interlaced: Some(probe.video_streams.first().is_some_and(|v| v.is_interlaced)),
-                    dolby_vision_only: decision::dolby_vision_only(
-                        probe
-                            .video_streams
-                            .first()
-                            .and_then(|v| v.dolby_vision)
-                            .map(|dv| i16::from(dv.bl_signal_compatibility_id)),
-                    ),
+                    dynamic_range: probe
+                        .video_streams
+                        .first()
+                        .map(decision::probed_dynamic_range)
+                        .unwrap_or_default(),
                     overall_bitrate_kbps: probe
                         .format
                         .bit_rate_kbps
@@ -4263,7 +4263,7 @@ pub(crate) struct StoredFileMeta {
     pub(crate) video_height: u32,
     /// `None` where nothing has recorded it, so a probe has to say.
     pub(crate) interlaced: Option<bool>,
-    pub(crate) dolby_vision_only: bool,
+    pub(crate) dynamic_range: decision::DynamicRange,
     pub(crate) overall_bitrate_kbps: Option<u32>,
 }
 
@@ -4400,7 +4400,11 @@ async fn load_movie_file_meta(
         video_width: file.video_width.unwrap_or(0) as u32,
         video_height: file.video_height.unwrap_or(0) as u32,
         interlaced: Some(file.is_interlaced),
-        dolby_vision_only: decision::dolby_vision_only(file.dv_bl_compat_id),
+        dynamic_range: decision::dynamic_range(
+            file.is_hdr,
+            file.hdr_format.as_deref(),
+            file.dv_bl_compat_id,
+        ),
         overall_bitrate_kbps: file
             .overall_bitrate_kbps
             .and_then(|k| u32::try_from(k).ok()),
@@ -4464,7 +4468,11 @@ async fn load_episode_file_meta(
         video_width: file.video_width.unwrap_or(0) as u32,
         video_height: file.video_height.unwrap_or(0) as u32,
         interlaced: Some(file.is_interlaced),
-        dolby_vision_only: decision::dolby_vision_only(file.dv_bl_compat_id),
+        dynamic_range: decision::dynamic_range(
+            file.is_hdr,
+            file.hdr_format.as_deref(),
+            file.dv_bl_compat_id,
+        ),
         overall_bitrate_kbps: file
             .overall_bitrate_kbps
             .and_then(|k| u32::try_from(k).ok()),
@@ -4504,7 +4512,7 @@ async fn load_recording_file_meta(
         video_width: 0,
         video_height: 0,
         interlaced: None,
-        dolby_vision_only: false,
+        dynamic_range: decision::DynamicRange::Sdr,
         overall_bitrate_kbps: None,
     })
 }

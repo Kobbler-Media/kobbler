@@ -100,15 +100,15 @@ pub(super) async fn open(
             .capabilities
             .as_ref()
             .is_some_and(|caps| caps.supports_interlaced == Some(false));
-    let dolby_vision_only = crate::streaming::decision::dolby_vision_only(
-        video
-            .and_then(|v| v.dolby_vision)
-            .map(|dv| i16::from(dv.bl_signal_compatibility_id)),
-    );
+    let dynamic_range = video
+        .map(crate::streaming::decision::probed_dynamic_range)
+        .unwrap_or_default();
+    let caps = body.capabilities.clone().unwrap_or_default();
+    let displays = caps.displays(dynamic_range);
     let direct_play = !deinterlace
+        && displays
         && body.capabilities.as_ref().is_some_and(|caps| {
             crate::streaming::decision::is_container_compatible(&container, &caps.containers)
-                && (!dolby_vision_only || caps.supports_dolby_vision == Some(true))
         });
     let segment_dir = super::segment_dir(state, runtime, session_id);
     let (decision, transcode) = if direct_play {
@@ -121,13 +121,14 @@ pub(super) async fn open(
                 audio_stream_index: audio_index,
                 subtitle_handling: SubtitleHandling::None,
                 deinterlace: false,
+                tone_map_hdr: false,
             },
             None,
         )
     } else {
         info!(session_id = %session_id, file = %filename, "Playing from local cache (no debrid)");
         let needs_transcode =
-            deinterlace || dolby_vision_only || video_codec == "hevc" || video_codec == "av1";
+            deinterlace || !displays || video_codec == "hevc" || video_codec == "av1";
         let audio_mode = if audio_track.is_some_and(|a| a.codec == "aac") {
             AudioMode::Copy
         } else {
@@ -143,37 +144,33 @@ pub(super) async fn open(
         } else {
             PlaybackMethod::Remux
         };
+        let decision = PlaybackDecision {
+            method,
+            video_mode: if needs_transcode {
+                VideoMode::Transcode {
+                    target_codec: "h264".to_string(),
+                }
+            } else {
+                VideoMode::Copy
+            },
+            audio_mode,
+            audio_stream_index: audio_index,
+            subtitle_handling: SubtitleHandling::None,
+            deinterlace,
+            tone_map_hdr: needs_transcode && !caps.displays_transcode_of(dynamic_range),
+        };
         let process = start_transcode(
             state,
             session_id,
             &file_path,
             &segment_dir,
-            needs_transcode,
-            deinterlace,
-            &audio_mode,
-            audio_index,
+            &decision,
             &video_codec,
             duration,
             body.start_time,
         )
         .await?;
-        (
-            PlaybackDecision {
-                method,
-                video_mode: if needs_transcode {
-                    VideoMode::Transcode {
-                        target_codec: "h264".to_string(),
-                    }
-                } else {
-                    VideoMode::Copy
-                },
-                audio_mode,
-                audio_stream_index: audio_index,
-                subtitle_handling: SubtitleHandling::None,
-                deinterlace,
-            },
-            Some(process),
-        )
+        (decision, Some(process))
     };
     let method = decision.method;
     let media = match mode {
@@ -306,14 +303,12 @@ async fn start_transcode(
     session_id: Uuid,
     file_path: &std::path::Path,
     segment_dir: &std::path::Path,
-    needs_transcode: bool,
-    deinterlace: bool,
-    audio_mode: &AudioMode,
-    audio_index: i32,
+    decision: &PlaybackDecision,
     video_codec: &str,
     duration: f64,
     start_time: Option<f64>,
 ) -> Result<crate::ffmpeg::transcode::TranscodeProcess, axum::response::Response> {
+    let needs_transcode = matches!(decision.video_mode, VideoMode::Transcode { .. });
     let primary = if needs_transcode {
         state.encoder_caps.h264.clone()
     } else {
@@ -331,7 +326,7 @@ async fn start_transcode(
             .into_iter()
             .map(String::from),
     );
-    let ffmpeg_audio = match audio_mode {
+    let ffmpeg_audio = match &decision.audio_mode {
         AudioMode::Copy => crate::ffmpeg::transcode::AudioMode::Copy,
         AudioMode::Transcode {
             target_codec,
@@ -372,7 +367,7 @@ async fn start_transcode(
                 crate::ffmpeg::transcode::VideoMode::Copy
             },
             audio_mode: ffmpeg_audio.clone(),
-            audio_stream_index: audio_index,
+            audio_stream_index: decision.audio_stream_index,
             start_time,
             segment_duration: 6,
             hw_accel: (*state.hw_accel).clone(),
@@ -385,7 +380,8 @@ async fn start_transcode(
             initial_generation: 0,
             hw_device,
             prior_runs: Vec::new(),
-            deinterlace,
+            deinterlace: decision.deinterlace,
+            tone_map_hdr: decision.tone_map_hdr,
         };
         match crate::ffmpeg::transcode::TranscodeProcess::start(args).await {
             Ok(mut process) => match process.survived_launch().await {

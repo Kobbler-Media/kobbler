@@ -153,6 +153,7 @@ pub fn hls_config(
         .video_encoder(&encoders.video)
         .audio_encoder(&encoders.audio)
         .audio_bitrate(i64::from(plan.audio_bitrate_kbps) * 1000)
+        .tone_map_hdr(true)
         .run_context(run);
     config.audio_stream_index = Some(plan.audio_stream_index.max(0) as u32);
     let (scale, kbps) = plan

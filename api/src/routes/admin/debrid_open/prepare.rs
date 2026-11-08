@@ -145,7 +145,7 @@ pub(super) async fn run(ctx: Prepare) {
             video_width: result.probe.video_width,
             video_height: result.probe.video_height,
             interlaced: result.probe.interlaced,
-            dolby_vision_only: result.probe.dolby_vision_only,
+            dynamic_range: result.probe.dynamic_range,
             audio_tracks: result
                 .probe
                 .audio_tracks
@@ -182,7 +182,7 @@ pub(super) async fn run(ctx: Prepare) {
         video_width,
         video_height,
         interlaced: probe_info.interlaced,
-        dolby_vision_only: probe_info.dolby_vision_only,
+        dynamic_range: probe_info.dynamic_range,
     };
     let audio_metas: Vec<crate::streaming::decision::AudioTrackMeta> = probe_info
         .audio_tracks
@@ -453,6 +453,7 @@ pub(super) async fn run(ctx: Prepare) {
                 hw_device,
                 prior_runs: Vec::new(),
                 deinterlace: decision.deinterlace,
+                tone_map_hdr: decision.tone_map_hdr,
             };
 
             match crate::ffmpeg::transcode::TranscodeProcess::start(args).await {

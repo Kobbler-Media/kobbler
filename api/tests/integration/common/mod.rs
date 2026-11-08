@@ -5,6 +5,7 @@ pub mod debrid_rig;
 pub mod debrid_upstream;
 pub mod epub;
 pub mod helpers;
+pub mod iptv_rig;
 pub mod kobo_mock;
 pub mod mp3;
 pub mod server;

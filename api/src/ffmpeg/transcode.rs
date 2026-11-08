@@ -72,6 +72,7 @@ pub struct TranscodeArgs {
     /// Generations an earlier process left in `output_dir`, adopted rather than redone.
     pub prior_runs: Vec<kob_ffmpeg::session::PriorRun>,
     pub deinterlace: bool,
+    pub tone_map_hdr: bool,
 }
 
 /// Health state for a live IPTV stream, shared between the feeder task and playlist handler.
@@ -127,7 +128,8 @@ pub struct HybridProbeInfo {
     pub video_width: u32,
     pub video_height: u32,
     pub interlaced: bool,
-    pub dolby_vision_only: bool,
+    #[serde(default)]
+    pub dynamic_range: crate::streaming::decision::DynamicRange,
     pub audio_tracks: Vec<HybridAudioTrack>,
 }
 
@@ -154,7 +156,7 @@ impl HybridProbeInfo {
         let mut video_width = 1920u32;
         let mut video_height = 1080u32;
         let mut interlaced = false;
-        let mut dolby_vision_only = false;
+        let mut dynamic_range = crate::streaming::decision::DynamicRange::Sdr;
         let mut audio_codec = String::new();
         let mut audio_stream_index = 0i32;
         let mut audio_tracks = Vec::new();
@@ -175,9 +177,13 @@ impl HybridProbeInfo {
                         video_width = (*params).width as u32;
                         video_height = (*params).height as u32;
                         interlaced = kob_ffmpeg::interlace::codec_parameters_interlaced(params);
-                        dolby_vision_only = crate::streaming::decision::dolby_vision_only(
-                            kob_ffmpeg::dovi::DolbyVision::from_codec_parameters(params)
-                                .map(|dv| i16::from(dv.bl_signal_compatibility_id)),
+                        let trc = (*params).color_trc;
+                        let hlg = trc == kob_ffmpeg::ffi::AVCOL_TRC_ARIB_STD_B67;
+                        let dv = kob_ffmpeg::dovi::DolbyVision::from_codec_parameters(params);
+                        dynamic_range = crate::streaming::decision::dynamic_range(
+                            dv.is_some() || hlg || trc == kob_ffmpeg::ffi::AVCOL_TRC_SMPTE2084,
+                            hlg.then_some("HLG"),
+                            dv.map(|dv| i16::from(dv.bl_signal_compatibility_id)),
                         );
                     }
                 }
@@ -221,7 +227,7 @@ impl HybridProbeInfo {
             video_width,
             video_height,
             interlaced,
-            dolby_vision_only,
+            dynamic_range,
             audio_tracks,
         }
     }
@@ -289,6 +295,7 @@ fn build_config_for_args(args: &TranscodeArgs) -> kob_ffmpeg::session::SessionCo
         if args.deinterlace {
             config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
         }
+        config = config.tone_map_hdr(args.tone_map_hdr);
     }
     if let AudioMode::Transcode {
         target_codec,
@@ -350,6 +357,7 @@ fn build_config_for_hybrid(
         if decision.deinterlace {
             config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
         }
+        config = config.tone_map_hdr(decision.tone_map_hdr);
     }
     if let Some((ref codec, bitrate)) = audio_config {
         config = config
@@ -999,6 +1007,7 @@ mod tests {
             hw_device: None,
             prior_runs: Vec::new(),
             deinterlace: false,
+            tone_map_hdr: false,
         }
     }
 
@@ -1010,6 +1019,7 @@ mod tests {
             audio_stream_index,
             subtitle_handling: SubtitleHandling::None,
             deinterlace: false,
+            tone_map_hdr: false,
         }
     }
 
