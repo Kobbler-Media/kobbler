@@ -1,4 +1,4 @@
-//! Handler for sync provider pull jobs.
+//! Hourly pull of reading status, progress and ratings from Hardcover.
 //!
 //! Periodically fetches user's book data from sync providers and updates local state.
 
@@ -14,22 +14,22 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use uuid::Uuid;
 
-/// Payload for sync_pull jobs.
+/// Payload for hardcover_pull jobs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncPullPayload {
+pub struct HardcoverPullPayload {
     /// Which provider to pull from (e.g., "hardcover")
     pub provider_type: String,
     /// Optional user ID to sync (if not specified, sync all users with this provider configured)
     pub user_id: Option<Uuid>,
 }
 
-/// Handler for sync_pull jobs.
-pub struct SyncPullHandler {
+/// Handler for hardcover_pull jobs.
+pub struct HardcoverPullHandler {
     pool: PgPool,
     registry: SyncProviderRegistry,
 }
 
-impl SyncPullHandler {
+impl HardcoverPullHandler {
     pub fn new(pool: PgPool) -> Self {
         let registry = SyncProviderRegistry::new();
         Self { pool, registry }
@@ -216,9 +216,9 @@ struct SyncStats {
 }
 
 #[async_trait]
-impl JobHandler for SyncPullHandler {
+impl JobHandler for HardcoverPullHandler {
     fn job_type(&self) -> &'static str {
-        "sync_pull"
+        "hardcover_pull"
     }
 
     /// Only 1 at a time to avoid API rate limits.
@@ -232,7 +232,7 @@ impl JobHandler for SyncPullHandler {
         payload: Value,
         cancel: CancellationToken,
     ) -> Result<Value, JobError> {
-        let payload: SyncPullPayload = serde_json::from_value(payload)?;
+        let payload: HardcoverPullPayload = serde_json::from_value(payload)?;
         nats_jobs::check_cancelled(&cancel)?;
 
         info!(

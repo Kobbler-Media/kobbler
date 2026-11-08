@@ -422,7 +422,7 @@ async fn admin_user_id(server: &TestServer) -> Uuid {
 }
 
 /// Simulate what pull sync does: store progress in user_book_data + reading_state.
-/// This mirrors the logic in SyncPullHandler::sync_user().
+/// This mirrors the logic in HardcoverPullHandler::sync_user().
 async fn simulate_pull_sync_progress(
     pool: &sqlx::PgPool,
     user_id: Uuid,

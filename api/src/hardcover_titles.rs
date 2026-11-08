@@ -68,7 +68,7 @@ pub const BOOK_PROVIDER_JOBS: &[&str] = &[
     "book_want",
     "book_want_check",
     "hardcover_reconcile",
-    "sync_pull",
+    "hardcover_pull",
 ];
 
 pub async fn most_read(

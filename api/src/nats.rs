@@ -53,6 +53,7 @@ use crate::jobs::handlers::{
     FileAvailabilityHandler,
     ForcedSubtitleCheckHandler,
     FormatConversionHandler,
+    HardcoverPullHandler,
     HardcoverReconcileHandler,
     IptvEpgCleanupHandler,
     IptvHealthCheckHandler,
@@ -120,7 +121,6 @@ use crate::jobs::handlers::{
     SportsWantHandler,
     SubtitleSearchHandler,
     SyncProviderHandler,
-    SyncPullHandler,
     TempFileCleanupHandler,
     TraktBulkSyncWatchStateHandler,
     TraktImportHistoryHandler,
@@ -619,8 +619,8 @@ pub async fn start_nats_worker(
         pool.clone(),
     )));
 
-    // Sync pull handler (pulls reading data from external providers)
-    worker.register_handler(HandlerAdapter::new(SyncPullHandler::new(pool.clone())));
+    // Hardcover pull handler (pulls reading data from Hardcover)
+    worker.register_handler(HandlerAdapter::new(HardcoverPullHandler::new(pool.clone())));
 
     // Migration handlers
     worker.register_handler(HandlerAdapter::new(MigrationEpisodeReconcileHandler::new(
@@ -1048,13 +1048,13 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
         .run_immediately(),
     );
 
-    // Sync pull - fetches user book data from sync providers
+    // Hardcover pull - fetches reading status, progress and ratings from Hardcover
     // Run immediately on startup to populate provider read IDs from existing reads
     scheduler.register(
         ScheduledJob::new(
-            "sync-pull-hardcover",
+            "hardcover-pull",
             "kobbler",
-            "sync_pull",
+            "hardcover_pull",
             std::time::Duration::from_secs(3600), // hourly
         )
         .with_payload(|| serde_json::json!({ "provider_type": "hardcover" }))
