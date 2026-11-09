@@ -27,8 +27,8 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::ffmpeg::persist::ChapterSkipSegment;
-use crate::repositories::cached_segments;
 use crate::repositories::debrid_cache_files as cache_files;
+use crate::repositories::debrid_stream_sessions;
 use crate::routes::admin::debrid_stream::StreamResolveBody;
 use crate::routes::admin::streaming::{ChapterResponse, SessionResponse, SkipSegmentResponse};
 use crate::streaming::progressive::DownloadTarget;
@@ -128,24 +128,31 @@ impl SessionRow {
     }
 
     /// Make the session playable: its library item exists and its row is written, starting
-    /// from what earlier analysis of the title found so a replay need not wait for it.
+    /// from what earlier analysis of the release found so a replay need not wait for it.
     pub(crate) async fn commit(
         &self,
         state: &AppState,
         body: &StreamResolveBody,
     ) -> Result<Committed, axum::response::Response> {
         let (media_id, media_type) = commit_media(state, body).await?;
-        let skip_segments = cached_segments::current(&state.pool, &media_type, media_id)
-            .await
-            .unwrap_or_else(|e| {
-                warn!(error = %e, %media_id, "cached skip segments unreadable");
-                Vec::new()
-            });
-        let lufs = crate::media_cache::episode_cache::debrid_title_lufs(
-            &state.config.storage_root,
+        let analysis = debrid_stream_sessions::release_analysis(
+            &state.pool,
             &media_type,
             media_id,
-        );
+            self.info_hash.as_deref(),
+            self.file_id,
+            self.cache_path.as_deref(),
+        )
+        .await
+        .unwrap_or_else(|e| {
+            warn!(error = %e, %media_id, "earlier analysis of the release unreadable");
+            Default::default()
+        });
+        let skip_segments: Vec<ChapterSkipSegment> = analysis
+            .skip_segments
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        let lufs = analysis.lufs;
         if let Err(e) = self
             .insert(&state.pool, &media_type, media_id, &skip_segments, lufs)
             .await

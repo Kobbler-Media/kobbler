@@ -146,8 +146,8 @@ pub async fn upsert_movie(
     Ok(())
 }
 
-/// The segments a debrid session of this title starts with: what detect last found for
-/// it, if that is from a pipeline the player can still trust.
+/// What detect last found for any release of this title, if from a pipeline that can
+/// still be trusted. Timed to that release, so only an estimate for another.
 pub async fn current(
     pool: &PgPool,
     media_type: &str,

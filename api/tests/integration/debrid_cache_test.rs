@@ -195,42 +195,83 @@ async fn cache_movie_segments(rig: &Rig, movie_id: Uuid, segments: &Value) {
     .unwrap();
 }
 
+async fn end_playback(rig: &Rig, session_id: Uuid) {
+    rig.server
+        .admin_client()
+        .delete(&format!("/api/v1/admin/playback/sessions/{session_id}"))
+        .await;
+}
+
+async fn record_analysis(rig: &Rig, session_id: Uuid, segments: &Value, lufs: f64) {
+    sqlx::query("UPDATE debrid_stream_sessions SET skip_segments = $2, lufs = $3 WHERE id = $1")
+        .bind(session_id)
+        .bind(segments)
+        .bind(lufs)
+        .execute(&rig.server.pool)
+        .await
+        .unwrap();
+}
+
+fn served_segments(resp: &Value) -> Vec<(String, f64)> {
+    resp["skip_segments"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|s| {
+            (
+                s["segment_type"].as_str().unwrap().to_string(),
+                s["start_seconds"].as_f64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// Intro and credits are timed to one file; another release of the title has its own.
 #[tokio::test]
-async fn a_session_opens_with_the_segments_already_detected_for_its_title() {
+async fn a_session_opens_with_what_analysis_found_in_its_own_release_only() {
+    use api::media_cache::episode_cache::{MediaKind, episode_cache_dir};
     let rig = Rig::start(UpstreamPlan::new(ITA_ENG_FIXTURE.to_vec()), "film.mkv").await;
+    let movie = rig.movie().await;
     let segments = json!([
         { "segment_type": "intro", "start_seconds": 10.0, "end_seconds": 40.0 },
         { "segment_type": "credits", "start_seconds": 2700.0, "end_seconds": 2800.0 }
     ]);
-    let replay_body = orphaned_download(&rig, "segreplay").await;
-    let replay_movie: Uuid = replay_body["media_id"].as_str().unwrap().parse().unwrap();
-    cache_movie_segments(&rig, replay_movie, &segments).await;
-    let replay = rig.resolve_with(&replay_body).await;
-
-    let movie = rig.movie().await;
+    let body = rig.resolve_body("ownrelease", movie, direct_play_caps());
+    let first = session_id_of(&rig.resolve_with(&body).await);
+    rig.wait_for_complete("ownrelease").await;
+    wait_for_probe(&rig, first).await;
+    record_analysis(&rig, first, &segments, -23.5).await;
     cache_movie_segments(&rig, movie, &segments).await;
-    let fresh = rig
-        .resolve_with(&rig.resolve_body("segfresh", movie, direct_play_caps()))
+    let analysed = episode_cache_dir(
+        &rig.server.storage_root(),
+        &MediaKind::Movie { movie_id: movie },
+    );
+    std::fs::create_dir_all(&analysed).unwrap();
+    std::fs::write(
+        analysed.join("loudness.json"),
+        r#"{"integrated_lufs":-23.5}"#,
+    )
+    .unwrap();
+    end_playback(&rig, first).await;
+
+    let replay = rig.resolve_with(&body).await;
+    let other = rig
+        .resolve_with(&rig.resolve_body("otherrelease", movie, direct_play_caps()))
         .await;
 
-    for (name, resp) in [("download", &fresh), ("cache replay", &replay)] {
-        let served: Vec<(String, f64)> = resp["skip_segments"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-            .iter()
-            .map(|s| {
-                (
-                    s["segment_type"].as_str().unwrap().to_string(),
-                    s["start_seconds"].as_f64().unwrap(),
-                )
-            })
-            .collect();
-        assert_eq!(
-            served,
-            vec![("intro".to_string(), 10.0), ("credits".to_string(), 2700.0)],
-            "{name}"
-        );
+    assert_eq!(
+        served_segments(&replay),
+        vec![("intro".to_string(), 10.0), ("credits".to_string(), 2700.0)],
+        "{replay}"
+    );
+    assert_eq!(replay["lufs"], json!(-23.5), "{replay}");
+    assert_eq!(served_segments(&other), vec![], "{other}");
+    assert_eq!(other["lufs"], Value::Null, "{other}");
+    for (name, resp, expected) in [
+        ("replay", &replay, Some(&segments)),
+        ("other release", &other, None),
+    ] {
         let stored: Option<Value> =
             sqlx::query_scalar("SELECT skip_segments FROM debrid_stream_sessions WHERE id = $1")
                 .bind(session_id_of(resp))
@@ -239,7 +280,7 @@ async fn a_session_opens_with_the_segments_already_detected_for_its_title() {
                 .unwrap();
         assert_eq!(
             stored.as_ref(),
-            Some(&segments),
+            expected,
             "{name}: the status stream reads this"
         );
     }
@@ -299,23 +340,10 @@ fn chapter_titles(chapters: &Value) -> Vec<String> {
 /// A library file's session carries its loudness and chapters; a debrid one did neither.
 #[tokio::test]
 async fn a_debrid_session_carries_the_loudness_and_chapters_of_its_file() {
-    use api::media_cache::episode_cache::{MediaKind, episode_cache_dir};
     let rig = Rig::start(UpstreamPlan::new(CHAPTERED_FIXTURE.to_vec()), "film.mkv").await;
     let movie = rig.movie().await;
-    let analysed = episode_cache_dir(
-        &rig.server.storage_root(),
-        &MediaKind::Movie { movie_id: movie },
-    );
-    std::fs::create_dir_all(&analysed).unwrap();
-    std::fs::write(
-        analysed.join("loudness.json"),
-        r#"{"integrated_lufs":-23.5}"#,
-    )
-    .unwrap();
-
     let body = rig.resolve_body("chapterhash", movie, direct_play_caps());
     let fresh = rig.resolve_with(&body).await;
-    assert_eq!(fresh["lufs"], json!(-23.5), "{fresh}");
     let session = session_id_of(&fresh);
     let resp = reqwest::Client::new()
         .get(format!(
@@ -349,7 +377,8 @@ async fn a_debrid_session_carries_the_loudness_and_chapters_of_its_file() {
 
     rig.wait_for_complete("chapterhash").await;
     wait_for_probe(&rig, session).await;
-    delete_session(&rig, session).await;
+    record_analysis(&rig, session, &json!([]), -23.5).await;
+    end_playback(&rig, session).await;
     let replay = rig.resolve_with(&body).await;
     assert_eq!(replay["lufs"], json!(-23.5), "{replay}");
     assert_eq!(
