@@ -81,6 +81,12 @@ impl MediaKind {
 }
 
 /// Resolve the directory holding `kind`'s artefacts.
+/// The measured loudness of a debrid title, from whichever release was analysed for it.
+pub fn debrid_title_lufs(storage_root: &str, media_type: &str, media_id: Uuid) -> Option<f64> {
+    let kind = MediaKind::for_debrid(media_type, media_id)?;
+    super::readers::read_loudness_at(&episode_cache_dir(storage_root, &kind))
+}
+
 pub fn episode_cache_dir(storage_root: &str, kind: &MediaKind) -> PathBuf {
     PathBuf::from(storage_root)
         .join("episode_cache")

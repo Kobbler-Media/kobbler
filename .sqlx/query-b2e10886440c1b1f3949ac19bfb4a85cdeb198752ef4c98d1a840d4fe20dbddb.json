@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT chapters AS \"chapters!\"\n        FROM debrid_stream_sessions\n        WHERE media_type = 'episode' AND media_id = $1 AND chapters IS NOT NULL\n        ORDER BY updated_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chapters!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "chapters"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "b2e10886440c1b1f3949ac19bfb4a85cdeb198752ef4c98d1a840d4fe20dbddb"
+}

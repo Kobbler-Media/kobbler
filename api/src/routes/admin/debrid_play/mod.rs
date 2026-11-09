@@ -106,10 +106,16 @@ fn touch(state: &AppState, session: &PlaySession) -> Live {
         return Live::default();
     };
     ps.touch();
+    // A session reading along with a download ahead has no writer of its own to restart.
     let stopped = ps
         .download_cancel
         .as_ref()
-        .is_some_and(|c| c.is_cancelled());
+        .is_some_and(|c| c.is_cancelled())
+        && !crate::routes::admin::debrid_open::release_key(
+            session.info_hash.as_deref(),
+            session.file_id,
+        )
+        .is_some_and(|k| state.downloads_ahead.contains(&k));
     let incomplete = || {
         let on_disk = session
             .cache_path

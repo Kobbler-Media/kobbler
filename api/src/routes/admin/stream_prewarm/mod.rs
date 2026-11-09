@@ -20,8 +20,11 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::routes::PlaybackAuth;
-use crate::routes::admin::debrid_open::{self, OpenMode, WarmGate, live_response, probe_json};
+use crate::routes::admin::debrid_open::{
+    self, OpenMode, WarmGate, chapters_json, live_response, probe_json,
+};
 use crate::routes::admin::debrid_stream::{AutoCreateMedia, StreamResolveBody, kids_may_resolve};
+use crate::routes::admin::stream_local;
 use crate::routes::admin::stream_search_request::{self, SearchTarget};
 use crate::routes::helpers::build_kobload_client;
 use crate::streaming::cache_download;
@@ -172,7 +175,7 @@ pub async fn prewarm(
         end(&state, existing.id, Phase::Released).await;
     }
 
-    let Some((option, resolve_body)) = pick(&state, &auth, &title).await else {
+    let Some((option, resolve_body)) = pick(&state, auth.user_id, &title).await else {
         return StatusCode::NO_CONTENT.into_response();
     };
     if auth.is_kids && !kids_may_resolve(&state.pool, &resolve_body).await {
@@ -184,6 +187,7 @@ pub async fn prewarm(
     // else, is left to the normal walk.
     if let Some(key) = &release_key
         && (state.debrid_session_index.contains_key(key)
+            || state.downloads_ahead.contains(key)
             || state.stream_prewarms.warm_for_release(key).is_some())
     {
         return StatusCode::NO_CONTENT.into_response();
@@ -272,14 +276,44 @@ fn warm_reply(state: &AppState, prewarm: &Prewarm) -> Response {
 
 /// The top pick kobload offers that is cached and has not failed, as kobload sent it and
 /// as a resolve body.
+/// The release a prewarm of the episode would pick.
+pub(crate) async fn pick_episode(
+    state: &AppState,
+    user_id: Uuid,
+    episode_id: Uuid,
+) -> Option<StreamResolveBody> {
+    let title = PrewarmBody {
+        media_type: "episode".to_string(),
+        media_id: Some(episode_id),
+        auto_create: None,
+        season: None,
+        episode: None,
+        capabilities: None,
+        start_time: None,
+        estimated_duration: None,
+        preferred_audio_language: None,
+        preferred_audio_title: None,
+    }
+    .title()
+    .ok()?;
+    pick(state, user_id, &title).await.map(|(_, body)| body)
+}
+
 async fn pick(
     state: &AppState,
-    auth: &PlaybackAuth,
+    user_id: Uuid,
     title: &Title,
 ) -> Option<(Value, StreamResolveBody)> {
+    if let Some(media_id) = title.template.media_id
+        && let Ok(Some(raw)) =
+            stream_local::local_option(state, &title.template.media_type, media_id).await
+        && let Some(picked) = pickable(title, &raw)
+    {
+        return Some(picked);
+    }
     let prepared = stream_search_request::prepare(
         state,
-        auth.user_id,
+        user_id,
         &title.target,
         title.template.preferred_audio_language.as_deref(),
     )
@@ -292,27 +326,31 @@ async fn pick(
         .await
         .map_err(|e| warn!(error = %e, "prewarm search failed"))
         .ok()?;
-    let raw = value["options"].as_array()?;
-    raw.iter().find_map(|raw| {
-        let option: nats_jobs::StreamOption = serde_json::from_value(raw.clone()).ok()?;
-        let available = option.cached
-            || matches!(
-                option.availability,
-                Some(nats_jobs::StreamAvailability::Ready | nats_jobs::StreamAvailability::Likely)
-            );
-        let failed = option.playback == Some(nats_jobs::StreamPlayback::Failed);
-        (available && !failed).then(|| {
-            let mut body = title.template.clone();
-            body.debrid_provider_id = option.debrid_provider_id;
-            body.info_hash = option.info_hash.clone();
-            body.magnet_url = option.magnet_url.clone();
-            body.nzb_url = option.nzb_url.clone();
-            body.file_id = option.files.first().map(|f| f.id);
-            body.release_title = option.release_title.clone();
-            body.debrid_provider = option.debrid_provider.clone();
-            body.quality = option.quality.clone();
-            (raw.clone(), body)
-        })
+    value["options"]
+        .as_array()?
+        .iter()
+        .find_map(|raw| pickable(title, raw))
+}
+
+fn pickable(title: &Title, raw: &Value) -> Option<(Value, StreamResolveBody)> {
+    let option: nats_jobs::StreamOption = serde_json::from_value(raw.clone()).ok()?;
+    let available = option.cached
+        || matches!(
+            option.availability,
+            Some(nats_jobs::StreamAvailability::Ready | nats_jobs::StreamAvailability::Likely)
+        );
+    let failed = option.playback == Some(nats_jobs::StreamPlayback::Failed);
+    (available && !failed).then(|| {
+        let mut body = title.template.clone();
+        body.debrid_provider_id = option.debrid_provider_id;
+        body.info_hash = option.info_hash.clone();
+        body.magnet_url = option.magnet_url.clone();
+        body.nzb_url = option.nzb_url.clone();
+        body.file_id = option.files.first().map(|f| f.id);
+        body.release_title = option.release_title.clone();
+        body.debrid_provider = option.debrid_provider.clone();
+        body.quality = option.quality.clone();
+        (raw.clone(), body)
     })
 }
 
@@ -391,8 +429,8 @@ async fn claim_prewarm(state: &AppState, prewarm: Prewarm) -> Response {
             .into_response();
     }
 
-    let (media_id, media_type) = match prewarm.row.commit(state, &prewarm.body).await {
-        Ok(m) => m,
+    let committed = match prewarm.row.commit(state, &prewarm.body).await {
+        Ok(c) => c,
         Err(resp) => return resp,
     };
     let session_id = prewarm.session_id;
@@ -401,13 +439,15 @@ async fn claim_prewarm(state: &AppState, prewarm: Prewarm) -> Response {
         .playback_sessions
         .get(&session_id)
         .filter(|s| !s.file_path.as_os_str().is_empty())
-        .map(|s| probe_json(&s));
-    if let Some(probe) = probe {
+        .map(|s| (probe_json(&s), chapters_json(&s.chapters)));
+    if let Some((probe, chapters)) = probe {
         let _ = sqlx::query(
-            "UPDATE debrid_stream_sessions SET probe_data = $1, updated_at = NOW() WHERE id = $2",
+            "UPDATE debrid_stream_sessions SET probe_data = $1, chapters = $3, updated_at = NOW() \
+             WHERE id = $2",
         )
         .bind(probe)
         .bind(session_id)
+        .bind(chapters)
         .execute(&state.pool)
         .await;
     }
@@ -418,8 +458,10 @@ async fn claim_prewarm(state: &AppState, prewarm: Prewarm) -> Response {
     prewarm.gate.claimed.cancel();
 
     let mut base = prewarm.opened.clone();
-    base.media_id = Some(media_id.to_string());
-    base.media_type = Some(media_type);
+    base.media_id = Some(committed.media_id.to_string());
+    base.media_type = Some(committed.media_type);
+    base.skip_segments = committed.skip_segments;
+    base.lufs = committed.lufs;
     let response = live_response(state, session_id, Some(&base)).unwrap_or(base);
     state
         .stream_prewarms

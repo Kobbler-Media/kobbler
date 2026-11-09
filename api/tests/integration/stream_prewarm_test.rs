@@ -342,3 +342,34 @@ async fn a_discover_episode_prewarm_takes_its_numbers_from_either_place() {
         }
     }
 }
+
+#[tokio::test]
+async fn a_release_on_disk_is_warmed_without_a_search() {
+    let rig = warm_rig(padded_fixture(), "searchhash").await;
+    let movie = rig.movie().await;
+    let first = session_id_of(
+        &rig.resolve_with(&rig.resolve_body("diskhash", movie, direct_play_caps()))
+            .await,
+    );
+    rig.wait_for_complete("diskhash").await;
+    rig.server
+        .admin_client()
+        .delete(&format!("/api/v1/admin/playback/sessions/{first}"))
+        .await;
+    let searches = rig.kobload_requests("/stream/search").await.len();
+
+    let reply = wait_ready(&rig, &movie_body(movie)).await;
+    let claimed: Value = claim(&rig, prewarm_id(&reply)).await.json();
+    let info_hash: Option<String> =
+        sqlx::query_scalar("SELECT info_hash FROM debrid_stream_sessions WHERE id = $1")
+            .bind(session_id_of(&claimed))
+            .fetch_one(&rig.server.pool)
+            .await
+            .unwrap();
+    assert_eq!(info_hash.as_deref(), Some("diskhash"));
+    assert_eq!(
+        rig.kobload_requests("/stream/search").await.len(),
+        searches,
+        "searched with the release on disk"
+    );
+}

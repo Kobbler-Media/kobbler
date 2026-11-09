@@ -145,3 +145,21 @@ pub async fn upsert_movie(
     .await?;
     Ok(())
 }
+
+/// The segments a debrid session of this title starts with: what detect last found for
+/// it, if that is from a pipeline the player can still trust.
+pub async fn current(
+    pool: &PgPool,
+    media_type: &str,
+    media_id: Uuid,
+) -> Result<Vec<ChapterSkipSegment>, sqlx::Error> {
+    let cached = match media_type {
+        "episode" => get_episode(pool, media_id).await?,
+        "movie" => get_movie(pool, media_id).await?,
+        _ => None,
+    };
+    Ok(cached
+        .filter(|c| c.pipeline_version >= crate::media_cache::MIN_SUPPORTED_PIPELINE_VERSION)
+        .map(|c| c.segments)
+        .unwrap_or_default())
+}

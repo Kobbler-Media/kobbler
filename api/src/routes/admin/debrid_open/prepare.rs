@@ -55,6 +55,15 @@ pub(crate) fn probe_json(session: &PlaybackSession) -> serde_json::Value {
     })
 }
 
+/// `None` for none, so the status stream has nothing to announce.
+pub(crate) fn chapters_json(
+    chapters: &[crate::routes::admin::streaming::ChapterResponse],
+) -> Option<serde_json::Value> {
+    (!chapters.is_empty())
+        .then(|| serde_json::to_value(chapters).ok())
+        .flatten()
+}
+
 /// Probe, decide, and start whatever transcode the decision needs.
 pub(super) async fn run(ctx: Prepare) {
     let Prepare {
@@ -159,6 +168,7 @@ pub(super) async fn run(ctx: Prepare) {
                     is_default: a.is_default,
                 })
                 .collect(),
+            chapters: result.probe.chapters.clone(),
         };
         (info, Some(result))
     };
@@ -258,6 +268,7 @@ pub(super) async fn run(ctx: Prepare) {
             session.audio_metas = audio_metas.clone();
             session.preferred_audio_index = preferred_audio;
             session.file_path = local_cache_path.clone();
+            session.chapters = probe_info.chapters.clone();
         }
     }
 
@@ -277,10 +288,12 @@ pub(super) async fn run(ctx: Prepare) {
         .map(|s| probe_json(&s))
         .unwrap_or_default();
     let _ = sqlx::query(
-        "UPDATE debrid_stream_sessions SET probe_data = $1, updated_at = NOW() WHERE id = $2",
+        "UPDATE debrid_stream_sessions SET probe_data = $1, chapters = $3, updated_at = NOW() \
+         WHERE id = $2",
     )
     .bind(&probe_json)
     .bind(session_id)
+    .bind(chapters_json(&probe_info.chapters))
     .execute(&bg_state.pool)
     .await;
 

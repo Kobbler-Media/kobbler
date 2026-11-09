@@ -66,6 +66,7 @@ pub(crate) fn live_response(
         response.preferred_audio_stream_index = session.preferred_audio_index;
         response.video_width = (width > 0).then_some(width);
         response.video_height = (height > 0).then_some(height);
+        response.chapters = session.chapters.clone();
     }
     if direct_play {
         response.start_time = None;

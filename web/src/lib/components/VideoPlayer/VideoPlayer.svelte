@@ -238,20 +238,7 @@
           startHeartbeat();
           watchStart();
           resetHideTimer();
-          if (sr.lufs != null && videoEl) {
-            try {
-              audioContext = new AudioContext();
-              const source = audioContext.createMediaElementSource(videoEl);
-              audioGainNode = audioContext.createGain();
-              audioLimiterNode = createNormalizationLimiter(audioContext);
-              source.connect(audioGainNode);
-              audioGainNode.connect(audioLimiterNode);
-              audioLimiterNode.connect(audioContext.destination);
-              applyVideoNormalization();
-            } catch (e) {
-              console.warn('Web Audio setup failed:', e);
-            }
-          }
+          ensureNormalization();
           if (activeCreationParams.media_type === 'episode' && activeMediaId) {
             getNextEpisode(activeMediaId).then((info) => {
               nextEpisode = info;
@@ -1575,6 +1562,24 @@
     }
   }
 
+  // A debrid stream's loudness is measured after it has started playing.
+  function ensureNormalization() {
+    if (session.lufs == null || !videoEl) return;
+    if (audioGainNode) return applyVideoNormalization();
+    try {
+      audioContext = new AudioContext();
+      const source = audioContext.createMediaElementSource(videoEl);
+      audioGainNode = audioContext.createGain();
+      audioLimiterNode = createNormalizationLimiter(audioContext);
+      source.connect(audioGainNode);
+      audioGainNode.connect(audioLimiterNode);
+      audioLimiterNode.connect(audioContext.destination);
+      applyVideoNormalization();
+    } catch (e) {
+      console.warn('Web Audio setup failed:', e);
+    }
+  }
+
   function applyVideoNormalization() {
     if (!audioGainNode || session.lufs == null) return;
     if (normalizeVolume) {
@@ -2773,6 +2778,17 @@
               session.skip_segments = data.segments;
             }
             break;
+          case 'chapters':
+            if (data.chapters) {
+              session.chapters = data.chapters;
+            }
+            break;
+          case 'loudness':
+            if (typeof data.lufs === 'number') {
+              session.lufs = data.lufs;
+              ensureNormalization();
+            }
+            break;
           case 'thumbnails_ready':
             if (data.thumbnails_url) {
               session.thumbnails_url = data.thumbnails_url;
@@ -2780,6 +2796,9 @@
             break;
           case 'download_complete':
             // Cache file is ready — no action needed, stream_play will use it
+            break;
+          case 'done':
+            es.close();
             break;
         }
       } catch {
@@ -2907,21 +2926,7 @@
     watchStart();
     resetHideTimer();
 
-    // Set up Web Audio for volume normalization
-    if (session.lufs != null && videoEl) {
-      try {
-        audioContext = new AudioContext();
-        const source = audioContext.createMediaElementSource(videoEl);
-        audioGainNode = audioContext.createGain();
-        audioLimiterNode = createNormalizationLimiter(audioContext);
-        source.connect(audioGainNode);
-        audioGainNode.connect(audioLimiterNode);
-        audioLimiterNode.connect(audioContext.destination);
-        applyVideoNormalization();
-      } catch (e) {
-        console.warn('Web Audio setup failed:', e);
-      }
-    }
+    ensureNormalization();
 
     if (activeCreationParams.media_type === 'episode' && activeMediaId) {
       getNextEpisode(activeMediaId).then((info) => {

@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT NOT EXISTS(\n                   SELECT 1 FROM tv_episode_file_episodes fe\n                   JOIN tv_episode_files f ON f.id = fe.episode_file_id\n                   WHERE fe.episode_id = $1 AND f.available)\n               AND NOT EXISTS(\n                   SELECT 1 FROM job_status\n                   WHERE job_type = $2 AND payload->>'episode_id' = $1::text\n                     AND created_at > NOW() - $3::float8 * INTERVAL '1 hour')\n               AS \"wanted!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "wanted!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0246f6d9f2fac294120e32eca98c939592be430253c28cd43df9a571868af58b"
+}

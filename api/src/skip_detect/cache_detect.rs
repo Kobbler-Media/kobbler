@@ -236,10 +236,7 @@ pub async fn detect_season_from_cache(
     episodes: &[EpisodeFile],
     storage_root: &str,
 ) -> Vec<(Uuid, Vec<DetectedSegment>, EpisodeDiagnostics)> {
-    let mut chapters_by_file: HashMap<Uuid, Vec<(f64, Option<String>)>> = HashMap::new();
-    for ep in episodes {
-        chapters_by_file.insert(ep.file_id, load_chapters_for_file(pool, ep.file_id).await);
-    }
+    let chapters_by_file = season_chapters(pool, episodes).await;
     detect_season_from_cache_with_chapters(
         text_embed_url,
         episodes,
@@ -1429,6 +1426,49 @@ fn build_vhash_slices(caches: &[EpisodeCache]) -> (EpVhashSeqs, EpVhashSeqs) {
         }
     }
     (start, end)
+}
+
+/// Each episode's chapters, keyed as [`season_episode_files`] keys them: a library file's
+/// from the DB, a debrid-only episode's (keyed by its own id) from its latest stream.
+pub async fn season_chapters(
+    pool: &PgPool,
+    episodes: &[EpisodeFile],
+) -> HashMap<Uuid, Vec<(f64, Option<String>)>> {
+    let mut by_file = HashMap::new();
+    for ep in episodes {
+        let chapters = if ep.episode_id == Some(ep.file_id) {
+            load_debrid_chapters(pool, ep.file_id).await
+        } else {
+            load_chapters_for_file(pool, ep.file_id).await
+        };
+        by_file.insert(ep.file_id, chapters);
+    }
+    by_file
+}
+
+async fn load_debrid_chapters(pool: &PgPool, episode_id: Uuid) -> Vec<(f64, Option<String>)> {
+    let chapters = sqlx::query_scalar!(
+        r#"
+        SELECT chapters AS "chapters!"
+        FROM debrid_stream_sessions
+        WHERE media_type = 'episode' AND media_id = $1 AND chapters IS NOT NULL
+        ORDER BY updated_at DESC
+        LIMIT 1
+        "#,
+        episode_id,
+    )
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    chapters
+        .and_then(|c| {
+            serde_json::from_value::<Vec<crate::routes::admin::streaming::ChapterResponse>>(c).ok()
+        })
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| (c.start_seconds, c.title))
+        .collect()
 }
 
 async fn load_chapters_for_file(pool: &PgPool, file_id: Uuid) -> Vec<(f64, Option<String>)> {

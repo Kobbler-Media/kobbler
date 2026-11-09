@@ -247,17 +247,6 @@ fn outcome_path(session_id: Uuid) -> String {
     format!("/api/v1/admin/stream/{session_id}/outcome")
 }
 
-async fn post_progress(server: &TestServer, session: Uuid, seconds: f64) {
-    server
-        .admin_client()
-        .post_json(
-            &format!("/api/v1/admin/stream/{session}/progress"),
-            &json!({ "progress_seconds": seconds }),
-        )
-        .await
-        .assert_status(StatusCode::NO_CONTENT);
-}
-
 #[tokio::test]
 async fn test_outcome_ok_forwards_one_success_per_session() {
     let (server, mock) = kobload_server().await;
@@ -355,33 +344,6 @@ async fn test_outcome_rejects_unknown_foreign_and_anonymous_callers() {
         .assert_status(StatusCode::UNAUTHORIZED);
 
     assert!(outcome_reports(&mock).await.is_empty());
-}
-
-#[tokio::test]
-async fn test_progress_past_a_minute_forwards_one_success() {
-    let (server, mock) = kobload_server().await;
-    let user = admin_id(&server).await;
-    let movie = insert_movie(&server, "tt9000004").await;
-    let session = insert_session(&server, user, SessionSeed::new(movie, "progresshash")).await;
-
-    for (progress, reports) in [(30.0, 0), (90.0, 1), (180.0, 1)] {
-        post_progress(&server, session, progress).await;
-        assert_eq!(
-            outcome_reports(&mock).await.len(),
-            reports,
-            "after progress {progress}"
-        );
-    }
-    server
-        .admin_client()
-        .post_json(&outcome_path(session), &json!({ "ok": true }))
-        .await
-        .assert_status(StatusCode::NO_CONTENT);
-    assert_eq!(
-        outcome_reports(&mock).await.len(),
-        1,
-        "an explicit ok after progress already counted is the same success"
-    );
 }
 
 #[tokio::test]
@@ -559,14 +521,13 @@ async fn test_next_episode_prewarm_fires_once_and_matches_the_real_search() {
     seed.file_id = Some(2);
     let session = insert_session(&server, user, seed).await;
 
-    for seconds in [10.0, 90.0, 400.0] {
-        post_progress(&server, session, seconds).await;
+    for _ in 0..3 {
+        server
+            .admin_client()
+            .post_json(&outcome_path(session), &json!({ "ok": true }))
+            .await
+            .assert_status(StatusCode::NO_CONTENT);
     }
-    server
-        .admin_client()
-        .post_json(&outcome_path(session), &json!({ "ok": true }))
-        .await
-        .assert_status(StatusCode::NO_CONTENT);
     let pending: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM job_status WHERE job_type = 'debrid_prewarm' AND status = 'pending'",
     )

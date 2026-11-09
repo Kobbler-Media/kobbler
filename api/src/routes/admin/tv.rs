@@ -2216,6 +2216,11 @@ pub async fn update_episode_position(
 
     let extent = crate::watch_completion::for_episode(&state.pool, id).await;
 
+    // A Kids profile streams only what its search allows; that is decided at play time.
+    if !auth.is_kids && extent.is_some_and(|e| e.is_past_halfway_at(body.position_seconds)) {
+        crate::download_ahead::consider(&state, user_id, id).await;
+    }
+
     if let Some(extent) = extent
         && extent.is_finished_at(body.position_seconds)
     {

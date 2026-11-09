@@ -7,12 +7,7 @@ use crate::jobs::JobContext;
 use crate::repositories::debrid_stream_sessions::{self as sessions, PlayedRelease};
 use crate::routes::helpers::build_kobload_client;
 
-const PLAYED_AFTER_SECONDS: f64 = 60.0;
 pub const PREWARM_JOB: &str = "debrid_prewarm";
-
-pub fn progress_means_played(progress_seconds: f64) -> bool {
-    progress_seconds >= PLAYED_AFTER_SECONDS
-}
 
 pub struct StreamRelease {
     pub debrid_provider_id: Option<Uuid>,

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE debrid_stream_sessions\n        SET skip_segments = $1, updated_at = NOW()\n        WHERE id = $2\n           OR cache_path = (SELECT cache_path FROM debrid_stream_sessions WHERE id = $2)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8d1a936446871936f55fc87caf54adc64d743a31f771e0d63f90d2c13372f104"
+}

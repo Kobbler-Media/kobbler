@@ -109,6 +109,18 @@ pub fn read_loudness(storage_root: &str, file_id: Uuid) -> Option<f64> {
     parsed.integrated_lufs
 }
 
+/// Path-based: integrated LUFS from `<cache_dir>/loudness.json`.
+pub fn read_loudness_at(cache_dir: &Path) -> Option<f64> {
+    #[derive(serde::Deserialize)]
+    struct LoudnessFile {
+        integrated_lufs: Option<f64>,
+    }
+    let bytes = std::fs::read(sidecar_path_at(cache_dir, Branch::Loudness)?).ok()?;
+    serde_json::from_slice::<LoudnessFile>(&bytes)
+        .ok()?
+        .integrated_lufs
+}
+
 /// Read raw audio peaks bytes (already in wire format).
 pub fn read_audio_peaks(storage_root: &str, file_id: Uuid) -> Option<Vec<u8>> {
     let path = sidecar_path(storage_root, file_id, Branch::AudioPeaks);

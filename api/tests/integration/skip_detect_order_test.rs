@@ -130,3 +130,60 @@ async fn debrid_season_episode_files_are_in_episode_order() {
         .collect();
     assert_eq!(listed, file_ids);
 }
+
+/// Chapter titles are evidence for detection; a debrid sibling's come from its stream.
+#[tokio::test]
+async fn season_chapters_come_from_library_files_and_debrid_streams_alike() {
+    use api::skip_detect::cache_detect::season_chapters;
+    use api::skip_detect::tv::EpisodeFile;
+    let server = TestServer::start_api_only().await;
+    let (episode_ids, file_ids) = seed_reversed_season(&server.pool, 2).await;
+    sqlx::query(
+        "INSERT INTO video_chapters (episode_file_id, chapter_index, title, start_seconds, end_seconds) \
+         VALUES ($1, 0, 'Library Intro', 30.0, 90.0)",
+    )
+    .bind(file_ids[0])
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    let user: Uuid = sqlx::query_scalar("SELECT id FROM users LIMIT 1")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO debrid_stream_sessions \
+             (id, user_id, media_type, media_id, release_title, debrid_provider, filename, filesize, chapters) \
+         VALUES ($1, $2, 'episode', $3, 'R', 'rd', 'r.mkv', 1, $4)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(user)
+    .bind(episode_ids[1])
+    .bind(json!([{ "index": 0, "title": "Opening Credits", "start_seconds": 12.0, "end_seconds": 70.0 }]))
+    .execute(&server.pool)
+    .await
+    .unwrap();
+
+    let file = |file_id, episode_id| EpisodeFile {
+        file_id,
+        file_path: String::new(),
+        duration_seconds: 1800.0,
+        episode_id: Some(episode_id),
+    };
+    // A debrid-only sibling is keyed by its episode id.
+    let chapters = season_chapters(
+        &server.pool,
+        &[
+            file(file_ids[0], episode_ids[0]),
+            file(episode_ids[1], episode_ids[1]),
+        ],
+    )
+    .await;
+    assert_eq!(
+        chapters[&file_ids[0]],
+        vec![(30.0, Some("Library Intro".to_string()))]
+    );
+    assert_eq!(
+        chapters[&episode_ids[1]],
+        vec![(12.0, Some("Opening Credits".to_string()))]
+    );
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE debrid_stream_sessions\n        SET lufs = COALESCE($2, lufs), chapters = COALESCE($3, chapters), updated_at = NOW()\n        WHERE id = $1\n           OR cache_path = (SELECT cache_path FROM debrid_stream_sessions WHERE id = $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "03a9ad601fef9944e5ac377c093205eca8487a22507864c4d4cacfc454009ff0"
+}

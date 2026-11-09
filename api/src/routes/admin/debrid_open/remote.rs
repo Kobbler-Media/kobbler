@@ -112,6 +112,7 @@ pub(super) async fn open(
         debrid_url_expires_at: resolved.expires_at.as_deref().and_then(|s| {
             time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
         }),
+        chapters: Vec::new(),
     };
     let media = match mode {
         OpenMode::Play => Some(row.commit(state, body).await?),
@@ -133,8 +134,18 @@ pub(super) async fn open(
     let on_disk = tokio::fs::metadata(&local_cache_path)
         .await
         .map_or(0, |m| m.len());
+    let release_key = super::release_key(body.info_hash.as_deref(), body.file_id);
+    // A Warm session stops its download at the head, which would stop the shared one.
+    let joined = match mode {
+        OpenMode::Play => release_key
+            .as_deref()
+            .and_then(|k| state.downloads_ahead.join(k)),
+        OpenMode::Warm(_) => None,
+    };
     // Seeded with what is already on disk so HybridIo reads it from there.
-    let download_meter = DownloadMeter::new(resolved.filesize.max(0) as u64, on_disk);
+    let download_meter = joined
+        .clone()
+        .unwrap_or_else(|| DownloadMeter::new(resolved.filesize.max(0) as u64, on_disk));
     if download_meter.is_complete() {
         info!(session_id = %session_id, "Using completed cached file");
     } else if on_disk > 0 {
@@ -156,7 +167,6 @@ pub(super) async fn open(
     };
 
     let download_cancel = CancellationToken::new();
-    let release_key = super::release_key(body.info_hash.as_deref(), body.file_id);
     state.playback_sessions.insert(
         session_id,
         crate::streaming::session::PlaybackSession {
@@ -198,11 +208,12 @@ pub(super) async fn open(
             pending_segment: None,
             download_cancel: Some(download_cancel.clone()),
             thumbnail_dir: None,
-            debrid_cache_key: release_key,
+            debrid_cache_key: release_key.clone(),
             audio_metas: vec![],
             preferred_audio_index: None,
             force_video_transcode: false,
             corrupt_ranges: Vec::new(),
+            chapters: Vec::new(),
             overlay_spawned_starts: std::collections::HashSet::new(),
             highest_served_segment: None,
             feed: Some(StreamFeed::new()),
@@ -238,13 +249,16 @@ pub(super) async fn open(
         subtitles: vec![],
         audio_tracks: vec![],
         thumbnails_url: None,
-        lufs: None,
         chapters: vec![],
-        skip_segments: vec![],
         // Direct play has no server-side seek; the client resumes via its own position.
         start_time: if direct_play { None } else { body.start_time },
-        media_id: media.as_ref().map(|(id, _)| id.to_string()),
-        media_type: media.map(|(_, t)| t),
+        media_id: media.as_ref().map(|c| c.media_id.to_string()),
+        skip_segments: media
+            .as_ref()
+            .map(|c| c.skip_segments.clone())
+            .unwrap_or_default(),
+        lufs: media.as_ref().and_then(|c| c.lufs),
+        media_type: media.map(|c| c.media_type),
         file_id: None,
         selected_audio_index: None,
         preferred_audio_stream_index: None,
@@ -277,7 +291,14 @@ pub(super) async fn open(
             (Some(gate), Some(target.clone()))
         }
     };
-    cache_download::spawn(state, target, download_cancel, download_meter.clone());
+    if joined.is_some() {
+        info!(%session_id, "joined the download ahead of this release");
+    } else {
+        if let Some(key) = &release_key {
+            state.downloads_ahead.hand_over(key).await;
+        }
+        cache_download::spawn(state, target, download_cancel, download_meter.clone());
+    }
 
     tokio::spawn(prepare::run(Prepare {
         state: state.clone(),

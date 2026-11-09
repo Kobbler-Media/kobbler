@@ -6,8 +6,7 @@
 //!
 //! The single-pass produces the full sidecar cache (trickplay, vhash,
 //! chromaprint, silence, loudness, black_frames) into `<cache_path>/media_cache/`
-//! — the same shape kobbler-native content gets. Embeddings + `skip_detect`
-//! are skipped for debrid in this round (wiring lives separately).
+//! — the same shape kobbler-native content gets.
 
 use crate::RuntimeConfigManager;
 use crate::ffmpeg::probe;
@@ -17,8 +16,8 @@ use crate::media_cache::analyze::{AnalyzeInputs, run_analysis};
 use crate::media_cache::episode_cache::MediaKind;
 use crate::media_cache::writers::write_manifest_at;
 use crate::skip_detect::cache_detect::{
-    MovieHandle, detect_movie_from_cache_with_chapters, detect_season_from_cache_with_chapters,
-    season_episode_files,
+    EpisodeDiagnostics, MovieHandle, detect_movie_from_cache_with_chapters,
+    detect_season_from_cache, season_episode_files,
 };
 use async_trait::async_trait;
 use nats_jobs::Publisher;
@@ -250,6 +249,23 @@ impl JobHandler for DebridProcessHandler {
             }
         }
 
+        let chapters: Vec<crate::routes::admin::streaming::ChapterResponse> = probe_result
+            .chapters
+            .iter()
+            .map(|ch| crate::routes::admin::streaming::ChapterResponse {
+                index: ch.index,
+                title: ch.title.clone(),
+                start_seconds: ch.start_seconds,
+                end_seconds: ch.end_seconds,
+            })
+            .collect();
+        let lufs = crate::media_cache::episode_cache::debrid_title_lufs(
+            &self.storage_root,
+            &session_row.media_type,
+            session_row.media_id,
+        );
+        persist_file_facts(&self.pool, session_id, lufs, &chapters).await?;
+
         // Cross-episode / single-file segments from the persisted episode_cache,
         // produced after analyze completes. Empty on first-stream-of-season
         // (the cache_detect fallback path returns single-file results).
@@ -343,43 +359,31 @@ impl DebridProcessHandler {
                 if episodes.is_empty() {
                     return Ok(Vec::new());
                 }
-                let chapters_by_file: std::collections::HashMap<Uuid, Vec<(f64, Option<String>)>> =
-                    std::collections::HashMap::new();
-                let per_ep = detect_season_from_cache_with_chapters(
-                    vision_url,
-                    &episodes,
-                    &self.storage_root,
-                    &chapters_by_file,
-                )
-                .await;
-                // Pull out segments matching the current playback episode.
-                let segments: Vec<_> = episodes
-                    .iter()
-                    .find(|ef| ef.episode_id == Some(episode_id))
-                    .and_then(|ef| {
-                        per_ep
-                            .iter()
-                            .find(|(fid, _, _)| *fid == ef.file_id)
-                            .map(|(_, segs, _)| segs.clone())
-                    })
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(detected_to_skip_segment)
-                    .collect();
-
-                // Best-effort cache write so future debrid streams of any
-                // sibling get the answer without re-running detect.
-                if !segments.is_empty()
-                    && let Err(e) = crate::repositories::cached_segments::upsert_episode(
-                        &self.pool,
-                        episode_id,
-                        &segments,
-                        crate::media_cache::PIPELINE_VERSION,
-                    )
-                    .await
-                {
-                    warn!(error = %e, %episode_id, "cached_segments upsert (episode) failed");
+                let per_ep =
+                    detect_season_from_cache(&self.pool, vision_url, &episodes, &self.storage_root)
+                        .await;
+                // Each new episode is another sibling to compare, so every episode's
+                // segments improve on what was cached when it was itself played; the
+                // first of a season, compared with nothing, has none at all.
+                let by_episode = segments_by_episode(&episodes, per_ep);
+                for (sibling, segments) in &by_episode {
+                    if !segments.is_empty()
+                        && let Err(e) = crate::repositories::cached_segments::upsert_episode(
+                            &self.pool,
+                            *sibling,
+                            segments,
+                            crate::media_cache::PIPELINE_VERSION,
+                        )
+                        .await
+                    {
+                        warn!(error = %e, episode_id = %sibling, "cached_segments upsert (episode) failed");
+                    }
                 }
+                let segments = by_episode
+                    .into_iter()
+                    .find(|(id, _)| *id == episode_id)
+                    .map(|(_, segs)| segs)
+                    .unwrap_or_default();
                 Ok(segments)
             }
             MediaKind::Movie { movie_id } => {
@@ -434,19 +438,34 @@ impl DebridProcessHandler {
     }
 }
 
+fn segments_by_episode(
+    episodes: &[crate::skip_detect::tv::EpisodeFile],
+    per_ep: Vec<(
+        Uuid,
+        Vec<crate::skip_detect::DetectedSegment>,
+        EpisodeDiagnostics,
+    )>,
+) -> Vec<(Uuid, Vec<crate::ffmpeg::persist::ChapterSkipSegment>)> {
+    per_ep
+        .into_iter()
+        .filter_map(|(file_id, segs, _)| {
+            let episode_id = episodes
+                .iter()
+                .find(|ef| ef.file_id == file_id)?
+                .episode_id?;
+            Some((
+                episode_id,
+                segs.into_iter().map(detected_to_skip_segment).collect(),
+            ))
+        })
+        .collect()
+}
+
 fn detected_to_skip_segment(
     s: crate::skip_detect::DetectedSegment,
 ) -> crate::ffmpeg::persist::ChapterSkipSegment {
-    use crate::skip_detect::SegmentType;
-    let segment_type = match s.segment_type {
-        SegmentType::Intro => "intro",
-        SegmentType::Credits => "credits",
-        SegmentType::Recap => "recap",
-        SegmentType::PostCreditsScene => "post_credits",
-    }
-    .to_string();
     crate::ffmpeg::persist::ChapterSkipSegment {
-        segment_type,
+        segment_type: s.segment_type.as_str().to_string(),
         start_seconds: s.start_seconds,
         end_seconds: s.end_seconds,
     }
@@ -460,11 +479,13 @@ async fn persist_skip_segments(
     let segments_json = serde_json::to_value(segments).map_err(|e| {
         JobError::ExecutionFailed(format!("Failed to serialize skip segments: {e}"))
     })?;
+    // Every session on the file: a player that joined a download ahead watches its own row.
     sqlx::query!(
         r#"
         UPDATE debrid_stream_sessions
         SET skip_segments = $1, updated_at = NOW()
         WHERE id = $2
+           OR cache_path = (SELECT cache_path FROM debrid_stream_sessions WHERE id = $2)
         "#,
         segments_json,
         session_id,
@@ -478,6 +499,30 @@ async fn persist_skip_segments(
         count = segments.len(),
         "Persisted skip segments for debrid stream"
     );
+    Ok(())
+}
+
+/// What a library file's row would carry, onto every session on the file.
+async fn persist_file_facts(
+    pool: &PgPool,
+    session_id: Uuid,
+    lufs: Option<f64>,
+    chapters: &[crate::routes::admin::streaming::ChapterResponse],
+) -> JobResult<()> {
+    sqlx::query!(
+        r#"
+        UPDATE debrid_stream_sessions
+        SET lufs = COALESCE($2, lufs), chapters = COALESCE($3, chapters), updated_at = NOW()
+        WHERE id = $1
+           OR cache_path = (SELECT cache_path FROM debrid_stream_sessions WHERE id = $1)
+        "#,
+        session_id,
+        lufs,
+        crate::routes::admin::debrid_open::chapters_json(chapters),
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| JobError::ExecutionFailed(format!("Failed to store file facts: {e}")))?;
     Ok(())
 }
 
@@ -496,4 +541,81 @@ fn merge_segments(
         by_type.insert(s.segment_type.clone(), s);
     }
     by_type.into_values().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::skip_detect::tv::EpisodeFile;
+    use crate::skip_detect::{DetectedSegment, SegmentType};
+
+    fn episode(file_id: Uuid, episode_id: Uuid) -> EpisodeFile {
+        EpisodeFile {
+            file_id,
+            file_path: String::new(),
+            duration_seconds: 3000.0,
+            episode_id: Some(episode_id),
+        }
+    }
+
+    fn credits(start: f64) -> DetectedSegment {
+        DetectedSegment {
+            segment_type: SegmentType::Credits,
+            start_seconds: start,
+            end_seconds: 3000.0,
+            confidence: 1.0,
+            veto_score: 0.0,
+            source: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn every_sibling_detected_in_the_season_pass_gets_its_own_segments() {
+        let (debrid_ep, local_ep, local_file) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
+        let episodes = [episode(debrid_ep, debrid_ep), episode(local_file, local_ep)];
+        let per_ep = vec![
+            (
+                debrid_ep,
+                vec![credits(2800.0)],
+                EpisodeDiagnostics::default(),
+            ),
+            (
+                local_file,
+                vec![credits(2700.0)],
+                EpisodeDiagnostics::default(),
+            ),
+            (
+                Uuid::now_v7(),
+                vec![credits(1.0)],
+                EpisodeDiagnostics::default(),
+            ),
+        ];
+        let starts: Vec<(Uuid, Vec<f64>)> = segments_by_episode(&episodes, per_ep)
+            .into_iter()
+            .map(|(id, segs)| (id, segs.iter().map(|s| s.start_seconds).collect()))
+            .collect();
+        assert_eq!(
+            starts,
+            vec![(debrid_ep, vec![2800.0]), (local_ep, vec![2700.0])]
+        );
+    }
+
+    #[test]
+    fn segment_types_are_named_as_the_players_and_library_name_them() {
+        for kind in [
+            SegmentType::Intro,
+            SegmentType::Credits,
+            SegmentType::Recap,
+            SegmentType::PostCreditsScene,
+        ] {
+            let segment = DetectedSegment {
+                segment_type: kind,
+                ..credits(1.0)
+            };
+            assert_eq!(
+                detected_to_skip_segment(segment).segment_type,
+                kind.as_str()
+            );
+        }
+    }
 }

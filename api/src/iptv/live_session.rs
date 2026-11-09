@@ -535,6 +535,7 @@ async fn build_session(
         preferred_audio_index: None,
         force_video_transcode: false,
         corrupt_ranges: Vec::new(),
+        chapters: Vec::new(),
         overlay_spawned_starts: std::collections::HashSet::new(),
         highest_served_segment: None,
         feed: None,

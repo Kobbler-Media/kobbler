@@ -262,20 +262,6 @@ async fn test_stream_session_endpoints_reject_non_owner() {
 
     let session = insert_session(&server.pool, alice_id, "Alice.Session.2025").await;
 
-    // Bodies must be valid — a malformed body 422s before the ownership check.
-    let progress = bob
-        .post_json(
-            &format!("/api/v1/admin/stream/{session}/progress"),
-            &json!({ "progress_seconds": 42.0 }),
-        )
-        .await;
-    assert_eq!(
-        progress.status,
-        StatusCode::NOT_FOUND,
-        "progress on another user's session. Body: {}",
-        progress.text()
-    );
-
     let keep = bob
         .post(&format!("/api/v1/admin/stream/{session}/keep"))
         .await;
@@ -371,13 +357,6 @@ async fn test_stream_session_endpoints_allow_owner() {
     let alice = client_for(&server, &alice_token);
     let session = insert_session(&server.pool, alice_id, "Alice.Own.2025").await;
 
-    alice
-        .post_json(
-            &format!("/api/v1/admin/stream/{session}/progress"),
-            &json!({ "progress_seconds": 12.5 }),
-        )
-        .await
-        .assert_status(StatusCode::NO_CONTENT);
     alice
         .post(&format!("/api/v1/admin/stream/{session}/pin"))
         .await

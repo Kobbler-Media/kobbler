@@ -294,11 +294,7 @@
             releaseDate={item.releaseDate}
             releaseDates={item.releaseDates}
             year={item.year}
-            streaming={streamingAvailability(
-              canStream,
-              stream.streamLoading,
-              stream.searched ? stream.streamOptions : null
-            )}
+            streaming={streamingAvailability(canStream, stream.streamLoading, stream.knownOptions)}
             library={libraryStatus(
               detail?.want_status ?? preview?.want_status,
               detail?.is_in_library ?? preview?.is_in_library

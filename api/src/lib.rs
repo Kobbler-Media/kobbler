@@ -17,6 +17,7 @@ pub mod corruption;
 pub mod db;
 pub mod debrid_outcomes;
 pub mod discover_art;
+pub mod download_ahead;
 pub mod ebook;
 pub mod embedding;
 pub mod enrichment_config;
@@ -177,6 +178,7 @@ pub struct AppState {
     pub debrid_resolve_locks: Arc<dashmap::DashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
     /// Instant Stream: debrid sessions warmed ahead of a Play press, until claimed.
     pub stream_prewarms: Arc<routes::admin::stream_prewarm::PrewarmStore>,
+    pub downloads_ahead: Arc<download_ahead::DownloadsAhead>,
     pub tts_casts: Arc<tts::cast::CastRenders>,
     /// Set to true after the first media_root_scan completes a full scan.
     /// Backfill handlers skip their work until this is set, preventing them
@@ -2053,6 +2055,10 @@ pub fn create_router(state: AppState) -> Router {
             post(routes::admin::stream_prewarm::touch),
         )
         .route(
+            "/api/v1/admin/stream/local",
+            get(routes::admin::stream_local::local_release),
+        )
+        .route(
             "/api/v1/admin/stream/{id}/keep",
             post(routes::admin::stream_keep::keep).get(routes::admin::stream_keep::keep_status),
         )
@@ -2063,10 +2069,6 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/admin/stream/{id}/status",
             get(debrid_stream_routes::stream_status),
-        )
-        .route(
-            "/api/v1/admin/stream/{id}/progress",
-            post(debrid_stream_routes::stream_progress),
         )
         .route(
             "/api/v1/admin/stream/{id}/outcome",
@@ -2597,6 +2599,7 @@ pub fn create_app_state(
         debrid_session_index: Arc::new(dashmap::DashMap::new()),
         debrid_resolve_locks: Arc::new(dashmap::DashMap::new()),
         stream_prewarms: Arc::default(),
+        downloads_ahead: Arc::default(),
         tts_casts: Arc::default(),
         initial_scan_complete: Arc::new(AtomicBool::new(false)),
         media_root_io_gate,

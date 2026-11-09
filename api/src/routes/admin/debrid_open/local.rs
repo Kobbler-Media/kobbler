@@ -11,7 +11,7 @@ use super::{OpenMode, Opened, SessionRow, audio_language, register};
 use crate::AppState;
 use crate::repositories::debrid_cache_files::{self as cache_files, CachedFile};
 use crate::routes::admin::debrid_stream::StreamResolveBody;
-use crate::routes::admin::streaming::{AudioTrackResponse, SessionResponse};
+use crate::routes::admin::streaming::{AudioTrackResponse, ChapterResponse, SessionResponse};
 use crate::runtime_config::RuntimeConfig;
 use crate::streaming::decision::{
     AAC_ENCODER, AudioMode, AudioTrackMeta, PlaybackDecision, PlaybackMethod, SubtitleHandling,
@@ -64,6 +64,16 @@ pub(super) async fn open(
         cache_path: Some(cached.file_path.clone()),
         debrid_url: None,
         debrid_url_expires_at: None,
+        chapters: probe
+            .chapters
+            .iter()
+            .map(|ch| ChapterResponse {
+                index: ch.index,
+                title: ch.title.clone(),
+                start_seconds: ch.start_seconds,
+                end_seconds: ch.end_seconds,
+            })
+            .collect(),
     };
     let _ = cache_files::touch(&state.pool, &cached.file_path).await;
 
@@ -249,6 +259,7 @@ pub(super) async fn open(
             preferred_audio_index: preferred,
             force_video_transcode: false,
             corrupt_ranges: Vec::new(),
+            chapters: row.chapters.clone(),
             overlay_spawned_starts: std::collections::HashSet::new(),
             highest_served_segment: None,
             feed: Some(StreamFeed::new()),
@@ -271,13 +282,16 @@ pub(super) async fn open(
         subtitles: vec![],
         audio_tracks,
         thumbnails_url: has_thumbnails.then(|| format!("{base_url}/thumbnails.vtt")),
-        lufs: None,
-        chapters: vec![],
-        skip_segments: vec![],
+        chapters: row.chapters.clone(),
         // Direct play has no server-side seek; the client resumes via its own position.
         start_time: if direct_play { None } else { body.start_time },
-        media_id: media.as_ref().map(|(id, _)| id.to_string()),
-        media_type: media.map(|(_, t)| t),
+        media_id: media.as_ref().map(|c| c.media_id.to_string()),
+        skip_segments: media
+            .as_ref()
+            .map(|c| c.skip_segments.clone())
+            .unwrap_or_default(),
+        lufs: media.as_ref().and_then(|c| c.lufs),
+        media_type: media.map(|c| c.media_type),
         file_id: None,
         selected_audio_index: Some(audio_index),
         preferred_audio_stream_index: preferred,

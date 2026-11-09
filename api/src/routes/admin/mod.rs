@@ -58,6 +58,7 @@ pub mod session_restore;
 pub mod sessions;
 pub mod sports;
 pub mod stream_keep;
+pub mod stream_local;
 pub mod stream_prewarm;
 pub mod stream_search_request;
 pub mod streaming;

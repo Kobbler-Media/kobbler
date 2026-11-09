@@ -145,6 +145,8 @@ pub struct PlaybackSession {
     /// overlay scheduler reads this to pre-emptively spawn overlay transcode
     /// generations as the playhead approaches each range.
     pub corrupt_ranges: Vec<crate::corruption::CorruptRange>,
+    /// A debrid stream's chapters, from its probe; a library file's are in the DB.
+    pub chapters: Vec<crate::routes::admin::streaming::ChapterResponse>,
     /// Set of corrupt-range start timestamps for which an overlay generation
     /// has already been spawned this session (avoids re-spawning on every
     /// playlist request). Identifying ranges by their start timestamp is
@@ -227,6 +229,7 @@ impl PlaybackSession {
             preferred_audio_index: None,
             force_video_transcode: false,
             corrupt_ranges: Vec::new(),
+            chapters: Vec::new(),
             overlay_spawned_starts: std::collections::HashSet::new(),
             highest_served_segment: None,
             feed: None,

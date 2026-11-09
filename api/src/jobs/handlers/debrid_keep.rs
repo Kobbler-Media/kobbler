@@ -199,6 +199,12 @@ async fn start_download(
             resp.status()
         )
     })?;
+    if let Some(key) = crate::routes::admin::debrid_open::release_key(
+        session.info_hash.as_deref(),
+        session.file_id,
+    ) {
+        state.downloads_ahead.hand_over(&key).await;
+    }
     let cancel = CancellationToken::new();
     let total = session.filesize.max(0) as u64;
     let meter = match state.playback_sessions.get_mut(&session.id) {

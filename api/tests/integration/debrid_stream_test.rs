@@ -767,3 +767,124 @@ async fn enrich_job_exists(server: &TestServer, movie_id: Uuid) -> bool {
     .await
     .unwrap()
 }
+
+/// Reads the stream for `window`, returning what arrived and whether the server closed it.
+async fn read_sse(
+    body: &mut (impl futures::Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin),
+    window: std::time::Duration,
+) -> (String, bool) {
+    let mut collected = String::new();
+    let start = std::time::Instant::now();
+    while start.elapsed() < window {
+        let remaining = window.saturating_sub(start.elapsed());
+        match tokio::time::timeout(remaining, futures::StreamExt::next(body)).await {
+            Ok(Some(Ok(chunk))) => collected.push_str(&String::from_utf8_lossy(&chunk)),
+            Ok(Some(Err(_))) | Ok(None) => return (collected, true),
+            Err(_) => break,
+        }
+    }
+    (collected, false)
+}
+
+/// Cross-episode detect runs after the download and after the trickplay sheet is
+/// written, so a stream that closed once probe, download and thumbnails were out never
+/// carried the credits to the player watching.
+#[tokio::test]
+async fn test_sse_stays_open_until_processing_has_delivered_its_segments() {
+    let server = TestServer::start_api_only().await;
+    let user_id = sqlx::query_scalar::<_, Uuid>("SELECT id FROM users LIMIT 1")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    let movie_id: Uuid = server
+        .admin_client()
+        .post_json(
+            "/api/v1/admin/movies",
+            &json!({ "title": "SSE Processing Movie", "year": 2026 }),
+        )
+        .await
+        .json::<serde_json::Value>()["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let cache_file = tmp_dir.path().join("done.mkv");
+    std::fs::write(&cache_file, vec![0u8; 100]).unwrap();
+    let trickplay = tmp_dir.path().join("media_cache").join("trickplay");
+    std::fs::create_dir_all(&trickplay).unwrap();
+    std::fs::write(trickplay.join("thumbnails.vtt"), "WEBVTT\n").unwrap();
+    let cache_path = cache_file.to_str().unwrap();
+
+    let session_id = Uuid::now_v7();
+    sqlx::query(
+        r#"
+        INSERT INTO debrid_stream_sessions
+            (id, user_id, media_type, media_id, release_title, info_hash,
+             debrid_provider, filename, filesize, cache_path, probe_data)
+        VALUES ($1, $2, 'movie', $3, 'SSE.Processing.2026', 'prochash', 'rd', 'done.mkv', 100,
+                $4, '{"duration": 3000.0}')
+        "#,
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .bind(movie_id)
+    .bind(cache_path)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    let job_id = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO job_status (id, job_type, status, payload) VALUES ($1, 'debrid_process', 'running', $2)",
+    )
+    .bind(job_id)
+    .bind(json!({ "session_id": session_id, "cache_path": cache_path }))
+    .execute(&server.pool)
+    .await
+    .unwrap();
+
+    let resp = reqwest::Client::new()
+        .get(format!(
+            "{}/api/v1/admin/stream/{session_id}/status",
+            server.api_url
+        ))
+        .header("Authorization", format!("Bearer {}", server.admin_token))
+        .send()
+        .await
+        .unwrap();
+    let mut body = resp.bytes_stream();
+    let (early, closed) = read_sse(&mut body, std::time::Duration::from_secs(5)).await;
+    assert!(early.contains("\"type\":\"thumbnails_ready\""), "{early}");
+    assert!(early.contains("\"type\":\"download_complete\""), "{early}");
+    assert!(
+        !closed,
+        "the stream closed while processing was running:\n{early}"
+    );
+
+    sqlx::query(
+        r#"UPDATE debrid_stream_sessions
+           SET skip_segments = '[{"segment_type":"credits","start_seconds":2800.0,"end_seconds":3000.0}]',
+               lufs = -20.5
+           WHERE id = $1"#,
+    )
+    .bind(session_id)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE job_status SET status = 'completed' WHERE id = $1")
+        .bind(job_id)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+
+    let (late, closed) = read_sse(&mut body, std::time::Duration::from_secs(6)).await;
+    assert!(late.contains("\"type\":\"skip_segments_ready\""), "{late}");
+    assert!(late.contains("credits"), "{late}");
+    assert!(
+        late.contains(r#"{"lufs":-20.5,"type":"loudness"}"#),
+        "{late}"
+    );
+    assert!(late.contains("\"type\":\"done\""), "{late}");
+    assert!(closed, "the stream outlived the processing it reports on");
+}

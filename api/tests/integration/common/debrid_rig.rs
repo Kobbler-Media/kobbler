@@ -14,6 +14,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 pub const PROVIDER_ID: &str = "00000000-0000-0000-0000-000000000001";
 pub const MB: usize = 1024 * 1024;
 pub const ITA_ENG_FIXTURE: &[u8] = include_bytes!("../../fixtures/audio-lang/ita-eng.mkv");
+pub const CHAPTERED_FIXTURE: &[u8] =
+    include_bytes!("../../fixtures/audio-lang/ita-eng-chapters.mkv");
 
 pub fn noise(len: usize) -> Vec<u8> {
     let mut x: u32 = 0x9e37_79b9;

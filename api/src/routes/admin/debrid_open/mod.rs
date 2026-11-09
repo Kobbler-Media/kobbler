@@ -10,7 +10,7 @@ mod response;
 mod subtitles;
 
 pub(crate) use media::commit_media;
-pub(crate) use prepare::probe_json;
+pub(crate) use prepare::{chapters_json, probe_json};
 pub(crate) use remote::WARM_HEAD_BYTES;
 pub(crate) use response::live_response;
 
@@ -22,16 +22,18 @@ use axum::response::IntoResponse;
 use serde_json::json;
 use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
-use tracing::error;
+use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::ffmpeg::persist::ChapterSkipSegment;
+use crate::repositories::cached_segments;
 use crate::repositories::debrid_cache_files as cache_files;
 use crate::routes::admin::debrid_stream::StreamResolveBody;
-use crate::routes::admin::streaming::SessionResponse;
+use crate::routes::admin::streaming::{ChapterResponse, SessionResponse, SkipSegmentResponse};
 use crate::streaming::progressive::DownloadTarget;
 
-const VIDEO_CONTAINERS: &[&str] = &[
+pub(crate) const VIDEO_CONTAINERS: &[&str] = &[
     "mkv", "mp4", "avi", "wmv", "webm", "m4v", "flv", "mov", "mpg", "mpeg", "ts", "m2ts", "vob",
 ];
 
@@ -71,6 +73,14 @@ pub(crate) struct SessionRow {
     pub cache_path: Option<String>,
     pub debrid_url: Option<String>,
     pub debrid_url_expires_at: Option<OffsetDateTime>,
+    pub chapters: Vec<ChapterResponse>,
+}
+
+pub(crate) struct Committed {
+    pub media_id: Uuid,
+    pub media_type: String,
+    pub skip_segments: Vec<SkipSegmentResponse>,
+    pub lufs: Option<f64>,
 }
 
 impl SessionRow {
@@ -79,13 +89,20 @@ impl SessionRow {
         pool: &sqlx::PgPool,
         media_type: &str,
         media_id: Uuid,
+        skip_segments: &[ChapterSkipSegment],
+        lufs: Option<f64>,
     ) -> Result<(), sqlx::Error> {
+        let skip_segments = (!skip_segments.is_empty())
+            .then(|| serde_json::to_value(skip_segments).ok())
+            .flatten();
+        let chapters = chapters_json(&self.chapters);
         sqlx::query!(
             r#"INSERT INTO debrid_stream_sessions
                 (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
                  debrid_provider_id, quality, filename, filesize, file_id, cache_path,
-                 debrid_url, debrid_url_expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)"#,
+                 debrid_url, debrid_url_expires_at, skip_segments, lufs, chapters)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                    $17, $18)"#,
             self.session_id,
             self.user_id,
             media_type,
@@ -101,20 +118,38 @@ impl SessionRow {
             self.cache_path,
             self.debrid_url,
             self.debrid_url_expires_at,
+            skip_segments,
+            lufs,
+            chapters,
         )
         .execute(pool)
         .await?;
         Ok(())
     }
 
-    /// Make the session playable: its library item exists and its row is written.
+    /// Make the session playable: its library item exists and its row is written, starting
+    /// from what earlier analysis of the title found so a replay need not wait for it.
     pub(crate) async fn commit(
         &self,
         state: &AppState,
         body: &StreamResolveBody,
-    ) -> Result<(Uuid, String), axum::response::Response> {
+    ) -> Result<Committed, axum::response::Response> {
         let (media_id, media_type) = commit_media(state, body).await?;
-        if let Err(e) = self.insert(&state.pool, &media_type, media_id).await {
+        let skip_segments = cached_segments::current(&state.pool, &media_type, media_id)
+            .await
+            .unwrap_or_else(|e| {
+                warn!(error = %e, %media_id, "cached skip segments unreadable");
+                Vec::new()
+            });
+        let lufs = crate::media_cache::episode_cache::debrid_title_lufs(
+            &state.config.storage_root,
+            &media_type,
+            media_id,
+        );
+        if let Err(e) = self
+            .insert(&state.pool, &media_type, media_id, &skip_segments, lufs)
+            .await
+        {
             error!(error = %e, "failed to create stream session");
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -122,7 +157,21 @@ impl SessionRow {
             )
                 .into_response());
         }
-        Ok((media_id, media_type))
+        Ok(Committed {
+            media_id,
+            media_type,
+            lufs,
+            skip_segments: skip_segments
+                .into_iter()
+                .map(|s| SkipSegmentResponse {
+                    segment_type: s.segment_type,
+                    start_seconds: s.start_seconds,
+                    end_seconds: s.end_seconds,
+                    confidence: None,
+                    source: "detected".to_string(),
+                })
+                .collect(),
+        })
     }
 }
 
@@ -144,26 +193,30 @@ pub(crate) async fn open(
     mode: OpenMode,
 ) -> Result<Opened, axum::response::Response> {
     let runtime = state.runtime_config.get().await;
-    if let Some(cached) = complete_cache_entry(state, body).await {
+    if let Some(cached) = complete_cache_entry(
+        state,
+        body.debrid_provider_id,
+        body.info_hash.as_deref(),
+        body.file_id,
+    )
+    .await
+    {
         return local::open(state, &runtime, user_id, body, cached, mode).await;
     }
     remote::open(state, &runtime, user_id, body, mode).await
 }
 
-async fn complete_cache_entry(
+pub(crate) async fn complete_cache_entry(
     state: &AppState,
-    body: &StreamResolveBody,
+    debrid_provider_id: Uuid,
+    info_hash: Option<&str>,
+    file_id: Option<i32>,
 ) -> Option<cache_files::CachedFile> {
-    let info_hash = body.info_hash.as_deref()?;
-    let cached = cache_files::find_release(
-        &state.pool,
-        body.debrid_provider_id,
-        info_hash,
-        body.file_id,
-    )
-    .await
-    .ok()
-    .flatten()?;
+    let info_hash = info_hash?;
+    let cached = cache_files::find_release(&state.pool, debrid_provider_id, info_hash, file_id)
+        .await
+        .ok()
+        .flatten()?;
     let on_disk = tokio::fs::metadata(Path::new(&cached.file_path))
         .await
         .ok()?

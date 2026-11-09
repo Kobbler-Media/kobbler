@@ -198,7 +198,7 @@ pub struct SessionResponse {
     pub picture: Option<crate::media_cache::picture_area::PictureArea>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChapterResponse {
     pub index: i32,
     pub title: Option<String>,
@@ -985,6 +985,7 @@ pub(crate) async fn open_file_session(
         preferred_audio_index: None,
         force_video_transcode: restore.as_ref().is_some_and(|p| p.force_video_transcode),
         corrupt_ranges,
+        chapters: Vec::new(),
         overlay_spawned_starts: std::collections::HashSet::new(),
         highest_served_segment: restore.as_ref().and_then(|p| p.highest_served_segment),
         feed: None,

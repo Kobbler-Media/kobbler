@@ -10,6 +10,7 @@ import type { PlaybackSessionResponse } from '#lib/types.js';
 
 const api = vi.hoisted(() => ({
   streamSearch: vi.fn(),
+  streamLocal: vi.fn(),
   streamResolve: vi.fn(),
   streamResolveStatus: vi.fn(),
   deleteStreamSession: vi.fn(),
@@ -140,9 +141,40 @@ beforeEach(() => {
   api.reportStreamOutcome.mockResolvedValue(undefined);
   api.touchStreamPrewarm.mockResolvedValue(undefined);
   api.releaseStreamPrewarm.mockResolvedValue(undefined);
+  api.streamLocal.mockResolvedValue(null);
 });
 
 describe('useStreamPlayback', () => {
+  it('plays the release already on disk without searching', async () => {
+    serve(['a']);
+    api.streamLocal.mockResolvedValue(option('disk'));
+    const { stream, played } = setup();
+    await stream.autoPlay();
+    expect(api.streamLocal).toHaveBeenCalledWith('movie', 'm1');
+    expect(resolved()).toEqual(['disk']);
+    expect(played()).toEqual(['disk-1']);
+    expect(api.streamSearch).not.toHaveBeenCalled();
+  });
+
+  it('searches when the release on disk will not open', async () => {
+    serve(['a'], { disk: 'blocked' });
+    api.streamLocal.mockResolvedValue(option('disk'));
+    const { stream, played } = setup();
+    await stream.autoPlay();
+    expect(resolved()).toEqual(['disk', 'a']);
+    expect(played()).toEqual(['a-1']);
+  });
+
+  it('a title with a release on disk is not searched when its page opens', async () => {
+    serve(['a']);
+    api.streamPrewarm.mockResolvedValue(null);
+    api.streamLocal.mockResolvedValue(option('disk'));
+    const { stream } = setup();
+    await stream.preWarmStream();
+    expect(api.streamSearch).not.toHaveBeenCalled();
+    expect(stream.knownOptions?.map((o) => o.info_hash)).toEqual(['disk']);
+  });
+
   it('plays the preferred option first without showing the list', async () => {
     serve(['a', 'b', 'c'], {}, { preferred_info_hash: 'c' });
     const { stream, played } = setup();

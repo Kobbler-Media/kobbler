@@ -465,7 +465,7 @@
           streaming={streamingAvailability(
             !!stats.kobload_configured,
             stream.streamLoading,
-            stream.searched ? stream.streamOptions : null
+            stream.knownOptions
           )}
           library={libraryStatus(movie.want_status, movie.is_in_library)}
         />

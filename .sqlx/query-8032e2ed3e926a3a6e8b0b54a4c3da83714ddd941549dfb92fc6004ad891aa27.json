@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS(\n                   SELECT 1 FROM job_status j\n                   WHERE j.job_type = 'debrid_process' AND j.payload->>'cache_path' = s.cache_path)\n               AND NOT EXISTS(\n                   SELECT 1 FROM job_status j\n                   WHERE j.job_type = 'debrid_process'\n                     AND j.status IN ('pending', 'running', 'retrying')\n                     AND j.payload->>'cache_path' = s.cache_path) AS \"finished!\"\n        FROM debrid_stream_sessions s\n        WHERE s.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "finished!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "8032e2ed3e926a3a6e8b0b54a4c3da83714ddd941549dfb92fc6004ad891aa27"
+}

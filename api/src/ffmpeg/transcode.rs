@@ -131,6 +131,8 @@ pub struct HybridProbeInfo {
     #[serde(default)]
     pub dynamic_range: crate::streaming::decision::DynamicRange,
     pub audio_tracks: Vec<HybridAudioTrack>,
+    #[serde(default)]
+    pub chapters: Vec<crate::routes::admin::streaming::ChapterResponse>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -229,6 +231,16 @@ impl HybridProbeInfo {
             interlaced,
             dynamic_range,
             audio_tracks,
+            chapters: ctx
+                .chapters()
+                .enumerate()
+                .map(|(i, ch)| crate::routes::admin::streaming::ChapterResponse {
+                    index: i as i32,
+                    title: ch.title(),
+                    start_seconds: ch.start_secs(),
+                    end_seconds: ch.end_secs(),
+                })
+                .collect(),
         }
     }
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT probe_data, skip_segments, subtitle_tracks, cache_path, filesize\n                FROM debrid_stream_sessions\n                WHERE id = $1\n                ",
+  "query": "\n                SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, cache_path,\n                       filesize\n                FROM debrid_stream_sessions\n                WHERE id = $1\n                ",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,28 @@
       },
       {
         "ordinal": 3,
+        "name": "chapters",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "chapters"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "lufs",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "lufs"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "cache_path",
         "type_info": "Text",
         "origin": {
@@ -48,7 +70,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "filesize",
         "type_info": "Int8",
         "origin": {
@@ -69,8 +91,10 @@
       true,
       true,
       true,
+      true,
+      true,
       false
     ]
   },
-  "hash": "973b7d35d73c239641431899718c774654de95d014d976e1a16fd6d2027f77a7"
+  "hash": "a8037b1d398de7e2b8ecb4d9ff770b5b0a3cc7f0ff3d0c7d9e86734cb41ba40e"
 }

@@ -6694,6 +6694,21 @@ export interface StreamResolveParams {
   };
 }
 
+/** The title's release already on disk, playable without a search or the debrid host. */
+export async function streamLocal(
+  mediaType: string,
+  mediaId: string
+): Promise<StreamOption | null> {
+  try {
+    return await request(
+      `/api/v1/admin/stream/local${buildQueryString({ media_type: mediaType, media_id: mediaId })}`
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
 export async function streamSearch(params: {
   movie_id?: string;
   episode_id?: string;
@@ -6750,16 +6765,6 @@ export async function streamResolveStatus(
   return request(
     `/api/v1/admin/stream/resolve/status?provider_id=${encodeURIComponent(providerId)}&torrent_id=${encodeURIComponent(torrentId)}`
   );
-}
-
-export async function updateStreamProgress(
-  sessionId: string,
-  progressSeconds: number
-): Promise<void> {
-  return request(`/api/v1/admin/stream/${sessionId}/progress`, {
-    method: 'POST',
-    body: JSON.stringify({ progress_seconds: progressSeconds })
-  });
 }
 
 export async function deleteStreamSession(sessionId: string): Promise<void> {

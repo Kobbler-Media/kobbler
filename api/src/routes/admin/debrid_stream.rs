@@ -16,14 +16,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use time::OffsetDateTime;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::debrid_outcomes;
 use crate::repositories::debrid_cache_files as cache_files;
-use crate::repositories::{movie_watch_states, tv_watch_states};
 use crate::routes::admin::debrid_errors::StreamFailure;
 use crate::routes::admin::stream_search_request::{self, SearchTarget};
 use crate::routes::admin::{debrid_open, stream_prewarm};
@@ -68,11 +66,6 @@ pub struct StreamSearchBody {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ProgressBody {
-    pub progress_seconds: f64,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct IngestBody {
     pub media_root_id: Uuid,
 }
@@ -94,6 +87,8 @@ struct DebridStatusRow {
     probe_data: Option<serde_json::Value>,
     skip_segments: Option<serde_json::Value>,
     subtitle_tracks: Option<serde_json::Value>,
+    chapters: Option<serde_json::Value>,
+    lufs: Option<f64>,
     cache_path: Option<String>,
     filesize: i64,
 }
@@ -446,10 +441,13 @@ pub async fn stream_status(
         // the merged (chapter + cross-episode) result after analyze.
         let mut last_skip: Option<serde_json::Value> = None;
         let mut last_subtitles: Option<serde_json::Value> = None;
+        let mut last_chapters: Option<serde_json::Value> = None;
+        let mut last_lufs: Option<f64> = None;
         let mut sent_thumbnails = false;
         let mut sent_download_complete = false;
-        // Timeout after 10 minutes to prevent leaked connections
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(600);
+        // The download and the analysis after it run as long as the episode is big; the
+        // keep-alive drops a player that has gone, this only bounds a stuck job.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3 * 3600);
 
         // Initial connected event
         yield Ok::<_, Infallible>(
@@ -463,10 +461,15 @@ pub async fn stream_status(
                 break;
             }
 
+            // Read before the row: the job writes its final segments and then finishes,
+            // so a row read after seeing it finished already holds them.
+            let processed = processing_finished(&pool, session_id).await;
+
             let row = sqlx::query_as!(
                 DebridStatusRow,
                 r#"
-                SELECT probe_data, skip_segments, subtitle_tracks, cache_path, filesize
+                SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, cache_path,
+                       filesize
                 FROM debrid_stream_sessions
                 WHERE id = $1
                 "#,
@@ -541,6 +544,27 @@ pub async fn stream_status(
                 last_subtitles = Some(tracks.clone());
             }
 
+            if let Some(ref chapters) = row.chapters
+                && last_chapters.as_ref() != Some(chapters)
+            {
+                let event = json!({ "type": "chapters", "chapters": chapters });
+                yield Ok(
+                    axum::response::sse::Event::default()
+                        .data(serde_json::to_string(&event).unwrap_or_default()),
+                );
+                last_chapters = Some(chapters.clone());
+            }
+
+            // Measured by the analysis that runs once the download completes.
+            if row.lufs.is_some() && row.lufs != last_lufs {
+                let event = json!({ "type": "loudness", "lufs": row.lufs });
+                yield Ok(
+                    axum::response::sse::Event::default()
+                        .data(serde_json::to_string(&event).unwrap_or_default()),
+                );
+                last_lufs = row.lufs;
+            }
+
             if let Some(ref skip_data) = row.skip_segments
                 && last_skip.as_ref() != Some(skip_data)
             {
@@ -604,144 +628,46 @@ pub async fn stream_status(
                 }
             }
 
-            // Close when all features have been sent
-            if sent_probe && sent_thumbnails && sent_download_complete {
+            if sent_probe && sent_download_complete && processed {
+                // An EventSource reconnects to a stream that simply ends.
+                yield Ok(
+                    axum::response::sse::Event::default()
+                        .data(serde_json::to_string(&json!({"type": "done"})).unwrap_or_default()),
+                );
                 break;
             }
         }
     };
 
-    Sse::new(event_stream).into_response()
+    Sse::new(event_stream)
+        .keep_alive(axum::response::sse::KeepAlive::default())
+        .into_response()
 }
 
-/// POST /api/v1/admin/stream/:id/progress — update watch progress
-pub async fn stream_progress(
-    State(state): State<AppState>,
-    auth: AuthUser,
-    Path(session_id): Path<Uuid>,
-    Json(body): Json<ProgressBody>,
-) -> impl IntoResponse {
-    let result = sqlx::query!(
+/// Whether the analysis of the session's file has run and nothing more will come of it.
+/// Keyed by file, not session: a session whose file another session already queued is
+/// processed by that job.
+async fn processing_finished(pool: &sqlx::PgPool, session_id: Uuid) -> bool {
+    sqlx::query_scalar!(
         r#"
-        UPDATE debrid_stream_sessions
-        SET progress_seconds = $2, updated_at = NOW()
-        WHERE id = $1 AND ($3::uuid IS NULL OR user_id = $3)
-        "#,
-        session_id,
-        body.progress_seconds,
-        session_owner(auth.user_id, &auth.role),
-    )
-    .execute(&state.pool)
-    .await;
-
-    match result {
-        Ok(r) if r.rows_affected() == 0 => {
-            return (StatusCode::NOT_FOUND, "session not found").into_response();
-        }
-        Err(e) => {
-            error!(error = %e, "failed to update stream progress");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "database error").into_response();
-        }
-        Ok(_) => {}
-    }
-
-    if debrid_outcomes::progress_means_played(body.progress_seconds) {
-        debrid_outcomes::record_played(&state, session_id).await;
-    }
-
-    // Always save position to watch state (enables resume).
-    // Mark as "watched" only when >= 90% complete.
-    if let Ok(Some(session)) = sqlx::query!(
-        r#"
-        SELECT media_type, media_id, probe_data
-        FROM debrid_stream_sessions
-        WHERE id = $1
+        SELECT EXISTS(
+                   SELECT 1 FROM job_status j
+                   WHERE j.job_type = 'debrid_process' AND j.payload->>'cache_path' = s.cache_path)
+               AND NOT EXISTS(
+                   SELECT 1 FROM job_status j
+                   WHERE j.job_type = 'debrid_process'
+                     AND j.status IN ('pending', 'running', 'retrying')
+                     AND j.payload->>'cache_path' = s.cache_path) AS "finished!"
+        FROM debrid_stream_sessions s
+        WHERE s.id = $1
         "#,
         session_id,
     )
-    .fetch_optional(&state.pool)
+    .fetch_optional(pool)
     .await
-    {
-        let duration = session
-            .probe_data
-            .as_ref()
-            .and_then(|p| p.get("duration"))
-            .and_then(|d| d.as_f64());
-
-        let is_watched = duration
-            .map(|dur| dur > 0.0 && body.progress_seconds / dur >= 0.90)
-            .unwrap_or(false);
-        let position = body.progress_seconds as i32;
-
-        // Save position directly — use a lightweight query that won't
-        // overwrite `watched=true` if the user already completed this content.
-        match session.media_type.as_str() {
-            "movie" => {
-                if is_watched {
-                    let input = movie_watch_states::WatchStateInput {
-                        movie_id: session.media_id,
-                        user_id: auth.user_id,
-                        watched: true,
-                        watched_at: Some(OffsetDateTime::now_utc()),
-                        position_seconds: Some(position),
-                        rating: None,
-                    };
-                    if let Err(e) = movie_watch_states::upsert(&state.pool, input).await {
-                        warn!(error = %e, "failed to mark movie as watched from stream");
-                    }
-                } else {
-                    // Position-only update: preserve existing watched state
-                    let _ = sqlx::query!(
-                        r#"
-                        INSERT INTO movie_watch_states (id, movie_id, user_id, watched, position_seconds)
-                        VALUES ($1, $2, $3, FALSE, $4)
-                        ON CONFLICT (movie_id, user_id)
-                        DO UPDATE SET position_seconds = $4, source = 'local', updated_at = NOW()
-                        "#,
-                        Uuid::now_v7(),
-                        session.media_id,
-                        auth.user_id,
-                        position,
-                    )
-                    .execute(&state.pool)
-                    .await;
-                }
-            }
-            "episode" => {
-                if is_watched {
-                    let input = tv_watch_states::TvWatchStateInput {
-                        episode_id: session.media_id,
-                        user_id: auth.user_id,
-                        watched: true,
-                        watched_at: Some(OffsetDateTime::now_utc()),
-                        position_seconds: Some(position),
-                        rating: None,
-                    };
-                    if let Err(e) = tv_watch_states::upsert(&state.pool, input).await {
-                        warn!(error = %e, "failed to mark episode as watched from stream");
-                    }
-                } else {
-                    let _ = sqlx::query!(
-                        r#"
-                        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, position_seconds)
-                        VALUES ($1, $2, $3, FALSE, $4)
-                        ON CONFLICT (episode_id, user_id)
-                        DO UPDATE SET position_seconds = $4, source = 'local', updated_at = NOW()
-                        "#,
-                        Uuid::now_v7(),
-                        session.media_id,
-                        auth.user_id,
-                        position,
-                    )
-                    .execute(&state.pool)
-                    .await;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    StatusCode::NO_CONTENT.into_response()
+    .ok()
+    .flatten()
+    .unwrap_or(false)
 }
 
 /// DELETE /api/v1/admin/stream/:id — end a stream session

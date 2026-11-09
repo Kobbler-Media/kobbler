@@ -182,3 +182,179 @@ async fn orphaned_cache_entries_are_still_evicted_by_ttl_lru_and_size() {
         "a file touched within the hour is never evicted"
     );
 }
+
+async fn cache_movie_segments(rig: &Rig, movie_id: Uuid, segments: &Value) {
+    sqlx::query(
+        "INSERT INTO movie_cached_segments (movie_id, segments, pipeline_version) VALUES ($1, $2, $3)",
+    )
+    .bind(movie_id)
+    .bind(segments)
+    .bind(api::media_cache::PIPELINE_VERSION)
+    .execute(&rig.server.pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn a_session_opens_with_the_segments_already_detected_for_its_title() {
+    let rig = Rig::start(UpstreamPlan::new(ITA_ENG_FIXTURE.to_vec()), "film.mkv").await;
+    let segments = json!([
+        { "segment_type": "intro", "start_seconds": 10.0, "end_seconds": 40.0 },
+        { "segment_type": "credits", "start_seconds": 2700.0, "end_seconds": 2800.0 }
+    ]);
+    let replay_body = orphaned_download(&rig, "segreplay").await;
+    let replay_movie: Uuid = replay_body["media_id"].as_str().unwrap().parse().unwrap();
+    cache_movie_segments(&rig, replay_movie, &segments).await;
+    let replay = rig.resolve_with(&replay_body).await;
+
+    let movie = rig.movie().await;
+    cache_movie_segments(&rig, movie, &segments).await;
+    let fresh = rig
+        .resolve_with(&rig.resolve_body("segfresh", movie, direct_play_caps()))
+        .await;
+
+    for (name, resp) in [("download", &fresh), ("cache replay", &replay)] {
+        let served: Vec<(String, f64)> = resp["skip_segments"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|s| {
+                (
+                    s["segment_type"].as_str().unwrap().to_string(),
+                    s["start_seconds"].as_f64().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            served,
+            vec![("intro".to_string(), 10.0), ("credits".to_string(), 2700.0)],
+            "{name}"
+        );
+        let stored: Option<Value> =
+            sqlx::query_scalar("SELECT skip_segments FROM debrid_stream_sessions WHERE id = $1")
+                .bind(session_id_of(resp))
+                .fetch_one(&rig.server.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            stored.as_ref(),
+            Some(&segments),
+            "{name}: the status stream reads this"
+        );
+    }
+}
+
+async fn local_option(rig: &Rig, movie_id: Uuid) -> TestResponse {
+    rig.server
+        .admin_client()
+        .get(&format!(
+            "/api/v1/admin/stream/local?media_type=movie&media_id={movie_id}"
+        ))
+        .await
+}
+
+#[tokio::test]
+async fn a_title_with_its_release_on_disk_offers_it_without_a_search() {
+    let rig = Rig::start(UpstreamPlan::new(ITA_ENG_FIXTURE.to_vec()), "film.mkv").await;
+    let movie = rig.movie().await;
+    let body = rig.resolve_body("localhash", movie, direct_play_caps());
+    let session = session_id_of(&rig.resolve_with(&body).await);
+    rig.wait_for_complete("localhash").await;
+    wait_for_probe(&rig, session).await;
+
+    let resp = local_option(&rig, movie).await;
+    resp.assert_ok();
+    let option: Value = resp.json();
+    assert_eq!(option["info_hash"], "localhash", "{option}");
+    assert_eq!(
+        option["debrid_provider_id"], body["debrid_provider_id"],
+        "{option}"
+    );
+    assert_eq!(option["availability"], "ready", "{option}");
+    assert!(option["release_title"].is_string(), "{option}");
+    assert_eq!(rig.kobload_requests("/stream/search").await.len(), 0);
+
+    local_option(&rig, rig.movie().await)
+        .await
+        .assert_status(StatusCode::NOT_FOUND);
+
+    std::fs::remove_file(rig.cache_file("localhash")).unwrap();
+    local_option(&rig, movie)
+        .await
+        .assert_status(StatusCode::NOT_FOUND);
+}
+
+fn chapter_titles(chapters: &Value) -> Vec<String> {
+    chapters
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|c| c["title"].as_str().unwrap_or_default().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A library file's session carries its loudness and chapters; a debrid one did neither.
+#[tokio::test]
+async fn a_debrid_session_carries_the_loudness_and_chapters_of_its_file() {
+    use api::media_cache::episode_cache::{MediaKind, episode_cache_dir};
+    let rig = Rig::start(UpstreamPlan::new(CHAPTERED_FIXTURE.to_vec()), "film.mkv").await;
+    let movie = rig.movie().await;
+    let analysed = episode_cache_dir(
+        &rig.server.storage_root(),
+        &MediaKind::Movie { movie_id: movie },
+    );
+    std::fs::create_dir_all(&analysed).unwrap();
+    std::fs::write(
+        analysed.join("loudness.json"),
+        r#"{"integrated_lufs":-23.5}"#,
+    )
+    .unwrap();
+
+    let body = rig.resolve_body("chapterhash", movie, direct_play_caps());
+    let fresh = rig.resolve_with(&body).await;
+    assert_eq!(fresh["lufs"], json!(-23.5), "{fresh}");
+    let session = session_id_of(&fresh);
+    let resp = reqwest::Client::new()
+        .get(format!(
+            "{}/api/v1/admin/stream/{session}/status",
+            rig.server.api_url
+        ))
+        .header(
+            "Authorization",
+            format!("Bearer {}", rig.server.admin_token),
+        )
+        .send()
+        .await
+        .unwrap();
+    let mut events = resp.bytes_stream();
+    let mut seen = String::new();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !seen.contains("\"type\":\"chapters\"") && std::time::Instant::now() < deadline {
+        if let Ok(Some(Ok(chunk))) = tokio::time::timeout(
+            Duration::from_secs(1),
+            futures::StreamExt::next(&mut events),
+        )
+        .await
+        {
+            seen.push_str(&String::from_utf8_lossy(&chunk));
+        }
+    }
+    assert!(
+        seen.contains("\"title\":\"Opening\""),
+        "no chapters on the stream: {seen}"
+    );
+
+    rig.wait_for_complete("chapterhash").await;
+    wait_for_probe(&rig, session).await;
+    delete_session(&rig, session).await;
+    let replay = rig.resolve_with(&body).await;
+    assert_eq!(replay["lufs"], json!(-23.5), "{replay}");
+    assert_eq!(
+        chapter_titles(&replay["chapters"]),
+        ["Opening", "Episode"],
+        "{replay}"
+    );
+}

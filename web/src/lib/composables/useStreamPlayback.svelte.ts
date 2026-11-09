@@ -8,6 +8,7 @@ import {
   deleteStreamSession,
   isStreamCaching,
   reportStreamOutcome,
+  streamLocal,
   streamResolve,
   streamSearch
 } from '#lib/api/client.js';
@@ -97,6 +98,7 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
   let resumeOverride = $state<number | undefined>(undefined);
   let reconnecting = $state(false);
   let reconnectNoted = $state(false);
+  let onDisk = $state<StreamOption | null | undefined>(undefined);
 
   let run: WalkState | null = null;
   let current: Current | null = null;
@@ -164,7 +166,18 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
 
   async function preWarmStream() {
     prewarm.start(buildPrewarmParams());
-    if (!searched && !streamLoading) await search();
+    if (searched || streamLoading) return;
+    if (!(await findOnDisk())) await search();
+  }
+
+  // A title can only have a release on disk once it is in the library.
+  async function findOnDisk(): Promise<StreamOption | null> {
+    if (onDisk !== undefined) return onDisk;
+    if (opts.mediaType === 'tv' || opts.getAutoCreate?.()) return (onDisk = null);
+    const mediaId = opts.getMediaId();
+    if (!mediaId) return (onDisk = null);
+    onDisk = await streamLocal(opts.mediaType, mediaId).catch(() => null);
+    return onDisk;
   }
 
   function buildResolveParams(option: StreamOption): StreamResolveParams {
@@ -343,9 +356,18 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     run = newWalkState();
     const claimed = await claimPrewarm(signal);
     if (signal.aborted) return;
-    if (!claimed) return continueWalk(signal);
-    run.tried.add(optionKey(claimed.option));
-    deliver(claimed.option, claimed.session, false);
+    if (claimed) {
+      run.tried.add(optionKey(claimed.option));
+      return deliver(claimed.option, claimed.session, false);
+    }
+    const local = await findOnDisk();
+    if (signal.aborted) return;
+    if (local) {
+      const result = await walk(signal, [local]);
+      if (result.kind === 'ready') return settle(signal, result);
+      if (signal.aborted) return;
+    }
+    return continueWalk(signal);
   }
 
   async function playOption(option: StreamOption) {
@@ -486,6 +508,7 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     prewarm.release();
     run = null;
     searched = false;
+    onDisk = undefined;
     streamOptions = [];
     streamErrors = [];
     streamLoading = false;
@@ -528,6 +551,11 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     },
     get searched() {
       return searched;
+    },
+    /** What is known to be playable: the search's options, or the release on disk before any search. */
+    get knownOptions(): StreamOption[] | null {
+      if (searched) return streamOptions;
+      return onDisk ? [onDisk] : null;
     },
     get playerProps() {
       return {

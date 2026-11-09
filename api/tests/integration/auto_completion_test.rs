@@ -433,6 +433,154 @@ async fn test_save_without_a_file_has_no_watched_verdict() {
     }
 }
 
+async fn insert_debrid_session(
+    server: &TestServer,
+    media_type: &str,
+    media_id: &str,
+    duration: f64,
+    skip_segments: Option<Value>,
+) {
+    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users LIMIT 1")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO debrid_stream_sessions \
+             (id, user_id, media_type, media_id, release_title, debrid_provider, filename, \
+              filesize, probe_data, skip_segments) \
+         VALUES ($1, $2, $3, $4::uuid, 'Release', 'rd', 'release.mkv', 1, $5, $6)",
+    )
+    .bind(Uuid::now_v7())
+    .bind(user_id)
+    .bind(media_type)
+    .bind(Uuid::parse_str(media_id).unwrap())
+    .bind(json!({ "duration": duration }))
+    .bind(skip_segments)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+}
+
+fn credits_json(start: f64, end: f64) -> Value {
+    json!([{ "segment_type": "credits", "start_seconds": start, "end_seconds": end }])
+}
+
+const EPISODE_CACHED: &str = "INSERT INTO tv_episode_cached_segments \
+     (episode_id, segments, pipeline_version) VALUES ($1::uuid, $2, 2)";
+const MOVIE_CACHED: &str = "INSERT INTO movie_cached_segments \
+     (movie_id, segments, pipeline_version) VALUES ($1::uuid, $2, 2)";
+
+async fn insert_cached_credits(server: &TestServer, sql: &'static str, id: &str, start: f64) {
+    sqlx::query(sql)
+        .bind(Uuid::parse_str(id).unwrap())
+        .bind(credits_json(start, CREDITS_CASE_DURATION))
+        .execute(&server.pool)
+        .await
+        .unwrap();
+}
+
+enum DebridCredits {
+    None,
+    Session(f64),
+    Cached(f64),
+}
+
+struct DebridCase {
+    name: &'static str,
+    credits: DebridCredits,
+    position: i32,
+    watched: bool,
+}
+
+const DEBRID_CASES: &[DebridCase] = &[
+    DebridCase {
+        name: "past 90% of the streamed duration",
+        credits: DebridCredits::None,
+        position: 2990,
+        watched: true,
+    },
+    DebridCase {
+        name: "short of 90% without credits",
+        credits: DebridCredits::None,
+        position: 2948,
+        watched: false,
+    },
+    DebridCase {
+        name: "inside the session's detected credits",
+        credits: DebridCredits::Session(2918.0),
+        position: 2948,
+        watched: true,
+    },
+    DebridCase {
+        name: "inside the cached credits",
+        credits: DebridCredits::Cached(2918.0),
+        position: 2948,
+        watched: true,
+    },
+    DebridCase {
+        name: "just before the cached credits",
+        credits: DebridCredits::Cached(2918.0),
+        position: 2900,
+        watched: false,
+    },
+];
+
+#[tokio::test]
+async fn test_debrid_only_titles_complete_from_the_streamed_release() {
+    let server = TestServer::start_api_only().await;
+    let show_id = create_show(&server, "Debrid Show").await;
+    let season_id = create_season(&server, &show_id, 1).await;
+    for (n, case) in DEBRID_CASES.iter().enumerate() {
+        let ep_id = create_episode(&server, &season_id, n as i32 + 1, case.name).await;
+        let movie_id = create_movie(&server, case.name).await;
+        for (media_type, id, cached_sql, path) in [
+            (
+                "episode",
+                &ep_id,
+                EPISODE_CACHED,
+                format!("/api/v1/admin/tv/episodes/{ep_id}/watch-state"),
+            ),
+            (
+                "movie",
+                &movie_id,
+                MOVIE_CACHED,
+                format!("/api/v1/admin/movies/{movie_id}/watch-state"),
+            ),
+        ] {
+            let session_segments = match case.credits {
+                DebridCredits::Session(start) => Some(credits_json(start, CREDITS_CASE_DURATION)),
+                _ => None,
+            };
+            insert_debrid_session(
+                &server,
+                media_type,
+                id,
+                CREDITS_CASE_DURATION,
+                session_segments,
+            )
+            .await;
+            if let DebridCredits::Cached(start) = case.credits {
+                insert_cached_credits(&server, cached_sql, id, start).await;
+            }
+            let saved: Value = server
+                .admin_client()
+                .patch_json(
+                    &format!("{path}/position"),
+                    &json!({ "position_seconds": case.position, "client_id": "phone" }),
+                )
+                .await
+                .json();
+            assert_eq!(
+                saved["watched"], case.watched,
+                "{media_type} save: {}",
+                case.name
+            );
+            let ws: Value = server.admin_client().get(&path).await.json();
+            assert_eq!(ws["watched"], case.watched, "{media_type}: {}", case.name);
+        }
+    }
+}
+
 #[tokio::test]
 async fn test_episode_seeking_back_before_credits_unwatches() {
     let server = TestServer::start_api_only().await;
