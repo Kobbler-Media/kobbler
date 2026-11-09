@@ -196,6 +196,7 @@ pub(super) async fn open(
             stream_index: a.index,
             codec: a.codec.clone(),
             channels: a.channels,
+            language_name: crate::streaming::language::display_name(a.language.as_deref()),
             language: a.language.clone(),
             title: a.title.clone(),
             is_default: a.index == audio_index,

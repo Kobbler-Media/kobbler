@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { PlaybackSubtitleTrack } from '#lib/types.js';
+  import { subtitleTrackLabel } from './trackLabels';
 
   interface Props {
     subtitles: PlaybackSubtitleTrack[];
@@ -27,9 +28,7 @@
   let tracks = $derived(
     subtitles.map((s) => ({
       id: s.track_id,
-      label:
-        ([s.title, s.language, s.codec].filter(Boolean).join(' - ') || `Track ${s.stream_index}`) +
-        (s.requires_transcode ? ' (transcode)' : ''),
+      label: subtitleTrackLabel(s),
       active: s.track_id === activeSubtitleId
     }))
   );

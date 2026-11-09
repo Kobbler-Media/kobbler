@@ -13,14 +13,8 @@
 
   const totalCount = $derived(subtitleTracks.length + externalSubtitles.length);
 
-  function formatLang(code: string | null): string {
-    if (!code) return 'Unknown';
-    try {
-      return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) ?? code;
-    } catch {
-      return code;
-    }
-  }
+  const languageLabel = (t: { language: string | null; language_name: string | null }) =>
+    t.language_name ?? t.language ?? 'Unknown';
 </script>
 
 <div class="subtitles-section">
@@ -60,7 +54,7 @@
       {#each subtitleTracks as track (track.id)}
         <div class="sub-item">
           <div class="sub-info">
-            <span class="sub-lang">{formatLang(track.language)}</span>
+            <span class="sub-lang">{languageLabel(track)}</span>
             <span class="sub-codec">{track.codec}</span>
             {#if track.is_forced}
               <span class="badge forced">Forced</span>
@@ -79,7 +73,7 @@
       {#each externalSubtitles as ext (ext.id)}
         <div class="sub-item" class:unavailable={!ext.available}>
           <div class="sub-info">
-            <span class="sub-lang">{formatLang(ext.language)}</span>
+            <span class="sub-lang">{languageLabel(ext)}</span>
             <span class="sub-codec">{ext.format.toUpperCase()}</span>
             {#if ext.is_forced}
               <span class="badge forced">Forced</span>

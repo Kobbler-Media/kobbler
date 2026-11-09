@@ -7,6 +7,7 @@ const track = (stream_index: number, language: string, is_default = false): Play
   codec: 'ac3',
   channels: 6,
   language,
+  language_name: null,
   title: null,
   is_default
 });

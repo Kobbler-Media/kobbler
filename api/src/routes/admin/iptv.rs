@@ -2614,6 +2614,7 @@ pub async fn create_iptv_session(
             stream_index: a.stream_index,
             codec: a.codec.clone(),
             channels: a.channels,
+            language_name: crate::streaming::language::display_name(a.language.as_deref()),
             language: a.language.clone(),
             title: a.title.clone(),
             is_default: a.is_default,

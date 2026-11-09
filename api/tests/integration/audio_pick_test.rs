@@ -95,5 +95,13 @@ async fn a_session_picks_commentary_over_ambient_unless_the_viewer_chose_otherwi
             Some(expected),
             "title {title:?}: {session}"
         );
+        assert_eq!(
+            session["audio_tracks"][0]["language_name"], "English",
+            "{session}"
+        );
+        assert!(
+            session["audio_tracks"][1]["language_name"].is_null(),
+            "{session}"
+        );
     }
 }

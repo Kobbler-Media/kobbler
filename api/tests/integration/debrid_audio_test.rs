@@ -97,6 +97,21 @@ async fn a_debrid_session_names_the_preferred_audio_track() {
     let local = rig.resolve_with(&body).await;
     assert_eq!(local["preferred_audio_stream_index"], ENG_STREAM, "{local}");
     assert_eq!(local["selected_audio_index"], ENG_STREAM, "{local}");
+    assert_audio_named(&local["audio_tracks"]);
+}
+
+fn assert_audio_named(tracks: &Value) {
+    let names: Vec<&str> = tracks
+        .as_array()
+        .unwrap_or_else(|| panic!("{tracks}"))
+        .iter()
+        .map(|t| {
+            t["language_name"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{tracks}"))
+        })
+        .collect();
+    assert_eq!(names, ["Italian", "English"], "{tracks}");
 }
 
 #[tokio::test]
@@ -193,4 +208,5 @@ async fn the_probe_event_names_the_preferred_audio_track() {
 
     let event = probe_event(&rig, session).await;
     assert_eq!(event["preferred_audio_stream_index"], ENG_STREAM, "{event}");
+    assert_audio_named(&event["audio_tracks"]);
 }

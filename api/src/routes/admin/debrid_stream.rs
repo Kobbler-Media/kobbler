@@ -516,10 +516,10 @@ pub async fn stream_status(
                                 track
                             })
                             .collect();
-                        event["audio_tracks"] = json!(enriched);
+                        event["audio_tracks"] = with_language_names(json!(enriched));
                     }
                     if let Some(subs) = obj.get("subtitle_streams") {
-                        event["subtitles"] = subs.clone();
+                        event["subtitles"] = with_language_names(subs.clone());
                     }
                 }
                 yield Ok(
@@ -533,7 +533,7 @@ pub async fn stream_status(
             if let Some(ref tracks) = row.subtitle_tracks
                 && last_subtitles.as_ref() != Some(tracks)
             {
-                let event = json!({ "type": "subtitles", "subtitles": tracks });
+                let event = json!({ "type": "subtitles", "subtitles": with_language_names(tracks.clone()) });
                 yield Ok(
                     axum::response::sse::Event::default()
                         .data(serde_json::to_string(&event).unwrap_or_default()),
@@ -1040,3 +1040,18 @@ pub async fn delete_stremio_key(
 // =============================================================================
 // Helpers
 // =============================================================================
+
+fn with_language_names(mut tracks: serde_json::Value) -> serde_json::Value {
+    for track in tracks
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+        .filter_map(|t| t.as_object_mut())
+    {
+        let name = crate::streaming::language::display_name(
+            track.get("language").and_then(|l| l.as_str()),
+        );
+        track.insert("language_name".to_string(), json!(name));
+    }
+    tracks
+}

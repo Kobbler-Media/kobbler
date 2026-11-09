@@ -152,29 +152,15 @@ fn spoken(text: &str) -> String {
         .join(" ")
 }
 
-/// whatlang names languages in ISO 639-3, which for these differs from the bibliographic
-/// codes Matroska and MP4 tag tracks with.
+/// whatlang names some languages by an individual 639-3 code where containers tag the
+/// macrolanguage.
 fn container_code(iso639_3: &str) -> &str {
-    match iso639_3 {
-        "deu" => "ger",
-        "fra" => "fre",
-        "nld" => "dut",
-        "ces" => "cze",
-        "ell" => "gre",
-        "cmn" | "zho" => "chi",
-        "pes" | "fas" => "per",
-        "ron" => "rum",
-        "slk" => "slo",
-        "hye" => "arm",
-        "kat" => "geo",
-        "mkd" => "mac",
-        "zsm" | "msa" => "may",
-        "sqi" => "alb",
-        "isl" => "ice",
-        "mya" => "bur",
-        "cym" => "wel",
+    super::language::bibliographic(match iso639_3 {
+        "cmn" => "zho",
+        "pes" => "fas",
+        "zsm" => "msa",
         other => other,
-    }
+    })
 }
 
 #[cfg(test)]

@@ -188,6 +188,8 @@ async fn a_file_extracted_before_its_text_was_read_gets_only_that_part() {
             .unwrap()
     };
     assert_eq!(sent(1)["language"], "eng", "{session}");
+    assert_eq!(sent(1)["language_name"], "English", "{session}");
+    assert_eq!(sent(2)["language_name"], "Spanish", "{session}");
     assert_eq!(sent(3)["is_forced"], true, "{session}");
     assert_eq!(sent(1)["is_forced"], false, "{session}");
 
@@ -240,6 +242,7 @@ fn assert_named(event: &Value) {
     };
     assert_eq!(by_index(1)["language"], "eng", "{event}");
     assert_eq!(by_index(2)["language"], "spa", "{event}");
+    assert_eq!(by_index(1)["language_name"], "English", "{event}");
     assert_eq!(by_index(3)["is_forced"], true, "{event}");
     assert_eq!(by_index(1)["is_forced"], false, "{event}");
 }

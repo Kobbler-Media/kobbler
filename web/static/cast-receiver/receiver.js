@@ -268,6 +268,7 @@ function sendTracks() {
       subtitles: textTracks().map(({ id, sub }) => ({
         id,
         language: sub.language ?? null,
+        languageName: sub.language_name ?? null,
         title: sub.title ?? null,
         forced: !!sub.is_forced,
         hearingImpaired: !!sub.is_hearing_impaired
@@ -276,6 +277,7 @@ function sendTracks() {
       audioTracks: (sessionState.audioTracks || []).map((a) => ({
         streamIndex: a.stream_index,
         language: a.language ?? null,
+        languageName: a.language_name ?? null,
         title: a.title ?? null,
         codec: a.codec ?? null,
         channels: a.channels ?? null
@@ -982,7 +984,7 @@ playerManager.setMessageInterceptor(cast.framework.messages.MessageType.LOAD, (l
       track.trackContentId = subtitleUrl(sub.url);
       track.trackContentType = 'text/vtt';
       track.subtype = cast.framework.messages.TextTrackType.SUBTITLES;
-      track.name = sub.title || sub.language || `Track ${id}`;
+      track.name = sub.title || sub.language_name || sub.language || `Track ${id}`;
       track.language = sub.language || 'und';
       return track;
     });

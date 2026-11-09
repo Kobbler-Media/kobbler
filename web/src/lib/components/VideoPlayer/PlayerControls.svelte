@@ -17,6 +17,7 @@
     type ThumbnailEntry
   } from '#lib/utils/vttThumbnails.js';
   import { SEGMENT_COLORS, isVisibleSkipSegment, segmentTitle } from './segments';
+  import { audioTrackLabel } from './trackLabels';
   import { pollThumbnailsVtt } from '#lib/utils/vttPoll.js';
 
   interface Props {
@@ -193,10 +194,7 @@
   let audioTrackItems = $derived(
     audioTracks.map((a, i) => ({
       id: `${i}-${a.stream_index}`,
-      label:
-        [a.title, a.language, a.channels > 0 ? `${a.channels}ch` : null, a.codec]
-          .filter(Boolean)
-          .join(' \u2013 ') || `Track ${a.stream_index}`,
+      label: audioTrackLabel(a),
       active: a.stream_index === activeAudioIndex
     }))
   );

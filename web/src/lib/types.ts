@@ -1000,6 +1000,7 @@ export type SubtitleTrackInfo = {
   track_index: number;
   codec: string;
   language: string | null;
+  language_name: string | null;
   title: string | null;
   is_forced: boolean;
   is_default: boolean;
@@ -1014,6 +1015,7 @@ export type ExternalSubtitleInfo = {
   file_size: number | null;
   format: string;
   language: string | null;
+  language_name: string | null;
   title: string | null;
   is_forced: boolean;
   is_hearing_impaired: boolean;
@@ -1886,6 +1888,7 @@ export type PlaybackSubtitleTrack = {
   stream_index: number;
   codec: string;
   language: string | null;
+  language_name: string | null;
   title: string | null;
   url: string | null;
   format: 'vtt' | 'ass' | 'burn_in';
@@ -1900,6 +1903,7 @@ export type PlaybackAudioTrack = {
   codec: string;
   channels: number;
   language: string | null;
+  language_name: string | null;
   title: string | null;
   is_default: boolean;
 };

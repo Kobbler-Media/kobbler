@@ -181,6 +181,7 @@ mod subtitle_insight_test;
 mod test_db_sweep_test;
 mod title_alternates_test;
 mod tmdb_titles_sync_test;
+mod track_names_test;
 mod trakt_test;
 mod transcode_start_race_test;
 mod tts_cast_test;

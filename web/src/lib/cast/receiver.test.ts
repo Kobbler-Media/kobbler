@@ -434,12 +434,24 @@ describe('cast receiver', () => {
     r.session({
       startOffset: 1380,
       subtitles: [
-        { url: '/api/s/en.vtt', format: 'vtt', language: 'eng', is_default: false },
+        {
+          url: '/api/s/en.vtt',
+          format: 'vtt',
+          language: 'eng',
+          language_name: 'English',
+          is_default: false
+        },
         { url: '/api/s/signs.ass', format: 'ass', language: 'eng', is_default: false },
-        { url: '/api/s/fr.vtt', format: 'vtt', language: 'fre', is_default: true }
+        {
+          url: '/api/s/fr.vtt',
+          format: 'vtt',
+          language: 'fre',
+          language_name: 'French',
+          is_default: true
+        }
       ],
       audioTracks: [
-        { stream_index: 1, language: 'jpn', is_default: true },
+        { stream_index: 1, language: 'jpn', language_name: 'Japanese', is_default: true },
         { stream_index: 2, language: 'eng', is_default: false }
       ]
     });
@@ -447,7 +459,7 @@ describe('cast receiver', () => {
   it('offers the text tracks it can show, timed to where the transcode began', () => {
     const r = receiver();
     const request = r.load(withTracks(r)) as LoadRequest & {
-      media: { tracks: Array<{ trackContentId: string }> };
+      media: { tracks: Array<{ trackContentId: string; name: string }> };
       activeTrackIds: number[];
     };
 
@@ -455,16 +467,20 @@ describe('cast receiver', () => {
       'https://kob/api/s/en.vtt?offset=1380&token=tok',
       'https://kob/api/s/fr.vtt?offset=1380&token=tok'
     ]);
+    expect(request.media.tracks.map((t) => t.name)).toEqual(['English', 'French']);
     expect(request.activeTrackIds).toEqual([2]);
 
     r.ask('TRACKS_REQUEST');
     expect(r.last<Tracks>('TRACKS')).toMatchObject({
       subtitles: [
-        { id: 1, language: 'eng' },
-        { id: 2, language: 'fre' }
+        { id: 1, language: 'eng', languageName: 'English' },
+        { id: 2, language: 'fre', languageName: 'French' }
       ],
       activeSubtitleId: 2,
-      audioTracks: [{ streamIndex: 1 }, { streamIndex: 2 }],
+      audioTracks: [
+        { streamIndex: 1, languageName: 'Japanese' },
+        { streamIndex: 2, languageName: null }
+      ],
       activeAudioIndex: 1
     });
 

@@ -124,6 +124,7 @@ export type ReceiverTracks = {
   subtitles: Array<{
     id: number;
     language: string | null;
+    languageName: string | null;
     title: string | null;
     forced: boolean;
     hearingImpaired: boolean;
@@ -132,6 +133,7 @@ export type ReceiverTracks = {
   audioTracks: Array<{
     streamIndex: number;
     language: string | null;
+    languageName: string | null;
     title: string | null;
     codec: string | null;
     channels: number | null;

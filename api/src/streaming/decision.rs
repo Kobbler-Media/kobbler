@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::language;
+
 /// FFmpeg encoder name kobbler uses for AAC output. We build ffmpeg with
 /// `--enable-libfdk-aac --enable-nonfree` (see docker/tools.Dockerfile),
 /// because the native FFmpeg `aac` encoder has known psy-acoustic weaknesses
@@ -610,55 +612,8 @@ pub(crate) fn suggest_audio_bitrate(track: Option<&AudioTrackMeta>) -> i32 {
 /// Handles ISO 639-1 (2-letter), ISO 639-2/B (3-letter), and full English names.
 /// Case-insensitive. Returns false if the track has no language tag.
 pub fn language_matches(track_lang: Option<&str>, preferred: &str) -> bool {
-    let Some(lang) = track_lang else {
-        return false;
-    };
-    let lang = lang.to_lowercase();
-    let pref = preferred.to_lowercase();
-
-    // Exact match (covers full names and codes)
-    if lang == pref {
-        return true;
-    }
-
-    match language_codes(&pref) {
-        Some(codes) => codes.contains(&lang.as_str()),
-        None => lang.starts_with(&pref) || pref.starts_with(&lang),
-    }
-}
-
-fn language_codes(pref: &str) -> Option<&'static [&'static str]> {
-    Some(match pref {
-        "english" | "en" | "eng" => &["en", "eng", "english"],
-        "french" | "fr" | "fra" | "fre" => &["fr", "fra", "fre", "french"],
-        "german" | "de" | "deu" | "ger" => &["de", "deu", "ger", "german"],
-        "spanish" | "es" | "spa" => &["es", "spa", "spanish"],
-        "italian" | "it" | "ita" => &["it", "ita", "italian"],
-        "russian" | "ru" | "rus" => &["ru", "rus", "russian"],
-        "japanese" | "ja" | "jpn" => &["ja", "jpn", "japanese"],
-        "korean" | "ko" | "kor" => &["ko", "kor", "korean"],
-        "chinese" | "zh" | "zho" | "chi" => &["zh", "zho", "chi", "chinese"],
-        "portuguese" | "pt" | "por" => &["pt", "por", "portuguese"],
-        "dutch" | "nl" | "nld" | "dut" => &["nl", "nld", "dut", "dutch"],
-        "swedish" | "sv" | "swe" => &["sv", "swe", "swedish"],
-        "danish" | "da" | "dan" => &["da", "dan", "danish"],
-        "norwegian" | "no" | "nor" | "nob" | "nno" => &["no", "nor", "nob", "nno", "norwegian"],
-        "finnish" | "fi" | "fin" => &["fi", "fin", "finnish"],
-        "polish" | "pl" | "pol" => &["pl", "pol", "polish"],
-        "czech" | "cs" | "ces" | "cze" => &["cs", "ces", "cze", "czech"],
-        "hungarian" | "hu" | "hun" => &["hu", "hun", "hungarian"],
-        "turkish" | "tr" | "tur" => &["tr", "tur", "turkish"],
-        "arabic" | "ar" | "ara" => &["ar", "ara", "arabic"],
-        "hindi" | "hi" | "hin" => &["hi", "hin", "hindi"],
-        "thai" | "th" | "tha" => &["th", "tha", "thai"],
-        "vietnamese" | "vi" | "vie" => &["vi", "vie", "vietnamese"],
-        "indonesian" | "id" | "ind" => &["id", "ind", "indonesian"],
-        "malay" | "ms" | "msa" | "may" => &["ms", "msa", "may", "malay"],
-        "greek" | "el" | "ell" | "gre" => &["el", "ell", "gre", "greek"],
-        "romanian" | "ro" | "ron" | "rum" => &["ro", "ron", "rum", "romanian"],
-        "ukrainian" | "uk" | "ukr" => &["uk", "ukr", "ukrainian"],
-        "hebrew" | "he" | "heb" => &["he", "heb", "hebrew"],
-        _ => return None,
+    track_lang.is_some_and(|lang| {
+        lang.eq_ignore_ascii_case(preferred) || language::same_language(lang, preferred)
     })
 }
 
@@ -678,12 +633,11 @@ fn title_names_language(title: Option<&str>, preferred: &str) -> bool {
     let Some(title) = title else {
         return false;
     };
-    let pref = preferred.to_lowercase();
-    let codes = language_codes(&pref).unwrap_or(&[]);
+    let words = language::title_words(preferred);
     title
         .to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
-        .any(|word| word == pref || (word.len() > 2 && codes.contains(&word)))
+        .any(|word| words.iter().any(|w| w == word))
 }
 
 fn title_has(title: Option<&str>, markers: &[&str]) -> bool {

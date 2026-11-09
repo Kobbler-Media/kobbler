@@ -34,6 +34,7 @@ use crate::routes::library::helpers::{
 use crate::routes::library::types::PaginatedResponse;
 use crate::routes::{AuthUser, PlaybackAuth};
 use crate::sport_want::{EventWant, event_want};
+use crate::streaming::language::{Named, named};
 use crate::video_metadata::VideoProviderRegistry;
 
 // =============================================================================
@@ -3457,9 +3458,9 @@ struct EpisodeFileTracksResponse {
     video_codec: Option<String>,
     video_width: Option<i32>,
     video_height: Option<i32>,
-    audio_tracks: Vec<audio_tracks::AudioTrackRow>,
-    subtitle_tracks: Vec<subtitle_tracks::SubtitleTrackRow>,
-    external_subtitles: Vec<external_subtitles::ExternalSubtitleRow>,
+    audio_tracks: Vec<Named<audio_tracks::AudioTrackRow>>,
+    subtitle_tracks: Vec<Named<subtitle_tracks::SubtitleTrackRow>>,
+    external_subtitles: Vec<Named<external_subtitles::ExternalSubtitleRow>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -3502,9 +3503,9 @@ pub async fn get_episode_tracks(
             video_codec: f.video_codec,
             video_width: f.video_width,
             video_height: f.video_height,
-            audio_tracks: audio,
-            subtitle_tracks: subs,
-            external_subtitles: ext_subs,
+            audio_tracks: named(audio, |t| t.language.as_deref()),
+            subtitle_tracks: named(subs, |t| t.language.as_deref()),
+            external_subtitles: named(ext_subs, |t| t.language.as_deref()),
         });
     }
 

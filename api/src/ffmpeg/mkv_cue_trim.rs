@@ -21,6 +21,7 @@ use super::mkv_cues::{
     VOID,
 };
 use super::mkv_splice::Splice;
+use crate::streaming::language::same_language;
 
 /// An unknown-size element: every value bit set. Only the Segment uses this in practice.
 const UNKNOWN_SIZE: u64 = 0x00FF_FFFF_FFFF_FFFF;
@@ -286,46 +287,15 @@ pub fn kept_tracks(
                 !sidecars_available
                     && (t.forced
                         || preferred_languages.iter().any(|want| {
-                            let want = want.to_ascii_lowercase();
                             t.language
                                 .as_deref()
-                                .map(|l| language_matches(&l.to_ascii_lowercase(), &want))
-                                .unwrap_or(false)
+                                .is_some_and(|l| same_language(l, want))
                         }))
             }
             _ => true,
         })
         .map(|t| t.number)
         .collect()
-}
-
-/// Matroska writes ISO-639-2/B ("eng", "fre"), config carries names ("english").
-fn language_matches(track: &str, want: &str) -> bool {
-    let track = track.split(['-', '_']).next().unwrap_or(track);
-    if track == want {
-        return true;
-    }
-    let alias: &[(&str, &[&str])] = &[
-        ("english", &["en", "eng"]),
-        ("french", &["fr", "fre", "fra"]),
-        ("german", &["de", "ger", "deu"]),
-        ("spanish", &["es", "spa"]),
-        ("italian", &["it", "ita"]),
-        ("dutch", &["nl", "dut", "nld"]),
-        ("portuguese", &["pt", "por"]),
-        ("japanese", &["ja", "jpn"]),
-        ("korean", &["ko", "kor"]),
-        ("chinese", &["zh", "chi", "zho"]),
-        ("russian", &["ru", "rus"]),
-        ("polish", &["pl", "pol"]),
-        ("swedish", &["sv", "swe"]),
-        ("danish", &["da", "dan"]),
-        ("norwegian", &["no", "nor"]),
-        ("finnish", &["fi", "fin"]),
-    ];
-    alias
-        .iter()
-        .any(|(name, codes)| *name == want && codes.contains(&track))
 }
 
 /// The trimmed Cues element as a splice over the original one.
