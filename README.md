@@ -20,9 +20,10 @@ assistant, and the companion projects Kobload and koblem — is **optional and o
 - ~2 GB RAM free and disk for your library
 - Nothing else. No GPU, no API keys, no accounts.
 
-Images are published to `ghcr.io/kobbler-media` (linux/amd64) on every push to `main`: `:latest`,
-plus `:sha-<commit>` to pin one. To build them yourself instead, see
-[Building from source](#building-from-source).
+Images are published to `ghcr.io/kobbler-media` for linux/amd64 and linux/arm64. `:latest`
+follows `main`; each [release](https://github.com/Kobbler-Media/kobbler/releases) is also tagged
+`:0.1.0` and `:0.1`, and `:sha-<commit>` pins any build. Set `KOBBLER_TAG` in `.env` to stay on
+one. To build the images yourself instead, see [Building from source](#building-from-source).
 
 ## Quickstart
 
@@ -52,6 +53,14 @@ docker compose logs api | grep "Admin account"
 Open the web UI at <http://localhost:5173> and sign in as `admin@localhost`.
 
 Upgrading is the same `docker compose pull && docker compose up -d`.
+
+### Apps
+
+- **Web:** the player at `http://<server>:5173/player/` needs nothing installed.
+- **Android, Android TV and Linux desktop:** download from
+  [kobapp's releases](https://github.com/Kobbler-Media/kobapp/releases), then pair the app with
+  your server: the app shows a PIN, which you enter on your profile page in the web UI.
+- **Kobo e-readers:** see [Before you expose it](#before-you-expose-it) for the sync URL.
 
 The containers use `restart: unless-stopped`, so they come back after a reboot.
 

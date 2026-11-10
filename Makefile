@@ -113,6 +113,10 @@ KOBBLER_REGISTRY ?= ghcr.io/kobbler-media
 ifdef REGISTRY
 export KOBBLER_REGISTRY := $(REGISTRY)
 endif
+KOBBLER_TAG ?= latest
+ifdef TAG
+export KOBBLER_TAG := $(TAG)
+endif
 
 # kobapp's Compose web build, served by the web image at /player/.
 KOBAPP_DIR ?= ../kobapp
@@ -127,8 +131,8 @@ docker-push: player
 	docker compose push api web
 	@echo ""
 	@echo "=== Pushed digests (compare with server: docker inspect <image> --format '{{.RepoDigests}}') ==="
-	@docker inspect $(KOBBLER_REGISTRY)/kobbler:latest --format '  api: {{index .RepoDigests 0}}' 2>/dev/null || true
-	@docker inspect $(KOBBLER_REGISTRY)/kobbler-web:latest --format '  web: {{index .RepoDigests 0}}' 2>/dev/null || true
+	@docker inspect $(KOBBLER_REGISTRY)/kobbler:$(KOBBLER_TAG) --format '  api: {{index .RepoDigests 0}}' 2>/dev/null || true
+	@docker inspect $(KOBBLER_REGISTRY)/kobbler-web:$(KOBBLER_TAG) --format '  web: {{index .RepoDigests 0}}' 2>/dev/null || true
 	@echo ""
 	@echo "Pruning old build artifacts..."
 	docker image prune -f --filter "dangling=true"

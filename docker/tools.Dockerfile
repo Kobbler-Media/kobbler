@@ -71,8 +71,8 @@ RUN test -f /usr/local/lib/pkgconfig/libchromaprint.pc || \
     printf 'prefix=/usr/local\nexec_prefix=${prefix}\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n\nName: chromaprint\nDescription: Audio fingerprint library\nVersion: 1.6.2\nLibs: -L${libdir} -lchromaprint\nCflags: -I${includedir}\n' \
     > /usr/local/lib/pkgconfig/libchromaprint.pc
 
-# Make sure pkg-config sees both /usr/local and the system paths.
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+# Searched ahead of pkg-config's own (per-arch) system paths, not instead of them.
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
 # faster-whisper venv — used for audiobook transcription (parakeet-stt is the
 # main path; this is a CPU fallback / shorter-clip helper).

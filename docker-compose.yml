@@ -75,10 +75,10 @@ services:
       start_period: 5s
 
   api:
-    # Images are named for ghcr.io/kobbler-media. `up` builds locally if the
-    # image is not present; once images are published, `docker compose pull`
-    # grabs them instead. Set KOBBLER_REGISTRY to push to a fork's registry.
-    image: ${KOBBLER_REGISTRY:-ghcr.io/kobbler-media}/kobbler:latest
+    # `docker compose pull` fetches the published image; `make up` builds it
+    # instead. KOBBLER_TAG pins a release (e.g. 0.1); KOBBLER_REGISTRY points
+    # at a fork's registry.
+    image: ${KOBBLER_REGISTRY:-ghcr.io/kobbler-media}/kobbler:${KOBBLER_TAG:-latest}
     init: true
     build:
       context: .
@@ -158,7 +158,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ${KOBBLER_REGISTRY:-ghcr.io/kobbler-media}/kobbler-web:latest
+    image: ${KOBBLER_REGISTRY:-ghcr.io/kobbler-media}/kobbler-web:${KOBBLER_TAG:-latest}
     build:
       context: ./web
       additional_contexts:
