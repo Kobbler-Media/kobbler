@@ -200,6 +200,22 @@ pub fn normalize_show_status(raw: Option<String>) -> Option<String> {
     })
 }
 
+/// A genre filter as the browse lists take it: blank means unfiltered.
+pub fn genre_filter(raw: Option<&str>) -> Option<&str> {
+    raw.map(str::trim).filter(|g| !g.is_empty())
+}
+
+/// `table` must be the unaliased movies or tv_shows table in scope; the genre is bound.
+fn push_genre_filter(sql: &mut String, params: &mut Vec<String>, table: &str, genre: Option<&str>) {
+    if let Some(genre) = genre_filter(genre) {
+        params.push(genre.to_string());
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM unnest({table}.genres) g WHERE lower(g) = lower(${}))",
+            params.len()
+        ));
+    }
+}
+
 /// Pagination direction for cursor-based queries.
 /// Used across authors, series, and books for bidirectional pagination.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

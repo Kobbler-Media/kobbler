@@ -92,7 +92,8 @@ use sqlx::PgPool;
 ///   library book) behind `semantic_search_enabled`, plus its two settings documents.
 /// - 43: EmbeddingGemma-2 replaces SigLIP2: `_vectors` is now `{description, poster}`
 ///   (768-d, summary first), and the Text Embedding Service URL setting document.
-pub const SEARCH_SCHEMA_VERSION: i32 = 43;
+/// - 44: TV show `kind` ("tv" or "sport"), filterable, so sports leagues are told apart.
+pub const SEARCH_SCHEMA_VERSION: i32 = 44;
 
 /// Result of checking if search reindex is needed on startup.
 #[derive(Debug)]
@@ -427,6 +428,8 @@ pub struct TvShowDocument {
     pub content_rating: Option<String>,
     pub runtime: Option<i32>,
     pub description: Option<String>,
+    /// `tv_shows.content_category`: "tv" or "sport" (a sports league).
+    pub kind: String,
     #[serde(rename = "_vectors", default, skip_serializing_if = "Option::is_none")]
     pub vectors: Option<semantic::TitleVectors>,
 }

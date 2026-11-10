@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            s.id,\n            s.title,\n            s.year,\n            CASE WHEN (s.images->'poster'->>'source_url' IS NOT NULL OR s.images->'poster'->>'cached_at' IS NOT NULL)\n                 THEN '/api/v1/admin/tv/shows/' || s.id || '/poster'\n                 ELSE NULL\n            END as poster_url,\n            s.is_monitored,\n            s.status,\n            s.network,\n            COALESCE(s.sort_title, s.title) as \"sort_title!\",\n            COALESCE(s.genres, ARRAY[]::text[]) as \"genres!: Vec<String>\",\n            COALESCE((\n                SELECT COUNT(*)::int\n                FROM tv_episodes te\n                JOIN tv_seasons tsn ON tsn.id = te.season_id\n                WHERE tsn.show_id = s.id\n            ), 0) AS \"total_episodes!\",\n            COALESCE((\n                SELECT COUNT(DISTINCT te.id)::int\n                FROM tv_episodes te\n                JOIN tv_seasons tsn ON tsn.id = te.season_id\n                JOIN tv_episode_file_episodes tefe ON tefe.episode_id = te.id\n                JOIN tv_episode_files tef ON tef.id = tefe.episode_file_id AND tef.available = true\n                WHERE tsn.show_id = s.id\n            ), 0) AS \"available_episode_count!\",\n            s.rating,\n            s.content_rating,\n            s.runtime,\n            s.description\n        FROM tv_shows s\n        ",
+  "query": "\n        SELECT\n            s.id,\n            s.title,\n            s.year,\n            CASE WHEN (s.images->'poster'->>'source_url' IS NOT NULL OR s.images->'poster'->>'cached_at' IS NOT NULL)\n                 THEN '/api/v1/admin/tv/shows/' || s.id || '/poster'\n                 ELSE NULL\n            END as poster_url,\n            s.is_monitored,\n            s.status,\n            s.network,\n            COALESCE(s.sort_title, s.title) as \"sort_title!\",\n            COALESCE(s.genres, ARRAY[]::text[]) as \"genres!: Vec<String>\",\n            COALESCE((\n                SELECT COUNT(*)::int\n                FROM tv_episodes te\n                JOIN tv_seasons tsn ON tsn.id = te.season_id\n                WHERE tsn.show_id = s.id\n            ), 0) AS \"total_episodes!\",\n            COALESCE((\n                SELECT COUNT(DISTINCT te.id)::int\n                FROM tv_episodes te\n                JOIN tv_seasons tsn ON tsn.id = te.season_id\n                JOIN tv_episode_file_episodes tefe ON tefe.episode_id = te.id\n                JOIN tv_episode_files tef ON tef.id = tefe.episode_file_id AND tef.available = true\n                WHERE tsn.show_id = s.id\n            ), 0) AS \"available_episode_count!\",\n            s.rating,\n            s.content_rating,\n            s.runtime,\n            s.description,\n            s.content_category AS kind\n        FROM tv_shows s\n        ",
   "describe": {
     "columns": [
       {
@@ -142,6 +142,17 @@
             "name": "description"
           }
         }
+      },
+      {
+        "ordinal": 15,
+        "name": "kind",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "tv_shows",
+            "name": "content_category"
+          }
+        }
       }
     ],
     "parameters": {
@@ -162,8 +173,9 @@
       true,
       true,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "19129aef1f32d742a45f098da3a1f8dac527e6c1ac7cc2c630e9dd689990fde4"
+  "hash": "fb7271a0f276f8880f5237f04ae00a3da47950dd6fa26c1f19e26be8fc87d172"
 }

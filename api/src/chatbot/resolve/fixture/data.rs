@@ -135,6 +135,7 @@ fn show(
         content_rating: None,
         runtime: Some(45),
         description: Some(description.to_string()),
+        kind: "tv".to_string(),
         vectors: None,
     }
 }

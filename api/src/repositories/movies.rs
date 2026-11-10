@@ -356,18 +356,7 @@ fn push_list_filters(sql: &mut String, params: &mut Vec<String>, filters: &Movie
         }
     }
 
-    if let Some(genre) = filters
-        .genre
-        .as_deref()
-        .map(str::trim)
-        .filter(|g| !g.is_empty())
-    {
-        params.push(genre.to_string());
-        sql.push_str(&format!(
-            " AND EXISTS (SELECT 1 FROM unnest(movies.genres) g WHERE lower(g) = lower(${}))",
-            params.len()
-        ));
-    }
+    super::push_genre_filter(sql, params, "movies", filters.genre.as_deref());
 
     if filters.kids_only {
         sql.push_str(&format!(" AND {}", crate::kids::allowed_sql("movies")));
@@ -943,49 +932,35 @@ pub struct FirstByLetterResult {
     pub title: String,
 }
 
-/// Find the first movie starting with a given letter.
-/// Used for alphabet bar jump navigation in the library UI.
-///
-/// # Arguments
-/// * `letter` - The letter to search for (A-Z, or "#" for non-alphabetic)
+fn filter_where(filters: &MovieListFilters) -> (String, Vec<String>) {
+    let mut sql = String::from("TRUE");
+    let mut params = Vec::new();
+    push_list_filters(&mut sql, &mut params, filters);
+    (sql, params)
+}
+
+/// The alphabet bar's jump target: the first title under `letter` (A-Z or `#`) in the list
+/// `filters` narrows to, so the jump lands on a row that list holds. Paging fields are ignored.
 pub async fn first_by_letter<'e, E>(
     exec: E,
     letter: &str,
-    kids_only: bool,
+    filters: &MovieListFilters,
 ) -> Result<Option<FirstByLetterResult>>
 where
     E: Executor<'e, Database = Postgres>,
 {
-    let letter_condition = if letter == "#" {
-        "COALESCE(sort_title, title) !~ '^[A-Za-z]'"
-    } else {
-        "UPPER(LEFT(COALESCE(sort_title, title), 1)) = $1"
-    };
+    let (where_clause, params) = filter_where(filters);
+    let row =
+        super::letters::first_by_letter(exec, "movies", &where_clause, params, letter).await?;
+    Ok(row.map(|(id, title)| FirstByLetterResult { id, title }))
+}
 
-    let kids_condition = if kids_only {
-        format!(" AND {}", crate::kids::allowed_sql("movies"))
-    } else {
-        String::new()
-    };
-
-    let mut query = sqlx::query(sqlx::AssertSqlSafe(format!(
-        r#"
-        SELECT id, title
-        FROM movies
-        WHERE {letter_condition}{kids_condition}
-        ORDER BY COALESCE(sort_title, title) ASC
-        LIMIT 1
-        "#
-    )));
-    if letter != "#" {
-        query = query.bind(letter.to_uppercase());
-    }
-    let row = query.fetch_optional(exec).await?;
-
-    Ok(row.map(|r| FirstByLetterResult {
-        id: r.get("id"),
-        title: r.get("title"),
-    }))
+pub async fn available_letters<'e, E>(exec: E, filters: &MovieListFilters) -> Result<Vec<String>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let (where_clause, params) = filter_where(filters);
+    Ok(super::letters::available_letters(exec, "movies", &where_clause, &params).await?)
 }
 
 // =============================================================================

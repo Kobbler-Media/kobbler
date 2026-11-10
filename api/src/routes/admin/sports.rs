@@ -1153,6 +1153,14 @@ struct FirstByLetterResponse {
     title: String,
 }
 
+fn letter_filters(auth: &AuthUser) -> tv_shows::TvShowListFilters {
+    tv_shows::TvShowListFilters {
+        content_category: Some(CONTENT_CATEGORY.to_string()),
+        kids_only: auth.is_kids,
+        ..Default::default()
+    }
+}
+
 /// GET /api/v1/admin/sports/leagues/first-by-letter?letter=A
 pub async fn first_by_letter(
     State(state): State<AppState>,
@@ -1168,9 +1176,8 @@ pub async fn first_by_letter(
         return Err(AppError::BadRequest("letter must be A-Z or #".into()));
     }
 
-    match tv_shows::first_by_letter(&state.pool, &letter, Some(CONTENT_CATEGORY), auth.is_kids)
-        .await
-    {
+    let filters = letter_filters(&auth);
+    match tv_shows::first_by_letter(&state.pool, &letter, &filters).await {
         Ok(Some(result)) => Ok(Json(FirstByLetterResponse {
             id: result.id,
             title: result.title,
@@ -1193,15 +1200,10 @@ pub async fn available_letters(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<impl IntoResponse, AppError> {
-    let conditions: &[&'static str] = if auth.is_kids {
-        &["b.content_category = 'sport'", crate::kids::KIDS_ALLOWED_B]
-    } else {
-        &["b.content_category = 'sport'"]
-    };
-    let letters =
-        crate::repositories::letters::available_letters(&state.pool, "tv_shows b", conditions)
-            .await
-            .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))?;
+    let filters = letter_filters(&auth);
+    let letters = tv_shows::available_letters(&state.pool, &filters)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))?;
 
     Ok(Json(AvailableLettersResponse { letters }))
 }

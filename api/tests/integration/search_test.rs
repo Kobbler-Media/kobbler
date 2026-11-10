@@ -805,3 +805,93 @@ async fn test_index_tv_show_children_unknown_show_is_empty() {
             .expect("index_tv_show_children should succeed for an unknown show");
     assert_eq!(counts, (0, 0));
 }
+
+async fn seed_show_of_kind(server: &TestServer, title: &str, kind: &str) -> uuid::Uuid {
+    let id = uuid::Uuid::new_v4();
+    sqlx::query("INSERT INTO tv_shows (id, title, content_category) VALUES ($1, $2, $3)")
+        .bind(id)
+        .bind(title)
+        .bind(kind)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+    id
+}
+
+fn letters_only_token() -> String {
+    uuid::Uuid::new_v4()
+        .simple()
+        .to_string()
+        .chars()
+        .map(|c| match c.to_digit(10) {
+            Some(d) => (b'g' + d as u8) as char,
+            None => c,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn test_fetch_all_tv_show_docs_carry_kind() {
+    let server = TestServer::start_api_only().await;
+    let league = seed_show_of_kind(&server, "Kind League", "sport").await;
+    let drama = seed_show_of_kind(&server, "Kind Drama", "tv").await;
+
+    let docs = fetch_all_tv_show_docs(&server.pool).await.unwrap();
+    let kind_of = |id: uuid::Uuid| {
+        docs.iter()
+            .find(|d| d.id == id.to_string())
+            .map(|d| d.kind.clone())
+            .unwrap()
+    };
+    assert_eq!(kind_of(league), "sport");
+    assert_eq!(kind_of(drama), "tv");
+}
+
+#[tokio::test]
+async fn test_search_hits_tell_sports_leagues_from_tv_shows() {
+    let url =
+        std::env::var("MEILI_URL_TEST").unwrap_or_else(|_| "http://localhost:7701".to_string());
+    let meili = std::sync::Arc::new(api::search::MeiliState::new(&url, "test-master-key").unwrap());
+    api::search::SearchBackend::init_indexes(meili.as_ref())
+        .await
+        .unwrap();
+    let server = TestServer::start_api_only_with_search(meili.clone()).await;
+
+    let token = letters_only_token();
+    for (title, kind) in [
+        (format!("{token} League"), "sport"),
+        (format!("{token} Drama"), "tv"),
+    ] {
+        let id = seed_show_of_kind(&server, &title, kind).await;
+        index_tv_show(meili.as_ref(), &server.pool, id)
+            .await
+            .unwrap();
+    }
+
+    let client = server.admin_client();
+    let mut kinds = Vec::new();
+    for _ in 0..100 {
+        let json: Value = client
+            .get(&format!("/api/v1/admin/search?q={token}&limit=10"))
+            .await
+            .json();
+        kinds = ["top_hits", "remaining"]
+            .iter()
+            .flat_map(|k| json[k].as_array().cloned().unwrap_or_default())
+            .filter(|h| h["type"] == "tv_show")
+            .map(|h| (h["title"].as_str().unwrap().to_string(), h["kind"].clone()))
+            .collect::<Vec<_>>();
+        if kinds.len() == 2 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    kinds.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        kinds,
+        vec![
+            (format!("{token} Drama"), Value::from("tv")),
+            (format!("{token} League"), Value::from("sport")),
+        ]
+    );
+}

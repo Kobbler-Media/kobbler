@@ -1468,7 +1468,8 @@ pub async fn available_letters(
             match crate::repositories::letters::available_letters(
                 &state.pool,
                 "books b",
-                &conditions,
+                &conditions.join(" AND "),
+                &[],
             )
             .await
             {

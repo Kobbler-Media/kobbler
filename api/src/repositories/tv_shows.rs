@@ -638,18 +638,7 @@ fn push_list_filters(sql: &mut String, params: &mut Vec<String>, filters: &TvSho
         }
     }
 
-    if let Some(genre) = filters
-        .genre
-        .as_deref()
-        .map(str::trim)
-        .filter(|g| !g.is_empty())
-    {
-        params.push(genre.to_string());
-        sql.push_str(&format!(
-            " AND EXISTS (SELECT 1 FROM unnest(tv_shows.genres) g WHERE lower(g) = lower(${}))",
-            params.len()
-        ));
-    }
+    super::push_genre_filter(sql, params, "tv_shows", filters.genre.as_deref());
 
     if filters.kids_only {
         sql.push_str(&format!(" AND {}", crate::kids::allowed_sql("tv_shows")));
@@ -1413,60 +1402,35 @@ pub struct FirstByLetterResult {
     pub title: String,
 }
 
-/// Find the first TV show starting with a given letter.
-/// Used for alphabet bar jump navigation in the library UI.
-///
-/// # Arguments
-/// * `letter` - The letter to search for (A-Z, or "#" for non-alphabetic)
-/// * `content_category` - Optional filter by content category ("tv" or "sport")
+fn filter_where(filters: &TvShowListFilters) -> (String, Vec<String>) {
+    let mut sql = String::from("TRUE");
+    let mut params = Vec::new();
+    push_list_filters(&mut sql, &mut params, filters);
+    (sql, params)
+}
+
+/// The alphabet bar's jump target: the first show under `letter` (A-Z or `#`) in the list
+/// `filters` narrows to, so the jump lands on a row that list holds. Paging fields are ignored.
 pub async fn first_by_letter<'e, E>(
     exec: E,
     letter: &str,
-    content_category: Option<&str>,
-    kids_only: bool,
+    filters: &TvShowListFilters,
 ) -> Result<Option<FirstByLetterResult>>
 where
     E: Executor<'e, Database = Postgres>,
 {
-    let mut next_param = 1;
-    let letter_condition = if letter == "#" {
-        "COALESCE(sort_title, title) !~ '^[A-Za-z]'".to_string()
-    } else {
-        next_param += 1;
-        "UPPER(LEFT(COALESCE(sort_title, title), 1)) = $1".to_string()
-    };
+    let (where_clause, params) = filter_where(filters);
+    let row =
+        super::letters::first_by_letter(exec, "tv_shows", &where_clause, params, letter).await?;
+    Ok(row.map(|(id, title)| FirstByLetterResult { id, title }))
+}
 
-    let category_condition = match content_category {
-        Some(_) => format!(" AND content_category = ${next_param}"),
-        None => String::new(),
-    };
-    let kids_condition = if kids_only {
-        format!(" AND {}", crate::kids::allowed_sql("tv_shows"))
-    } else {
-        String::new()
-    };
-
-    let mut query = sqlx::query(sqlx::AssertSqlSafe(format!(
-        r#"
-        SELECT id, title
-        FROM tv_shows
-        WHERE {letter_condition}{category_condition}{kids_condition}
-        ORDER BY COALESCE(sort_title, title) ASC
-        LIMIT 1
-        "#
-    )));
-    if letter != "#" {
-        query = query.bind(letter.to_uppercase());
-    }
-    if let Some(cat) = content_category {
-        query = query.bind(cat.to_string());
-    }
-    let row = query.fetch_optional(exec).await?;
-
-    Ok(row.map(|r| FirstByLetterResult {
-        id: r.get("id"),
-        title: r.get("title"),
-    }))
+pub async fn available_letters<'e, E>(exec: E, filters: &TvShowListFilters) -> Result<Vec<String>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let (where_clause, params) = filter_where(filters);
+    Ok(super::letters::available_letters(exec, "tv_shows", &where_clause, &params).await?)
 }
 
 /// Never touched by enrichment or a metadata refresh: this is the admin's decision.

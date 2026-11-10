@@ -81,6 +81,7 @@ mod episode_cast_test;
 mod event_subscriber_test;
 mod events_test;
 mod file_replacement_test;
+mod filtered_alphabet_test;
 mod for_you_test;
 mod hardcover_reconcile_test;
 mod hardcover_sync_test;

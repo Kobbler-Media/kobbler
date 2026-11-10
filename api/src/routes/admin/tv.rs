@@ -3304,6 +3304,28 @@ pub async fn get_episode_still(
 #[derive(Debug, Deserialize)]
 pub struct FirstByLetterQuery {
     pub letter: String,
+    pub genre: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AvailableLettersQuery {
+    pub genre: Option<String>,
+    pub status: Option<String>,
+}
+
+fn letter_filters(
+    auth: &AuthUser,
+    genre: Option<String>,
+    status: Option<String>,
+) -> tv_shows::TvShowListFilters {
+    tv_shows::TvShowListFilters {
+        content_category: Some("tv".to_string()),
+        genre,
+        status,
+        kids_only: auth.is_kids,
+        ..Default::default()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -3327,7 +3349,8 @@ pub async fn first_by_letter(
         return Err(AppError::BadRequest("letter must be A-Z or #".into()));
     }
 
-    match tv_shows::first_by_letter(&state.pool, &letter, Some("tv"), auth.is_kids).await {
+    let filters = letter_filters(&auth, params.genre, params.status);
+    match tv_shows::first_by_letter(&state.pool, &letter, &filters).await {
         Ok(Some(result)) => Ok(Json(FirstByLetterResponse {
             id: result.id,
             title: result.title,
@@ -3349,31 +3372,36 @@ struct AvailableLettersResponse {
 pub async fn available_letters(
     State(state): State<AppState>,
     auth: AuthUser,
+    Query(params): Query<AvailableLettersQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    use crate::search::TvShowSearchFilters;
+    let filters = letter_filters(&auth, params.genre, params.status);
+    let from_sql = || async {
+        tv_shows::available_letters(&state.pool, &filters)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))
+    };
 
-    // The index knows nothing of Kids profiles; their bar comes from the rule in SQL.
-    if auth.is_kids {
-        let letters = crate::repositories::letters::available_letters(
-            &state.pool,
-            "tv_shows b",
-            &["b.content_category = 'tv'", crate::kids::KIDS_ALLOWED_B],
-        )
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))?;
-        return Ok(Json(AvailableLettersResponse { letters }));
+    // The index knows neither the Kids rule nor these filters; only the bare bar can come from it.
+    if filters.kids_only
+        || filters.status.is_some()
+        || crate::repositories::genre_filter(filters.genre.as_deref()).is_some()
+    {
+        return Ok(Json(AvailableLettersResponse {
+            letters: from_sql().await?,
+        }));
     }
 
-    let filters = TvShowSearchFilters::default();
-    let letters = match state.search.get_available_tv_show_letters(filters).await {
+    let letters = match state
+        .search
+        .get_available_tv_show_letters(crate::search::TvShowSearchFilters::default())
+        .await
+    {
         Ok(letters) => letters,
         // The bar is furniture, not an answer to a question: losing the search index
         // should cost typo tolerance, not make the page's alphabet vanish.
         Err(e) => {
             tracing::debug!(error = %e, "Show letters from search unavailable, using SQL");
-            crate::repositories::letters::available_letters(&state.pool, "tv_shows b", &[])
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))?
+            from_sql().await?
         }
     };
     Ok(Json(AvailableLettersResponse { letters }))

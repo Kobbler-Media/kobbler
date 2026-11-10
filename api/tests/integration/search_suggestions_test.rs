@@ -546,3 +546,42 @@ async fn titles_the_query_starts_rank_first_and_by_popularity() {
         .concat(),
     );
 }
+
+#[tokio::test]
+async fn sports_suggestions_keep_leagues_apart_from_tv() {
+    let server = TestServer::start_api_only().await;
+    seed_catalogue(&server).await;
+    let league = seed_show(&server, "Breakdance World Series", None, &[], None).await;
+    sqlx::query("UPDATE tv_shows SET content_category = 'sport' WHERE id = $1")
+        .bind(league)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+    let client = server.admin_client();
+    let path = "/api/v1/admin/search/suggestions";
+
+    assert_eq!(
+        suggestions(&client.get(&format!("{path}?q=break&media=sports")).await),
+        vec![s("Breakdance World Series", "sports", "library")],
+    );
+    assert_eq!(
+        suggestions(&client.get(&format!("{path}?q=break&media=tv")).await),
+        vec![s("Breaking Bad", "tv", "library")],
+    );
+    assert_eq!(
+        suggestions(&client.get(&format!("{path}?q=break")).await),
+        vec![
+            s("Breakin'", "movie", "library"),
+            s("Breaking Bad", "tv", "library"),
+            s("Breakfast at Tiffany's", "movie", "tmdb"),
+        ],
+    );
+    assert_eq!(
+        suggestions(&client.get(&format!("{path}?q=break&media=tv,sports")).await),
+        vec![
+            s("Breakdance World Series", "sports", "library"),
+            s("Breaking Bad", "tv", "library"),
+        ],
+    );
+    assert!(suggestions(&client.get(&format!("{path}?q=&media=sports")).await).is_empty());
+}

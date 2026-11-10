@@ -2113,6 +2113,7 @@ impl SearchBackend for MeiliState {
                         "rating",
                         "content_rating",
                         "available_episode_count",
+                        "kind",
                     ])
                     .with_sortable_attributes(["title", "year", "rating", "id"])
                     .with_synonyms(synonyms.clone())

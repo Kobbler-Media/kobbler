@@ -1617,6 +1617,20 @@ pub async fn get_logo(
 #[derive(Debug, Deserialize)]
 pub struct FirstByLetterQuery {
     pub letter: String,
+    pub genre: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AvailableLettersQuery {
+    pub genre: Option<String>,
+}
+
+fn letter_filters(auth: &AuthUser, genre: Option<String>) -> movies::MovieListFilters {
+    movies::MovieListFilters {
+        genre,
+        kids_only: auth.is_kids,
+        ..Default::default()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1640,7 +1654,8 @@ pub async fn first_by_letter(
         return Err(AppError::BadRequest("letter must be A-Z or #".into()));
     }
 
-    match movies::first_by_letter(&state.pool, &letter, auth.is_kids).await {
+    let filters = letter_filters(&auth, params.genre);
+    match movies::first_by_letter(&state.pool, &letter, &filters).await {
         Ok(Some(result)) => Ok(Json(FirstByLetterResponse {
             id: result.id,
             title: result.title,
@@ -1662,31 +1677,33 @@ struct AvailableLettersResponse {
 pub async fn available_letters(
     State(state): State<AppState>,
     auth: AuthUser,
+    Query(params): Query<AvailableLettersQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    use crate::search::MovieSearchFilters;
+    let filters = letter_filters(&auth, params.genre);
+    let from_sql = || async {
+        movies::available_letters(&state.pool, &filters)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))
+    };
 
-    // The index knows nothing of Kids profiles; their bar comes from the rule in SQL.
-    if auth.is_kids {
-        let letters = crate::repositories::letters::available_letters(
-            &state.pool,
-            "movies b",
-            &[crate::kids::KIDS_ALLOWED_B],
-        )
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))?;
-        return Ok(Json(AvailableLettersResponse { letters }));
+    // The index knows neither the Kids rule nor genres; only the bare bar can come from it.
+    if filters.kids_only || crate::repositories::genre_filter(filters.genre.as_deref()).is_some() {
+        return Ok(Json(AvailableLettersResponse {
+            letters: from_sql().await?,
+        }));
     }
 
-    let filters = MovieSearchFilters::default();
-    let letters = match state.search.get_available_movie_letters(filters).await {
+    let letters = match state
+        .search
+        .get_available_movie_letters(crate::search::MovieSearchFilters::default())
+        .await
+    {
         Ok(letters) => letters,
         // The bar is furniture, not an answer to a question: losing the search index
         // should cost typo tolerance, not make the page's alphabet vanish.
         Err(e) => {
             tracing::debug!(error = %e, "Movie letters from search unavailable, using SQL");
-            crate::repositories::letters::available_letters(&state.pool, "movies b", &[])
-                .await
-                .map_err(|e| AppError::Internal(format!("Failed to get available letters: {e}")))?
+            from_sql().await?
         }
     };
     Ok(Json(AvailableLettersResponse { letters }))

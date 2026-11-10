@@ -29,6 +29,9 @@ pub struct SuggestionRequest<'a> {
 /// Hardcover's most-read books and authors. The two pools interleave rank by rank. A blank
 /// query seeds from the shelves alone.
 ///
+/// Sports leagues are library TV shows suggested as `sports`, never as `tv`; nothing outside
+/// the library knows them.
+///
 /// Kids: the kids rule on the library and only kids shelves. Exports carry no rating, so a
 /// Kids profile gets them all except titles its library hides, which its search would only
 /// come up empty on. Books are open to Kids; live channels and their guides are not.
@@ -62,13 +65,16 @@ where
               AND (m.title ILIKE $3 OR m.title ILIKE $4)
               AND (NOT $5 OR kids_allowed(m.kids_override, m.content_rating))
             UNION ALL
-            SELECT s.title, 'tv', 'library', 0, 0,
+            SELECT s.title, k.media_type, 'library', 0, 0,
                    (SELECT t.popularity FROM tmdb_titles t
                     WHERE t.media_type = 'tv' AND t.tmdb_id = CASE
                         WHEN s.identifiers->>'tmdb_id' ~ '^[0-9]{1,9}$' THEN (s.identifiers->>'tmdb_id')::int
                     END)
             FROM tv_shows s
-            WHERE $1 <> '' AND 'tv' = ANY($2)
+            CROSS JOIN LATERAL (
+                SELECT CASE WHEN s.content_category = 'sport' THEN 'sports' ELSE 'tv' END AS media_type
+            ) k
+            WHERE $1 <> '' AND k.media_type = ANY($2)
               AND (s.title ILIKE $3 OR s.title ILIKE $4)
               AND (NOT $5 OR kids_allowed(s.kids_override, s.content_rating))
             UNION ALL
@@ -183,7 +189,7 @@ where
         deduped AS (
             SELECT DISTINCT ON (lower(title)) title, media_type, source, shelf, pos, popularity,
                    CASE WHEN $1 = '' OR title ILIKE $3 THEN 0 ELSE 1 END AS tier,
-                   media_type IN ('movie', 'tv') AS video
+                   media_type IN ('movie', 'tv', 'sports') AS video
             FROM scored
             ORDER BY lower(title), shelf, pos
         ),

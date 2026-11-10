@@ -18,9 +18,6 @@ use crate::AppState;
 use crate::routes::{extract_bearer, extract_session_cookie, require_auth_token};
 use crate::search::{SearchHit, UnifiedSearchResponse};
 
-/// [`allowed_sql`] for a row aliased `b`, as `letters::available_letters` takes conditions.
-pub const KIDS_ALLOWED_B: &str = "kids_allowed(b.kids_override, b.content_rating)";
-
 /// `alias` is the movies or tv_shows row in scope of the query the predicate goes into.
 pub fn allowed_sql(alias: &str) -> String {
     format!("kids_allowed({alias}.kids_override, {alias}.content_rating)")

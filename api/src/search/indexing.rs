@@ -598,7 +598,8 @@ pub async fn index_tv_show(
             s.rating,
             s.content_rating,
             s.runtime,
-            s.description
+            s.description,
+            s.content_category AS kind
         FROM tv_shows s
         WHERE s.id = $1
         "#,
@@ -613,27 +614,7 @@ pub async fn index_tv_show(
         return Ok(());
     };
 
-    let genres = row.genres;
-    let first_letter = compute_first_letter(&row.sort_title);
-
-    let mut doc = TvShowDocument {
-        id: row.id.to_string(),
-        title: row.title,
-        year: row.year,
-        genres,
-        poster_url: row.poster_url,
-        is_monitored: row.is_monitored,
-        status: row.status,
-        network: row.network,
-        first_letter,
-        total_episodes: row.total_episodes,
-        available_episode_count: row.available_episode_count,
-        rating: row.rating,
-        content_rating: row.content_rating,
-        runtime: row.runtime,
-        description: truncate_description(row.description),
-        vectors: None,
-    };
+    let mut doc = tv_show_row_to_doc(row);
 
     super::semantic::attach_vectors(search, pool, std::slice::from_mut(&mut doc)).await?;
     search.index_tv_show(doc).await?;
@@ -657,6 +638,29 @@ struct TvShowRow {
     content_rating: Option<String>,
     runtime: Option<i32>,
     description: Option<String>,
+    kind: String,
+}
+
+fn tv_show_row_to_doc(row: TvShowRow) -> TvShowDocument {
+    TvShowDocument {
+        id: row.id.to_string(),
+        first_letter: compute_first_letter(&row.sort_title),
+        title: row.title,
+        year: row.year,
+        genres: row.genres,
+        poster_url: row.poster_url,
+        is_monitored: row.is_monitored,
+        status: row.status,
+        network: row.network,
+        total_episodes: row.total_episodes,
+        available_episode_count: row.available_episode_count,
+        rating: row.rating,
+        content_rating: row.content_rating,
+        runtime: row.runtime,
+        description: truncate_description(row.description),
+        kind: row.kind,
+        vectors: None,
+    }
 }
 
 /// Fetch all movie documents from the database for reindexing.
@@ -759,40 +763,15 @@ pub async fn fetch_all_tv_show_docs(
             s.rating,
             s.content_rating,
             s.runtime,
-            s.description
+            s.description,
+            s.content_category AS kind
         FROM tv_shows s
         "#,
     )
     .fetch_all(pool)
     .await?;
 
-    let docs = rows
-        .into_iter()
-        .map(|row| {
-            let genres = row.genres;
-            let first_letter = compute_first_letter(&row.sort_title);
-            TvShowDocument {
-                id: row.id.to_string(),
-                title: row.title,
-                year: row.year,
-                genres,
-                poster_url: row.poster_url,
-                is_monitored: row.is_monitored,
-                status: row.status,
-                network: row.network,
-                first_letter,
-                total_episodes: row.total_episodes,
-                available_episode_count: row.available_episode_count,
-                rating: row.rating,
-                content_rating: row.content_rating,
-                runtime: row.runtime,
-                description: truncate_description(row.description),
-                vectors: None,
-            }
-        })
-        .collect();
-
-    Ok(docs)
+    Ok(rows.into_iter().map(tv_show_row_to_doc).collect())
 }
 
 /// Build a padded season code like "S02" from a season identifier string.
