@@ -27,9 +27,11 @@ ENV SQLX_OFFLINE=true
 ENV RUSTFLAGS="--cfg tokio_unstable"
 # Cache mounts persist across builds (BuildKit). Target cache is ephemeral to
 # this RUN, so copy the binary out before the step ends.
+# The target mount's id keeps it apart from kobload's, which mounts the same path with a
+# different toolchain and FFmpeg, so a shared dir would rebuild for whichever ran last.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    --mount=type=cache,target=/app/target \
+    --mount=type=cache,id=kobbler-target,target=/app/target \
     cargo build --release -p api && \
     cp /app/target/release/api /app/api-binary && \
     cp /app/target/release/chatbot_e2e /app/chatbot-e2e-binary
