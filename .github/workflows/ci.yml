@@ -31,7 +31,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libavformat-dev libavcodec-dev libavutil-dev libavfilter-dev \
             libswresample-dev libswscale-dev libchromaprint-dev \
-            clang libclang-dev pkg-config
+            clang libclang-dev pkg-config ffmpeg
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.99"

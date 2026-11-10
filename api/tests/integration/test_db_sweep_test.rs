@@ -1,4 +1,4 @@
-use crate::common::server::{admin_connect, cleanup_stale_databases, get_admin_pool};
+use crate::common::server::{TestServer, admin_connect, cleanup_stale_databases, get_admin_pool};
 use sqlx::Executor;
 
 async fn exists(name: &str) -> bool {
@@ -35,4 +35,17 @@ async fn the_sweep_spares_an_old_database_whose_run_is_still_going_and_drops_a_f
     .unwrap();
     assert!(kept, "a database of a run still in progress was dropped");
     assert!(!exists(&finished).await);
+}
+
+#[tokio::test]
+async fn a_test_servers_database_is_dropped_with_it() {
+    let server = TestServer::start_api_only().await;
+    let name: String = sqlx::query_scalar("SELECT current_database()")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap();
+
+    drop(server);
+
+    assert!(!exists(&name).await, "{name} outlived its TestServer");
 }

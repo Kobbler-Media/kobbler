@@ -306,6 +306,7 @@ pub struct TestServer {
     _storage_dir: TempDir,
     _config_dir: TempDir,
     _api_shutdown: Option<tokio::sync::oneshot::Sender<()>>,
+    db_name: String,
     // Note: proxy doesn't have graceful shutdown, it will stop when the test ends
 }
 
@@ -561,6 +562,7 @@ impl TestServer {
             _storage_dir: storage_dir,
             _config_dir: config_dir,
             _api_shutdown: Some(api_shutdown_tx),
+            db_name,
         }
     }
 
@@ -663,10 +665,30 @@ impl Drop for TestServer {
             tx.send(()).ok();
         }
 
-        // Signal pool to close (releases connections on next poll).
-        // We don't await since we're in Drop - the actual closing happens asynchronously.
-        // The stale database cleanup uses WITH (FORCE) which handles any lingering connections.
         drop(self.pool.close());
+
+        // A run clones one database per test from the template, ~17 MB each on the
+        // tmpfs-backed Postgres; leaving them for the next run's sweep holds tens of
+        // GB in RAM by the end of a full suite. Own thread and runtime because Drop
+        // may run on a current-thread runtime that cannot be blocked on.
+        let db_name = std::mem::take(&mut self.db_name);
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("drop runtime")
+                .block_on(async {
+                    let mut conn = admin_connect().await;
+                    sqlx::query(sqlx::AssertSqlSafe(format!(
+                        "DROP DATABASE IF EXISTS {db_name} WITH (FORCE)"
+                    )))
+                    .execute(&mut conn)
+                    .await
+                    .ok();
+                });
+        })
+        .join()
+        .ok();
     }
 }
 
