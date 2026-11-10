@@ -26,31 +26,6 @@ use tokio_util::sync::CancellationToken;
 
 use super::client::TestClient;
 
-/// Shared admin pool for queries against the `postgres` database (cleanup, listing).
-/// NOT used for CREATE DATABASE — that gets its own one-shot connection to avoid
-/// serialization on the Postgres template lock.
-static ADMIN_POOL: OnceCell<DbPool> = OnceCell::const_new();
-
-pub async fn get_admin_pool() -> &'static DbPool {
-    ADMIN_POOL
-        .get_or_init(|| async {
-            let base_url = std::env::var("DATABASE_URL_TEST").unwrap_or_else(|_| {
-                "postgres://kobbler:kobbler@localhost:5433/kobbler_test".to_string()
-            });
-            let postgres_url = base_url
-                .rsplit_once('/')
-                .map(|(base, _)| format!("{}/postgres", base))
-                .unwrap_or_else(|| base_url.clone());
-            sqlx::postgres::PgPoolOptions::new()
-                .max_connections(8)
-                .acquire_timeout(std::time::Duration::from_secs(30))
-                .connect(&postgres_url)
-                .await
-                .expect("Failed to connect to postgres admin database")
-        })
-        .await
-}
-
 /// One-shot connection for CREATE/DROP DATABASE DDL.
 /// These take Postgres-level locks on the template and must not block pool connections.
 pub async fn admin_connect() -> sqlx::PgConnection {
@@ -150,15 +125,10 @@ async fn init_template_database() {
     let base_url = std::env::var("DATABASE_URL_TEST")
         .unwrap_or_else(|_| "postgres://kobbler:kobbler@localhost:5433/kobbler_test".to_string());
 
-    let admin_pool = get_admin_pool().await;
-
-    // Clean up stale databases from old test runs (uses shared pool)
-    cleanup_stale_databases(admin_pool).await;
+    let mut ddl_conn = admin_connect().await;
+    cleanup_stale_databases(&mut ddl_conn).await;
 
     let template_name = template_db_name();
-
-    // Drop and recreate template database (one-shot connection for DDL)
-    let mut ddl_conn = admin_connect().await;
     sqlx::query(sqlx::AssertSqlSafe(format!(
         "DROP DATABASE IF EXISTS {} WITH (FORCE)",
         template_name
@@ -196,7 +166,7 @@ async fn init_template_database() {
 /// Clean up stale test databases and templates older than 5 minutes.
 /// Only cleans up databases from OTHER test runs (not the current one).
 /// Also checks for active connections to avoid killing concurrent test runs.
-pub async fn cleanup_stale_databases(admin_pool: &DbPool) {
+pub async fn cleanup_stale_databases(conn: &mut sqlx::PgConnection) {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -207,7 +177,7 @@ pub async fn cleanup_stale_databases(admin_pool: &DbPool) {
     let databases: Vec<String> = sqlx::query_scalar(
         "SELECT datname FROM pg_database WHERE datname LIKE 'test_%' OR datname LIKE 'kobbler_tpl_%'",
     )
-    .fetch_all(admin_pool)
+    .fetch_all(&mut *conn)
     .await
     .unwrap_or_default();
 
@@ -233,7 +203,7 @@ pub async fn cleanup_stale_databases(admin_pool: &DbPool) {
         let active_connections: i64 =
             sqlx::query_scalar("SELECT count(*) FROM pg_stat_activity WHERE datname = $1")
                 .bind(&db)
-                .fetch_one(admin_pool)
+                .fetch_one(&mut *conn)
                 .await
                 .unwrap_or(1); // Assume in-use if query fails
 
@@ -246,7 +216,7 @@ pub async fn cleanup_stale_databases(admin_pool: &DbPool) {
             "DROP DATABASE IF EXISTS {} WITH (FORCE)",
             db
         )))
-        .execute(admin_pool)
+        .execute(&mut *conn)
         .await
         .ok();
     }
