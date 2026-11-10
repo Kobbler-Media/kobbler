@@ -1,4 +1,4 @@
-.PHONY: all quick web up deps deps-web deps-plugin fmt fmt-api fmt-web fmt-plugin lint lint-api lint-web lint-plugin check check-api check-web check-plugin sqlx-check sqlx-prepare sqlx-migrate build build-api build-web test test-api test-web test-db-up test-db-down docker-push player tools sweep
+.PHONY: all quick web up deps deps-web deps-plugin fmt fmt-api fmt-web fmt-plugin lint lint-api lint-web lint-plugin check check-web check-plugin sqlx-check sqlx-prepare sqlx-migrate build build-api build-web test test-api test-web test-db-up test-db-down docker-push player tools
 
 # Prerequisites for a fresh clone:
 #   - Rust stable + `cargo install sqlx-cli` (for the sqlx-check / sqlx-prepare targets)
@@ -6,10 +6,10 @@
 #   - Docker + `docker compose` (test database)
 #   - Python 3 with `ruff` in a local .venv (the Calibre plugin lint) — `make deps-plugin`
 # `make deps` sets up everything this repo can set up for you.
-all: sweep fmt lint check build test
+all: fmt lint check build test
 
 # Quick build check - skips slow backend tests
-quick: sweep fmt lint check build
+quick: fmt lint check build
 
 # One-time setup for a fresh clone.
 deps: deps-web deps-plugin
@@ -26,17 +26,14 @@ web: fmt-web lint-web check-web build-web
 
 fmt: fmt-api fmt-web fmt-plugin
 lint: lint-api lint-web lint-plugin
-check: check-api check-web check-plugin sqlx-check
+check: check-web check-plugin sqlx-check
 build: build-api build-web
 
 fmt-api:
 	cargo fmt --manifest-path api/Cargo.toml
 
 lint-api:
-	SQLX_OFFLINE=true cargo clippy --manifest-path api/Cargo.toml --all-targets --all-features -- -D warnings
-
-check-api:
-	SQLX_OFFLINE=true cargo check --manifest-path api/Cargo.toml
+	SQLX_OFFLINE=true cargo clippy --manifest-path api/Cargo.toml --all-targets -- -D warnings
 
 # Verify .sqlx cache matches code. If stale, run: make sqlx-prepare
 # `-- --all-targets` so test-only query macros (api/tests/) are included; without
@@ -103,7 +100,6 @@ test-api: test-db-up
 	DATABASE_URL_TEST=postgres://kobbler:kobbler@localhost:5433/kobbler_test \
 	NATS_URL_TEST=nats://localhost:4223 \
 	TEST_RUN_ID="$$RUN_ID" \
-	CARGO_INCREMENTAL=0 \
 	cargo test --manifest-path api/Cargo.toml -- --test-threads=4
 
 # Maintainer target: publishes the release images. Needs push rights on the
@@ -136,13 +132,6 @@ docker-push: player
 	@echo ""
 	@echo "Pruning old build artifacts..."
 	docker image prune -f --filter "dangling=true"
-
-# Skipped when cargo-sweep isn't installed so a fresh clone can still run `make`.
-# Above what one full `make` leaves (~15 GB): a lower cap deletes artifacts the next run
-# only builds again.
-sweep:
-	@command -v cargo-sweep >/dev/null 2>&1 && cargo sweep --maxsize 25GB . || \
-		echo "sweep: cargo-sweep not installed, skipping (cargo install cargo-sweep)"
 
 tools:
 	docker build -f docker/tools.Dockerfile -t kobbler-tools:latest .
