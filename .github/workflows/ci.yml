@@ -17,7 +17,12 @@ jobs:
   api:
     name: api (rust)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
+      - name: Free runner disk for the tools image and two target dirs
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/swift /usr/local/lib/android
       - uses: actions/checkout@v7
         with:
           path: kobbler
@@ -31,14 +36,16 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libavformat-dev libavcodec-dev libavutil-dev libavfilter-dev \
             libswresample-dev libswscale-dev libchromaprint-dev \
-            clang libclang-dev pkg-config ffmpeg
+            clang libclang-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.99"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: kobbler
+          workspaces: |
+            kobbler -> target
+            kobbler -> target-tools
       - name: fmt
         working-directory: kobbler
         run: cargo fmt --all -- --check
@@ -48,13 +55,30 @@ jobs:
       - name: start test backing services (postgres, nats, meilisearch)
         working-directory: kobbler
         run: docker compose -f docker-compose.test.yml up -d --wait
-      - name: test
+      # The tests pin FFmpeg behaviour (tone-mapped colour tags, MP3 frame exactness)
+      # that differs between releases, so they run against the FFmpeg the API image
+      # ships rather than the runner's. Pulled when published, built otherwise.
+      - name: kobbler-tools image
         working-directory: kobbler
-        env:
-          DATABASE_URL_TEST: postgres://kobbler:kobbler@localhost:5433/kobbler_test
-          NATS_URL_TEST: nats://localhost:4223
-          MEILI_URL_TEST: http://localhost:7701
-        run: cargo test --all-features
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          if docker pull ghcr.io/kobbler-media/kobbler-tools:latest; then
+            docker tag ghcr.io/kobbler-media/kobbler-tools:latest kobbler-tools:latest
+          else
+            make tools
+          fi
+      # Own target dir: kob-ffmpeg-sys bindings are generated from the FFmpeg headers
+      # present, and cargo does not notice those changing between host and image.
+      - name: test (in kobbler-tools)
+        run: |
+          docker run --rm --network host --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp -e CARGO_HOME=/cargo -e CARGO_TARGET_DIR=/w/kobbler/target-tools \
+            -e SQLX_OFFLINE=true -e CARGO_TERM_COLOR=always \
+            -e DATABASE_URL_TEST=postgres://kobbler:kobbler@localhost:5433/kobbler_test \
+            -e NATS_URL_TEST=nats://localhost:4223 \
+            -e MEILI_URL_TEST=http://localhost:7701 \
+            -v "$HOME/.cargo:/cargo" -v "$GITHUB_WORKSPACE:/w" -w /w/kobbler \
+            kobbler-tools:latest cargo test --all-features
 
   web:
     name: web (svelte)

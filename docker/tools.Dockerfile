@@ -11,6 +11,7 @@
 # from-source compile because BtbN's GPL build excludes libfdk_aac.
 
 FROM debian:sid-slim
+LABEL org.opencontainers.image.source="https://github.com/Kobbler-Media/kobbler"
 
 ENV DEBIAN_FRONTEND=noninteractive
 

@@ -47,6 +47,11 @@ jobs:
       - name: build + push :latest
         working-directory: kobbler
         run: make docker-push REGISTRY=$REGISTRY
+      # CI runs the API tests inside it, to test against the FFmpeg the API ships.
+      - name: push kobbler-tools
+        run: |
+          docker tag kobbler-tools:latest "$REGISTRY/kobbler-tools:latest"
+          docker push "$REGISTRY/kobbler-tools:latest"
       - name: push :sha-<short> and :<tag>
         run: |
           tags="sha-${GITHUB_SHA::7}"
