@@ -99,8 +99,5 @@ async function poll(pin: string): Promise<{ api_url: string; token: string } | n
 | `429` | Too many unknown PINs requested - back off, honour `Retry-After` |
 | `503` | Service full or not ready - honour `Retry-After` |
 
-A `404` on poll means the PIN is gone. The service does **not** mint a
-replacement - earlier versions did, and clients detected expiry by noticing the
-returned `pin` differed from the one requested. That behaviour was removed
-because it made PIN probing an allocation primitive and leaked which PINs exist.
-Allocate a fresh PIN with `POST /pin/{namespace}` and ask the user to re-enter it.
+A `404` on poll means the PIN is gone; the service does **not** mint a
+replacement. Allocate a fresh PIN with `POST /pin/{namespace}` and ask the user to re-enter it.

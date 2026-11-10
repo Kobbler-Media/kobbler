@@ -34,17 +34,17 @@ Configure both services to use the same NATS instance:
 
 ```bash
 # Option 1: Point Kobload to Kobbler's NATS
-# In Kobload's environment:
-NATS_URL=nats://kobbler-host:4222
+# In Kobload's environment (token = Kobbler's NATS_TOKEN):
+NATS_URL=nats://<token>@kobbler-host:4222
 
 # Option 2: Use a dedicated NATS deployment
 # In both services:
-NATS_URL=nats://nats.example.com:4222
+NATS_URL=nats://<token>@nats.example.com:4222
 ```
 
 ### Development (Local)
 
-For local development, a shared NATS instance is managed separately in `koblibs/docker-compose.nats.yml`. Both projects' `run_dev.sh` scripts start this shared NATS automatically.
+For local development, a shared NATS instance is managed separately in `koblibs/docker-compose.nats.yml`, so `koblibs` (and `kobload`, if you run it) must be checked out next to `kobbler`. Both projects' `run_dev.sh` scripts start this shared NATS automatically.
 
 **Either project can be started first** - they both use the same shared NATS:
 
@@ -64,7 +64,7 @@ The dev setup:
 - `../koblibs/docker-compose.nats.yml` defines the shared NATS container on `kob_dev` network
 - Both `run_dev.sh` scripts call `docker compose -f ../koblibs/docker-compose.nats.yml up -d`
 - Both dev compose files mark `kob_dev` as external and don't define their own NATS
-- Whichever project starts first creates NATS; the second reuses it
+- Whichever project starts first creates NATS and the `kob_dev` network; the second reuses them
 
 ## Configuration
 
@@ -83,12 +83,13 @@ The default NATS configuration in docker-compose:
 
 ```yaml
 nats:
-  image: nats:2.12-alpine
+  image: nats:2.15.2-alpine
   command: ["--jetstream", "--store_dir=/data", "-m", "8222", "--auth", "${NATS_TOKEN}"]
   volumes:
     - nats_data:/data
   ports:
     - "${NATS_MONITOR_PORT:-8222}:8222"
+    - "${NATS_PORT:-4222}:4222"
 ```
 
 ## Securing Cross-Host Communication
@@ -115,7 +116,7 @@ Update your docker-compose to use this config:
 
 ```yaml
 nats:
-  image: nats:2.12-alpine
+  image: nats:2.15.2-alpine
   command: ["-c", "/etc/nats/nats.conf"]
   volumes:
     - nats_data:/data
@@ -171,7 +172,7 @@ tls {
 
 ```yaml
 nats:
-  image: nats:2.12-alpine
+  image: nats:2.15.2-alpine
   command: ["-c", "/etc/nats/nats.conf"]
   volumes:
     - nats_data:/data
@@ -192,7 +193,7 @@ NATS_URL=tls://your-secure-token-here@kobbler-host:4222
 
 If both servers are on a trusted private network (e.g., same VPC, Tailscale):
 
-1. Run NATS without auth (default)
+1. Keep the default token auth (or drop `--auth` from the NATS command)
 2. Use firewall rules to restrict port 4222 to known IPs
 
 ```bash
@@ -221,46 +222,34 @@ The job system creates two streams automatically on startup:
 
 | Stream | Purpose | Retention |
 |--------|---------|-----------|
-| `JOBS` | Work queue for job processing | WorkQueue (each message processed once) |
-| `EVENTS` | Pub/sub for notifications | Limits (24h retention) |
+| `JOBS` | Work queue for job processing | WorkQueue (each message processed once), 7 days |
+| `EVENTS` | Pub/sub for notifications | Limits, 24 hours |
 
 ### Job Subjects
 
-Jobs are published to `jobs.{service}.{job_type}`:
+Jobs are published to `jobs.{service}.{job_type}`, e.g.:
 
-| Subject | Service | Description |
-|---------|---------|-------------|
-| `jobs.kobbler.directory_scan` | Kobbler | Scan watch directory for new files |
+| Subject | Handled by | Description |
+|---------|------------|-------------|
 | `jobs.kobbler.metadata_write` | Kobbler | Write metadata to book files |
 | `jobs.kobbler.metadata_extraction` | Kobbler | Extract metadata from files |
-| `jobs.kobbler.sync_provider` | Kobbler | Sync reading state to providers |
 | `jobs.kobload.want_request` | Kobload | Create/update a want's watch pattern and search for it |
 | `jobs.kobload.watch_pattern_delete` | Kobload | Delete watch pattern |
 
 ### Event Subjects
 
-Events are published to `events.{event_type}`:
+Events are published to `events.{event_type}`. Kobbler consumes `events.download.>` from Kobload:
 
-| Subject | Publisher | Description |
-|---------|-----------|-------------|
-| `events.download.completed` | Kobload | Download finished, ready for ingest |
-| `events.download.failed` | Kobload | Download failed |
-| `events.library.book_added` | Kobbler | New book added to library |
+| Subject | Description |
+|---------|-------------|
+| `events.download.completed` | Download finished, ready for ingest |
+| `events.download.watch_matched` | A watch pattern matched a release |
 
 ## Monitoring
 
-### Health Check
+### NATS Monitoring
 
-Both services expose NATS connection status in their health endpoints:
-
-```bash
-curl http://localhost:6766/health  # Kobbler
-curl http://localhost:7080/health  # Kobload
-```
-
-### NATS Monitoring (Dev)
-
-In dev mode, NATS monitoring is available at port 8222:
+NATS monitoring is exposed on `NATS_MONITOR_PORT` (default 8222):
 
 ```bash
 # Stream info
@@ -291,12 +280,12 @@ INFO nats_jobs::client: EVENTS stream ready: 0 messages
 
 ### Jobs not processing
 
-1. Check worker is registered: look for `Worker started, listening on jobs.kobbler.>` in logs
+1. Check the consumer started: look for `Starting consumer '...' on 'jobs.kobbler.<job_type>'` in logs
 2. Verify stream exists: check NATS monitoring at `/jsz`
 3. Check for handler errors in logs
 
 ### Cross-service events not received
 
 1. Verify both services use the same NATS instance
-2. Check subscription logs: `Subscribed to download events from Kobload`
+2. Check Kobbler logs for `Received download event`
 3. Ensure event publisher is connected: look for `Connected to NATS` in publisher logs

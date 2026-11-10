@@ -42,21 +42,9 @@ sudo chown -R 1000:1000 /var/kobbler/data  # Or your user's UID:GID
 
 ### Directory Structure
 
-Kobbler creates the following structure inside the data directory:
-
-```
-/data/
-  books/
-    {book_uuid}/
-      KEPUB/
-        book.kepub.epub
-      EPUB/
-        book.epub
-  covers/
-    {book_uuid}.jpg
-  cache/
-    ... temporary files
-```
+Kobbler creates its own subdirectories inside the data directory — `books/`,
+`covers/`, `voices/`, `proxy_blobs/`, `reader_packs/` and caches. Don't edit
+them by hand; use the UI or the backup/restore feature.
 
 ### Multiple Instances
 
@@ -111,8 +99,8 @@ Then configure the watch directory in the UI to point to `/import`.
 The PostgreSQL database should be backed up separately:
 
 ```bash
-# Using docker exec
-docker exec kobbler-db-1 pg_dump -U postgres kobbler > backup.sql
+# From the kobbler checkout
+docker compose exec -T db pg_dump -U kobbler kobbler > backup.sql
 
 # Or with volume mounted
 docker run --rm -v kobbler_pg:/data -v $(pwd):/backup alpine \
@@ -144,7 +132,7 @@ DATE=$(date +%Y%m%d_%H%M%S)
 mkdir -p $BACKUP_DIR
 
 # Database
-docker exec kobbler-db-1 pg_dump -U postgres kobbler > $BACKUP_DIR/db_$DATE.sql
+docker compose exec -T db pg_dump -U kobbler kobbler > $BACKUP_DIR/db_$DATE.sql
 
 # Data files (adjust path for your setup)
 tar czf $BACKUP_DIR/data_$DATE.tar.gz /var/kobbler/data

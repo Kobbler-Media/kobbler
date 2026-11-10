@@ -197,7 +197,7 @@ Replace `{device_token}` with the token shown in the Kobbler Devices page.
 
 1. Verify `public_proxy_url` in `config/kobbler.toml` matches your external URL exactly
 2. Check that the `/kobo/` path is being proxied to port 6767
-3. Test the API is reachable: `curl https://kobbler.example.com/api/health`
+3. Test the API is reachable: `curl https://kobbler.example.com/health` (should print `ok`)
 4. Check Kobbler logs: `docker compose logs api`
 
 ### WebSocket connection fails

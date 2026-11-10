@@ -100,7 +100,6 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@localhost}
       RUST_LOG: ${RUST_LOG:-info,api=info,tower_http=info}
       KOBBLER_HTTP_TRACE: ${KOBBLER_HTTP_TRACE:-0}
-      KOBBLER_DOWNLOAD_TRACE: ${KOBBLER_DOWNLOAD_TRACE:-0}
       # Conversion tools; empty = search PATH. The native kob-ebook pipeline
       # handles EPUB/MOBI/AZW3 in-process — ebook-convert is only the fallback
       # for PDF/FB2/RTF/TXT/HTML/DOCX/LIT/PDB.
@@ -111,6 +110,12 @@ services:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
       KOBBLER_WEB_ORIGINS: ${KOBBLER_WEB_ORIGINS:-}
       KOBBLER_PIN_SERVICE_URL: ${KOBBLER_PIN_SERVICE_URL:-}
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-10}
+      HTTP_MAX_BODY_BYTES: ${HTTP_MAX_BODY_BYTES:-209715200}
+      KOBBLER_FS_CONCURRENCY: ${KOBBLER_FS_CONCURRENCY:-8}
+      KOBBLER_ENRICHMENT_CONCURRENCY: ${KOBBLER_ENRICHMENT_CONCURRENCY:-4}
+      KOBBLER_STREMIO_API_URL: ${KOBBLER_STREMIO_API_URL:-}
+      KOBLEM_UI_ENABLED: ${KOBLEM_UI_ENABLED:-0}
       # Quiet hours are wall-clock times, judged in the user's own timezone when
       # `users.timezone` is set and in THIS container's otherwise. Set TZ to your
       # household's zone or quiet hours will be silencing the wrong half of the day.

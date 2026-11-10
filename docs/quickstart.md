@@ -5,15 +5,27 @@ Detailed setup guide with API examples. See also the main [README](../README.md)
 ## 1) Start services
 
 ```bash
-docker compose up -d --build
+make up
 ```
+
+`make up` builds the `kobbler-tools` base image first if it is missing; a bare
+`docker compose up --build` without it fails with "pull access denied".
 
 Watch logs for the generated admin password:
 ```
 Admin account created: email=admin@localhost password=<password>
 ```
 
-### Development with demo data
+### Development with demo data (contributors)
+
+`scripts/run_and_seed.sh` runs the hot-reloading dev stack (`docker-compose.dev.yml`) and seeds
+demo data. It needs:
+
+- [koblibs](https://github.com/Kobbler-Media/koblibs) checked out next to this repo — its
+  `docker-compose.nats.yml` provides the shared dev NATS and creates the `kob_dev` Docker network
+  the dev stack joins; the dev images also build against it
+- optionally `cp env.dev.template .env.dev` to override dev settings
+- `python` (Python 3) and `rg` (ripgrep) on the host
 
 ```bash
 ./scripts/run_and_seed.sh

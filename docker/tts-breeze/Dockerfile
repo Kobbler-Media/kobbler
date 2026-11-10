@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
 # BreezeTTS 2 text-to-speech, built from a qwen3-tts.cpp source tree (the
-# `breeze-server` CMake target). Set BREEZE_REPO/BREEZE_REF to point at one.
+# `breeze-server` CMake target). Override BREEZE_REPO/BREEZE_REF to build another tree.
 #
 # Breeze-TTS-2 is research / non-commercial licensed (RESONIA, INC.). Check the
 # licence before using this for anything but personal evaluation. Weights are
@@ -31,8 +31,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         pkg-config \
         libavcodec-dev libavformat-dev libavutil-dev
 
-# No public upstream ships the breeze-server target; supply your own
-# qwen3-tts.cpp checkout via BREEZE_REPO (and pin BREEZE_REF to a commit).
+# Upstream qwen3-tts.cpp has no breeze-server target; the default is a public
+# fork that does. Pin BREEZE_REF to a commit.
 ARG BREEZE_REPO=https://github.com/dbrain/hbd-qwen3-tts.cpp.git
 ARG BREEZE_REF=d022511
 # CUDA compute capabilities to emit: 86 = Ampere, 89 = Ada, 120 = Blackwell.

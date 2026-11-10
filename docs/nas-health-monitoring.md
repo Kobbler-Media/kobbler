@@ -6,7 +6,7 @@ happen when the SMB session drops, which only happens when the NAS is so
 overwhelmed it stops responding — a clean "things are too hot" signal that
 doesn't false-positive on normal load.
 
-When the reconnect delta over the last hour crosses **5**, the dashboard
+When the reconnect delta over the last hour exceeds **5**, the dashboard
 shows a yellow "NAS contention detected" banner with guidance to lower
 `max_concurrent_io` on affected media roots. When the stats file itself
 becomes unreadable, the banner turns red ("NAS monitoring unreachable").
@@ -69,7 +69,7 @@ it disabled until you actually mount something via SMB.
 
 ### 2. Wire the api container
 
-In `docker-compose.yml` (or your `docker-compose.prod.yml`), add to the
+In `docker-compose.override.yml` (next to `docker-compose.yml`), add to the
 `api` service:
 
 ```yaml
@@ -93,7 +93,7 @@ Notes:
 
 ```bash
 docker compose up -d api
-curl -u admin http://<api>/api/v1/admin/system/nas-health
+curl -H "Authorization: Bearer <admin token>" http://<host>:6766/api/v1/admin/system/nas-health
 # → {"status":"healthy","reconnects_last_hour":0,"note":null}
 ```
 
@@ -120,7 +120,7 @@ sudo rm /etc/systemd/system/kobbler-nas-stats.{service,timer}
 sudo systemctl daemon-reload
 ```
 
-Then unset `KOBBLER_NAS_HEALTH_MONITORING` in compose and restart the api
+Then remove `KOBBLER_NAS_HEALTH_MONITORING` from your override and restart the api
 container. The `/var/lib/kobbler/nas-stats` file and directory can stay —
 they're harmless once nothing's reading them.
 
