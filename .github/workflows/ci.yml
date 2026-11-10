@@ -69,9 +69,13 @@ jobs:
           fi
       # Own target dir: kob-ffmpeg-sys bindings are generated from the FFmpeg headers
       # present, and cargo does not notice those changing between host and image.
+      # A crash in FFmpeg's C code takes the whole test binary down with no Rust backtrace;
+      # keep its core so the step after can say where.
       - name: test (in kobbler-tools)
         run: |
-          docker run --rm --network host --user "$(id -u):$(id -g)" \
+          mkdir -p /tmp/cores && chmod 777 /tmp/cores
+          sudo sysctl -w kernel.core_pattern=/tmp/cores/core.%e.%p
+          docker run --rm --network host --user "$(id -u):$(id -g)" --ulimit core=-1 -v /tmp/cores:/tmp/cores \
             -e HOME=/tmp -e CARGO_HOME=/cargo -e CARGO_TARGET_DIR=/w/kobbler/target-tools \
             -e SQLX_OFFLINE=true -e CARGO_TERM_COLOR=always \
             -e DATABASE_URL_TEST=postgres://kobbler:kobbler@localhost:5433/kobbler_test \
@@ -79,6 +83,16 @@ jobs:
             -e MEILI_URL_TEST=http://localhost:7701 \
             -v "$HOME/.cargo:/cargo" -v "$GITHUB_WORKSPACE:/w" -w /w/kobbler \
             kobbler-tools:latest cargo test --all-features
+      - name: backtrace of a crashed test binary
+        if: failure()
+        run: |
+          ls /tmp/cores/core.* >/dev/null 2>&1 || { echo "no core dump"; exit 0; }
+          docker run --rm -v /tmp/cores:/tmp/cores -v "$GITHUB_WORKSPACE:/w" kobbler-tools:latest bash -c '
+            apt-get update -qq >/dev/null && apt-get install -y -qq gdb >/dev/null
+            for core in /tmp/cores/core.*; do
+              bin=$(ls -t /w/kobbler/target-tools/debug/deps/integration-* | grep -v "\.d$" | head -1)
+              gdb -q -batch -ex "info threads" -ex "thread apply all bt 30" "$bin" "$core"
+            done'
 
   web:
     name: web (svelte)
