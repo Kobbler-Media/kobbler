@@ -18,7 +18,7 @@
   import WantedStatusPanel from './WantedStatusPanel.svelte';
   import MoveToMediaRootModal from './MoveToMediaRootModal.svelte';
   import SelectDevicesModal from './SelectDevicesModal.svelte';
-  import { getAuthState } from '#lib/stores/auth.svelte.js';
+  import BookNarrationPanel from './BookNarrationPanel.svelte';
 
   type Context = 'library' | 'ingest';
 
@@ -56,16 +56,6 @@
     footer
   }: Props = $props();
 
-  const auth = getAuthState();
-
-  // Transcript / text extraction state
-  let hasAudioTranscript = $state(false);
-  let hasEbookSegments = $state(false);
-  let transcribing = $state(false);
-  let canTranscribe = $state(false);
-  let fullCastAvailable = $state(false);
-  let extracting = $state(false);
-
   // Move to media root state
   let showMoveModal = $state(false);
 
@@ -77,25 +67,6 @@
   // Reading data state
   let readingData = $state<ReadingData | null>(null);
   let readingDataLoading = $state(false);
-
-  // Fetch transcript status when book changes
-  $effect(() => {
-    if (book?.id && (book.has_audiobook || (book.formats && book.formats.length > 0))) {
-      fetchTranscriptStatus(book.id);
-    }
-  });
-
-  async function fetchTranscriptStatus(bookId: string) {
-    try {
-      const status = await api.hasTranscript(bookId);
-      hasAudioTranscript = status.has_audio_transcript;
-      hasEbookSegments = status.has_ebook_segments;
-      canTranscribe = status.transcript_mode !== 'off';
-      fullCastAvailable = status.full_cast_available;
-    } catch {
-      // Not critical
-    }
-  }
 
   // Fetch reading data when book changes (library context only)
   $effect(() => {
@@ -361,54 +332,6 @@
             {/if}
           </div>
         {/if}
-        {#if context === 'library' && auth.isAdmin && hasEbookSegments && fullCastAvailable}
-          <div class="transcript-actions">
-            <a href="/library/books/{book.id}/cast" class="btn-action-outline">
-              <span class="material-icons-outlined">record_voice_over</span>
-              Full cast
-            </a>
-          </div>
-        {/if}
-        {#if (book.has_audiobook && !hasAudioTranscript && canTranscribe) || (book.formats && book.formats.length > 0 && !hasEbookSegments)}
-          <div class="transcript-actions">
-            {#if book.has_audiobook && !hasAudioTranscript && canTranscribe}
-              <button
-                type="button"
-                class="btn-action-outline"
-                disabled={transcribing}
-                onclick={async () => {
-                  transcribing = true;
-                  try {
-                    await api.transcribeAudiobook(book.id);
-                  } catch {
-                    // Job status shows progress
-                  }
-                }}
-              >
-                <span class="material-icons-outlined">mic</span>
-                {transcribing ? 'Transcription started' : 'Transcribe'}
-              </button>
-            {/if}
-            {#if book.formats && book.formats.length > 0 && !hasEbookSegments}
-              <button
-                type="button"
-                class="btn-action-outline"
-                disabled={extracting}
-                onclick={async () => {
-                  extracting = true;
-                  try {
-                    await api.extractEbookText(book.id);
-                  } catch {
-                    // Job status shows progress
-                  }
-                }}
-              >
-                <span class="material-icons-outlined">text_snippet</span>
-                {extracting ? 'Extraction started' : 'Extract Text'}
-              </button>
-            {/if}
-          </div>
-        {/if}
       </div>
 
       <!-- Genres -->
@@ -470,6 +393,8 @@
           <BookFilesPanel bookId={book.id} onFileDeleted={onRefresh} {onSearchReleases} />
         </div>
       {/if}
+
+      <BookNarrationPanel {book} {context} />
 
       <!-- Move to Media Root (orphaned books only) -->
       {#if context === 'library' && isOwned && !book.media_root_id}
@@ -758,44 +683,6 @@
   }
 
   .btn-listen .material-icons-outlined {
-    font-size: 18px;
-  }
-
-  .transcript-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 16px;
-    flex-wrap: wrap;
-  }
-
-  .btn-action-outline {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 6px 16px;
-    border-radius: 8px;
-    background: transparent;
-    border: 1px solid var(--ring);
-    color: var(--ink);
-    cursor: pointer;
-    text-decoration: none;
-    transition: all 0.15s ease;
-  }
-
-  .btn-action-outline:hover:not(:disabled) {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  .btn-action-outline:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  .btn-action-outline .material-icons-outlined {
     font-size: 18px;
   }
 

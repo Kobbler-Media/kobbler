@@ -11,12 +11,13 @@ pub mod takes;
 
 use std::collections::HashMap;
 
+use serde::Serialize;
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::book_cast::quotes;
 use crate::repositories::book_cast_vetting::{CastVoice, VettingCharacter};
-use crate::repositories::book_casts::CastLine;
+use crate::repositories::book_casts::{CastChapter, CastLine};
 use crate::repositories::user_voice_presets::UserVoicePreset;
 use crate::tts::TtsParams;
 use crate::tts::timeline::Voice;
@@ -120,4 +121,37 @@ pub fn line_text<'a>(texts: &'a HashMap<i32, String>, line: &CastLine) -> Option
         .get(&line.segment_index)?
         .get(line.span_start as usize..line.span_end as usize)
         .map(quotes::spoken)
+}
+
+/// A line as it reads in the book: its paragraph split around the quote, and
+/// the paragraphs either side of it within its chapter.
+#[derive(Debug, Serialize)]
+pub struct LineContext<'a> {
+    pub before: Option<&'a str>,
+    pub pre: &'a str,
+    pub quote: &'a str,
+    pub post: &'a str,
+    pub after: Option<&'a str>,
+}
+
+pub fn line_context<'a>(
+    texts: &'a HashMap<i32, String>,
+    chapter: Option<&CastChapter>,
+    line: &CastLine,
+) -> Option<LineContext<'a>> {
+    let paragraph = texts.get(&line.segment_index)?;
+    let (start, end) = (line.span_start as usize, line.span_end as usize);
+    let neighbour = |index: i32| {
+        chapter
+            .filter(|c| (c.first_segment..=c.last_segment).contains(&index))
+            .and_then(|_| texts.get(&index))
+            .map(String::as_str)
+    };
+    Some(LineContext {
+        before: neighbour(line.segment_index - 1),
+        pre: paragraph.get(..start)?,
+        quote: paragraph.get(start..end)?,
+        post: paragraph.get(end..)?,
+        after: neighbour(line.segment_index + 1),
+    })
 }

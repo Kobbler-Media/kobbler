@@ -2565,6 +2565,14 @@ export interface BookCast {
   approving: BookCastApproving | null;
 }
 
+export interface BookCastLineContext {
+  before: string | null;
+  pre: string;
+  quote: string;
+  post: string;
+  after: string | null;
+}
+
 export interface BookCastLine {
   segment_index: number;
   span_start: number;
@@ -2576,6 +2584,7 @@ export interface BookCastLine {
   source: 'gemma' | 'beefy' | 'user';
   not_speech: boolean;
   text: string | null;
+  context: BookCastLineContext | null;
   voice: BookCastVoice | null;
 }
 
@@ -2588,7 +2597,7 @@ export interface BookCastUnattributedLine {
   speaker: string | null;
   cue: string | null;
   text: string | null;
-  paragraph: string | null;
+  context: BookCastLineContext | null;
 }
 
 export interface BookCastTake {

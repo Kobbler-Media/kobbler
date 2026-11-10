@@ -16,10 +16,10 @@ use crate::AppState;
 use crate::book_cast::voices::needs_design;
 use crate::book_cast::{POOL_BELOW, chapters, eta};
 use crate::book_cast_render::work_dir;
-use crate::book_cast_vetting::{self, clips, line_text};
+use crate::book_cast_vetting::{self, clips, line_context, line_text};
 use crate::jobs::handlers::APPROVE_JOB;
 use crate::repositories::book_cast_vetting::{self as vetting, VettingCharacter};
-use crate::repositories::book_casts::{self, BookCast, CastLine, CastState};
+use crate::repositories::book_casts::{self, BookCast, CastChapter, CastLine, CastState};
 use crate::repositories::{ebook_segments, job_status};
 use crate::routes::AuthUser;
 
@@ -417,11 +417,12 @@ pub async fn chapter_lines(
         Ok(None) => return fail(StatusCode::NOT_FOUND, "the book has no cast"),
         Err(e) => return internal(e),
     };
-    let (segments, lines, characters, voices) = match tokio::try_join!(
+    let (segments, lines, characters, voices, cast_chapters) = match tokio::try_join!(
         ebook_segments::get_for_file(&state.pool, cast.book_file_id),
         book_casts::lines(&state.pool, book_id, Some(chapter)),
         vetting::characters(&state.pool, book_id),
         vetting::voices(&state.pool, book_id),
+        book_casts::chapters(&state.pool, book_id),
     ) {
         Ok(v) => v,
         Err(e) => return internal(e),
@@ -430,11 +431,13 @@ pub async fn chapter_lines(
         .into_iter()
         .map(|s| (s.segment_index, s.text))
         .collect();
+    let this_chapter = cast_chapters.iter().find(|c| c.chapter_index == chapter);
     let lines: Vec<Value> = lines
         .iter()
         .map(|l| {
             let mut v = serde_json::to_value(l).unwrap_or_default();
             v["text"] = json!(line_text(&texts, l));
+            v["context"] = json!(line_context(&texts, this_chapter, l));
             v["voice"] = json!(book_cast_vetting::voice_for(
                 &characters,
                 &voices,
@@ -448,7 +451,7 @@ pub async fn chapter_lines(
 }
 
 /// GET /api/v1/admin/books/{book_id}/cast/lines/unattributed — every line in
-/// the book still waiting for a speaker, with its paragraph to judge it by.
+/// the book still waiting for a speaker, with the text around it to judge it by.
 pub async fn unattributed(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -474,10 +477,8 @@ pub async fn unattributed(
         .into_iter()
         .map(|s| (s.segment_index, s.text))
         .collect();
-    let titles: HashMap<i32, Option<String>> = cast_chapters
-        .into_iter()
-        .map(|c| (c.chapter_index, c.title))
-        .collect();
+    let by_index: HashMap<i32, &CastChapter> =
+        cast_chapters.iter().map(|c| (c.chapter_index, c)).collect();
     let lines: Vec<Value> = lines
         .iter()
         .filter(|l| l.needs_speaker())
@@ -487,11 +488,11 @@ pub async fn unattributed(
                 "span_start": l.span_start,
                 "span_end": l.span_end,
                 "chapter_index": l.chapter_index,
-                "chapter_title": titles.get(&l.chapter_index).cloned().flatten(),
+                "chapter_title": by_index.get(&l.chapter_index).and_then(|c| c.title.as_deref()),
                 "speaker": l.speaker,
                 "cue": l.cue,
                 "text": line_text(&texts, l),
-                "paragraph": texts.get(&l.segment_index),
+                "context": line_context(&texts, by_index.get(&l.chapter_index).copied(), l),
             })
         })
         .collect();

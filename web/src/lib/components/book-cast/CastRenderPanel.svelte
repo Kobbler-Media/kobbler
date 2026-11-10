@@ -1,18 +1,17 @@
 <script lang="ts">
   import * as api from '#lib/api/client.js';
   import { showMessage } from '#lib/context/app.svelte.js';
-  import type { BookCast, BookCastUnapproved } from '#lib/types.js';
+  import type { BookCast } from '#lib/types.js';
   import { formatDuration } from '#lib/utils/format.js';
 
   interface Props {
     bookId: string;
     cast: BookCast;
     onChanged: () => void;
+    onReview: () => void;
   }
 
-  let { bookId, cast, onChanged }: Props = $props();
-
-  const POLL_MS = 10_000;
+  let { bookId, cast, onChanged, onReview }: Props = $props();
 
   let starting = $state(false);
   let render = $derived(cast.render);
@@ -34,18 +33,6 @@
   });
   let reattributed = $derived(render.stale.filter((s) => s.attribution).length);
 
-  $effect(() => {
-    if (!rendering && !cast.approving) return;
-    const timer = setInterval(onChanged, POLL_MS);
-    return () => clearInterval(timer);
-  });
-
-  function label(u: BookCastUnapproved): string {
-    if (u.character_id === null) return `${u.name} (${u.speakers.join(', ')})`;
-    if (u.from_chapter === null) return `${u.name} (no voice)`;
-    return u.from_chapter > 0 ? `${u.name} from chapter ${u.from_chapter + 1}` : u.name;
-  }
-
   function chapters(n: number): string {
     return n === 1 ? '1 chapter' : `${n} chapters`;
   }
@@ -66,7 +53,7 @@
 
 <section class="panel render">
   <div class="row">
-    <h2>Audiobook</h2>
+    <h2>Render the audiobook</h2>
     <span class="spacer"></span>
     <span class="progress-text">
       {render.chapters.done}/{render.chapters.total} chapters up to date
@@ -125,33 +112,17 @@
     </a>
   {/if}
 
-  {#if cast.approving}
-    <p class="muted">
-      Approving the remaining voices… {cast.approving.progress ?? 0}%
-    </p>
-  {:else if !ready}
-    <div class="row">
-      <p class="muted">Approve every voice to render. Still to approve:</p>
+  {#if !ready}
+    <div class="blocked">
+      <span class="material-icons-outlined">lock</span>
+      <p>
+        {render.unapproved.length === 1
+          ? '1 voice still needs'
+          : `${render.unapproved.length} voices still need`} approving before the book can be rendered.
+      </p>
       <span class="spacer"></span>
-      <button
-        type="button"
-        class="btn alt small"
-        disabled={starting}
-        onclick={() =>
-          act(
-            () => api.approveAllCastVoices(bookId),
-            'Approving the remaining voices',
-            'Failed to approve the voices'
-          )}
-      >
-        Approve all remaining
-      </button>
+      <button type="button" class="btn alt small" onclick={onReview}>Review voices</button>
     </div>
-    <ul class="unapproved">
-      {#each render.unapproved as u (`${u.name}:${u.character_id}:${u.from_chapter}:${u.preset_id}`)}
-        <li>{label(u)}</li>
-      {/each}
-    </ul>
   {/if}
 </section>
 
@@ -207,10 +178,23 @@
     text-decoration: none;
   }
 
-  .unapproved {
-    margin: 0;
-    padding-left: 18px;
+  .blocked {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--bg-2);
     font-size: 13px;
+  }
+
+  .blocked p {
+    margin: 0;
+  }
+
+  .blocked .material-icons-outlined {
+    font-size: 18px;
+    color: var(--muted);
   }
 
   .muted {

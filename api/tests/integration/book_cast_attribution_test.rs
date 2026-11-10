@@ -222,8 +222,14 @@ async fn lines_nobody_speaks_are_listed_until_given_a_speaker_or_narration() {
     );
     assert_eq!(sadeas["text"], "I am Sadeas, and I came for you,");
     assert_eq!(
-        sadeas["paragraph"],
-        "“I am Sadeas, and I came for you,” said Sadeas."
+        sadeas["context"],
+        json!({
+            "before": "“Good morning to you all,” said Lizzy.",
+            "pre": "",
+            "quote": "“I am Sadeas, and I came for you,”",
+            "post": " said Sadeas.",
+            "after": "The road wound north through the hills and into the dark.",
+        })
     );
     let cast = rig.cast().await;
     assert_eq!(
@@ -337,4 +343,47 @@ async fn a_rerun_that_finds_a_line_is_not_speech_takes_it_from_its_speaker() {
         (&line["not_speech"], &line["character_id"], &line["speaker"]),
         (&json!(true), &Value::Null, &Value::Null)
     );
+}
+
+#[tokio::test]
+async fn a_chapter_line_reads_in_its_paragraph_between_its_neighbours_in_the_chapter() {
+    let rig = rig().await;
+    let cases = [
+        (
+            "Bye now,",
+            json!({
+                "before": "One",
+                "pre": "“Hello there, my old friend,” said Ann. ",
+                "quote": "“Bye now,”",
+                "post": " said Tom.",
+                "after": "“One more thing before we go,” said Ann. “And another,” said Ann.",
+            }),
+            "the chapter heading leads its first paragraph",
+        ),
+        (
+            "Good morning to you all,",
+            json!({
+                "before": "Two",
+                "pre": "",
+                "quote": "“Good morning to you all,”",
+                "post": " said Lizzy.",
+                "after": "“I am Sadeas, and I came for you,” said Sadeas.",
+            }),
+            "the last chapter's closing paragraph is not this one's context",
+        ),
+        (
+            "Halt, who goes there?",
+            json!({
+                "before": "“We should leave before the rain,” said Ann. “Yes we should,” said Ann.",
+                "pre": "",
+                "quote": "“Halt, who goes there?”",
+                "post": " said soldier.",
+                "after": "The rain kept on falling over the grey town all night long.",
+            }),
+            "narration around a line is context too",
+        ),
+    ];
+    for (text, want, why) in cases {
+        assert_eq!(rig.line(text).await["context"], want, "{why}");
+    }
 }
