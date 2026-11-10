@@ -19,23 +19,15 @@ assistant, and the companion projects Kobload and koblem — is **optional and o
 - Linux host with Docker and the `docker compose` plugin
 - ~2 GB RAM free and disk for your library
 - Nothing else. No GPU, no API keys, no accounts.
-- [koblibs](https://github.com/Kobbler-Media/koblibs) cloned as a **sibling directory** of this
-  repo. No published image exists yet, so `docker compose up` always builds from source, and the
-  build needs the shared koblibs crates and the `@koblibs/ui` npm package from that checkout:
 
-  ```bash
-  git clone https://github.com/Kobbler-Media/kobbler.git
-  git clone https://github.com/Kobbler-Media/koblibs.git
-  # you should end up with ./kobbler and ./koblibs next to each other
-  ```
-
-  If you keep koblibs somewhere else, set `KOBLIBS_DIR` in `.env`.
-
-For building from source (contributors only) see [CONTRIBUTING.md](CONTRIBUTING.md).
+Images are published to `ghcr.io/kobbler-media` (linux/amd64) on every push to `main`: `:latest`,
+plus `:sha-<commit>` to pin one. To build them yourself instead, see
+[Building from source](#building-from-source).
 
 ## Quickstart
 
 ```bash
+git clone https://github.com/Kobbler-Media/kobbler.git
 cd kobbler
 
 # 1. Create the config file. (If you skip this the API writes one from its
@@ -46,14 +38,9 @@ cp config/kobbler.toml.example config/kobbler.toml
 #    (NATS_TOKEN, MEILI_MASTER_KEY — `openssl rand -hex 32` each).
 cp .env.example .env
 
-# 3. Build and start. First run also builds the base image api/Dockerfile
-#    needs (Calibre, FFmpeg, chromaprint) — ~5GB, several minutes depending on
-#    your connection, cached after that. `make up` builds it automatically if
-#    missing; if you'd rather do it yourself, `make tools` first, same thing —
-#    skipping straight to `docker compose up --build` without it fails with a
-#    confusing "pull access denied" error that has nothing to do with the
-#    registry.
-make up
+# 3. Pull and start.
+docker compose pull
+docker compose up -d
 ```
 
 Then find the generated admin password in the logs:
@@ -64,6 +51,8 @@ docker compose logs api | grep "Admin account"
 
 Open the web UI at <http://localhost:5173> and sign in as `admin@localhost`.
 
+Upgrading is the same `docker compose pull && docker compose up -d`.
+
 The containers use `restart: unless-stopped`, so they come back after a reboot.
 
 Postgres only reads `POSTGRES_PASSWORD` when it first initializes an empty
@@ -73,6 +62,26 @@ database. If you change it in `.env` after the first `docker compose up`, the
 back to the original password, or `docker compose down -v` to wipe the volume
 and reinit from the new one (this deletes your data — only do this before you
 have any).
+
+### Building from source
+
+The build needs [koblibs](https://github.com/Kobbler-Media/koblibs) cloned as a **sibling
+directory** of this repo, for the shared crates and the `@koblibs/ui` npm package (set
+`KOBLIBS_DIR` in `.env` if you keep it elsewhere):
+
+```bash
+git clone https://github.com/Kobbler-Media/koblibs.git   # next to ./kobbler
+
+# First run also builds the base image api/Dockerfile needs (Calibre, FFmpeg,
+# chromaprint) — ~5GB, cached after that. `make up` builds it automatically if
+# missing; skipping straight to `docker compose up --build` without it fails
+# with a confusing "pull access denied" error that has nothing to do with the
+# registry.
+make up
+```
+
+The web player at `/player/` is kobapp's wasm build, which `make docker-push` bakes in; a plain
+`make up` image comes without it. Development setup is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Before you expose it
 

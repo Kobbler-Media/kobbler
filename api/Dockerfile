@@ -35,6 +35,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cp /app/target/release/chatbot_e2e /app/chatbot-e2e-binary
 
 FROM kobbler-tools:latest AS prod
+LABEL org.opencontainers.image.source="https://github.com/Kobbler-Media/kobbler"
 
 WORKDIR /app
 COPY --from=builder /app/api-binary /app/api

@@ -1,0 +1,59 @@
+name: Release images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-images-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/kobbler-media
+
+# The web image serves kobapp's wasm build at /player/ (`make player`), so kobapp
+# is checked out beside koblibs and built with the JDK it needs.
+jobs:
+  images:
+    name: build + push to ghcr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free runner disk for the image builds
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/swift
+      - uses: actions/checkout@v7
+        with:
+          path: kobbler
+      - uses: actions/checkout@v7
+        with:
+          repository: Kobbler-Media/koblibs
+          path: koblibs
+      - uses: actions/checkout@v7
+        with:
+          repository: Kobbler-Media/kobapp
+          path: kobapp
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v6
+      - name: docker login
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: build + push :latest
+        working-directory: kobbler
+        run: make docker-push REGISTRY=$REGISTRY
+      - name: push :sha-<short> and :<tag>
+        run: |
+          tags="sha-${GITHUB_SHA::7}"
+          [ "$GITHUB_REF_TYPE" = tag ] && tags="$tags $GITHUB_REF_NAME"
+          for img in kobbler kobbler-web; do
+            for t in $tags; do
+              docker tag "$REGISTRY/$img:latest" "$REGISTRY/$img:$t"
+              docker push "$REGISTRY/$img:$t"
+            done
+          done
