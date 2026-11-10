@@ -164,7 +164,7 @@ async fn edit_mid_render(edit: Edit) -> Vec<String> {
     let before = rig.speech_requests().await.len();
     start(&rig).await.assert_status(StatusCode::ACCEPTED);
 
-    let editing = async {
+    let slow_line_asked = async {
         while !rig
             .speech_requests()
             .await
@@ -174,12 +174,33 @@ async fn edit_mid_render(edit: Edit) -> Vec<String> {
         {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        apply(&rig, edit).await;
     };
-    tokio::join!(render(&rig), editing);
+    let rendering = render(&rig);
+    tokio::pin!(rendering);
+    let edited = tokio::time::timeout(Duration::from_secs(120), async {
+        tokio::select! {
+            () = &mut rendering => false,
+            () = slow_line_asked => {
+                tokio::join!(&mut rendering, apply(&rig, edit));
+                true
+            }
+        }
+    })
+    .await;
 
     let mut problems = Vec::new();
     let cast = rig.cast().await;
+    match edited {
+        Ok(true) => {}
+        Ok(false) => problems.push(format!(
+            "{edit:?}: the render ended {} before reading {SLOW_LINE:?}: {}",
+            cast["state"], cast["error"]
+        )),
+        Err(_) => problems.push(format!(
+            "{edit:?}: the render was still going after two minutes, {}",
+            cast["state"]
+        )),
+    }
     if cast["state"] != "done" {
         problems.push(format!(
             "{edit:?}: the render ended {}: {}",

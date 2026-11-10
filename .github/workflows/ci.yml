@@ -17,6 +17,7 @@ jobs:
   api:
     name: api (rust)
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: read
