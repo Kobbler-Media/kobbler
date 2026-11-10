@@ -5245,6 +5245,7 @@ export async function hasTranscript(bookId: string): Promise<{
   has_audio_transcript: boolean;
   has_ebook_segments: boolean;
   transcript_mode: string;
+  full_cast_available: boolean;
 }> {
   return await request(`/api/v1/admin/books/${bookId}/transcript/status`);
 }

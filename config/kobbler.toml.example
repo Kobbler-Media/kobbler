@@ -134,9 +134,6 @@ kobload_ingest_token = ""        # CHANGEME — mint in Settings > Ingest Tokens
 kobload_ingest_url = ""          # e.g. "https://kobbler.example.com/api/v1/ingest/<token>"
 kobload_communication_mode = ""
 
-# Dead key — no longer read anywhere in api/src. Kept only so old files parse.
-kobload_callback_url = ""
-
 ebook_convert_path = ""
 ebook_meta_path = ""
 
@@ -144,10 +141,11 @@ ebook_meta_path = ""
 # Search (Meilisearch)
 # =============================================================================
 #
-# Meilisearch is optional. Leave `meili_url` empty (and MEILI_URL unset) and
-# kobbler runs every search as a SQL query against Postgres instead — slower and
-# without typo tolerance or facets, but a complete install needs only Postgres
-# and NATS. Startup says which mode is active.
+# Meilisearch is optional. With `meili_url` empty and MEILI_URL empty in the api
+# container, kobbler runs every search as a SQL query against Postgres instead —
+# slower and without typo tolerance or facets. docker-compose.yml always sets
+# MEILI_URL, so see README.md "Search" for the override that turns it off.
+# Startup logs which mode is active.
 #
 # `meili_url` is the Docker service name from the bundled compose file, so it
 # only resolves when that container is running. Point it elsewhere if you run
@@ -204,13 +202,13 @@ radarr_api_key = ""
 # matching service is actually running.
 #
 # The `*_service_url` values below are the Docker service names used by the
-# optional service definitions in the bundled compose file. They resolve only
-# when you have started that container — they are addresses, not a promise that
-# something is listening there.
+# optional service definitions in docker-compose.gpu.yml. They resolve only
+# when you have started that container, so they ship commented out: leave them
+# empty and kobbler runs with the feature off.
 
 enrichment_enabled = false
 transcript_mode = "off"
-stt_service_url = "http://stt-parakeet-cpp:8023"
+stt_service_url = ""                # e.g. "http://stt-parakeet-cpp:8023"
 
 tts_enabled = false
 # "breeze" | "chatterbox" | "kokoro" | "openai" | "auto". Only "breeze" has a
@@ -218,7 +216,7 @@ tts_enabled = false
 tts_service_type = "auto"
 # Used when NOT routing through koblem (route_gpu_via_koblem = false). With
 # koblem in the middle, `effective_tts_url()` returns the koblem URL instead.
-tts_service_url = "http://tts-breeze:8203"
+tts_service_url = ""                # e.g. "http://tts-breeze:8203"
 # Empty = let the engine pick a voice and hold it for the request. There is no
 # "default" clone to name.
 tts_default_voice = ""
@@ -247,7 +245,7 @@ route_gpu_via_koblem = false
 # `vision_service_url` as well.
 
 skip_detect_mode = "off"           # off | full
-vision_service_url = "http://embed-vision:8080"
+vision_service_url = ""             # e.g. "http://embed-vision:8080"
 text_embedding_service_url = ""
 
 # =============================================================================

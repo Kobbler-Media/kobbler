@@ -1,3 +1,4 @@
+pub mod analyze;
 pub mod assertions;
 pub mod audiobooks;
 pub mod client;

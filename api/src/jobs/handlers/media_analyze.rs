@@ -34,6 +34,7 @@ use crate::media_cache::writers::{ArtefactInfo, write_atomic, write_manifest};
 use crate::media_cache::{self, Branch, PIPELINE_VERSION};
 use crate::repositories::media_cache_runs::{self, TriggeredBy};
 use crate::repositories::{audiobook_files, media_roots, movie_files, tv_episode_files};
+use crate::skip_detect::PipelineMode;
 use crate::streaming::session::MediaType;
 use async_trait::async_trait;
 use kob_ffmpeg::single_pass::BranchId;
@@ -1110,7 +1111,11 @@ impl JobHandler for MediaAnalyzeHandler {
             self.check_picture(&payload).await;
         }
 
-        {
+        let skip_detect_on = config
+            .skip_detect_mode
+            .parse::<PipelineMode>()
+            .is_ok_and(|m| m != PipelineMode::Off);
+        if skip_detect_on {
             let label = if embeddings_ok {
                 "skip detect (audio + visual + credit-text)"
             } else if want_embed_src {

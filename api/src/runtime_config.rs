@@ -285,7 +285,7 @@ impl Default for RuntimeConfig {
             gpu_preempt_tts: true,
             route_gpu_via_koblem: false,
             skip_detect_mode: "off".to_string(),
-            vision_service_url: Some("http://embed-vision:8080".to_string()),
+            vision_service_url: None,
             text_embedding_service_url: None,
             iptv_language_filter: vec!["en".to_string()],
             iptv_auto_create_channels: true,

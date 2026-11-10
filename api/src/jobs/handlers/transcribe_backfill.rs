@@ -64,12 +64,18 @@ impl JobHandler for TranscribeBackfillHandler {
             return Ok(json!({"status": "skipped", "reason": "initial_scan_pending"}));
         }
 
+        let config = self.runtime_config.get().await;
+        if config.transcript_mode != "auto"
+            || config.effective_stt_url().is_none_or(|u| u.is_empty())
+        {
+            return Ok(json!({"status": "skipped", "reason": "transcription_not_automatic"}));
+        }
+
         if crate::jobs::has_active_jobs_of_type(&self.pool, "audiobook_transcribe").await? {
             info!("Transcribe backfill waiting for queued transcriptions to finish");
             return Ok(json!({"status": "queue_busy", "enqueued": 0}));
         }
 
-        let config = self.runtime_config.get().await;
         let current_tag = stt_config_tag(&config);
 
         let stale = audiobook_transcripts::stale_books(&self.pool, &current_tag, false)

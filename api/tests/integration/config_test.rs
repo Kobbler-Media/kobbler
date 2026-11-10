@@ -16,6 +16,28 @@ async fn test_config_includes_stt_and_hw_fields() {
 }
 
 #[tokio::test]
+async fn gpu_service_urls_are_unset_by_default() {
+    let server = TestServer::start_api_only().await;
+
+    let json: Value = server
+        .admin_client()
+        .get("/api/v1/admin/config")
+        .await
+        .assert_ok()
+        .json();
+
+    for key in [
+        "stt_service_url",
+        "tts_service_url",
+        "vision_service_url",
+        "text_embedding_service_url",
+        "koblem_service_url",
+    ] {
+        assert!(json[key].is_null(), "{key} = {}", json[key]);
+    }
+}
+
+#[tokio::test]
 async fn test_config_koblem_ui_disabled_by_default() {
     assert!(
         std::env::var("KOBLEM_UI_ENABLED").is_err(),

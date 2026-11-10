@@ -62,6 +62,8 @@
   let hasAudioTranscript = $state(false);
   let hasEbookSegments = $state(false);
   let transcribing = $state(false);
+  let canTranscribe = $state(false);
+  let fullCastAvailable = $state(false);
   let extracting = $state(false);
 
   // Move to media root state
@@ -88,6 +90,8 @@
       const status = await api.hasTranscript(bookId);
       hasAudioTranscript = status.has_audio_transcript;
       hasEbookSegments = status.has_ebook_segments;
+      canTranscribe = status.transcript_mode !== 'off';
+      fullCastAvailable = status.full_cast_available;
     } catch {
       // Not critical
     }
@@ -357,7 +361,7 @@
             {/if}
           </div>
         {/if}
-        {#if context === 'library' && auth.isAdmin && hasEbookSegments}
+        {#if context === 'library' && auth.isAdmin && hasEbookSegments && fullCastAvailable}
           <div class="transcript-actions">
             <a href="/library/books/{book.id}/cast" class="btn-action-outline">
               <span class="material-icons-outlined">record_voice_over</span>
@@ -365,9 +369,9 @@
             </a>
           </div>
         {/if}
-        {#if (book.has_audiobook && !hasAudioTranscript) || (book.formats && book.formats.length > 0 && !hasEbookSegments)}
+        {#if (book.has_audiobook && !hasAudioTranscript && canTranscribe) || (book.formats && book.formats.length > 0 && !hasEbookSegments)}
           <div class="transcript-actions">
-            {#if book.has_audiobook && !hasAudioTranscript}
+            {#if book.has_audiobook && !hasAudioTranscript && canTranscribe}
               <button
                 type="button"
                 class="btn-action-outline"

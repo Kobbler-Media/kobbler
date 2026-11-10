@@ -61,7 +61,11 @@ async fn transcription_requests(mock: &MockServer) -> usize {
 }
 
 async fn configure_stt(server: &TestServer, stt_url: &str, via_koblem: Option<&str>) {
-    let mut patch = json!({"stt_service_url": stt_url, "route_gpu_via_koblem": false});
+    let mut patch = json!({
+        "stt_service_url": stt_url,
+        "route_gpu_via_koblem": false,
+        "transcript_mode": "auto",
+    });
     if let Some(koblem) = via_koblem {
         patch["koblem_service_url"] = json!(koblem);
         patch["route_gpu_via_koblem"] = json!(true);
@@ -171,6 +175,34 @@ async fn backfill_leaves_books_alone_once_transcribed_through_koblem() {
     let result = run_backfill(&server).await;
 
     assert_eq!(result["enqueued"], 0, "{result}");
+}
+
+#[tokio::test]
+async fn backfill_queues_nothing_unless_transcription_is_automatic_and_stt_is_set() {
+    for (mode, stt_url) in [
+        ("off", "http://stt-engine:8023"),
+        ("manual", "http://stt-engine:8023"),
+        ("auto", ""),
+    ] {
+        let server = TestServer::start_api_only().await;
+        configure_stt(&server, stt_url, None).await;
+        set_transcript_mode(&server, mode).await;
+        let (_, files) =
+            seed_audiobook(&server, "Untouched", &[file("u.m4b", 3600.0, Audio::None)]).await;
+        mark_available(&server, &files).await;
+
+        let result = run_backfill(&server).await;
+
+        assert_eq!(
+            result["status"], "skipped",
+            "mode={mode} stt={stt_url:?}: {result}"
+        );
+        assert_eq!(
+            active_transcribe_jobs(&server).await,
+            0,
+            "mode={mode} stt={stt_url:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -420,6 +452,37 @@ async fn a_refresh_with_nothing_left_to_do_finishes_at_once() {
 
     assert_eq!(result["batches"], 0, "{result}");
     assert!(queued_transcriptions(&server).await.is_empty());
+}
+
+#[tokio::test]
+async fn full_cast_is_offered_only_with_koblem_and_tts() {
+    for (patch, expected) in [
+        (json!({}), false),
+        (json!({"tts_enabled": true}), false),
+        (json!({"koblem_service_url": "http://koblem:8090"}), false),
+        (
+            json!({"koblem_service_url": "http://koblem:8090", "tts_enabled": true}),
+            true,
+        ),
+    ] {
+        let server = TestServer::start_api_only().await;
+        server
+            .admin_client()
+            .patch_json("/api/v1/admin/config", &patch)
+            .await
+            .assert_ok();
+        let (book_id, _) =
+            seed_audiobook(&server, "Cast", &[file("c.m4b", 60.0, Audio::None)]).await;
+
+        let status: Value = server
+            .admin_client()
+            .get(&format!("/api/v1/admin/books/{book_id}/transcript/status"))
+            .await
+            .assert_ok()
+            .json();
+
+        assert_eq!(status["full_cast_available"], expected, "{patch}: {status}");
+    }
 }
 
 #[tokio::test]

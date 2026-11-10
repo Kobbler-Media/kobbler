@@ -928,12 +928,13 @@ pub async fn transcript_status(
     let has_ebook = ebook_segments::has_segments(&state.pool, book_id)
         .await
         .unwrap_or(false);
-    let transcript_mode = state.runtime_config.get().await.transcript_mode.clone();
+    let config = state.runtime_config.get().await;
 
     Json(json!({
         "has_audio_transcript": has_audio,
         "has_ebook_segments": has_ebook,
-        "transcript_mode": transcript_mode,
+        "transcript_mode": config.transcript_mode,
+        "full_cast_available": config.tts_enabled && crate::book_cast::llm::config(&config).is_ok(),
     }))
     .into_response()
 }

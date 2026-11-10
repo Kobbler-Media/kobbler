@@ -182,7 +182,7 @@ pub struct FileConfig {
     #[serde(default = "default_skip_detect_mode")]
     pub skip_detect_mode: String,
     /// Image embedding server (EmbeddingGemma-2), or koblem.
-    #[serde(default = "default_vision_service_url")]
+    #[serde(default)]
     pub vision_service_url: Option<String>,
     /// Always-on text embedding server; unset → text goes to `vision_service_url`.
     #[serde(default)]
@@ -313,9 +313,6 @@ fn default_iptv_language_filter() -> Vec<String> {
 fn default_semantic_search_ratio() -> f64 {
     0.5
 }
-fn default_vision_service_url() -> Option<String> {
-    Some("http://embed-vision:8080".to_string())
-}
 fn default_discover_region() -> String {
     "US".to_string()
 }
@@ -407,7 +404,7 @@ impl Default for FileConfig {
             gpu_preempt_tts: true,
             route_gpu_via_koblem: false,
             skip_detect_mode: default_skip_detect_mode(),
-            vision_service_url: default_vision_service_url(),
+            vision_service_url: None,
             text_embedding_service_url: None,
             iptv_language_filter: default_iptv_language_filter(),
             iptv_auto_create_channels: true,
@@ -1645,6 +1642,18 @@ mod tests {
         assert_eq!(loaded.public_proxy_url, "https://example.com/kobo");
         assert_eq!(loaded.kobo_mode, "local");
         assert!(!loaded.proxy_logging_enabled);
+    }
+
+    #[test]
+    fn a_config_that_names_no_vision_service_has_none() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join("kobbler.toml");
+        std::fs::write(&path, "kobo_mode = \"local\"\n").unwrap();
+
+        let loaded = FileConfig::load(path.to_str().unwrap()).unwrap();
+
+        assert_eq!(loaded.vision_service_url, None);
+        assert_eq!(FileConfig::default().vision_service_url, None);
     }
 
     #[test]

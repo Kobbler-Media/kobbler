@@ -1,16 +1,10 @@
+use crate::common::analyze::*;
 use crate::common::*;
-use api::jobs::MediaRootIoGate;
-use api::jobs::handlers::{MediaAnalyzeBackfillHandler, MediaAnalyzeHandler};
 use api::jobs::worker::JobHandler;
-use api::repositories::movie_files;
 use serde_json::{Value, json};
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-
-const MKV: &[u8] = include_bytes!("../fixtures/playback/interlaced.mkv");
 
 /// Five 5x5 sprite sheets of 320x180 thumbnails, every one a 2.39 picture in a 16:9 frame.
 fn write_letterboxed_trickplay(dir: &Path) {
@@ -45,39 +39,7 @@ fn write_letterboxed_trickplay(dir: &Path) {
 #[tokio::test]
 async fn an_analysed_file_gets_only_the_missing_bar_check_and_its_session_reports_it() {
     let server = TestServer::start_api_only().await;
-    let movie = server
-        .admin_client()
-        .post_json(
-            "/api/v1/admin/movies",
-            &json!({ "title": "Scope", "year": 2024 }),
-        )
-        .await;
-    let movie_id: Uuid = movie.json::<Value>()["id"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    let path = Path::new(&server.storage_root()).join(format!("{movie_id}.mkv"));
-    std::fs::write(&path, MKV).unwrap();
-    let file_id = movie_files::create(
-        &server.pool,
-        movie_files::MovieFileInput {
-            movie_id,
-            file_path: path.to_string_lossy().into_owned(),
-            format: "mkv".to_string(),
-            container: Some("matroska,webm".to_string()),
-            video_codec: Some("h264".to_string()),
-            video_width: Some(1920),
-            video_height: Some(1080),
-            duration_seconds: Some(4.02),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    movie_files::set_media_cache_version(&server.pool, file_id, 2)
-        .await
-        .unwrap();
+    let file_id = seed_analyzable_movie(&server, 2).await;
     write_letterboxed_trickplay(&api::media_cache::trickplay_dir(
         &server.storage_root(),
         file_id,
@@ -91,12 +53,7 @@ async fn an_analysed_file_gets_only_the_missing_bar_check_and_its_session_report
         )
         .await
         .assert_ok();
-    let backfill = MediaAnalyzeBackfillHandler::new(
-        server.pool.clone(),
-        server.nats_publisher.clone(),
-        server.runtime_config.clone(),
-        Arc::new(AtomicBool::new(true)),
-    );
+    let backfill = analyze_backfill(&server);
     let walked = backfill
         .execute(Uuid::now_v7(), json!({}), CancellationToken::new())
         .await
@@ -106,16 +63,7 @@ async fn an_analysed_file_gets_only_the_missing_bar_check_and_its_session_report
         "an analysed file missing the check is queued for it: {walked}"
     );
 
-    let analyze = MediaAnalyzeHandler::new(
-        server.pool.clone(),
-        server.nats_publisher.clone(),
-        server.runtime_config.clone(),
-        Arc::new(tokio::sync::Semaphore::new(1)),
-        kob_gpu_gate::GpuLock::new(),
-        server.storage_root(),
-        MediaRootIoGate::new(server.pool.clone()),
-    );
-    server.process_pending_jobs(&analyze).await;
+    server.process_pending_jobs(&analyzer(&server)).await;
 
     let again = backfill
         .execute(Uuid::now_v7(), json!({}), CancellationToken::new())

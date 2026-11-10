@@ -120,6 +120,7 @@ mod livetv_test;
 mod livetv_tune_lifecycle_test;
 mod livetv_watch_test;
 mod manual_want_wire_test;
+mod media_analyze_gating_test;
 mod media_probe_test;
 mod media_roots_test;
 mod metadata_test;
