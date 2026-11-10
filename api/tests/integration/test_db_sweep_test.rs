@@ -1,10 +1,12 @@
 use crate::common::server::{TestServer, admin_connect, cleanup_stale_databases, get_admin_pool};
 use sqlx::Executor;
 
+// Its own connection: the shared admin pool belongs to whichever test's runtime made it first,
+// and that runtime may already be shutting down.
 async fn exists(name: &str) -> bool {
     sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)")
         .bind(name)
-        .fetch_one(get_admin_pool().await)
+        .fetch_one(&mut admin_connect().await)
         .await
         .unwrap()
 }
