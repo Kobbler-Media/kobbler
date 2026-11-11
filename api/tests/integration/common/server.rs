@@ -639,8 +639,9 @@ impl Drop for TestServer {
 
         // A run clones one database per test from the template, ~17 MB each on the
         // tmpfs-backed Postgres; leaving them for the next run's sweep holds tens of
-        // GB in RAM by the end of a full suite. Own thread and runtime because Drop
-        // may run on a current-thread runtime that cannot be blocked on.
+        // GB in RAM by the end of a full suite. Not waited for: a drop under load has
+        // taken a minute, and blocking here stalls every other server on this test's
+        // runtime, which then times out its requests.
         let db_name = std::mem::take(&mut self.db_name);
         std::thread::spawn(move || {
             tokio::runtime::Builder::new_current_thread()
@@ -656,9 +657,7 @@ impl Drop for TestServer {
                     .await
                     .ok();
                 });
-        })
-        .join()
-        .ok();
+        });
     }
 }
 

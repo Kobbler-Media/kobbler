@@ -47,5 +47,12 @@ async fn a_test_servers_database_is_dropped_with_it() {
 
     drop(server);
 
-    assert!(!exists(&name).await, "{name} outlived its TestServer");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while exists(&name).await {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{name} outlived its TestServer"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 }
