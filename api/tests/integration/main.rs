@@ -163,6 +163,7 @@ mod seekhead_order_test;
 mod semantic_search_test;
 mod session_restore_test;
 mod sessions_test;
+mod shared_http_client_test;
 mod sidecar_pipeline_test;
 mod skip_detect_gate_test;
 mod skip_detect_order_test;

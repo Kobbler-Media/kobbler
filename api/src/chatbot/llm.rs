@@ -28,7 +28,7 @@ const FALLBACK_CONTEXT: usize = 16_384;
 /// model's own reply — the Tier 1 window gets what is left.
 const CONTEXT_RESERVE: usize = 4_096;
 
-static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+static CLIENT: crate::http::RuntimeClient = crate::http::RuntimeClient::new(|| {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .build()
@@ -517,7 +517,7 @@ where
     F: FnMut(String) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
-    let mut request = CLIENT.post(cfg.completions_url()).json(&body);
+    let mut request = CLIENT.client().post(cfg.completions_url()).json(&body);
     if let Some(key) = &cfg.api_key {
         request = request.bearer_auth(key);
     }
@@ -623,7 +623,7 @@ async fn probe_context(cfg: &LlmConfig) -> Option<usize> {
 }
 
 async fn get_json(cfg: &LlmConfig, url: &str) -> Option<Value> {
-    let mut request = CLIENT.get(url).timeout(Duration::from_secs(5));
+    let mut request = CLIENT.client().get(url).timeout(Duration::from_secs(5));
     if let Some(key) = &cfg.api_key {
         request = request.bearer_auth(key);
     }

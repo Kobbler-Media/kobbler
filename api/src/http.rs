@@ -51,10 +51,35 @@ pub fn provider_cooldown() -> &'static ProviderCooldown {
     &PROVIDER_COOLDOWN
 }
 
+/// A client per tokio runtime. A pooled connection is driven by a task on the
+/// runtime that opened it, so another runtime handed that connection waits on
+/// one it does not drive: the server has one runtime, but every test has its own.
+pub struct RuntimeClient {
+    build: fn() -> Client,
+    clients: LazyLock<DashMap<Option<tokio::runtime::Id>, Client>>,
+}
+
+impl RuntimeClient {
+    pub const fn new(build: fn() -> Client) -> Self {
+        Self {
+            build,
+            clients: LazyLock::new(DashMap::new),
+        }
+    }
+
+    pub fn client(&self) -> Client {
+        let runtime = tokio::runtime::Handle::try_current().ok().map(|h| h.id());
+        self.clients
+            .entry(runtime)
+            .or_insert_with(self.build)
+            .clone()
+    }
+}
+
 /// Shared application-wide HTTP client.
 ///
 /// Single connection pool reused by all callers of `new_client()`.
-static SHARED_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+static SHARED_CLIENT: RuntimeClient = RuntimeClient::new(|| {
     builder()
         .user_agent("Kobbler/1.0")
         .build()
@@ -78,7 +103,7 @@ const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 /// Here the total deadline is off and `read_timeout` bounds IDLE time between
 /// chunks instead: a stalled upstream still fails fast, a slow-but-progressing
 /// one runs as long as it needs. Same pattern as the debrid/kobload streams.
-static STREAMING_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+static STREAMING_CLIENT: RuntimeClient = RuntimeClient::new(|| {
     builder()
         .user_agent("Kobbler/1.0")
         .timeout(Duration::MAX)
@@ -93,7 +118,7 @@ static STREAMING_CLIENT: LazyLock<Client> = LazyLock::new(|| {
 /// (`bytes_stream()`) and may outlive `new_client()`'s 30 s total deadline.
 /// For request/response calls that buffer the whole body, use `new_client()`.
 pub fn new_streaming_client() -> Client {
-    STREAMING_CLIENT.clone()
+    STREAMING_CLIENT.client()
 }
 
 /// Default headers applied to all outbound HTTP clients.
@@ -112,7 +137,7 @@ fn default_headers() -> reqwest::header::HeaderMap {
 /// efficient for connection reuse. Sets `Accept-Language: en-US,en;q=0.9`
 /// and a 30s timeout.
 pub fn new_client() -> Client {
-    SHARED_CLIENT.clone()
+    SHARED_CLIENT.client()
 }
 
 /// Get a pre-configured `ClientBuilder` with default headers and timeout.

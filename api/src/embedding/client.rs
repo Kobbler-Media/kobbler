@@ -33,7 +33,7 @@ const TEXTS_PER_REQUEST: usize = 32;
 /// meaningful total timeout: routed through koblem, an image request can wait
 /// minutes behind the GPU gate, and that wait is the backpressure. Interactive
 /// callers set their own per-request timeout.
-static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
+static HTTP: crate::http::RuntimeClient = crate::http::RuntimeClient::new(|| {
     crate::http::builder()
         .user_agent("Kobbler/1.0")
         .timeout(Duration::from_secs(60 * 60))
@@ -221,6 +221,7 @@ impl EmbeddingClient {
 
 async fn health(base_url: &str) -> bool {
     let Ok(resp) = HTTP
+        .client()
         .get(format!("{base_url}/health"))
         .timeout(Duration::from_secs(10))
         .send()
@@ -251,7 +252,10 @@ async fn post_embeddings(
     }
     let expected = input.len();
     let body = EmbeddingsRequest { input, model: None };
-    let mut request = HTTP.post(format!("{base_url}/v1/embeddings")).json(&body);
+    let mut request = HTTP
+        .client()
+        .post(format!("{base_url}/v1/embeddings"))
+        .json(&body);
     if let Some(timeout) = timeout {
         request = request.timeout(timeout);
     }
