@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT kind AS \"kind!\", id AS \"id!\" FROM (\n            SELECT 'movie' AS kind, f.id, f.created_at AS added,\n                   (SELECT MAX(w.updated_at) FROM movie_watch_states w WHERE w.movie_id = f.movie_id) AS touched\n            FROM movie_files f\n            WHERE f.available AND f.lufs IS NOT NULL AND f.downmix_peak_db IS NULL\n            UNION ALL\n            SELECT 'episode', f.id, f.created_at,\n                   (SELECT MAX(w.updated_at)\n                    FROM tv_watch_states w\n                    JOIN tv_episodes we ON we.id = w.episode_id\n                    JOIN tv_seasons ws ON ws.id = we.season_id\n                    WHERE ws.show_id = (\n                        SELECT s.show_id\n                        FROM tv_episode_file_episodes fe\n                        JOIN tv_episodes e ON e.id = fe.episode_id\n                        JOIN tv_seasons s ON s.id = e.season_id\n                        WHERE fe.episode_file_id = f.id\n                        LIMIT 1))\n            FROM tv_episode_files f\n            WHERE f.available AND f.lufs IS NOT NULL AND f.downmix_peak_db IS NULL\n            UNION ALL\n            SELECT 'audiobook', f.id, f.added_at,\n                   (SELECT MAX(r.updated_at) FROM reading_states r WHERE r.book_id = f.book_id)\n            FROM audiobook_files f\n            WHERE f.available AND f.lufs IS NOT NULL AND f.downmix_peak_db IS NULL\n        ) gaps\n        ORDER BY touched DESC NULLS LAST, added DESC NULLS LAST, id DESC\n        LIMIT $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "kind!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "id!",
+        "type_info": "Uuid",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "68afb51bb958635b7674ad0794219c039a2222beb21b72cca2ef8297ced24f73"
+}

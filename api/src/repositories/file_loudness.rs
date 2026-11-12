@@ -127,7 +127,7 @@ pub async fn list_needing_downmix_peak(pool: &PgPool, limit: i64) -> Result<Vec<
             SELECT 'movie' AS kind, f.id, f.created_at AS added,
                    (SELECT MAX(w.updated_at) FROM movie_watch_states w WHERE w.movie_id = f.movie_id) AS touched
             FROM movie_files f
-            WHERE f.lufs IS NOT NULL AND f.downmix_peak_db IS NULL
+            WHERE f.available AND f.lufs IS NOT NULL AND f.downmix_peak_db IS NULL
             UNION ALL
             SELECT 'episode', f.id, f.created_at,
                    (SELECT MAX(w.updated_at)
@@ -142,12 +142,12 @@ pub async fn list_needing_downmix_peak(pool: &PgPool, limit: i64) -> Result<Vec<
                         WHERE fe.episode_file_id = f.id
                         LIMIT 1))
             FROM tv_episode_files f
-            WHERE f.lufs IS NOT NULL AND f.downmix_peak_db IS NULL
+            WHERE f.available AND f.lufs IS NOT NULL AND f.downmix_peak_db IS NULL
             UNION ALL
-            SELECT 'audiobook', f.id, uuid_extract_timestamp(f.id),
+            SELECT 'audiobook', f.id, f.added_at,
                    (SELECT MAX(r.updated_at) FROM reading_states r WHERE r.book_id = f.book_id)
             FROM audiobook_files f
-            WHERE f.lufs IS NOT NULL AND f.downmix_peak_db IS NULL
+            WHERE f.available AND f.lufs IS NOT NULL AND f.downmix_peak_db IS NULL
         ) gaps
         ORDER BY touched DESC NULLS LAST, added DESC NULLS LAST, id DESC
         LIMIT $1

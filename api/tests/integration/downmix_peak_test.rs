@@ -246,3 +246,30 @@ async fn what_is_being_watched_is_re_measured_first() {
         ]
     );
 }
+
+#[tokio::test]
+async fn files_gone_from_disk_are_not_re_measured() {
+    let server = enabled_server().await;
+    let movie = seed(&server, "movie", PIPELINE_VERSION).await;
+    let episode = seed(&server, "episode", PIPELINE_VERSION).await;
+    let (_, audiobook) =
+        seed_audiobook(&server, "Gone", &[file("01.mp3", 3.0, Audio::Tone(440.0))]).await;
+    for (table, id) in [
+        ("movie_files", movie),
+        ("tv_episode_files", episode),
+        ("audiobook_files", audiobook[0]),
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {table} SET lufs = -20.0, available = false WHERE id = $1"
+        )))
+        .bind(id)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+    }
+
+    let order = file_loudness::list_needing_downmix_peak(&server.pool, 10)
+        .await
+        .unwrap();
+    assert_eq!(order, vec![]);
+}
