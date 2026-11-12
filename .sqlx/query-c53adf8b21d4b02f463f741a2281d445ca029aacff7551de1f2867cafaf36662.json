@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT lufs, downmix_peak_db FROM movie_files WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lufs",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "lufs"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "downmix_peak_db",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "downmix_peak_db"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "c53adf8b21d4b02f463f741a2281d445ca029aacff7551de1f2867cafaf36662"
+}

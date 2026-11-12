@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, file_index, format, file_path, file_size, duration_seconds, available,\n               intro_end_seconds, outro_start_seconds\n        FROM audiobook_files\n        WHERE book_id = $1\n        ORDER BY file_index, file_path\n        ",
+  "query": "\n        SELECT id, file_index, format, file_path, file_size, duration_seconds, available,\n               intro_end_seconds, outro_start_seconds, lufs, downmix_peak_db\n        FROM audiobook_files\n        WHERE book_id = $1\n        ORDER BY file_index, file_path\n        ",
   "describe": {
     "columns": [
       {
@@ -101,6 +101,28 @@
             "name": "outro_start_seconds"
           }
         }
+      },
+      {
+        "ordinal": 9,
+        "name": "lufs",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "lufs"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "downmix_peak_db",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "downmix_peak_db"
+          }
+        }
       }
     ],
     "parameters": {
@@ -117,8 +139,10 @@
       true,
       false,
       true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "97a57b451fa9286bd3f862b9ed1d3ffe5c30cb9e3105b75f4bea34c3811344e3"
+  "hash": "5b1249d2fbb53949fda7d6a214dcbe5a1b3c94a60ada02bd4081e22d0af7ca25"
 }

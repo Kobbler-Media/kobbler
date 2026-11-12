@@ -33,8 +33,11 @@ use crate::media_cache::picture_area::{self, PictureArea};
 use crate::media_cache::writers::{ArtefactInfo, write_atomic, write_manifest};
 use crate::media_cache::{self, Branch, PIPELINE_VERSION};
 use crate::repositories::media_cache_runs::{self, TriggeredBy};
-use crate::repositories::{audiobook_files, media_roots, movie_files, tv_episode_files};
+use crate::repositories::{
+    audiobook_files, file_loudness, media_roots, movie_files, tv_episode_files,
+};
 use crate::skip_detect::PipelineMode;
+use crate::streaming::loudness::PlaybackLoudness;
 use crate::streaming::session::MediaType;
 use async_trait::async_trait;
 use kob_ffmpeg::single_pass::BranchId;
@@ -68,9 +71,9 @@ pub struct MediaAnalyzePayload {
     /// "manual" | "auto_ingest" | "backfill". Required — every caller names
     /// its source so we can segment run stats by trigger.
     pub triggered_by: String,
-    /// Fill only the cheap checks that read what an earlier analyze left on disk — the
-    /// picture area from trickplay — for files analysed before those checks existed.
-    /// No decode, and no skip_detect behind it.
+    /// Fill only the checks added after a file was analysed: the picture area, read from
+    /// the trickplay already on disk, and the downmix peak, from an audio-only decode.
+    /// No skip_detect behind it.
     #[serde(default)]
     pub gaps_only: bool,
 }
@@ -992,16 +995,23 @@ impl JobHandler for MediaAnalyzeHandler {
         // decode while we run ~14s of non-NAS work.
         drop(io_permits);
 
-        // Write the DB-side lufs column from the loudness branch's result so
-        // the player's audio normalization reads the current value without a
-        // manifest roundtrip. Replaces the legacy `measure_lufs` handler's
-        // write path.
-        if let Some(loud) = outcome.manifest.artefacts.loudness.as_ref()
-            && let Some(lufs) = loud.params.get("integrated_lufs").and_then(|v| v.as_f64())
-            && let Err(e) =
-                update_lufs_column(&self.pool, &payload.media_type, payload.file_id, lufs).await
-        {
-            warn!(error = %e, "lufs DB update failed");
+        if let Some(loud) = outcome.manifest.artefacts.loudness.as_ref() {
+            let param = |k: &str| loud.params.get(k).and_then(|v| v.as_f64());
+            let loudness = PlaybackLoudness {
+                lufs: param("integrated_lufs"),
+                downmix_peak_db: param("downmix_peak_db"),
+            };
+            if loudness.lufs.is_some()
+                && let Err(e) = file_loudness::record(
+                    &self.pool,
+                    &payload.media_type,
+                    payload.file_id,
+                    loudness,
+                )
+                .await
+            {
+                warn!(error = %e, "loudness DB update failed");
+            }
         }
 
         let mut branch_results = outcome.branch_results;
@@ -1252,40 +1262,6 @@ impl JobHandler for MediaAnalyzeHandler {
             "branch_results": branch_results_json,
         }))
     }
-}
-
-/// Mirror the loudness branch's LUFS value into the file row so the streaming
-/// session response can serve it without a manifest roundtrip. Replaces what
-/// the legacy `measure_lufs` handler did. Audiobooks are written by
-/// `enrich_audiobook` separately.
-async fn update_lufs_column(
-    pool: &PgPool,
-    media_type: &str,
-    file_id: uuid::Uuid,
-    lufs: f64,
-) -> Result<(), sqlx::Error> {
-    match media_type {
-        "movie" => {
-            sqlx::query!(
-                "UPDATE movie_files SET lufs = $2 WHERE id = $1",
-                file_id,
-                lufs,
-            )
-            .execute(pool)
-            .await?;
-        }
-        "episode" => {
-            sqlx::query!(
-                "UPDATE tv_episode_files SET lufs = $2 WHERE id = $1",
-                file_id,
-                lufs,
-            )
-            .execute(pool)
-            .await?;
-        }
-        _ => {}
-    }
-    Ok(())
 }
 
 /// Send in-memory JPEG frames to the vision service, pack to fp16, and write

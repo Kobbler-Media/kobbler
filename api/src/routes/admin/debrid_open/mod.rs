@@ -31,6 +31,7 @@ use crate::repositories::debrid_cache_files as cache_files;
 use crate::repositories::debrid_stream_sessions;
 use crate::routes::admin::debrid_stream::StreamResolveBody;
 use crate::routes::admin::streaming::{ChapterResponse, SessionResponse, SkipSegmentResponse};
+use crate::streaming::loudness::PlaybackLoudness;
 use crate::streaming::progressive::DownloadTarget;
 
 pub(crate) const VIDEO_CONTAINERS: &[&str] = &[
@@ -80,7 +81,7 @@ pub(crate) struct Committed {
     pub media_id: Uuid,
     pub media_type: String,
     pub skip_segments: Vec<SkipSegmentResponse>,
-    pub lufs: Option<f64>,
+    pub loudness: PlaybackLoudness,
 }
 
 impl SessionRow {
@@ -90,7 +91,7 @@ impl SessionRow {
         media_type: &str,
         media_id: Uuid,
         skip_segments: &[ChapterSkipSegment],
-        lufs: Option<f64>,
+        loudness: PlaybackLoudness,
     ) -> Result<(), sqlx::Error> {
         let skip_segments = (!skip_segments.is_empty())
             .then(|| serde_json::to_value(skip_segments).ok())
@@ -100,9 +101,9 @@ impl SessionRow {
             r#"INSERT INTO debrid_stream_sessions
                 (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
                  debrid_provider_id, quality, filename, filesize, file_id, cache_path,
-                 debrid_url, debrid_url_expires_at, skip_segments, lufs, chapters)
+                 debrid_url, debrid_url_expires_at, skip_segments, lufs, downmix_peak_db, chapters)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18)"#,
+                    $17, $18, $19)"#,
             self.session_id,
             self.user_id,
             media_type,
@@ -119,7 +120,8 @@ impl SessionRow {
             self.debrid_url,
             self.debrid_url_expires_at,
             skip_segments,
-            lufs,
+            loudness.lufs,
+            loudness.downmix_peak_db,
             chapters,
         )
         .execute(pool)
@@ -152,9 +154,12 @@ impl SessionRow {
             .skip_segments
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
-        let lufs = analysis.lufs;
+        let loudness = PlaybackLoudness {
+            lufs: analysis.lufs,
+            downmix_peak_db: analysis.downmix_peak_db,
+        };
         if let Err(e) = self
-            .insert(&state.pool, &media_type, media_id, &skip_segments, lufs)
+            .insert(&state.pool, &media_type, media_id, &skip_segments, loudness)
             .await
         {
             error!(error = %e, "failed to create stream session");
@@ -167,7 +172,7 @@ impl SessionRow {
         Ok(Committed {
             media_id,
             media_type,
-            lufs,
+            loudness,
             skip_segments: skip_segments
                 .into_iter()
                 .map(|s| SkipSegmentResponse {

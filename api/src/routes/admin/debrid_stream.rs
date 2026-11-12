@@ -27,6 +27,7 @@ use crate::routes::admin::stream_search_request::{self, SearchTarget};
 use crate::routes::admin::{debrid_open, stream_prewarm};
 use crate::routes::helpers::build_kobload_client;
 use crate::routes::{AuthUser, PlaybackAuth};
+use crate::streaming::loudness::PlaybackLoudness;
 
 // =============================================================================
 // Request/Response Types
@@ -89,6 +90,7 @@ struct DebridStatusRow {
     subtitle_tracks: Option<serde_json::Value>,
     chapters: Option<serde_json::Value>,
     lufs: Option<f64>,
+    downmix_peak_db: Option<f64>,
     cache_path: Option<String>,
     filesize: i64,
 }
@@ -442,7 +444,7 @@ pub async fn stream_status(
         let mut last_skip: Option<serde_json::Value> = None;
         let mut last_subtitles: Option<serde_json::Value> = None;
         let mut last_chapters: Option<serde_json::Value> = None;
-        let mut last_lufs: Option<f64> = None;
+        let mut last_loudness = PlaybackLoudness::default();
         let mut sent_thumbnails = false;
         let mut sent_download_complete = false;
         // The download and the analysis after it run as long as the episode is big; the
@@ -468,8 +470,8 @@ pub async fn stream_status(
             let row = sqlx::query_as!(
                 DebridStatusRow,
                 r#"
-                SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, cache_path,
-                       filesize
+                SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, downmix_peak_db,
+                       cache_path, filesize
                 FROM debrid_stream_sessions
                 WHERE id = $1
                 "#,
@@ -556,13 +558,18 @@ pub async fn stream_status(
             }
 
             // Measured by the analysis that runs once the download completes.
-            if row.lufs.is_some() && row.lufs != last_lufs {
-                let event = json!({ "type": "loudness", "lufs": row.lufs });
+            let loudness = PlaybackLoudness { lufs: row.lufs, downmix_peak_db: row.downmix_peak_db };
+            if loudness.lufs.is_some() && loudness != last_loudness {
+                let event = json!({
+                    "type": "loudness",
+                    "lufs": loudness.lufs,
+                    "downmix_peak_db": loudness.downmix_peak_db,
+                });
                 yield Ok(
                     axum::response::sse::Event::default()
                         .data(serde_json::to_string(&event).unwrap_or_default()),
                 );
-                last_lufs = row.lufs;
+                last_loudness = loudness;
             }
 
             if let Some(ref skip_data) = row.skip_segments

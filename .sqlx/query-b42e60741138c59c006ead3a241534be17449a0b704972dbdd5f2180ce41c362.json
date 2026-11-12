@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT skip_segments, lufs\n        FROM debrid_stream_sessions\n        WHERE media_type = $1 AND media_id = $2\n          AND ((info_hash = $3 AND file_id IS NOT DISTINCT FROM $4) OR cache_path = $5)\n          AND (skip_segments IS NOT NULL OR lufs IS NOT NULL)\n        ORDER BY updated_at DESC\n        LIMIT 1\n        ",
+  "query": "\n        SELECT skip_segments, lufs, downmix_peak_db\n        FROM debrid_stream_sessions\n        WHERE media_type = $1 AND media_id = $2\n          AND ((info_hash = $3 AND file_id IS NOT DISTINCT FROM $4) OR cache_path = $5)\n          AND (skip_segments IS NOT NULL OR lufs IS NOT NULL)\n        ORDER BY updated_at DESC\n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -24,6 +24,17 @@
             "name": "lufs"
           }
         }
+      },
+      {
+        "ordinal": 2,
+        "name": "downmix_peak_db",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "downmix_peak_db"
+          }
+        }
       }
     ],
     "parameters": {
@@ -37,8 +48,9 @@
     },
     "nullable": [
       true,
+      true,
       true
     ]
   },
-  "hash": "1e756b14530dd365632aace88e58c0e0cb12f5f7f26c30b0fb239e1c26e6656d"
+  "hash": "b42e60741138c59c006ead3a241534be17449a0b704972dbdd5f2180ce41c362"
 }

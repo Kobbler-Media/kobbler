@@ -145,6 +145,8 @@ pub struct AudiobookFileInfo {
     pub available: bool,
     pub intro_end_seconds: Option<f64>,
     pub outro_start_seconds: Option<f64>,
+    pub lufs: Option<f64>,
+    pub downmix_peak_db: Option<f64>,
 }
 
 /// List all audio files for a book, ordered by file_index then file_path.
@@ -158,7 +160,7 @@ where
         AudiobookFileInfo,
         r#"
         SELECT id, file_index, format, file_path, file_size, duration_seconds, available,
-               intro_end_seconds, outro_start_seconds
+               intro_end_seconds, outro_start_seconds, lufs, downmix_peak_db
         FROM audiobook_files
         WHERE book_id = $1
         ORDER BY file_index, file_path
@@ -435,19 +437,6 @@ pub async fn reindex_file_order(pool: &sqlx::PgPool, book_id: Uuid) -> Result<()
     .execute(pool)
     .await?;
     Ok(())
-}
-
-/// Update the LUFS (loudness) measurement for an audiobook file.
-pub async fn update_lufs<'e, E>(exec: E, id: Uuid, lufs: Option<f64>) -> Result<bool>
-where
-    E: Executor<'e, Database = Postgres>,
-{
-    let result = sqlx::query("UPDATE audiobook_files SET lufs = $2 WHERE id = $1")
-        .bind(id)
-        .bind(lufs)
-        .execute(exec)
-        .await?;
-    Ok(result.rows_affected() > 0)
 }
 
 /// Bump `media_cache_version` + `media_cache_generated_at` after a successful

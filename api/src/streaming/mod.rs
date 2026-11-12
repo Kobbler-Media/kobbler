@@ -10,6 +10,7 @@ pub mod decision;
 pub mod download_meter;
 pub mod feed;
 pub mod language;
+pub mod loudness;
 pub mod offline_export;
 pub mod persist;
 pub mod progressive;

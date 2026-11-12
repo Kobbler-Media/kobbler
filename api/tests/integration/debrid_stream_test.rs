@@ -865,7 +865,7 @@ async fn test_sse_stays_open_until_processing_has_delivered_its_segments() {
     sqlx::query(
         r#"UPDATE debrid_stream_sessions
            SET skip_segments = '[{"segment_type":"credits","start_seconds":2800.0,"end_seconds":3000.0}]',
-               lufs = -20.5
+               lufs = -20.5, downmix_peak_db = -3.5
            WHERE id = $1"#,
     )
     .bind(session_id)
@@ -882,7 +882,7 @@ async fn test_sse_stays_open_until_processing_has_delivered_its_segments() {
     assert!(late.contains("\"type\":\"skip_segments_ready\""), "{late}");
     assert!(late.contains("credits"), "{late}");
     assert!(
-        late.contains(r#"{"lufs":-20.5,"type":"loudness"}"#),
+        late.contains(r#"{"downmix_peak_db":-3.5,"lufs":-20.5,"type":"loudness"}"#),
         "{late}"
     );
     assert!(late.contains("\"type\":\"done\""), "{late}");

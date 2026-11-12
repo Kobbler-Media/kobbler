@@ -207,6 +207,14 @@ where
                 THEN NULL
                 ELSE movie_files.lufs
             END,
+            downmix_peak_db = CASE
+                WHEN (EXCLUDED.file_fingerprint IS NOT NULL
+                      AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)
+                     OR (EXCLUDED.file_size IS NOT NULL
+                         AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size)
+                THEN NULL
+                ELSE movie_files.downmix_peak_db
+            END,
             corrupt_ranges = CASE
                 WHEN (EXCLUDED.file_fingerprint IS NOT NULL
                       AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)
@@ -642,19 +650,6 @@ where
         .execute(exec)
         .await?;
 
-    Ok(result.rows_affected() > 0)
-}
-
-/// Update the LUFS loudness measurement for a movie file.
-pub async fn update_lufs<'e, E>(exec: E, id: Uuid, lufs: Option<f64>) -> Result<bool>
-where
-    E: Executor<'e, Database = Postgres>,
-{
-    let result = sqlx::query("UPDATE movie_files SET lufs = $2 WHERE id = $1")
-        .bind(id)
-        .bind(lufs)
-        .execute(exec)
-        .await?;
     Ok(result.rows_affected() > 0)
 }
 

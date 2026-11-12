@@ -827,15 +827,11 @@ pub async fn extract_all_subtitles(
 // LUFS loudness measurement
 // =============================================================================
 
-/// Measure integrated loudness (LUFS) of a media file's audio.
-///
-/// Uses kob-ffmpeg's ebur128 filter to measure integrated loudness.
-/// Returns `None` if the file has no audio or measurement fails.
-pub async fn measure_lufs(input: &Path) -> Result<Option<f64>, TranscodeError> {
+pub async fn measure_loudness(input: &Path) -> Result<kob_ffmpeg::audio::Loudness, TranscodeError> {
     let path = input.to_owned();
     tokio::task::spawn_blocking(move || {
-        kob_ffmpeg::audio::measure_lufs(&path, None)
-            .map_err(|e| TranscodeError::StartFailed(format!("LUFS measurement failed: {e}")))
+        kob_ffmpeg::audio::measure_loudness(&path, None)
+            .map_err(|e| TranscodeError::StartFailed(format!("Loudness measurement failed: {e}")))
     })
     .await
     .map_err(|e| TranscodeError::StartFailed(format!("task join error: {e}")))?

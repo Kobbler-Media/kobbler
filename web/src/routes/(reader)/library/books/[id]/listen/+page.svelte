@@ -30,7 +30,7 @@
     formatTime,
     recordInteraction
   } from '#lib/stores/audioplayer.svelte.js';
-  import type { Book } from '#lib/types.js';
+  import type { Book, PlaybackLoudness } from '#lib/types.js';
 
   let { data } = $props();
   const initialData = untrack(() => data);
@@ -41,6 +41,7 @@
     string,
     { intro_end_seconds?: number | null; outro_start_seconds?: number | null }
   > = initialData.audioFileIntroOutro ?? {};
+  const audioFileLoudness: Record<string, PlaybackLoudness> = initialData.audioFileLoudness ?? {};
   const loadError: string | null = initialData.error;
 
   const player = getAudioPlayerState();
@@ -170,7 +171,7 @@
     // Only start playing if not already playing this book
     if (player.currentBook?.id !== book.id) {
       try {
-        await play(book, audioFileIds, audioFileDurations);
+        await play(book, audioFileIds, audioFileDurations, audioFileLoudness);
       } catch {
         error = 'Failed to start audiobook playback';
       }

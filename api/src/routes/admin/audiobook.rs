@@ -5,6 +5,7 @@
 //! - Returning chapter lists for audiobook files
 //! - Getting and saving audiobook playback positions
 
+use crate::streaming::loudness::PlaybackLoudness;
 use axum::{
     extract::{Json, Path, Query, State},
     http::{HeaderMap, StatusCode, header},
@@ -152,6 +153,8 @@ pub struct AudioFileResponse {
     pub intro_end_seconds: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outro_start_seconds: Option<f64>,
+    #[serde(flatten)]
+    pub loudness: PlaybackLoudness,
 }
 
 /// Return the list of audio files for a book.
@@ -185,6 +188,10 @@ pub async fn list_audio_files(
                         available: f.available,
                         intro_end_seconds: f.intro_end_seconds,
                         outro_start_seconds: f.outro_start_seconds,
+                        loudness: PlaybackLoudness {
+                            lufs: f.lufs,
+                            downmix_peak_db: f.downmix_peak_db,
+                        },
                     }
                 })
                 .collect();

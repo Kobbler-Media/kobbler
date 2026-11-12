@@ -46,6 +46,7 @@ use crate::jobs::handlers::{
     DebridPrewarmHandler,
     DebridProcessHandler,
     DiscoverSyncHandler,
+    DownmixPeakFillHandler,
     EbookExtractHandler,
     EbookRepairHandler,
     EnrichAudiobookHandler,
@@ -774,6 +775,12 @@ pub async fn start_nats_worker(
         runtime_config.clone(),
         enrichment_semaphore.clone(),
         gpu_lock.clone(),
+        storage_root.clone(),
+        media_root_io_gate.clone(),
+    )));
+
+    worker.register_handler(HandlerAdapter::new(DownmixPeakFillHandler::new(
+        pool.clone(),
         storage_root.clone(),
         media_root_io_gate.clone(),
     )));

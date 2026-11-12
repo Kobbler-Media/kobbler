@@ -4,6 +4,7 @@
 //! - Book file download for reading
 //! - Reading progress save (auto-creates web reader device)
 
+use crate::streaming::byte_range::file_stream;
 use axum::{
     body::Body,
     extract::{Json, Path, Query, State},
@@ -12,7 +13,6 @@ use axum::{
 };
 use chrono::Utc;
 use serde::Deserialize;
-use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -84,7 +84,7 @@ pub async fn download_book_file(
         _ => "application/octet-stream",
     };
 
-    let stream = ReaderStream::new(file);
+    let stream = file_stream(file);
     let body = Body::from_stream(stream);
 
     Response::builder()

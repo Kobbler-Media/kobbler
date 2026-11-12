@@ -487,12 +487,14 @@ pub async fn run_analysis(
     // update at media_analyze.rs working without a separate code path.
     let loudness = Loudness {
         integrated_lufs: result.loudness,
+        downmix_peak_db: result.downmix_peak_db,
     };
     match serde_json::to_vec(&loudness) {
         Ok(bytes) => match write_sidecar_at(content_dir, Branch::Loudness, &bytes) {
             Ok(()) => {
                 let mut params = Map::new();
                 params.insert("integrated_lufs".into(), json!(loudness.integrated_lufs));
+                params.insert("downmix_peak_db".into(), json!(loudness.downmix_peak_db));
                 content_manifest.artefacts.set(
                     Branch::Loudness,
                     ArtefactInfo {
@@ -502,7 +504,11 @@ pub async fn run_analysis(
                 );
                 branch_results.insert(
                     "loudness".into(),
-                    json!({"ok": true, "integrated_lufs": loudness.integrated_lufs}),
+                    json!({
+                        "ok": true,
+                        "integrated_lufs": loudness.integrated_lufs,
+                        "downmix_peak_db": loudness.downmix_peak_db,
+                    }),
                 );
             }
             Err(e) => {

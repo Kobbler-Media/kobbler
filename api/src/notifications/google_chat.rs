@@ -68,6 +68,7 @@ static SUPPORTED_TRIGGERS: &[NotificationTrigger] = &[
     NotificationTrigger::OnImport,
     NotificationTrigger::OnFailed,
     NotificationTrigger::OnMediaCorrupt,
+    NotificationTrigger::OnServerHealth,
 ];
 
 pub static INFO: NotificationAgentInfo = NotificationAgentInfo {

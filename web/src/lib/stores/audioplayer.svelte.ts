@@ -6,7 +6,8 @@ import {
   getAudioPosition,
   saveAudioPosition
 } from '#lib/api/client.js';
-import type { AudiobookChapter, Book, UnifiedChapter } from '#lib/types.js';
+import type { AudiobookChapter, Book, PlaybackLoudness, UnifiedChapter } from '#lib/types.js';
+import { levellingGain } from '#lib/streaming/loudness.js';
 import { bumpWatchStateVersion } from '#lib/stores/watchState.svelte.js';
 
 export type SleepTimerMode = 'off' | '15' | '30' | '45' | '60' | 'end_of_chapter' | 'inactivity';
@@ -67,7 +68,7 @@ let nightMode = $state(
     ? localStorage.getItem('audioplayer:nightMode') === 'true'
     : false
 );
-let currentFileLufs: number | null = null;
+let fileLoudness: Record<string, PlaybackLoudness> = {};
 
 // Smart resume: track when playback was last paused
 let lastPauseTimestamp = 0;
@@ -240,11 +241,13 @@ async function ensureAudioContext() {
 }
 
 function targetNormalizationGain(): number {
-  if (normalizeVolume && currentFileLufs !== null && isFinite(currentFileLufs)) {
-    const targetLufs = -14;
-    return Math.pow(10, (targetLufs - currentFileLufs) / 20);
-  }
-  return 1.0;
+  if (!normalizeVolume || !currentFileId) return 1.0;
+  return levellingGain(fileLoudness[currentFileId] ?? {});
+}
+
+function setSource(audio: HTMLAudioElement, bookId: string, fileId: string) {
+  audio.src = getAudioStreamUrl(bookId, fileId);
+  applyNormalizationGain();
 }
 
 function applyNormalizationGain() {
@@ -454,7 +457,12 @@ function getCurrentChapter(): AudiobookChapter | null {
   return chapters[0];
 }
 
-export async function play(book: Book, audioFileIds: string[], audioFileDurations: number[] = []) {
+export async function play(
+  book: Book,
+  audioFileIds: string[],
+  audioFileDurations: number[] = [],
+  audioFileLoudness: Record<string, PlaybackLoudness> = {}
+) {
   if (audioFileIds.length === 0) return;
   const audio = createAudioElement();
   error = null;
@@ -473,6 +481,7 @@ export async function play(book: Book, audioFileIds: string[], audioFileDuration
   loading = true;
   currentBook = book;
   fileIds = audioFileIds;
+  fileLoudness = audioFileLoudness;
   fileDurations =
     audioFileDurations.length === audioFileIds.length
       ? audioFileDurations.map((d) => (isFinite(d) && d > 0 ? d : 0))
@@ -491,7 +500,7 @@ export async function play(book: Book, audioFileIds: string[], audioFileDuration
   }
 
   // Set source
-  audio.src = getAudioStreamUrl(book.id, fileId);
+  setSource(audio, book.id, fileId);
   audio.playbackRate = playbackRate;
   audio.volume = volume;
 
@@ -512,7 +521,7 @@ export async function play(book: Book, audioFileIds: string[], audioFileDuration
       if (savedIndex >= 0) {
         currentTrackIndex = savedIndex;
         currentFileId = saved.file_id;
-        audio.src = getAudioStreamUrl(book.id, saved.file_id);
+        setSource(audio, book.id, saved.file_id);
         if (saved.position_seconds > 0) {
           audio.currentTime = saved.position_seconds;
           currentTime = saved.position_seconds;
@@ -548,7 +557,7 @@ async function advanceTrack(trackIndex: number) {
   // Update chapters for the new track (unified chapters already loaded)
   chapters = chaptersForFile(nextFileId);
 
-  audio.src = getAudioStreamUrl(currentBook.id, nextFileId);
+  setSource(audio, currentBook.id, nextFileId);
   audio.playbackRate = playbackRate;
   audio.volume = volume;
   currentTime = 0;
@@ -672,11 +681,6 @@ export function setNightMode(enabled: boolean) {
     localStorage.setItem('audioplayer:nightMode', String(enabled));
   }
   applyNightMode();
-}
-
-export function setFileLufs(lufs: number | null) {
-  currentFileLufs = lufs;
-  applyNormalizationGain();
 }
 
 function startInactivityTimer() {

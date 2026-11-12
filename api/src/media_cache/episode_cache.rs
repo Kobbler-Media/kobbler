@@ -32,6 +32,7 @@ use uuid::Uuid;
 
 use super::writers::{Manifest, write_atomic, write_manifest_at};
 use super::{Branch, sidecar_filename};
+use crate::streaming::loudness::PlaybackLoudness;
 
 /// Source-of-truth-keyed namespace for a persisted artefact set. Each variant
 /// names the DB table whose `id` keys the directory; see module docs for the
@@ -82,9 +83,18 @@ impl MediaKind {
 
 /// Resolve the directory holding `kind`'s artefacts.
 /// The measured loudness of a debrid title, from whichever release was analysed for it.
-pub fn debrid_title_lufs(storage_root: &str, media_type: &str, media_id: Uuid) -> Option<f64> {
-    let kind = MediaKind::for_debrid(media_type, media_id)?;
-    super::readers::read_loudness_at(&episode_cache_dir(storage_root, &kind))
+pub fn debrid_title_loudness(
+    storage_root: &str,
+    media_type: &str,
+    media_id: Uuid,
+) -> PlaybackLoudness {
+    MediaKind::for_debrid(media_type, media_id)
+        .and_then(|kind| super::readers::read_loudness_at(&episode_cache_dir(storage_root, &kind)))
+        .map(|l| PlaybackLoudness {
+            lufs: l.integrated_lufs,
+            downmix_peak_db: l.downmix_peak_db,
+        })
+        .unwrap_or_default()
 }
 
 pub fn episode_cache_dir(storage_root: &str, kind: &MediaKind) -> PathBuf {

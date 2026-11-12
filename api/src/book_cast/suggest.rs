@@ -377,7 +377,7 @@ mod tests {
     #[test]
     fn answers_match_the_cast_by_any_of_its_names_and_a_new_name_stays_a_name() {
         let woman = Uuid::now_v7();
-        let all = vec![
+        let all = [
             line(1, 0, Some(woman)),
             line(2, 0, Some(woman)),
             line(3, 0, Some(woman)),

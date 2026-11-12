@@ -69,7 +69,7 @@ async fn a_character_shares_the_minor_part_voices_or_leaves_them_by_hand() {
     rig.set_pooled(&narrator, true)
         .await
         .assert_status(StatusCode::BAD_REQUEST);
-    let user = create_user_client(&rig.server, "reader@test.local", "user").await;
+    let user = create_user_client(&rig.server, "reader@test.local", "viewer").await;
     user.patch_json(
         &rig.url(&format!("/characters/{ann}")),
         &json!({"pooled": false}),
@@ -145,7 +145,7 @@ async fn a_characters_lines_list_in_book_order_and_read_in_the_book_around_them(
         .get(&rig.url(&format!("/characters/{}/lines", uuid::Uuid::now_v7())))
         .await
         .assert_status(StatusCode::NOT_FOUND);
-    let user = create_user_client(&rig.server, "reader@test.local", "user").await;
+    let user = create_user_client(&rig.server, "reader@test.local", "viewer").await;
     for url in [
         rig.url(&format!("/characters/{ann}/lines")),
         rig.url("/text?from=0&to=1"),
@@ -257,7 +257,7 @@ async fn the_model_suggests_who_says_lines_read_in_their_scene_and_nothing_chang
         )
         .await
         .assert_status(StatusCode::BAD_REQUEST);
-    let user = create_user_client(&rig.server, "reader@test.local", "user").await;
+    let user = create_user_client(&rig.server, "reader@test.local", "viewer").await;
     user.post_json(&rig.url(&format!("/characters/{ann}/suggest")), &json!({}))
         .await
         .assert_status(StatusCode::FORBIDDEN);

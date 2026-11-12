@@ -3,6 +3,7 @@
 //! Providers, channels, EPG, recordings, favourites, watch history,
 //! playback proxy, series rules, groups, unmatched sources, and settings.
 
+use crate::streaming::byte_range::file_stream;
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -1932,7 +1933,7 @@ pub async fn stream_recording(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to open recording file: {e}")))?;
 
-    let stream = tokio_util::io::ReaderStream::new(file);
+    let stream = file_stream(file);
     let body = axum::body::Body::from_stream(stream);
 
     Ok(axum::response::Response::builder()

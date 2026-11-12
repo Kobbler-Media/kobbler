@@ -40,7 +40,7 @@ pub(crate) fn live_response(
         subtitles: vec![],
         audio_tracks: vec![],
         thumbnails_url: None,
-        lufs: None,
+        loudness: Default::default(),
         chapters: vec![],
         skip_segments: vec![],
         start_time: None,

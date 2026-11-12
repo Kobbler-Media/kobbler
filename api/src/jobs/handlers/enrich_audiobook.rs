@@ -9,7 +9,8 @@ use crate::audio::peaks;
 use crate::ffmpeg::transcode;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
-use crate::repositories::audiobook_files;
+use crate::repositories::file_loudness;
+use crate::streaming::loudness::PlaybackLoudness;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -117,9 +118,9 @@ impl JobHandler for EnrichAudiobookHandler {
 
         let file_path_clone = file_path.clone();
 
-        let (peaks_result, lufs_result) = tokio::join!(
+        let (peaks_result, loudness_result) = tokio::join!(
             peaks::generate_peaks(&file_path, 4),
-            transcode::measure_lufs(&file_path_clone),
+            transcode::measure_loudness(&file_path_clone),
         );
 
         // Save peaks to disk
@@ -134,22 +135,20 @@ impl JobHandler for EnrichAudiobookHandler {
             warn!(error = %e, "Peaks generation failed (non-fatal)");
         }
 
-        // Save LUFS to DB
-        let lufs_value = match &lufs_result {
-            Ok(Some(lufs)) => {
-                if let Err(e) =
-                    audiobook_files::update_lufs(&self.pool, payload.file_id, Some(*lufs)).await
-                {
-                    warn!(error = %e, "Failed to save audiobook LUFS");
-                }
-                Some(*lufs)
-            }
-            Ok(None) => None,
+        let loudness = match loudness_result {
+            Ok(l) => PlaybackLoudness::from(l),
             Err(e) => {
-                warn!(error = %e, "LUFS measurement failed (non-fatal)");
-                None
+                warn!(error = %e, "Loudness measurement failed (non-fatal)");
+                PlaybackLoudness::default()
             }
         };
+        if loudness.lufs.is_some()
+            && let Err(e) =
+                file_loudness::record(&self.pool, "audiobook", payload.file_id, loudness).await
+        {
+            warn!(error = %e, "Failed to save audiobook loudness");
+        }
+        let lufs_value = loudness.lufs;
 
         info!(
             file_id = %payload.file_id,

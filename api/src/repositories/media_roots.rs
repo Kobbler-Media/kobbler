@@ -395,6 +395,20 @@ pub async fn resolve_media_root_ids_for_file(
         .into_iter()
         .flatten()
         .collect(),
+        "audiobook" => sqlx::query_scalar!(
+            r#"
+            SELECT b.media_root_id AS "media_root_id?: Uuid"
+            FROM audiobook_files af
+            JOIN books b ON b.id = af.book_id
+            WHERE af.id = $1
+            "#,
+            file_id,
+        )
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .flatten()
+        .collect(),
         _ => Vec::new(),
     };
     let mut ids = rows;

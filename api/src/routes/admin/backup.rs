@@ -1,5 +1,6 @@
 //! Backup and restore route handlers.
 
+use crate::streaming::byte_range::file_stream;
 use axum::{
     Json,
     body::Body,
@@ -10,7 +11,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::path::Path as StdPath;
 use time::OffsetDateTime;
-use tokio_util::io::ReaderStream;
 
 use crate::jobs::{self, JobContext};
 use crate::repositories;
@@ -75,7 +75,7 @@ pub async fn download_backup(
                 }
             };
 
-            let stream = ReaderStream::new(file);
+            let stream = file_stream(file);
             let body = Body::from_stream(stream);
 
             let mut response_headers = HeaderMap::new();

@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT lufs, downmix_peak_db FROM audiobook_files WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lufs",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "lufs"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "downmix_peak_db",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "audiobook_files",
+            "name": "downmix_peak_db"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "b2a80c4b2a58b37bf357745f43f1a65876d66ea50c9ad9ecc364ef6ad9319b7f"
+}

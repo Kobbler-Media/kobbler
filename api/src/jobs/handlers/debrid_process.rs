@@ -259,12 +259,12 @@ impl JobHandler for DebridProcessHandler {
                 end_seconds: ch.end_seconds,
             })
             .collect();
-        let lufs = crate::media_cache::episode_cache::debrid_title_lufs(
+        let loudness = crate::media_cache::episode_cache::debrid_title_loudness(
             &self.storage_root,
             &session_row.media_type,
             session_row.media_id,
         );
-        persist_file_facts(&self.pool, session_id, lufs, &chapters).await?;
+        persist_file_facts(&self.pool, session_id, loudness, &chapters).await?;
 
         // Cross-episode / single-file segments from the persisted episode_cache,
         // produced after analyze completes. Empty on first-stream-of-season
@@ -506,19 +506,21 @@ async fn persist_skip_segments(
 async fn persist_file_facts(
     pool: &PgPool,
     session_id: Uuid,
-    lufs: Option<f64>,
+    loudness: crate::streaming::loudness::PlaybackLoudness,
     chapters: &[crate::routes::admin::streaming::ChapterResponse],
 ) -> JobResult<()> {
     sqlx::query!(
         r#"
         UPDATE debrid_stream_sessions
-        SET lufs = COALESCE($2, lufs), chapters = COALESCE($3, chapters), updated_at = NOW()
+        SET lufs = COALESCE($2, lufs), downmix_peak_db = COALESCE($4, downmix_peak_db),
+            chapters = COALESCE($3, chapters), updated_at = NOW()
         WHERE id = $1
            OR cache_path = (SELECT cache_path FROM debrid_stream_sessions WHERE id = $1)
         "#,
         session_id,
-        lufs,
+        loudness.lufs,
         crate::routes::admin::debrid_open::chapters_json(chapters),
+        loudness.downmix_peak_db,
     )
     .execute(pool)
     .await

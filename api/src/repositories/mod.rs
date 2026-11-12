@@ -49,6 +49,7 @@ pub mod enrichment_attempts;
 pub mod entitlements;
 pub mod episode_skip_segments;
 pub mod external_subtitles;
+pub mod file_loudness;
 pub mod file_pictures;
 pub mod for_you_dismissals;
 pub mod genres;

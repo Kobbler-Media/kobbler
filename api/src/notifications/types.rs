@@ -10,10 +10,14 @@ pub enum NotificationTrigger {
     OnFailed,
     /// A file already in the library turned out not to be intact.
     OnMediaCorrupt,
+    /// The server stalled, or its watchdog had to restart it.
+    OnServerHealth,
     OnTest,
 }
 
 impl NotificationTrigger {
+    /// What a household member can ask the chat bot for. Server health goes to the
+    /// operator's agents only, so it is not here.
     pub fn all() -> &'static [NotificationTrigger] {
         &[
             NotificationTrigger::OnGrab,
@@ -29,6 +33,7 @@ impl NotificationTrigger {
             Self::OnImport => "On Import",
             Self::OnFailed => "On Failed",
             Self::OnMediaCorrupt => "On Corrupt Media",
+            Self::OnServerHealth => "On Server Health",
             Self::OnTest => "Test",
         }
     }
@@ -39,6 +44,7 @@ impl NotificationTrigger {
             Self::OnImport => "When an item is added to the library",
             Self::OnFailed => "When acquisition fails",
             Self::OnMediaCorrupt => "When a file in the library is found incomplete or unreadable",
+            Self::OnServerHealth => "When the server stalls or its watchdog restarts it",
             Self::OnTest => "Test notification",
         }
     }

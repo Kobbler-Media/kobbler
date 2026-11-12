@@ -17,7 +17,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio_util::io::ReaderStream;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -31,12 +30,13 @@ use crate::repositories::{
     subtitle_tracks, tv_episode_files, video_chapters,
 };
 use crate::routes::{AuthUser, PlaybackAuth};
-use crate::streaming::byte_range::{ByteRange, parse_byte_range};
+use crate::streaming::byte_range::{ByteRange, file_stream, parse_byte_range};
 use crate::streaming::decision::{
     self, AAC_ENCODER, AudioTrackMeta, ClientCapabilities, FileMeta, PlaybackMethod,
     SubtitleTrackMeta, ViewerPrefs,
 };
 use crate::streaming::feed::FeedStatus;
+use crate::streaming::loudness::PlaybackLoudness;
 use crate::streaming::persist::Progress;
 use crate::streaming::segment_cache::SegmentCache;
 use crate::streaming::session::{
@@ -150,8 +150,8 @@ pub struct SessionResponse {
     pub audio_tracks: Vec<AudioTrackResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thumbnails_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lufs: Option<f64>,
+    #[serde(flatten)]
+    pub loudness: PlaybackLoudness,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub chapters: Vec<ChapterResponse>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -839,25 +839,11 @@ pub(crate) async fn open_file_session(
                 .unwrap_or(false)
         }
     };
-    let lufs_value: Option<f64> = match req.media_type {
-        MediaType::Movie => {
-            sqlx::query_scalar!(r#"SELECT lufs FROM movie_files WHERE id = $1"#, file_id,)
-                .fetch_optional(&state.pool)
-                .await
-                .ok()
-                .flatten()
-                .flatten()
-        }
-        MediaType::Episode => sqlx::query_scalar!(
-            r#"SELECT lufs FROM tv_episode_files WHERE id = $1"#,
-            file_id,
-        )
-        .fetch_optional(&state.pool)
-        .await
-        .ok()
-        .flatten()
-        .flatten(),
-        MediaType::Recording => None,
+    let loudness = match crate::repositories::file_loudness::FileKind::of_session(req.media_type) {
+        Some(kind) => crate::repositories::file_loudness::get(&state.pool, kind, file_id)
+            .await
+            .unwrap_or_default(),
+        None => Default::default(),
     };
 
     let picture = crate::repositories::file_pictures::get(&state.pool, req.media_type, file_id)
@@ -888,7 +874,7 @@ pub(crate) async fn open_file_session(
         } else {
             None
         },
-        lufs: lufs_value,
+        loudness,
         chapters: chapter_responses,
         skip_segments: skip_segment_responses,
         start_time: reported_rebase(decision.method, resume_start),
@@ -2312,7 +2298,7 @@ pub async fn serve_segment(
 
     match tokio::fs::File::open(&segment_path).await {
         Ok(file) => {
-            let stream = ReaderStream::new(file);
+            let stream = file_stream(file);
             Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, content_type)
@@ -2370,7 +2356,7 @@ async fn serve_live_segment(
 
     match tokio::fs::File::open(&segment_path).await {
         Ok(file) => {
-            let stream = ReaderStream::new(file);
+            let stream = file_stream(file);
             Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, content_type)
@@ -3118,7 +3104,7 @@ pub async fn switch_audio(
             subtitles: vec![],
             audio_tracks: audio_responses,
             thumbnails_url: None,
-            lufs: None,
+            loudness: PlaybackLoudness::default(),
             chapters: vec![],
             skip_segments: vec![],
             start_time: None,
@@ -3299,7 +3285,7 @@ pub async fn switch_audio(
             .collect(),
         audio_tracks: audio_responses,
         thumbnails_url: None,
-        lufs: None,
+        loudness: PlaybackLoudness::default(),
         chapters: vec![],
         skip_segments: vec![],
         start_time,
@@ -3897,7 +3883,7 @@ pub async fn direct_play(
     }
 
     // No range — serve full file
-    let stream = ReaderStream::new(file);
+    let stream = file_stream(file);
     let body = match patch {
         Some(p) => Body::from_stream(patched_stream(stream, 0, p)),
         None => Body::from_stream(stream),
@@ -3949,7 +3935,7 @@ async fn serve_range(
     }
 
     let limited = file.take(length);
-    let stream = ReaderStream::new(limited);
+    let stream = file_stream(limited);
     let body = match patch {
         Some(p) => Body::from_stream(patched_stream(stream, range.start, p)),
         None => Body::from_stream(stream),
@@ -4087,7 +4073,7 @@ pub async fn serve_subtitle(
 
         match tokio::fs::File::open(&serve_path).await {
             Ok(file) => {
-                let stream = ReaderStream::new(file);
+                let stream = file_stream(file);
                 Response::builder()
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, content_type)

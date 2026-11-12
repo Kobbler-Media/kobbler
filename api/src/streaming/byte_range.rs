@@ -3,9 +3,24 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use futures::StreamExt;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 use tracing::error;
+
+/// Read size for a file sent as a response body. ReaderStream's default is 4 KiB, and on the
+/// CIFS-mounted media library 4 KiB reads measured 10 MB/s against 102 MB/s at this size.
+pub const FILE_CHUNK: usize = 1 << 20;
+
+/// The most one read of a Linux pipe returns, so a bigger buffer would only sit empty.
+pub const PIPE_CHUNK: usize = 64 * 1024;
+
+pub fn file_stream<R: AsyncRead>(reader: R) -> ReaderStream<R> {
+    ReaderStream::with_capacity(reader, FILE_CHUNK)
+}
+
+pub fn pipe_stream<R: AsyncRead>(reader: R) -> ReaderStream<R> {
+    ReaderStream::with_capacity(reader, PIPE_CHUNK)
+}
 
 /// An inclusive byte range already clamped to the file it addresses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,7 +176,7 @@ async fn piece(part: Part, skip: u64, take: u64) -> std::io::Result<Piece> {
             mut file, offset, ..
         } => {
             file.seek(std::io::SeekFrom::Start(offset + skip)).await?;
-            ReaderStream::new(file.take(take)).boxed()
+            file_stream(file.take(take)).boxed()
         }
     })
 }

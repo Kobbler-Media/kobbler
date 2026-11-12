@@ -499,7 +499,13 @@ pub async fn webpush_subscribe(
             name: "Web Push".to_string(),
             enabled: true,
             config: json!({}),
-            triggers: json!(["on_grab", "on_import", "on_failed", "on_media_corrupt"]),
+            triggers: json!([
+                "on_grab",
+                "on_import",
+                "on_failed",
+                "on_media_corrupt",
+                "on_server_health"
+            ]),
         };
         if let Err(e) = notification_agents::create(&state.pool, agent_input).await {
             error!(error = %e, "Failed to auto-create webpush agent");

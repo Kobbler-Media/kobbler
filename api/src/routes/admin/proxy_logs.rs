@@ -1,5 +1,6 @@
 //! Proxy log route handlers.
 
+use crate::streaming::byte_range::file_stream;
 use axum::{
     body::Body,
     extract::{Json, Path, State},
@@ -9,7 +10,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::{QueryBuilder, Row};
 use time::OffsetDateTime;
-use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use std::collections::HashMap;
@@ -538,7 +538,7 @@ pub async fn download_proxy_log_blob(
     }
 
     // Stream the file instead of buffering in memory
-    let stream = ReaderStream::new(file);
+    let stream = file_stream(file);
     let body = Body::from_stream(stream);
 
     Response::builder()

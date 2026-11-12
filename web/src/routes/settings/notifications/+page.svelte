@@ -268,6 +268,7 @@
       on_import: 'On Import',
       on_failed: 'On Failed',
       on_media_corrupt: 'On Corrupt Media',
+      on_server_health: 'On Server Health',
       on_test: 'Test'
     };
     return labels[trigger] ?? trigger;

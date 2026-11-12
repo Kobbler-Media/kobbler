@@ -290,7 +290,7 @@ pub(super) async fn open(
             .as_ref()
             .map(|c| c.skip_segments.clone())
             .unwrap_or_default(),
-        lufs: media.as_ref().and_then(|c| c.lufs),
+        loudness: media.as_ref().map(|c| c.loudness).unwrap_or_default(),
         media_type: media.map(|c| c.media_type),
         file_id: None,
         selected_audio_index: Some(audio_index),

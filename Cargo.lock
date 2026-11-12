@@ -122,6 +122,7 @@ dependencies = [
  "kob-gpu-gate",
  "koblem-client",
  "kobo-proxy",
+ "libc",
  "meilisearch-sdk",
  "nats-jobs",
  "nix",

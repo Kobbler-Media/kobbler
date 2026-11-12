@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, cache_path,\n                       filesize\n                FROM debrid_stream_sessions\n                WHERE id = $1\n                ",
+  "query": "\n                SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, downmix_peak_db,\n                       cache_path, filesize\n                FROM debrid_stream_sessions\n                WHERE id = $1\n                ",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "downmix_peak_db",
+        "type_info": "Float8",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "downmix_peak_db"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "cache_path",
         "type_info": "Text",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "filesize",
         "type_info": "Int8",
         "origin": {
@@ -93,8 +104,9 @@
       true,
       true,
       true,
+      true,
       false
     ]
   },
-  "hash": "a8037b1d398de7e2b8ecb4d9ff770b5b0a3cc7f0ff3d0c7d9e86734cb41ba40e"
+  "hash": "f75a2e56db06d7129e7351414135458f3754fa9e3fb162c55ac9a77634572d58"
 }

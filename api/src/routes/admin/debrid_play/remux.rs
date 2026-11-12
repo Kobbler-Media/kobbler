@@ -1,7 +1,7 @@
+use crate::streaming::byte_range::pipe_stream;
 use axum::body::Body;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use tokio_util::io::ReaderStream;
 use tracing::{error, warn};
 
 /// Pipe a reqwest response body through ffmpeg for on-the-fly remux to fMP4.
@@ -66,7 +66,7 @@ pub(super) async fn remux_proxy_stream(url: &str, audio_stream: Option<i32>) -> 
     });
 
     // Stream ffmpeg stdout back to the client
-    let reader_stream = ReaderStream::new(tokio::io::BufReader::new(stdout));
+    let reader_stream = pipe_stream(stdout);
 
     Response::builder()
         .status(StatusCode::OK)
@@ -99,7 +99,7 @@ pub(super) async fn remux_local_file(
     };
 
     let stdout = ffmpeg.stdout.take().expect("ffmpeg stdout was piped");
-    let reader_stream = ReaderStream::new(tokio::io::BufReader::new(stdout));
+    let reader_stream = pipe_stream(stdout);
 
     Response::builder()
         .status(StatusCode::OK)

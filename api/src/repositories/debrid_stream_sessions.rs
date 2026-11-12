@@ -160,6 +160,7 @@ where
 pub struct ReleaseAnalysis {
     pub skip_segments: Option<serde_json::Value>,
     pub lufs: Option<f64>,
+    pub downmix_peak_db: Option<f64>,
 }
 
 /// Intro, credits and loudness are measured on one file, so only an earlier session of
@@ -178,7 +179,7 @@ where
     let row = sqlx::query_as!(
         ReleaseAnalysis,
         r#"
-        SELECT skip_segments, lufs
+        SELECT skip_segments, lufs, downmix_peak_db
         FROM debrid_stream_sessions
         WHERE media_type = $1 AND media_id = $2
           AND ((info_hash = $3 AND file_id IS NOT DISTINCT FROM $4) OR cache_path = $5)

@@ -16,7 +16,10 @@ use crate::RuntimeConfigManager;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::media_cache::PIPELINE_VERSION;
-use crate::repositories::{audiobook_files, file_pictures, movie_files, tv_episode_files};
+use crate::repositories::file_loudness::FileKind;
+use crate::repositories::{
+    audiobook_files, file_loudness, file_pictures, movie_files, tv_episode_files,
+};
 use crate::streaming::session::MediaType;
 use crate::types::MediaScope;
 use async_trait::async_trait;
@@ -30,6 +33,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use uuid::Uuid;
 
+use super::downmix_peak_fill::{DownmixPeakFillPayload, JOB_TYPE as PEAK_JOB};
 use super::media_analyze::MediaAnalyzePayload;
 
 #[derive(Debug, Default, Deserialize)]
@@ -55,6 +59,7 @@ pub struct MediaAnalyzeBackfillPayload {
 }
 
 const GAPS_PER_RUN: i64 = 1000;
+const GAP_FAILURES_PER_DAY: i64 = 3;
 
 pub struct MediaAnalyzeBackfillHandler {
     pool: PgPool,
@@ -200,6 +205,27 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
             }
         }
 
+        // ── Downmix peaks ──
+        // A file due a full analysis gets its peak from that instead.
+        let peak_gaps = file_loudness::list_needing_downmix_peak(&self.pool, GAPS_PER_RUN)
+            .await
+            .map_err(|e| JobError::ExecutionFailed(format!("DB error (peak gaps): {e}")))?;
+        let mut peak_gaps_enqueued = 0u32;
+        for (kind, file_id) in &peak_gaps {
+            nats_jobs::check_cancelled(&cancel)?;
+            if movie_ids.contains(file_id)
+                || episode_ids.contains(file_id)
+                || audiobook_ids.contains(file_id)
+            {
+                continue;
+            }
+            if let BackfillEnqueue::Enqueued =
+                enqueue_peak_fill(&self.pool, &self.publisher, *kind, *file_id).await
+            {
+                peak_gaps_enqueued += 1;
+            }
+        }
+
         let movie_found = movie_ids.len();
         let episode_found = episode_ids.len();
         let audiobook_found = audiobook_ids.len();
@@ -216,6 +242,8 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
             audiobook_skipped,
             gaps_found = gaps.len(),
             gaps_enqueued,
+            peak_gaps_found = peak_gaps.len(),
+            peak_gaps_enqueued,
             pipeline_version = PIPELINE_VERSION,
             all_video = payload.all_video,
             media_type = payload.media_type.map(|m| m.as_str()).unwrap_or("all"),
@@ -234,10 +262,44 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
             "audiobook_skipped": audiobook_skipped,
             "gaps_found": gaps.len(),
             "gaps_enqueued": gaps_enqueued,
+            "peak_gaps_found": peak_gaps.len(),
+            "peak_gaps_enqueued": peak_gaps_enqueued,
             "pipeline_version": PIPELINE_VERSION,
             "all_video": payload.all_video,
             "media_type": payload.media_type.map(|m| m.as_str()),
         }))
+    }
+}
+
+async fn enqueue_peak_fill(
+    pool: &PgPool,
+    publisher: &Publisher,
+    kind: FileKind,
+    file_id: Uuid,
+) -> BackfillEnqueue {
+    let fid = file_id.to_string();
+    if let Ok(true) = crate::jobs::has_active_job(pool, PEAK_JOB, "file_id", &fid).await {
+        return BackfillEnqueue::Skipped;
+    }
+    if crate::jobs::recent_failure_count(pool, PEAK_JOB, "file_id", &fid, 24)
+        .await
+        .unwrap_or(0)
+        >= GAP_FAILURES_PER_DAY
+    {
+        return BackfillEnqueue::Skipped;
+    }
+    let payload = DownmixPeakFillPayload { kind, file_id };
+    match crate::jobs::enqueue_routine(
+        pool,
+        publisher,
+        PEAK_JOB,
+        serde_json::to_value(&payload).unwrap_or_default(),
+        crate::jobs::JobContext::new("Backfill — downmix peak"),
+    )
+    .await
+    {
+        Ok(_) => BackfillEnqueue::Enqueued,
+        Err(_) => BackfillEnqueue::Skipped,
     }
 }
 

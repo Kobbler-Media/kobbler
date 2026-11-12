@@ -77,6 +77,7 @@ pub mod video_sync_providers;
 pub mod wanted;
 pub mod watch_completion;
 pub mod watch_handoff;
+pub mod watchdog;
 pub mod watcher;
 pub mod xml_text;
 

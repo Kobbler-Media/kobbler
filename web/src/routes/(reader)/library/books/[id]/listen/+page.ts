@@ -1,3 +1,5 @@
+import { loudnessByFile } from '#lib/streaming/loudness.js';
+import type { PlaybackLoudness } from '#lib/types.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ params, fetch }) => {
@@ -15,6 +17,7 @@ export const load: PageLoad = async ({ params, fetch }) => {
         audioFileIds: [],
         audioFileDurations: [],
         audioFileIntroOutro: {},
+        audioFileLoudness: {},
         error: 'Book not found'
       };
     }
@@ -26,18 +29,20 @@ export const load: PageLoad = async ({ params, fetch }) => {
       string,
       { intro_end_seconds?: number | null; outro_start_seconds?: number | null }
     > = {};
+    let audioFileLoudness: Record<string, PlaybackLoudness> = {};
 
     if (audioRes.ok) {
-      const audioFiles: {
+      const audioFiles: ({
         id: string;
         available: boolean;
         duration_seconds?: number | null;
         intro_end_seconds?: number | null;
         outro_start_seconds?: number | null;
-      }[] = await audioRes.json();
+      } & PlaybackLoudness)[] = await audioRes.json();
       const available = audioFiles.filter((f) => f.available);
       audioFileIds = available.map((f) => f.id);
       audioFileDurations = available.map((f) => f.duration_seconds ?? 0);
+      audioFileLoudness = loudnessByFile(available);
       for (const f of available) {
         if (f.intro_end_seconds != null || f.outro_start_seconds != null) {
           audioFileIntroOutro[f.id] = {
@@ -48,13 +53,21 @@ export const load: PageLoad = async ({ params, fetch }) => {
       }
     }
 
-    return { book, audioFileIds, audioFileDurations, audioFileIntroOutro, error: null };
+    return {
+      book,
+      audioFileIds,
+      audioFileDurations,
+      audioFileIntroOutro,
+      audioFileLoudness,
+      error: null
+    };
   } catch (e) {
     return {
       book: null,
       audioFileIds: [],
       audioFileDurations: [],
       audioFileIntroOutro: {},
+      audioFileLoudness: {},
       error: e instanceof Error ? e.message : 'Failed to load book'
     };
   }

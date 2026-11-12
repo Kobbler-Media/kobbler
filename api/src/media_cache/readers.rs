@@ -97,28 +97,10 @@ pub fn read_black_frames(storage_root: &str, file_id: Uuid) -> Option<Vec<BlackG
     serde_json::from_slice(&bytes).ok()
 }
 
-/// Read integrated LUFS from `loudness.json`.
-pub fn read_loudness(storage_root: &str, file_id: Uuid) -> Option<f64> {
-    #[derive(serde::Deserialize)]
-    struct LoudnessFile {
-        integrated_lufs: Option<f64>,
-    }
-    let path = sidecar_path(storage_root, file_id, Branch::Loudness);
-    let bytes = std::fs::read(path).ok()?;
-    let parsed: LoudnessFile = serde_json::from_slice(&bytes).ok()?;
-    parsed.integrated_lufs
-}
-
-/// Path-based: integrated LUFS from `<cache_dir>/loudness.json`.
-pub fn read_loudness_at(cache_dir: &Path) -> Option<f64> {
-    #[derive(serde::Deserialize)]
-    struct LoudnessFile {
-        integrated_lufs: Option<f64>,
-    }
+/// Path-based: `<cache_dir>/loudness.json`.
+pub fn read_loudness_at(cache_dir: &Path) -> Option<Loudness> {
     let bytes = std::fs::read(sidecar_path_at(cache_dir, Branch::Loudness)?).ok()?;
-    serde_json::from_slice::<LoudnessFile>(&bytes)
-        .ok()?
-        .integrated_lufs
+    serde_json::from_slice(&bytes).ok()
 }
 
 /// Read raw audio peaks bytes (already in wire format).

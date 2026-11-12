@@ -202,14 +202,20 @@ async fn end_playback(rig: &Rig, session_id: Uuid) {
         .await;
 }
 
+const PEAK_DB: f64 = -4.5;
+
 async fn record_analysis(rig: &Rig, session_id: Uuid, segments: &Value, lufs: f64) {
-    sqlx::query("UPDATE debrid_stream_sessions SET skip_segments = $2, lufs = $3 WHERE id = $1")
-        .bind(session_id)
-        .bind(segments)
-        .bind(lufs)
-        .execute(&rig.server.pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE debrid_stream_sessions SET skip_segments = $2, lufs = $3, downmix_peak_db = $4 \
+         WHERE id = $1",
+    )
+    .bind(session_id)
+    .bind(segments)
+    .bind(lufs)
+    .bind(PEAK_DB)
+    .execute(&rig.server.pool)
+    .await
+    .unwrap();
 }
 
 fn served_segments(resp: &Value) -> Vec<(String, f64)> {
@@ -250,7 +256,7 @@ async fn a_session_opens_with_what_analysis_found_in_its_own_release_only() {
     std::fs::create_dir_all(&analysed).unwrap();
     std::fs::write(
         analysed.join("loudness.json"),
-        r#"{"integrated_lufs":-23.5}"#,
+        r#"{"integrated_lufs":-23.5,"downmix_peak_db":-4.5}"#,
     )
     .unwrap();
     end_playback(&rig, first).await;
@@ -266,8 +272,10 @@ async fn a_session_opens_with_what_analysis_found_in_its_own_release_only() {
         "{replay}"
     );
     assert_eq!(replay["lufs"], json!(-23.5), "{replay}");
+    assert_eq!(replay["downmix_peak_db"], json!(PEAK_DB), "{replay}");
     assert_eq!(served_segments(&other), vec![], "{other}");
     assert_eq!(other["lufs"], Value::Null, "{other}");
+    assert_eq!(other["downmix_peak_db"], Value::Null, "{other}");
     for (name, resp, expected) in [
         ("replay", &replay, Some(&segments)),
         ("other release", &other, None),
@@ -381,6 +389,7 @@ async fn a_debrid_session_carries_the_loudness_and_chapters_of_its_file() {
     end_playback(&rig, session).await;
     let replay = rig.resolve_with(&body).await;
     assert_eq!(replay["lufs"], json!(-23.5), "{replay}");
+    assert_eq!(replay["downmix_peak_db"], json!(PEAK_DB), "{replay}");
     assert_eq!(
         chapter_titles(&replay["chapters"]),
         ["Opening", "Episode"],

@@ -71,6 +71,7 @@ static SUPPORTED_TRIGGERS: &[NotificationTrigger] = &[
     NotificationTrigger::OnImport,
     NotificationTrigger::OnFailed,
     NotificationTrigger::OnMediaCorrupt,
+    NotificationTrigger::OnServerHealth,
 ];
 
 pub static INFO: NotificationAgentInfo = NotificationAgentInfo {
@@ -637,7 +638,9 @@ fn render_embed(payload: &NotificationPayload, today: time::Date) -> Option<serd
     }
     let color = match payload.trigger {
         NotificationTrigger::OnImport => 0x2ecc71,
-        NotificationTrigger::OnFailed | NotificationTrigger::OnMediaCorrupt => 0xe74c3c,
+        NotificationTrigger::OnFailed
+        | NotificationTrigger::OnMediaCorrupt
+        | NotificationTrigger::OnServerHealth => 0xe74c3c,
         _ => 0x3498db,
     };
     embed.insert("color".into(), color.into());

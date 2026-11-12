@@ -139,7 +139,8 @@ export type ChatIdentitiesResponse = {
   transports: ChatTransportInfo[];
 };
 
-export type NotificationTrigger = 'on_grab' | 'on_import' | 'on_failed' | 'on_media_corrupt';
+export type NotificationTrigger =
+  'on_grab' | 'on_import' | 'on_failed' | 'on_media_corrupt' | 'on_server_health';
 
 export type MuteDuration =
   | 'an_hour'
@@ -1908,7 +1909,13 @@ export type PlaybackAudioTrack = {
   is_default: boolean;
 };
 
-export type PlaybackSessionResponse = {
+export type PlaybackLoudness = {
+  lufs?: number | null;
+  /** True peak (dBTP) of the stereo fold-down the player renders; caps the levelling boost. */
+  downmix_peak_db?: number | null;
+};
+
+export type PlaybackSessionResponse = PlaybackLoudness & {
   session_id: string;
   method: PlaybackMethod;
   playlist_url: string | null;
@@ -1917,7 +1924,6 @@ export type PlaybackSessionResponse = {
   subtitles: PlaybackSubtitleTrack[];
   audio_tracks: PlaybackAudioTrack[];
   thumbnails_url?: string;
-  lufs?: number;
   chapters?: VideoChapter[];
   skip_segments?: SkipSegment[];
   start_time?: number;

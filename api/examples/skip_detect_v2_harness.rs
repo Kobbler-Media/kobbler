@@ -863,6 +863,7 @@ fn persist_sidecars(
     // Loudness (optional; detection doesn't use it but write it for parity).
     let loudness = Loudness {
         integrated_lufs: result.loudness,
+        downmix_peak_db: result.downmix_peak_db,
     };
     if let Ok(bytes) = serde_json::to_vec(&loudness) {
         let _ = write_sidecar_at(cache_dir, Branch::Loudness, &bytes);

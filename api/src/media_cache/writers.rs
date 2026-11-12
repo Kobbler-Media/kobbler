@@ -38,6 +38,8 @@ pub struct BlackGap {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Loudness {
     pub integrated_lufs: Option<f64>,
+    #[serde(default)]
+    pub downmix_peak_db: Option<f64>,
 }
 
 /// One artefact's coverage info as it appears in `manifest.json`.

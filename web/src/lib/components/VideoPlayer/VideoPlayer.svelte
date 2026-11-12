@@ -26,6 +26,7 @@
   import { showsStartShell } from '#lib/streaming/startShell.js';
   import { streamPosition } from '#lib/streaming/streamPosition.js';
   import { reconnectStep } from '#lib/streaming/reconnect.js';
+  import { levellingGain } from '#lib/streaming/loudness.js';
   import { startingAudio } from '#lib/streaming/audioPreference.js';
   import { liveSyncRate, liveTargetLatency } from '#lib/streaming/liveLatency.js';
   import { useKeep } from '#lib/composables/useKeep.svelte.js';
@@ -1582,21 +1583,7 @@
 
   function applyVideoNormalization() {
     if (!audioGainNode || session.lufs == null) return;
-    if (normalizeVolume) {
-      // EBU R128 / Apple HLS-style: aim for the target loudness, but cap the
-      // boost so a quietly-mastered TV episode (-25 LUFS) doesn't get +11 dB
-      // of unbounded gain that pushes peaks past 0 dBFS.
-      // Without true-peak data per-file we use a conservative +6 dB ceiling
-      // (≈2× linear). The downstream DynamicsCompressor catches anything that
-      // still wants to clip on transients/intersample peaks.
-      const targetLufs = -14;
-      const maxBoostDb = 6;
-      const requestedDb = targetLufs - session.lufs;
-      const cappedDb = Math.min(requestedDb, maxBoostDb);
-      audioGainNode.gain.value = Math.pow(10, cappedDb / 20);
-    } else {
-      audioGainNode.gain.value = 1.0;
-    }
+    audioGainNode.gain.value = normalizeVolume ? levellingGain(session) : 1.0;
   }
 
   /**
@@ -2786,6 +2773,7 @@
           case 'loudness':
             if (typeof data.lufs === 'number') {
               session.lufs = data.lufs;
+              session.downmix_peak_db = data.downmix_peak_db ?? null;
               ensureNormalization();
             }
             break;

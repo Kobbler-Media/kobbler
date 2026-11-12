@@ -546,6 +546,7 @@ fn trigger_phrase(triggers: &[NotificationTrigger]) -> String {
             NotificationTrigger::OnImport => "things finishing",
             NotificationTrigger::OnFailed => "failures",
             NotificationTrigger::OnMediaCorrupt => "corrupt files",
+            NotificationTrigger::OnServerHealth => "server trouble",
             NotificationTrigger::OnTest => "tests",
         })
         .collect();

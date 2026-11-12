@@ -1,3 +1,4 @@
+use crate::streaming::byte_range::file_stream;
 use axum::body::Body;
 use axum::{
     Json,
@@ -9,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use time::OffsetDateTime;
-use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -549,6 +549,6 @@ pub async fn recording_segment(
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
         .header(header::CACHE_CONTROL, "no-store")
-        .body(Body::from_stream(ReaderStream::new(f)))
+        .body(Body::from_stream(file_stream(f)))
         .expect("valid segment response"))
 }

@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO movie_files (id, movie_id, file_path, file_size, format, quality,\n                                 languages, subtitles, source_type, source_metadata,\n                                 video_codec, video_width, video_height, video_bitrate_kbps,\n                                 framerate, bit_depth, is_hdr, hdr_format, is_interlaced,\n                                 duration_seconds, container, overall_bitrate_kbps, file_fingerprint)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,\n                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)\n        ON CONFLICT (file_path) DO UPDATE SET\n            file_size = COALESCE(EXCLUDED.file_size, movie_files.file_size),\n            file_fingerprint = COALESCE(EXCLUDED.file_fingerprint, movie_files.file_fingerprint),\n            format = EXCLUDED.format,\n            quality = COALESCE(EXCLUDED.quality, movie_files.quality),\n            languages = COALESCE(EXCLUDED.languages, movie_files.languages),\n            subtitles = COALESCE(EXCLUDED.subtitles, movie_files.subtitles),\n            source_type = COALESCE(EXCLUDED.source_type, movie_files.source_type),\n            source_metadata = COALESCE(EXCLUDED.source_metadata, movie_files.source_metadata),\n            -- See the matching note in tv_episode_files::create_or_update: the\n            -- 'unreadable' sentinel takes a file out of list_needing_probe and\n            -- nothing clears it, so a replacement at the same path would stay\n            -- unprobed forever. A change in size means this is a different\n            -- file, so the earlier verdict no longer applies.\n            video_codec = CASE\n                WHEN movie_files.video_codec = 'unreadable'\n                 AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size\n                THEN NULL\n                ELSE COALESCE(EXCLUDED.video_codec, movie_files.video_codec)\n            END,\n            video_width = COALESCE(EXCLUDED.video_width, movie_files.video_width),\n            video_height = COALESCE(EXCLUDED.video_height, movie_files.video_height),\n            video_bitrate_kbps = COALESCE(EXCLUDED.video_bitrate_kbps, movie_files.video_bitrate_kbps),\n            framerate = COALESCE(EXCLUDED.framerate, movie_files.framerate),\n            bit_depth = COALESCE(EXCLUDED.bit_depth, movie_files.bit_depth),\n            is_hdr = EXCLUDED.is_hdr,\n            hdr_format = COALESCE(EXCLUDED.hdr_format, movie_files.hdr_format),\n            is_interlaced = EXCLUDED.is_interlaced,\n            -- A content change at the same path invalidates every byte-exact /\n            -- probe-derived cache keyed by this row id. \"Changed\" = the scanner's\n            -- content fingerprint differs (scan path) OR file_size differs (kobload\n            -- ingest, which has no fingerprint) — each import path supplies exactly\n            -- one of the two. Leaving caches stale maps resume-seeks to the wrong\n            -- segment (endless player load), shows old trickplay/LUFS/skip markers,\n            -- and force-transcodes the wrong byte windows. media_cache_version = -1\n            -- forces media_analyze to regen instead of short-circuiting on the\n            -- stale on-disk manifest; duration takes EXCLUDED (NULL → reprobed).\n            duration_seconds = CASE\n                WHEN (EXCLUDED.file_fingerprint IS NOT NULL\n                      AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)\n                     OR (EXCLUDED.file_size IS NOT NULL\n                         AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size)\n                THEN EXCLUDED.duration_seconds\n                ELSE COALESCE(EXCLUDED.duration_seconds, movie_files.duration_seconds)\n            END,\n            container = COALESCE(EXCLUDED.container, movie_files.container),\n            overall_bitrate_kbps = COALESCE(EXCLUDED.overall_bitrate_kbps, movie_files.overall_bitrate_kbps),\n            keyframes = CASE\n                WHEN (EXCLUDED.file_fingerprint IS NOT NULL\n                      AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)\n                     OR (EXCLUDED.file_size IS NOT NULL\n                         AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size)\n                THEN NULL\n                ELSE movie_files.keyframes\n            END,\n            lufs = CASE\n                WHEN (EXCLUDED.file_fingerprint IS NOT NULL\n                      AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)\n                     OR (EXCLUDED.file_size IS NOT NULL\n                         AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size)\n                THEN NULL\n                ELSE movie_files.lufs\n            END,\n            downmix_peak_db = CASE\n                WHEN (EXCLUDED.file_fingerprint IS NOT NULL\n                      AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)\n                     OR (EXCLUDED.file_size IS NOT NULL\n                         AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size)\n                THEN NULL\n                ELSE movie_files.downmix_peak_db\n            END,\n            corrupt_ranges = CASE\n                WHEN (EXCLUDED.file_fingerprint IS NOT NULL\n                      AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)\n                     OR (EXCLUDED.file_size IS NOT NULL\n                         AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size)\n                THEN '[]'::jsonb\n                ELSE movie_files.corrupt_ranges\n            END,\n            -- -1 sentinel = \"invalidated by replace\", distinct from the default\n            -- 0 (legacy / never-analyzed) so media_analyze only force-regenerates\n            -- genuinely-replaced files. See db_media_cache_invalidated.\n            media_cache_version = CASE\n                WHEN (EXCLUDED.file_fingerprint IS NOT NULL\n                      AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)\n                     OR (EXCLUDED.file_size IS NOT NULL\n                         AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size)\n                THEN -1\n                ELSE movie_files.media_cache_version\n            END,\n            available = TRUE\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Int8",
+        "Text",
+        "Jsonb",
+        "TextArray",
+        "TextArray",
+        "Text",
+        "Jsonb",
+        "Text",
+        "Int4",
+        "Int4",
+        "Int4",
+        "Float8",
+        "Int2",
+        "Bool",
+        "Text",
+        "Bool",
+        "Float8",
+        "Text",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c0452c5aabf88c7bebcc661a983d6b6237497e0b9e47da5a1eaa2ddab2dca031"
+}

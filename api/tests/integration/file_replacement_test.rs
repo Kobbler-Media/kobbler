@@ -305,7 +305,8 @@ async fn test_content_change_invalidates_all_caches() {
     // Seed the analysis-derived caches as if the first copy had been fully processed.
     sqlx::query(
         "UPDATE tv_episode_files \
-         SET lufs = -18.0, corrupt_ranges = '[[1.0,2.0]]'::jsonb, media_cache_version = 7 \
+         SET lufs = -18.0, downmix_peak_db = -2.0, corrupt_ranges = '[[1.0,2.0]]'::jsonb, \
+             media_cache_version = 7 \
          WHERE id = $1",
     )
     .bind(file_id)
@@ -321,7 +322,7 @@ async fn test_content_change_invalidates_all_caches() {
         .unwrap();
 
     let row = sqlx::query(
-        "SELECT duration_seconds, lufs, corrupt_ranges, media_cache_version \
+        "SELECT duration_seconds, lufs, downmix_peak_db, corrupt_ranges, media_cache_version \
          FROM tv_episode_files WHERE id = $1",
     )
     .bind(file_id)
@@ -339,6 +340,11 @@ async fn test_content_change_invalidates_all_caches() {
         "duration must take the new import's value (None → reprobe)"
     );
     assert!(lufs.is_none(), "lufs must be cleared on content change");
+    let peak: Option<f64> = row.get("downmix_peak_db");
+    assert!(
+        peak.is_none(),
+        "downmix peak must be cleared on content change"
+    );
     assert_eq!(corrupt, json!([]), "corrupt_ranges must reset to empty");
     assert_eq!(
         cache_version, -1,
@@ -418,7 +424,8 @@ async fn test_same_size_reimport_preserves_analysis_caches() {
         .unwrap();
     sqlx::query(
         "UPDATE tv_episode_files \
-         SET lufs = -18.0, corrupt_ranges = '[[1.0,2.0]]'::jsonb, media_cache_version = 7 \
+         SET lufs = -18.0, downmix_peak_db = -2.0, corrupt_ranges = '[[1.0,2.0]]'::jsonb, \
+             media_cache_version = 7 \
          WHERE id = $1",
     )
     .bind(file_id)
@@ -431,7 +438,8 @@ async fn test_same_size_reimport_preserves_analysis_caches() {
         .unwrap();
 
     let row = sqlx::query(
-        "SELECT lufs, corrupt_ranges, media_cache_version FROM tv_episode_files WHERE id = $1",
+        "SELECT lufs, downmix_peak_db, corrupt_ranges, media_cache_version \
+         FROM tv_episode_files WHERE id = $1",
     )
     .bind(file_id)
     .fetch_one(pool)
@@ -442,6 +450,12 @@ async fn test_same_size_reimport_preserves_analysis_caches() {
     let cache_version: i32 = row.get("media_cache_version");
 
     assert_eq!(lufs, Some(-18.0), "lufs must survive same-size re-import");
+    let peak: Option<f64> = row.get("downmix_peak_db");
+    assert_eq!(
+        peak,
+        Some(-2.0),
+        "downmix peak must survive same-size re-import"
+    );
     assert_eq!(
         corrupt,
         json!([[1.0, 2.0]]),
@@ -551,6 +565,11 @@ async fn test_movie_keyframes_cleared_when_file_size_changes() {
     movie_files::update_keyframes(pool, file_id, &json!([0.0, 6.0, 12.0]))
         .await
         .unwrap();
+    sqlx::query("UPDATE movie_files SET lufs = -18.0, downmix_peak_db = -2.0 WHERE id = $1")
+        .bind(file_id)
+        .execute(pool)
+        .await
+        .unwrap();
 
     let same_id = movie_files::create_or_update(pool, input(2000))
         .await
@@ -568,5 +587,16 @@ async fn test_movie_keyframes_cleared_when_file_size_changes() {
     assert!(
         kf.is_none(),
         "Movie keyframes must be cleared on content change, got {kf:?}"
+    );
+    let loudness: (Option<f64>, Option<f64>) =
+        sqlx::query_as("SELECT lufs, downmix_peak_db FROM movie_files WHERE id = $1")
+            .bind(file_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        loudness,
+        (None, None),
+        "Movie loudness must be cleared on content change"
     );
 }

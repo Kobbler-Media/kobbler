@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE audiobook_files SET lufs = COALESCE($2, lufs), downmix_peak_db = COALESCE($3, downmix_peak_db) WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cc9da800f5fe87727b93151315b0f677028ef176a8b5da39d996d0dd73e899c9"
+}
