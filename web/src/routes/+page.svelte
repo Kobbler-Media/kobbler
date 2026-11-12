@@ -20,6 +20,7 @@
     createBook,
     getDiscoverLists,
     dismissForYou,
+    dismissUpNext,
     undismissForYou,
     getVideoMetadataProviders,
     getMetadataProviders,
@@ -562,6 +563,19 @@
     }
   }
 
+  async function dismissStremio(item: StremioContinueItem) {
+    const stremioId = item.identifiers?.imdb_id;
+    if (!stremioId) return;
+    const before = stremioContinue;
+    stremioContinue = stremioContinue.filter((i) => i !== item);
+    try {
+      await dismissUpNext('stremio', stremioId);
+    } catch {
+      stremioContinue = before;
+      showMessage('Could not hide that title');
+    }
+  }
+
   function becauseLabel(because: string[]): string | null {
     if (because.length === 0) return null;
     const more = because.length > 1 ? ` +${because.length - 1}` : '';
@@ -866,6 +880,7 @@
               subtitle={item.subtitle}
               progressPercent={item.progress_percent}
               season={item.season}
+              ondismiss={item.identifiers?.imdb_id ? () => dismissStremio(item) : undefined}
             />
           {/each}
         </ScrollRow>

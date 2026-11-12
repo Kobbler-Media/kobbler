@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            m.id AS movie_id,\n            m.title,\n            m.year,\n            m.images AS \"images: serde_json::Value\",\n            ws.position_seconds AS \"position_seconds!\",\n            COALESCE(\n                (SELECT MAX(mf.duration_seconds) FROM movie_files mf\n                 WHERE mf.movie_id = m.id AND mf.available = true),\n                (SELECT (ds.probe_data->>'duration')::float8 FROM debrid_stream_sessions ds\n                 WHERE ds.media_type = 'movie' AND ds.media_id = m.id AND ds.probe_data IS NOT NULL\n                 ORDER BY ds.updated_at DESC LIMIT 1)\n            ) AS \"duration_seconds?: f64\",\n            ws.updated_at AS \"updated_at!\"\n        FROM movie_watch_states ws\n        JOIN movies m ON m.id = ws.movie_id\n        WHERE ws.user_id = $1\n          AND ws.position_seconds IS NOT NULL\n          AND ws.position_seconds >= 60\n          AND ws.watched = FALSE\n          AND ($2 = FALSE OR kids_allowed(m.kids_override, m.content_rating))\n        ORDER BY ws.updated_at DESC\n        LIMIT 20\n        ",
+  "query": "\n        SELECT\n            m.id AS movie_id,\n            m.title,\n            m.year,\n            m.images AS \"images: serde_json::Value\",\n            ws.position_seconds AS \"position_seconds!\",\n            COALESCE(\n                (SELECT MAX(mf.duration_seconds) FROM movie_files mf\n                 WHERE mf.movie_id = m.id AND mf.available = true),\n                (SELECT (ds.probe_data->>'duration')::float8 FROM debrid_stream_sessions ds\n                 WHERE ds.media_type = 'movie' AND ds.media_id = m.id AND ds.probe_data IS NOT NULL\n                 ORDER BY ds.updated_at DESC LIMIT 1)\n            ) AS \"duration_seconds?: f64\",\n            ws.updated_at AS \"updated_at!\"\n        FROM movie_watch_states ws\n        JOIN movies m ON m.id = ws.movie_id\n        WHERE ws.user_id = $1\n          AND ws.position_seconds IS NOT NULL\n          AND ws.position_seconds >= 60\n          AND ws.watched = FALSE\n          AND ($2 = FALSE OR kids_allowed(m.kids_override, m.content_rating))\n          AND NOT EXISTS (\n              SELECT 1 FROM up_next_dismissals d\n              WHERE d.user_id = $1 AND d.kind = 'movie' AND d.target = m.id::text\n                AND d.dismissed_at >= ws.updated_at\n          )\n        ORDER BY ws.updated_at DESC\n        LIMIT 20\n        ",
   "describe": {
     "columns": [
       {
@@ -92,5 +92,5 @@
       false
     ]
   },
-  "hash": "275fbc6b0be5cffae4127ed352eb9a7d877b830e7e9a59c847b94cbdb2b65bd7"
+  "hash": "c9353c40bb3491e6999053421b4b9d2a641ba5efe8632a20b8a141e6b0e65040"
 }

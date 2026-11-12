@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            m.id AS \"movie_id!\",\n            m.title AS \"title!\",\n            m.year,\n            m.images AS \"images!: serde_json::Value\",\n            w.added_at AS \"added_at!\"\n        FROM watchlist_items w\n        JOIN movies m ON m.id = w.media_id\n        WHERE w.user_id = $1\n          AND w.media_type = 'movie'\n          AND ($2 = FALSE OR kids_allowed(m.kids_override, m.content_rating))\n          AND NOT EXISTS (\n              SELECT 1 FROM movie_watch_states ws\n              WHERE ws.movie_id = m.id\n                AND ws.user_id = $1\n                AND (ws.watched = TRUE OR COALESCE(ws.position_seconds, 0) >= 60)\n          )\n        ORDER BY w.added_at DESC\n        ",
+  "query": "\n        SELECT\n            m.id AS \"movie_id!\",\n            m.title AS \"title!\",\n            m.year,\n            m.images AS \"images!: serde_json::Value\",\n            w.added_at AS \"added_at!\"\n        FROM watchlist_items w\n        JOIN movies m ON m.id = w.media_id\n        WHERE w.user_id = $1\n          AND w.media_type = 'movie'\n          AND ($2 = FALSE OR kids_allowed(m.kids_override, m.content_rating))\n          AND NOT EXISTS (\n              SELECT 1 FROM up_next_dismissals d\n              WHERE d.user_id = $1 AND d.kind = 'movie' AND d.target = m.id::text\n                AND d.dismissed_at >= w.added_at\n          )\n          AND NOT EXISTS (\n              SELECT 1 FROM movie_watch_states ws\n              WHERE ws.movie_id = m.id\n                AND ws.user_id = $1\n                AND (ws.watched = TRUE OR COALESCE(ws.position_seconds, 0) >= 60)\n          )\n        ORDER BY w.added_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -73,5 +73,5 @@
       false
     ]
   },
-  "hash": "523f63bd72ec2616d6732eb675baa9199741c418f1f646e9d2b9af42d3eeffd3"
+  "hash": "6b2d5041d154f88ed517071a4e0fecaaaed7c8e95566c5f9b592314f16530048"
 }

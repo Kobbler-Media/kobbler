@@ -5855,6 +5855,15 @@ export async function undismissForYou(title: RecommendationTitle): Promise<void>
   });
 }
 
+export type UpNextMediaType = WatchNextItem['media_type'] | 'stremio';
+
+export async function dismissUpNext(mediaType: UpNextMediaType, mediaId: string): Promise<void> {
+  return request('/api/v1/admin/up-next/dismiss', {
+    method: 'POST',
+    body: JSON.stringify({ media_type: mediaType, media_id: mediaId })
+  });
+}
+
 export type WatchHistorySource = 'local' | 'trakt' | 'stremio';
 
 export interface WatchHistoryItem {

@@ -8,7 +8,7 @@ use uuid::Uuid;
 // Helpers
 // =============================================================================
 
-async fn create_movie(server: &TestServer, title: &str) -> Uuid {
+pub(crate) async fn create_movie(server: &TestServer, title: &str) -> Uuid {
     let resp = server
         .admin_client()
         .post_json(
@@ -21,7 +21,7 @@ async fn create_movie(server: &TestServer, title: &str) -> Uuid {
     json["id"].as_str().unwrap().parse().unwrap()
 }
 
-async fn create_show(server: &TestServer, title: &str) -> Uuid {
+pub(crate) async fn create_show(server: &TestServer, title: &str) -> Uuid {
     let resp = server
         .admin_client()
         .post_json(
@@ -34,7 +34,7 @@ async fn create_show(server: &TestServer, title: &str) -> Uuid {
     json["id"].as_str().unwrap().parse().unwrap()
 }
 
-async fn create_season(pool: &sqlx::PgPool, show_id: Uuid, season_num: i32) -> Uuid {
+pub(crate) async fn create_season(pool: &sqlx::PgPool, show_id: Uuid, season_num: i32) -> Uuid {
     let id = Uuid::now_v7();
     sqlx::query(
         "INSERT INTO tv_seasons (id, show_id, season_identifier, season_sort_order, is_monitored, is_special)
@@ -50,7 +50,7 @@ async fn create_season(pool: &sqlx::PgPool, show_id: Uuid, season_num: i32) -> U
     id
 }
 
-async fn create_episode(pool: &sqlx::PgPool, season_id: Uuid, episode_num: i32) -> Uuid {
+pub(crate) async fn create_episode(pool: &sqlx::PgPool, season_id: Uuid, episode_num: i32) -> Uuid {
     create_episode_with_air_date(pool, season_id, episode_num, None).await
 }
 
@@ -77,7 +77,7 @@ async fn create_episode_with_air_date(
     id
 }
 
-async fn mark_watched(server: &TestServer, episode_id: Uuid) {
+pub(crate) async fn mark_watched(server: &TestServer, episode_id: Uuid) {
     server
         .admin_client()
         .put_json(
@@ -88,7 +88,7 @@ async fn mark_watched(server: &TestServer, episode_id: Uuid) {
         .assert_ok();
 }
 
-async fn set_position(server: &TestServer, episode_id: Uuid, position: i32) {
+pub(crate) async fn set_position(server: &TestServer, episode_id: Uuid, position: i32) {
     server
         .admin_client()
         .put_json(
@@ -105,7 +105,7 @@ async fn get_dashboard(server: &TestServer) -> Value {
     resp.json()
 }
 
-async fn get_discover(server: &TestServer) -> Value {
+pub(crate) async fn get_discover(server: &TestServer) -> Value {
     let resp = server.admin_client().get("/api/v1/admin/discover").await;
     resp.assert_ok();
     resp.json()
@@ -651,7 +651,7 @@ async fn test_watch_next_debrid_unaired_excluded() {
 // Watchlist ("want to watch")
 // =============================================================================
 
-async fn add_watchlist(server: &TestServer, media_type: &str, media_id: Uuid) {
+pub(crate) async fn add_watchlist(server: &TestServer, media_type: &str, media_id: Uuid) {
     server
         .admin_client()
         .post_json(
@@ -670,7 +670,7 @@ async fn remove_watchlist(server: &TestServer, media_type: &str, media_id: Uuid)
         .assert_status(StatusCode::NO_CONTENT);
 }
 
-async fn watchlist_ids(server: &TestServer) -> Vec<String> {
+pub(crate) async fn watchlist_ids(server: &TestServer) -> Vec<String> {
     let resp = server.admin_client().get("/api/v1/admin/watchlist").await;
     resp.assert_ok();
     let json: Value = resp.json();

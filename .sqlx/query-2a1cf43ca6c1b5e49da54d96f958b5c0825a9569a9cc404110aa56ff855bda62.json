@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT EXISTS (\n            SELECT 1 FROM stremio_continue_items i\n            WHERE i.stremio_id = $2\n              AND i.account_id = (\n                  SELECT id FROM stremio_accounts\n                  WHERE user_id = $1 OR user_id IS NULL\n                  ORDER BY user_id NULLS LAST\n                  LIMIT 1\n              )\n        ) AS \"exists!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2a1cf43ca6c1b5e49da54d96f958b5c0825a9569a9cc404110aa56ff855bda62"
+}

@@ -1537,7 +1537,7 @@ export type RecentTvEntry = {
 };
 
 export type WatchNextItem = {
-  media_type: 'movie' | 'episode';
+  media_type: 'movie' | 'episode' | 'event';
   media_id: string;
   title: string;
   subtitle: string | null;

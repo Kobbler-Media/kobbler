@@ -119,6 +119,7 @@ use routes::admin::subtitles as subtitle_routes;
 use routes::admin::tts as tts_routes;
 use routes::admin::tts_cast as tts_cast_routes;
 use routes::admin::tv as tv_routes;
+use routes::admin::up_next as up_next_routes;
 use routes::admin::video_metadata as video_metadata_routes;
 use routes::admin::video_sync as video_sync_routes;
 use routes::admin::watch_history as watch_history_routes;
@@ -274,6 +275,10 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/admin/watchlist/{media_type}/{media_id}",
             delete(watchlist_routes::remove_from_watchlist),
+        )
+        .route(
+            "/api/v1/admin/up-next/dismiss",
+            post(up_next_routes::dismiss),
         )
         // Discover (trending/popular)
         .route(

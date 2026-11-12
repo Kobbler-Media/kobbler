@@ -91,6 +91,9 @@ async fn insert(conn: &mut PgConnection, account_id: Uuid, r: &ContinueRow) -> R
 /// caught-up show only comes back for an episode that aired (plus a day for release lag) after
 /// the last watch. In-progress movies never expire.
 ///
+/// A dismissal hides the row until the title is played again, and dismissing the library copy
+/// counts too: the library row going away would otherwise surface this one in its place.
+///
 /// A title already in the library is judged by the library's Kids rule (with its manual
 /// override); anything else by the TMDB rating stored at sync time.
 pub async fn list_for_user(
@@ -140,6 +143,14 @@ pub async fn list_for_user(
                 WHEN ls.id IS NOT NULL THEN kids_allowed(ls.kids_override, ls.content_rating)
                 ELSE kids_allowed(NULL, i.content_rating)
               END)
+          AND NOT EXISTS (
+                SELECT 1 FROM up_next_dismissals d
+                WHERE d.user_id = $1
+                  AND d.dismissed_at >= i.last_watched
+                  AND ((d.kind = 'stremio' AND d.target = i.stremio_id)
+                       OR (d.kind = 'movie' AND d.target = lm.id::text)
+                       OR (d.kind = 'show' AND d.target = ls.id::text))
+              )
           AND (lm.id IS NULL OR NOT lm.id = ANY($3))
           AND (ls.id IS NULL OR NOT EXISTS (
                 SELECT 1 FROM tv_episodes e
@@ -155,5 +166,26 @@ pub async fn list_for_user(
         exclude_episode_ids,
     )
     .fetch_all(pool)
+    .await?)
+}
+
+pub async fn visible_to_user(pool: &PgPool, user_id: Uuid, stremio_id: &str) -> Result<bool> {
+    Ok(sqlx::query_scalar!(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM stremio_continue_items i
+            WHERE i.stremio_id = $2
+              AND i.account_id = (
+                  SELECT id FROM stremio_accounts
+                  WHERE user_id = $1 OR user_id IS NULL
+                  ORDER BY user_id NULLS LAST
+                  LIMIT 1
+              )
+        ) AS "exists!"
+        "#,
+        user_id,
+        stremio_id,
+    )
+    .fetch_one(pool)
     .await?)
 }

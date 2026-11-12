@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO up_next_dismissals (user_id, kind, target)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (user_id, kind, target) DO UPDATE SET dismissed_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "268b2df812fde38fd009ee0227b9c22709a01e237d8f1bf8ce6b428a237e9088"
+}

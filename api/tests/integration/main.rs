@@ -192,6 +192,7 @@ mod tts_cast_test;
 mod tv_bulk_episodes_test;
 mod tv_bulk_watch_test;
 mod tv_status_normalization_test;
+mod up_next_dismiss_test;
 mod user_scoping_test;
 mod video_ingest_test;
 mod video_jobs_test;

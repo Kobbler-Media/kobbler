@@ -174,6 +174,7 @@ pub const TABLES_IN_ORDER: &[&str] = &[
     "movie_watch_states",
     "for_you_dismissals",
     "watch_history_exclusions",
+    "up_next_dismissals",
     // Depends on shelves, books
     "shelf_items",
     "shelf_archives",

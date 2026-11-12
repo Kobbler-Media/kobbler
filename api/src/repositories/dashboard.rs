@@ -118,6 +118,11 @@ where
           AND ws.position_seconds >= 60
           AND ws.watched = FALSE
           AND ($2 = FALSE OR kids_allowed(m.kids_override, m.content_rating))
+          AND NOT EXISTS (
+              SELECT 1 FROM up_next_dismissals d
+              WHERE d.user_id = $1 AND d.kind = 'movie' AND d.target = m.id::text
+                AND d.dismissed_at >= ws.updated_at
+          )
         ORDER BY ws.updated_at DESC
         LIMIT 20
         "#,
@@ -308,6 +313,11 @@ where
             AND tshow.content_category IN ('tv', 'sport')
         JOIN show_activity sa ON sa.show_id = c.show_id
         WHERE ($2 = FALSE OR kids_allowed(tshow.kids_override, tshow.content_rating))
+          AND NOT EXISTS (
+              SELECT 1 FROM up_next_dismissals d
+              WHERE d.user_id = $1 AND d.kind = 'show' AND d.target = c.show_id::text
+                AND d.dismissed_at >= sa.last_activity
+          )
           AND (
             sa.last_activity >= NOW() - INTERVAL '14 days'
             OR (tshow.content_category = 'sport' AND EXISTS (
@@ -580,6 +590,11 @@ where
           )
           AND ($2 = FALSE OR kids_allowed(tshow.kids_override, tshow.content_rating))
           AND NOT EXISTS (
+              SELECT 1 FROM up_next_dismissals d
+              WHERE d.user_id = $1 AND d.kind = 'show' AND d.target = tshow.id::text
+                AND d.dismissed_at >= w.added_at
+          )
+          AND NOT EXISTS (
               SELECT 1
               FROM tv_watch_states ws
               JOIN tv_episodes te2 ON te2.id = ws.episode_id
@@ -625,6 +640,11 @@ where
         WHERE w.user_id = $1
           AND w.media_type = 'movie'
           AND ($2 = FALSE OR kids_allowed(m.kids_override, m.content_rating))
+          AND NOT EXISTS (
+              SELECT 1 FROM up_next_dismissals d
+              WHERE d.user_id = $1 AND d.kind = 'movie' AND d.target = m.id::text
+                AND d.dismissed_at >= w.added_at
+          )
           AND NOT EXISTS (
               SELECT 1 FROM movie_watch_states ws
               WHERE ws.movie_id = m.id

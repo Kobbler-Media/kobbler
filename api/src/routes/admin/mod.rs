@@ -70,6 +70,7 @@ mod tokens;
 pub mod tts;
 pub mod tts_cast;
 pub mod tv;
+pub mod up_next;
 mod users;
 pub mod video_metadata;
 pub mod video_sync;

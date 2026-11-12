@@ -124,6 +124,7 @@ pub mod tv_seasons;
 pub mod tv_show_ratings;
 pub mod tv_shows;
 pub mod tv_watch_states;
+pub mod up_next_dismissals;
 pub mod user_book_data;
 pub mod user_notifications;
 pub mod user_sync_providers;

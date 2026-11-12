@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   dismissForYou,
+  dismissUpNext,
   getWatchHistory,
   removeWatchHistory,
   setWatchHistoryExcluded,
@@ -45,6 +46,13 @@ describe('recommendation edits', () => {
       '/api/v1/admin/watch-history/exclude',
       'POST',
       { items: [title], excluded: true }
+    ],
+    [
+      'dismiss up next',
+      () => dismissUpNext('stremio', 'tt0944947'),
+      '/api/v1/admin/up-next/dismiss',
+      'POST',
+      { media_type: 'stremio', media_id: 'tt0944947' }
     ],
     [
       'remove',
