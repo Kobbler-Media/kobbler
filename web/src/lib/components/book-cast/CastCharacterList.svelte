@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { BookCast, BookCastCharacter } from '#lib/types.js';
   import CastCharacterCard from './CastCharacterCard.svelte';
+  import CastCharacterLines from './CastCharacterLines.svelte';
 
   interface Props {
     bookId: string;
@@ -11,6 +12,8 @@
   let { bookId, cast, onChanged }: Props = $props();
 
   let query = $state('');
+  let reading = $state<string | null>(null);
+  let readingCharacter = $derived(cast.characters.find((c) => c.id === reading));
 
   let groups = $derived.by(() => {
     const q = query.trim().toLowerCase();
@@ -39,30 +42,41 @@
   });
 </script>
 
-<div class="list">
-  <input class="search" type="search" placeholder="Find a character…" bind:value={query} />
-  {#each groups as g (g.title)}
-    <section class="group">
-      <header>
-        <h2>{g.title} <span class="n">{g.characters.length}</span></h2>
-        {#if g.note}<span class="note">{g.note}</span>{/if}
-        <span class="spacer"></span>
-        {#if g.title !== 'Narrator'}<span class="note">lines</span>{/if}
-      </header>
-      {#each g.characters as character (character.id)}
-        <CastCharacterCard
-          {bookId}
-          {character}
-          others={cast.characters}
-          presets={cast.presets}
-          {onChanged}
-        />
-      {/each}
-    </section>
-  {:else}
-    <p class="note">Nobody matches “{query}”.</p>
-  {/each}
-</div>
+{#if readingCharacter}
+  <CastCharacterLines
+    {bookId}
+    character={readingCharacter}
+    characters={cast.characters}
+    {onChanged}
+    onBack={() => (reading = null)}
+  />
+{:else}
+  <div class="list">
+    <input class="search" type="search" placeholder="Find a character…" bind:value={query} />
+    {#each groups as g (g.title)}
+      <section class="group">
+        <header>
+          <h2>{g.title} <span class="n">{g.characters.length}</span></h2>
+          {#if g.note}<span class="note">{g.note}</span>{/if}
+          <span class="spacer"></span>
+          {#if g.title !== 'Narrator'}<span class="note">lines</span>{/if}
+        </header>
+        {#each g.characters as character (character.id)}
+          <CastCharacterCard
+            {bookId}
+            {character}
+            others={cast.characters}
+            presets={cast.presets}
+            {onChanged}
+            onRead={() => (reading = character.id)}
+          />
+        {/each}
+      </section>
+    {:else}
+      <p class="note">Nobody matches “{query}”.</p>
+    {/each}
+  </div>
+{/if}
 
 <style>
   .list {

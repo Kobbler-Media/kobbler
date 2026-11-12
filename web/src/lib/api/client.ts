@@ -6985,8 +6985,10 @@ export async function getChatLog(id: string): Promise<ChatTurnLogEntry> {
 // Full-cast audiobooks
 import type {
   BookCast,
+  BookCastCharacterLine,
   BookCastLine,
   BookCastTake,
+  BookCastText,
   BookCastUnattributedLine,
   BookCastVoice
 } from '#lib/types.js';
@@ -7128,6 +7130,30 @@ export async function removeCastVoiceChange(
   });
 }
 
+export async function getCastCharacterLines(
+  bookId: string,
+  characterId: string
+): Promise<{ lines: BookCastCharacterLine[] }> {
+  return request(castPath(bookId, `/characters/${characterId}/lines`));
+}
+
+/** Paragraphs `from..=to` of the book (at most 200). */
+export async function getCastText(bookId: string, from: number, to: number): Promise<BookCastText> {
+  return request(castPath(bookId, `/text${buildQueryString({ from, to })}`));
+}
+
+/** Asks the model who says the character's lines (`lines`, or all); poll the job for its suggestions. */
+export async function suggestCastSpeakers(
+  bookId: string,
+  characterId: string,
+  lines: { segment_index: number; span_start: number }[] = []
+): Promise<{ job_id: string }> {
+  return request(castPath(bookId, `/characters/${characterId}/suggest`), {
+    method: 'POST',
+    body: JSON.stringify({ lines })
+  });
+}
+
 export async function getUnattributedCastLines(
   bookId: string
 ): Promise<{ lines: BookCastUnattributedLine[] }> {
@@ -7205,6 +7231,7 @@ export async function updateCastCharacter(
     aliases?: string[];
     bible?: Record<string, unknown>;
     generic?: boolean;
+    pooled?: boolean;
   }
 ): Promise<void> {
   await request(castPath(bookId, `/characters/${characterId}`), {

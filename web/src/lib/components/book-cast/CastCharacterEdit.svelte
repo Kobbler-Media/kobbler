@@ -104,6 +104,22 @@
         >
           {character.generic ? 'Give them their own voice' : 'Let the narrator read them'}
         </button>
+        {#if !character.generic}
+          <button
+            type="button"
+            class="btn alt small"
+            disabled={busy}
+            title={character.pooled
+              ? 'Design a voice of their own, however few lines they have'
+              : 'Share a voice with the other minor parts of their gender and age, however many lines they have'}
+            onclick={() =>
+              act(() =>
+                api.updateCastCharacter(bookId, character.id, { pooled: !character.pooled })
+              )}
+          >
+            {character.pooled ? 'Their own voice' : 'Make a minor part'}
+          </button>
+        {/if}
       {/if}
     </div>
   </fieldset>

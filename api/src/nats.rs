@@ -28,6 +28,7 @@ use crate::jobs::handlers::{
     BookCastBibleHandler,
     BookCastChaptersHandler,
     BookCastRenderHandler,
+    BookCastSuggestHandler,
     BookCastVoicesHandler,
     BookEnrichHandler,
     BookWantCheckHandler,
@@ -387,6 +388,11 @@ pub async fn start_nats_worker(
 
     worker.register_handler(HandlerAdapter::new(BookCastApproveHandler::new(
         app_state.clone(),
+    )));
+
+    worker.register_handler(HandlerAdapter::new(BookCastSuggestHandler::new(
+        pool.clone(),
+        runtime_config.clone(),
     )));
 
     worker.register_handler(HandlerAdapter::new(ReaderPackHandler::new(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { firstPassName, paragraphs } from './castLines.js';
+import { cutQuotes, firstPassName, paragraphs } from './castLines.js';
 
 describe('firstPassName', () => {
   const pattern = { name: 'Pattern' };
@@ -55,5 +55,36 @@ describe('paragraphs', () => {
   it('shows a line with no context as the quote alone', () => {
     const [p] = paragraphs([{ segment_index: 0, id: 'x', context: null, text: 'Hello' }]);
     expect(p.pieces.map((x) => x.text)).toEqual(['“Hello”']);
+  });
+});
+
+describe('cutQuotes', () => {
+  const text = '“Hi,” said Ann. “Bye,” said Tom.';
+  const bytes = (s: string) => new TextEncoder().encode(s).length;
+  const span = (quote: string) => {
+    const start = bytes(text.slice(0, text.indexOf(quote)));
+    return { id: quote, span_start: start, span_end: start + bytes(quote) };
+  };
+
+  it('cuts at byte offsets, so curly quotes before a line do not shift it', () => {
+    const bye = span('“Bye,”');
+    const hi = span('“Hi,”');
+    expect(cutQuotes(text, [bye, hi]).map((p) => [p.text, p.line?.id ?? null])).toEqual([
+      ['“Hi,”', '“Hi,”'],
+      [' said Ann. ', null],
+      ['“Bye,”', '“Bye,”'],
+      [' said Tom.', null]
+    ]);
+  });
+
+  it('skips a span past the paragraph or overlapping the one before', () => {
+    const hi = span('“Hi,”');
+    const pieces = cutQuotes(text, [
+      hi,
+      { ...hi, id: 'again' },
+      { ...hi, id: 'past', span_start: 500, span_end: 510 }
+    ]);
+    expect(pieces.filter((p) => p.line).map((p) => p.line?.id)).toEqual(['“Hi,”']);
+    expect(pieces.map((p) => p.text).join('')).toBe(text);
   });
 });

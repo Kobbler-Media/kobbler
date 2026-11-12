@@ -11,9 +11,10 @@
     others: BookCastCharacter[];
     presets: BookCastPresetChoice[];
     onChanged: () => void;
+    onRead: () => void;
   }
 
-  let { bookId, character, others, presets, onChanged }: Props = $props();
+  let { bookId, character, others, presets, onChanged, onRead }: Props = $props();
 
   let open = $state(false);
   let editing = $state(false);
@@ -55,6 +56,9 @@
     <div class="body">
       <CastCharacterSummary {character}>
         {#snippet actions()}
+          {#if !character.narrator && character.line_count > 0}
+            <button type="button" class="btn alt small" onclick={onRead}>Read their lines</button>
+          {/if}
           <button type="button" class="btn alt small" onclick={() => (editing = !editing)}>
             {editing ? 'Close' : 'Edit'}
           </button>

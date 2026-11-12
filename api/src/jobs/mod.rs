@@ -774,6 +774,25 @@ pub async fn enqueue_book_cast(
     .await
 }
 
+/// Asks the model who says a character's lines; the answers land in the
+/// job's result.
+pub async fn enqueue_book_cast_suggest(
+    pool: &PgPool,
+    nats: &Publisher,
+    book_id: Uuid,
+    name: &str,
+    payload: Value,
+) -> JobResult<Uuid> {
+    let display = fetch_job_display(pool, "book", book_id).await;
+    let context = JobContext::for_entity(
+        "book",
+        book_id,
+        format!("Working out who says {name}'s lines"),
+    )
+    .with_display_opt(display);
+    enqueue(pool, nats, handlers::SUGGEST_JOB, payload, context).await
+}
+
 // =============================================================================
 // Cross-Format Sync Helpers
 // =============================================================================

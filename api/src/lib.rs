@@ -487,6 +487,18 @@ pub fn create_router(state: AppState) -> Router {
             post(admin::book_cast_voices::approve).delete(admin::book_cast_voices::unapprove),
         )
         .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/lines",
+            get(admin::book_cast::character_lines),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/suggest",
+            post(admin::book_cast::suggest),
+        )
+        .route(
+            "/api/v1/admin/books/{book_id}/cast/text",
+            get(admin::book_cast::text),
+        )
+        .route(
             "/api/v1/admin/books/{book_id}/cast/characters/{character_id}/merge",
             post(admin::book_cast_edits::merge),
         )

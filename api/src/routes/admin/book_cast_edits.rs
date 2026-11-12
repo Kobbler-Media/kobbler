@@ -71,6 +71,7 @@ pub(super) async fn save_bible(
         aliases: None,
         bible: Some(bible),
         generic: None,
+        pooled: None,
     };
     if let Err(e) =
         vetting::update_character(&state.pool, cast.book_id, character_id, &edit, POOL_BELOW).await
@@ -358,11 +359,14 @@ pub struct CharacterPatch {
     pub aliases: Option<Vec<String>>,
     pub bible: Option<Value>,
     pub generic: Option<bool>,
+    pub pooled: Option<bool>,
 }
 
 /// PATCH /api/v1/admin/books/{book_id}/cast/characters/{character_id}
 ///
 /// `bible` is merged into the character's; a field set to null is removed.
+/// `pooled` puts a character in the shared minor-part voices, or takes them
+/// out, whatever their line count says.
 pub async fn update_character(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -380,6 +384,12 @@ pub async fn update_character(
     if c.narrator && req.generic == Some(true) {
         return fail(StatusCode::BAD_REQUEST, "the narrator cannot be generic");
     }
+    if c.narrator && req.pooled == Some(true) {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "the narrator cannot share a pooled voice",
+        );
+    }
     if req.bible.as_ref().is_some_and(|b| !b.is_object()) {
         return fail(StatusCode::BAD_REQUEST, "bible must be an object");
     }
@@ -392,6 +402,7 @@ pub async fn update_character(
         aliases: req.aliases,
         bible: req.bible,
         generic: req.generic,
+        pooled: req.pooled,
     };
     match vetting::update_character(&state.pool, book_id, character_id, &edit, POOL_BELOW).await {
         Ok(()) => done(&state, &cast).await,

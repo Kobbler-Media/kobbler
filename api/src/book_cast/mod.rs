@@ -10,6 +10,7 @@ pub mod llm;
 pub mod page;
 pub mod quotes;
 pub mod resolve;
+pub mod suggest;
 pub mod voices;
 
 use std::time::Duration;

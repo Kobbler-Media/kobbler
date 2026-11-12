@@ -2600,6 +2600,38 @@ export interface BookCastUnattributedLine {
   context: BookCastLineContext | null;
 }
 
+/** A line as the character view lists it: where it is and what it says. */
+export interface BookCastCharacterLine {
+  segment_index: number;
+  span_start: number;
+  span_end: number;
+  chapter_index: number;
+  chapter_title: string | null;
+  speaker: string | null;
+  character_id: string | null;
+  cue: string | null;
+  source: 'gemma' | 'beefy' | 'user';
+  not_speech: boolean;
+  text: string | null;
+}
+
+/** A run of the book's paragraphs with every quote in them. Spans are UTF-8 byte offsets. */
+export interface BookCastText {
+  first: number | null;
+  last: number | null;
+  paragraphs: { segment_index: number; chapter_index: number | null; text: string }[];
+  lines: Omit<BookCastCharacterLine, 'chapter_title' | 'text'>[];
+}
+
+/** The model's answer for one line; `character_id` null is a name the cast lacks, or "unknown". */
+export interface BookCastSuggestion {
+  segment_index: number;
+  span_start: number;
+  speaker: string;
+  character_id: string | null;
+  reason: string;
+}
+
 export interface BookCastTake {
   segment_index: number;
   span_start: number | null;

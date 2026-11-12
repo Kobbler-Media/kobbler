@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
@@ -13,11 +13,12 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::book_cast::suggest::{LineKey, MOST_LINES};
 use crate::book_cast::voices::needs_design;
 use crate::book_cast::{POOL_BELOW, chapters, eta};
 use crate::book_cast_render::work_dir;
 use crate::book_cast_vetting::{self, clips, line_context, line_text};
-use crate::jobs::handlers::APPROVE_JOB;
+use crate::jobs::handlers::{APPROVE_JOB, SUGGEST_JOB};
 use crate::repositories::book_cast_vetting::{self as vetting, VettingCharacter};
 use crate::repositories::book_casts::{self, BookCast, CastChapter, CastLine, CastState};
 use crate::repositories::{ebook_segments, job_status};
@@ -497,4 +498,186 @@ pub async fn unattributed(
         })
         .collect();
     Json(json!({"lines": lines})).into_response()
+}
+
+async fn read_cast(state: &AppState, auth: &AuthUser, book_id: Uuid) -> Result<BookCast, Response> {
+    auth.require_admin().map_err(IntoResponse::into_response)?;
+    match book_casts::get(&state.pool, book_id).await {
+        Ok(Some(c)) => Ok(c),
+        Ok(None) => Err(fail(StatusCode::NOT_FOUND, "the book has no cast")),
+        Err(e) => Err(internal(e)),
+    }
+}
+
+/// GET /api/v1/admin/books/{book_id}/cast/characters/{character_id}/lines —
+/// every line the character says, in book order, to read each in the book.
+pub async fn character_lines(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((book_id, character_id)): Path<(Uuid, Uuid)>,
+) -> Response {
+    let cast = match read_cast(&state, &auth, book_id).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    match vetting::character(&state.pool, book_id, character_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return fail(StatusCode::NOT_FOUND, "no such character"),
+        Err(e) => return internal(e),
+    }
+    let (segments, lines, cast_chapters) = match tokio::try_join!(
+        ebook_segments::get_for_file(&state.pool, cast.book_file_id),
+        book_casts::lines(&state.pool, book_id, None),
+        book_casts::chapters(&state.pool, book_id),
+    ) {
+        Ok(v) => v,
+        Err(e) => return internal(e),
+    };
+    let texts: HashMap<i32, String> = segments
+        .into_iter()
+        .map(|s| (s.segment_index, s.text))
+        .collect();
+    let titles: HashMap<i32, Option<&str>> = cast_chapters
+        .iter()
+        .map(|c| (c.chapter_index, c.title.as_deref()))
+        .collect();
+    let lines: Vec<Value> = lines
+        .iter()
+        .filter(|l| l.character_id == Some(character_id))
+        .map(|l| {
+            let mut v = serde_json::to_value(l).unwrap_or_default();
+            v["chapter_title"] = json!(titles.get(&l.chapter_index).copied().flatten());
+            v["text"] = json!(line_text(&texts, l));
+            v
+        })
+        .collect();
+    Json(json!({"lines": lines})).into_response()
+}
+
+/// The most paragraphs one read of the book's text returns.
+const TEXT_MAX: i32 = 200;
+
+#[derive(Debug, Deserialize)]
+pub struct TextQuery {
+    pub from: i32,
+    pub to: i32,
+}
+
+/// GET /api/v1/admin/books/{book_id}/cast/text?from=&to= — the book's
+/// paragraphs `from..=to` with every quote in them and who has it, to read a
+/// line in its scene. `first` and `last` bound the whole book.
+pub async fn text(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(book_id): Path<Uuid>,
+    Query(q): Query<TextQuery>,
+) -> Response {
+    let cast = match read_cast(&state, &auth, book_id).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    if q.to < q.from || q.to - q.from >= TEXT_MAX {
+        return fail(StatusCode::BAD_REQUEST, "ask for 1 to 200 paragraphs");
+    }
+    let (segments, lines, cast_chapters) = match tokio::try_join!(
+        ebook_segments::get_for_file(&state.pool, cast.book_file_id),
+        book_casts::lines(&state.pool, book_id, None),
+        book_casts::chapters(&state.pool, book_id),
+    ) {
+        Ok(v) => v,
+        Err(e) => return internal(e),
+    };
+    let wanted = q.from..=q.to;
+    let chapter_of = |index: i32| {
+        cast_chapters
+            .iter()
+            .find(|c| (c.first_segment..=c.last_segment).contains(&index))
+            .map(|c| c.chapter_index)
+    };
+    let paragraphs: Vec<Value> = segments
+        .iter()
+        .filter(|s| wanted.contains(&s.segment_index))
+        .map(|s| {
+            json!({
+                "segment_index": s.segment_index,
+                "chapter_index": chapter_of(s.segment_index),
+                "text": s.text,
+            })
+        })
+        .collect();
+    let lines: Vec<&CastLine> = lines
+        .iter()
+        .filter(|l| wanted.contains(&l.segment_index))
+        .collect();
+    Json(json!({
+        "first": segments.first().map(|s| s.segment_index),
+        "last": segments.last().map(|s| s.segment_index),
+        "paragraphs": paragraphs,
+        "lines": lines,
+    }))
+    .into_response()
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct SuggestRequest {
+    #[serde(default)]
+    pub lines: Vec<LineKey>,
+}
+
+/// POST /api/v1/admin/books/{book_id}/cast/characters/{character_id}/suggest
+///
+/// Asks the model who says the character's lines (`lines`, or all of them),
+/// each read in its scene. The answers are the job's result, as suggestions:
+/// nothing changes until they are accepted line by line.
+pub async fn suggest(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((book_id, character_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<SuggestRequest>,
+) -> Response {
+    if let Err(r) = vetting_cast(&state, &auth, book_id).await {
+        return r;
+    }
+    let c = match vetting::character(&state.pool, book_id, character_id).await {
+        Ok(Some(c)) => c,
+        Ok(None) => return fail(StatusCode::NOT_FOUND, "no such character"),
+        Err(e) => return internal(e),
+    };
+    if c.narrator {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "the narrator has no lines to ask about",
+        );
+    }
+    let asked = if req.lines.is_empty() {
+        c.line_count as usize
+    } else {
+        req.lines.len()
+    };
+    if asked == 0 {
+        return fail(StatusCode::BAD_REQUEST, "the character has no lines");
+    }
+    if asked > MOST_LINES {
+        return fail(
+            StatusCode::BAD_REQUEST,
+            "too many lines to ask about at once; pick at most 120",
+        );
+    }
+    let payload = json!({"book_id": book_id, "character_id": character_id, "lines": req.lines});
+    match crate::jobs::enqueue_book_cast_suggest(
+        &state.pool,
+        state.nats.publisher(),
+        book_id,
+        &c.name,
+        payload,
+    )
+    .await
+    {
+        Ok(job_id) => (
+            StatusCode::ACCEPTED,
+            Json(json!({"job_id": job_id, "job_type": SUGGEST_JOB})),
+        )
+            .into_response(),
+        Err(e) => internal(e),
+    }
 }

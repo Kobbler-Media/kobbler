@@ -374,7 +374,7 @@ where
 
 /// Line counts follow every hand edit, and a speaker who crosses the pooling
 /// line in either direction loses the voice that no longer fits; the next seed
-/// gives them the right kind.
+/// gives them the right kind. A hand-set `edits.pooled` overrides the count.
 pub(super) async fn recount(
     tx: &mut sqlx::PgConnection,
     book_id: Uuid,
@@ -384,7 +384,8 @@ pub(super) async fn recount(
         r#"
         UPDATE book_cast_characters c SET
             line_count = n.count::int,
-            pooled = NOT c.generic AND NOT c.narrator AND n.count < $2
+            pooled = NOT c.generic AND NOT c.narrator
+                AND COALESCE((c.edits->>'pooled')::boolean, n.count < $2)
         FROM (
             SELECT ch.id, ch.pooled AS was, COUNT(l.character_id) AS count
             FROM book_cast_characters ch
@@ -682,6 +683,8 @@ pub struct CharacterEdit {
     pub aliases: Option<Vec<String>>,
     pub bible: Option<Value>,
     pub generic: Option<bool>,
+    /// Kept only in `edits`: `recount` decides the column from it.
+    pub pooled: Option<bool>,
 }
 
 /// `bible` is merged into what is there; a key set to null is removed. The
@@ -710,6 +713,8 @@ pub async fn update_character(
                edits = edits
                    || CASE WHEN $5::boolean IS NULL THEN '{}'::jsonb
                            ELSE jsonb_build_object('generic', $5) END
+                   || CASE WHEN $6::boolean IS NULL THEN '{}'::jsonb
+                           ELSE jsonb_build_object('pooled', $6) END
                    || CASE WHEN $4::jsonb IS NULL THEN '{}'::jsonb
                            ELSE jsonb_build_object('bible',
                                COALESCE(edits->'bible', '{}'::jsonb) || $4) END
@@ -718,7 +723,8 @@ pub async fn update_character(
         edit.name,
         edit.aliases.as_deref(),
         edit.bible,
-        edit.generic
+        edit.generic,
+        edit.pooled
     )
     .execute(&mut *tx)
     .await?;

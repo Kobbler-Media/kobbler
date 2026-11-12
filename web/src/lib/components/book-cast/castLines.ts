@@ -45,3 +45,24 @@ export function paragraphs<L extends Placed>(lines: L[]): Paragraph<L>[] {
   }
   return out;
 }
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+/** A paragraph cut around its quotes, whose spans count UTF-8 bytes as the server does. */
+export function cutQuotes<L extends { span_start: number; span_end: number }>(
+  text: string,
+  quotes: L[]
+): Piece<L>[] {
+  const bytes = encoder.encode(text);
+  const out: Piece<L>[] = [];
+  let at = 0;
+  for (const q of quotes.toSorted((a, b) => a.span_start - b.span_start)) {
+    if (q.span_start < at || q.span_end > bytes.length) continue;
+    if (q.span_start > at) out.push({ text: decoder.decode(bytes.subarray(at, q.span_start)) });
+    out.push({ text: decoder.decode(bytes.subarray(q.span_start, q.span_end)), line: q });
+    at = q.span_end;
+  }
+  if (at < bytes.length) out.push({ text: decoder.decode(bytes.subarray(at)) });
+  return out;
+}
