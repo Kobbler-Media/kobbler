@@ -199,10 +199,22 @@ pub async fn compute_content_hash(
     path: impl AsRef<std::path::Path>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     use sha2::{Digest, Sha256};
-    let data = tokio::fs::read(path.as_ref()).await?;
-    let mut hasher = Sha256::new();
-    hasher.update(&data);
-    Ok(hex::encode(hasher.finalize()))
+    let path = path.as_ref().to_owned();
+    tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        let mut file = std::fs::File::open(path)?;
+        let mut hasher = Sha256::new();
+        let mut buf = vec![0u8; 1 << 20];
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(hex::encode(hasher.finalize()))
+    })
+    .await?
 }
 
 /// Compute a fast content fingerprint for change detection and rename tracking.

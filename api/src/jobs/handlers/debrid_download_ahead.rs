@@ -100,7 +100,7 @@ impl JobHandler for DebridDownloadAheadHandler {
         let cache_path = cache_download::cache_dir(state, &runtime)
             .join(body.info_hash.as_deref().unwrap_or_default())
             .join(&resolved.filename);
-        let meter = DownloadMeter::new(resolved.filesize.max(0) as u64, on_disk(&cache_path));
+        let meter = DownloadMeter::new(resolved.filesize.max(0) as u64, on_disk(&cache_path).await);
         let Some(claim) = state.downloads_ahead.claim(&key, &cancel, meter.clone()) else {
             return Ok(json!({ "skipped": "already downloading" }));
         };
@@ -152,6 +152,6 @@ impl JobHandler for DebridDownloadAheadHandler {
     }
 }
 
-fn on_disk(path: &Path) -> u64 {
-    std::fs::metadata(path).map_or(0, |m| m.len())
+async fn on_disk(path: &Path) -> u64 {
+    tokio::fs::metadata(path).await.map_or(0, |m| m.len())
 }

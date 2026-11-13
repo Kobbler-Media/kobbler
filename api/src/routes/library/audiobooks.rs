@@ -265,7 +265,10 @@ pub async fn get_audiobook_clip(
 
     let abs_path =
         crate::audio::path::resolve_file_path(&state.config.storage_root, &file.file_path);
-    if !abs_path.is_file() {
+    if !tokio::fs::metadata(&abs_path)
+        .await
+        .is_ok_and(|m| m.is_file())
+    {
         return (
             StatusCode::NOT_FOUND,
             Json(json!({"error": "audiobook file missing on disk"})),

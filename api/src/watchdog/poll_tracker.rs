@@ -1,14 +1,21 @@
 use std::panic::Location;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicPtr, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::runtime::TaskMeta;
+use tokio::task;
 
 #[derive(Debug, Clone)]
 pub struct LongPoll {
     pub worker: usize,
     pub running_for: Duration,
     pub spawned_at: &'static Location<'static>,
+    pub job: Option<String>,
+    pub blocked_in: Option<String>,
+}
+
+thread_local! {
+    static THREAD_ID: i32 = unsafe { libc::gettid() };
 }
 
 /// What each worker is polling right now. A worker blocked inside a task looks exactly like
@@ -22,6 +29,8 @@ struct Slot {
     // Nanoseconds since `epoch`, plus one so zero can mean "not polling".
     started: AtomicU64,
     spawned_at: AtomicPtr<Location<'static>>,
+    task: Mutex<Option<task::Id>>,
+    thread: AtomicI32,
 }
 
 impl PollTracker {
@@ -32,6 +41,8 @@ impl PollTracker {
                 .map(|_| Slot {
                     started: AtomicU64::new(0),
                     spawned_at: AtomicPtr::new(std::ptr::null_mut()),
+                    task: Mutex::new(None),
+                    thread: AtomicI32::new(0),
                 })
                 .collect(),
         })
@@ -44,6 +55,10 @@ impl PollTracker {
         let location: &'static Location<'static> = meta.spawned_at();
         slot.spawned_at
             .store(std::ptr::from_ref(location).cast_mut(), Ordering::Relaxed);
+        if let Ok(mut task) = slot.task.lock() {
+            *task = Some(meta.id());
+        }
+        slot.thread.store(THREAD_ID.with(|t| *t), Ordering::Relaxed);
         slot.started.store(self.now(), Ordering::Release);
     }
 
@@ -61,8 +76,10 @@ impl PollTracker {
             .filter_map(|(worker, slot)| {
                 let started = slot.started.load(Ordering::Acquire);
                 let location = slot.spawned_at.load(Ordering::Relaxed);
-                // A poll that ended and a new one that began between the two loads would
-                // pair one task's start with another's location.
+                let task = slot.task.lock().ok().and_then(|t| *t);
+                let thread = slot.thread.load(Ordering::Relaxed);
+                // A poll that ended and a new one that began between the loads would pair
+                // one task's start with another's location.
                 if started == 0
                     || location.is_null()
                     || slot.started.load(Ordering::Acquire) != started
@@ -74,6 +91,10 @@ impl PollTracker {
                     worker,
                     running_for,
                     spawned_at: unsafe { &*location },
+                    job: task
+                        .and_then(nats_jobs::running::running_job)
+                        .map(|j| format!("{} {}", j.job_type, j.job_id)),
+                    blocked_in: super::blocked::describe(thread),
                 })
             })
             .collect()

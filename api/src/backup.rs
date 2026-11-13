@@ -310,38 +310,11 @@ pub async fn create_backup(
         .fetch_one(pool)
         .await?;
 
-    // Copy storage files
-    let mut files_count = 0;
-
-    // Copy books directory
-    let books_src = Path::new(storage_root).join("books");
-    if books_src.exists() {
-        let books_dst = storage_dir.join("books");
-        files_count += copy_dir_recursive(&books_src, &books_dst)?;
-    }
-
-    // Copy covers directory
-    let covers_src = Path::new(storage_root).join("covers");
-    if covers_src.exists() {
-        let covers_dst = storage_dir.join("covers");
-        files_count += copy_dir_recursive(&covers_src, &covers_dst)?;
-    }
-
-    // Copy voices directory (user TTS voice clips)
-    let voices_src = Path::new(storage_root).join("voices");
-    if voices_src.exists() {
-        let voices_dst = storage_dir.join("voices");
-        files_count += copy_dir_recursive(&voices_src, &voices_dst)?;
-    }
-
-    // Copy proxy_blobs if requested
+    let mut dirs = vec!["books", "covers", "voices"];
     if include_proxy_blobs {
-        let blobs_src = Path::new(storage_root).join("proxy_blobs");
-        if blobs_src.exists() {
-            let blobs_dst = storage_dir.join("proxy_blobs");
-            files_count += copy_dir_recursive(&blobs_src, &blobs_dst)?;
-        }
+        dirs.push("proxy_blobs");
     }
+    let files_count = copy_trees(Path::new(storage_root), &storage_dir, dirs, false).await?;
 
     // Create manifest
     let manifest = BackupManifest::new(books_count, files_count, include_proxy_blobs);
@@ -429,6 +402,31 @@ async fn get_table_columns(pool: &DbPool, table: &str) -> BackupResult<Vec<Strin
     .await?;
 
     Ok(columns)
+}
+
+async fn copy_trees(
+    src: &Path,
+    dst: &Path,
+    dirs: Vec<&'static str>,
+    replace: bool,
+) -> io::Result<usize> {
+    let (src, dst) = (src.to_path_buf(), dst.to_path_buf());
+    tokio::task::spawn_blocking(move || {
+        let mut count = 0;
+        for dir in dirs {
+            let (from, to) = (src.join(dir), dst.join(dir));
+            if !from.exists() {
+                continue;
+            }
+            if replace && to.exists() {
+                fs::remove_dir_all(&to)?;
+            }
+            count += copy_dir_recursive(&from, &to)?;
+        }
+        Ok(count)
+    })
+    .await
+    .map_err(io::Error::other)?
 }
 
 /// Recursively copy a directory. Returns number of files copied.
@@ -557,50 +555,13 @@ pub async fn restore_backup(
     // Commit database changes
     tx.commit().await?;
 
-    // Restore storage files
-    let storage_src = extract_dir.join("storage");
-    let mut files_restored = 0;
-
-    // Restore books
-    let books_src = storage_src.join("books");
-    if books_src.exists() {
-        let books_dst = Path::new(storage_root).join("books");
-        // Clear existing and copy new
-        if books_dst.exists() {
-            fs::remove_dir_all(&books_dst)?;
-        }
-        files_restored += copy_dir_recursive(&books_src, &books_dst)?;
-    }
-
-    // Restore covers
-    let covers_src = storage_src.join("covers");
-    if covers_src.exists() {
-        let covers_dst = Path::new(storage_root).join("covers");
-        if covers_dst.exists() {
-            fs::remove_dir_all(&covers_dst)?;
-        }
-        files_restored += copy_dir_recursive(&covers_src, &covers_dst)?;
-    }
-
-    // Restore voices (user TTS voice clips)
-    let voices_src = storage_src.join("voices");
-    if voices_src.exists() {
-        let voices_dst = Path::new(storage_root).join("voices");
-        if voices_dst.exists() {
-            fs::remove_dir_all(&voices_dst)?;
-        }
-        files_restored += copy_dir_recursive(&voices_src, &voices_dst)?;
-    }
-
-    // Restore proxy_blobs if present
-    let blobs_src = storage_src.join("proxy_blobs");
-    if blobs_src.exists() {
-        let blobs_dst = Path::new(storage_root).join("proxy_blobs");
-        if blobs_dst.exists() {
-            fs::remove_dir_all(&blobs_dst)?;
-        }
-        files_restored += copy_dir_recursive(&blobs_src, &blobs_dst)?;
-    }
+    let files_restored = copy_trees(
+        &extract_dir.join("storage"),
+        Path::new(storage_root),
+        vec!["books", "covers", "voices", "proxy_blobs"],
+        true,
+    )
+    .await?;
 
     // Get books count
     let books_restored: i64 = sqlx::query_scalar!(r#"SELECT COUNT(*) as "count!" FROM books"#)

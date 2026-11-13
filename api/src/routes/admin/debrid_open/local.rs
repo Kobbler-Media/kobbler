@@ -198,7 +198,9 @@ pub(super) async fn open(
         .unwrap_or(&file_path)
         .join("media_cache")
         .join("trickplay");
-    let has_thumbnails = thumb_dir.join("thumbnails.vtt").exists();
+    let has_thumbnails = tokio::fs::try_exists(thumb_dir.join("thumbnails.vtt"))
+        .await
+        .unwrap_or(false);
     let audio_tracks: Vec<AudioTrackResponse> = probe
         .audio_streams
         .iter()

@@ -158,7 +158,7 @@ pub async fn plan(
     let mut missing = HashSet::new();
     for file in &files {
         let full = path::resolve_file_path(storage_root, &file.file_path);
-        if !full.is_file() {
+        if !tokio::fs::metadata(&full).await.is_ok_and(|m| m.is_file()) {
             missing.insert(file.id);
             continue;
         }

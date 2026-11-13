@@ -562,7 +562,8 @@ pub(crate) async fn open_file_session(
         &segment_dir,
         &state.config.storage_root,
         file_id,
-    );
+    )
+    .await;
 
     // Initialize segment cache
     let mut segment_cache = SegmentCache::new(segment_dir.clone(), 6, duration);
@@ -799,15 +800,17 @@ pub(crate) async fn open_file_session(
     // post-processing) — recordings don't have LUFS.
     let thumbnails_generated = match req.media_type {
         MediaType::Movie | MediaType::Episode => {
-            let from_manifest =
-                crate::media_cache::readers::read_manifest(&state.config.storage_root, file_id)
+            let storage_root = state.config.storage_root.clone();
+            tokio::task::spawn_blocking(move || {
+                crate::media_cache::readers::read_manifest(&storage_root, file_id)
                     .and_then(|m| m.artefacts.trickplay)
-                    .map(|t| t.present)
-                    .unwrap_or(false);
-            from_manifest
-                || crate::media_cache::trickplay_dir(&state.config.storage_root, file_id)
-                    .join("thumbnails.vtt")
-                    .exists()
+                    .is_some_and(|t| t.present)
+                    || crate::media_cache::trickplay_dir(&storage_root, file_id)
+                        .join("thumbnails.vtt")
+                        .exists()
+            })
+            .await
+            .unwrap_or(false)
         }
         MediaType::Recording => {
             let file_path_opt = sqlx::query_scalar!(
@@ -818,8 +821,8 @@ pub(crate) async fn open_file_session(
             .await
             .ok()
             .flatten();
-            file_path_opt
-                .map(|p| {
+            match file_path_opt {
+                Some(p) => tokio::task::spawn_blocking(move || {
                     let parent = std::path::Path::new(&p)
                         .parent()
                         .map(std::path::Path::to_path_buf)
@@ -836,7 +839,10 @@ pub(crate) async fn open_file_session(
                         || parent.join("media_cache/trickplay/thumbnails.vtt").exists()
                         || parent.join("thumbnails/thumbnails.vtt").exists()
                 })
-                .unwrap_or(false)
+                .await
+                .unwrap_or(false),
+                None => false,
+            }
         }
     };
     let loudness = match crate::repositories::file_loudness::FileKind::of_session(req.media_type) {
@@ -2175,13 +2181,12 @@ pub async fn serve_segment(
 
     let wait_started = std::time::Instant::now();
     loop {
-        if segment_path.exists()
-            && let Ok(meta) = tokio::fs::metadata(&segment_path).await
+        if let Ok(meta) = tokio::fs::metadata(&segment_path).await
             && meta.len() > 0
         {
             let next_ok = match next_segment_path.as_ref() {
                 None => true,
-                Some(p) => p.exists(),
+                Some(p) => tokio::fs::try_exists(p).await.unwrap_or(false),
             };
             if next_ok {
                 break;
@@ -2275,7 +2280,7 @@ pub async fn serve_segment(
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
-    if !segment_path.exists() {
+    if !tokio::fs::try_exists(&segment_path).await.unwrap_or(false) {
         return (StatusCode::NOT_FOUND, "segment not found").into_response();
     }
 
@@ -2344,7 +2349,7 @@ async fn serve_live_segment(
         session.segment_cache.base_dir.join(filename)
     };
 
-    if !segment_path.exists() {
+    if !tokio::fs::try_exists(&segment_path).await.unwrap_or(false) {
         return (StatusCode::NOT_FOUND, "segment not found").into_response();
     }
 
@@ -4133,7 +4138,7 @@ pub(crate) async fn load_playable_file(
 
     let full_path =
         crate::audio::path::resolve_file_path(&state.config.storage_root, &stored.file_path);
-    if !full_path.exists() {
+    if !tokio::fs::try_exists(&full_path).await.unwrap_or(false) {
         return Err((StatusCode::NOT_FOUND, "file not found on disk").into_response());
     }
 
@@ -4519,38 +4524,39 @@ async fn load_recording_file_meta(
 /// `extracted: true`. Otherwise, falls back to the session temp dir with
 /// `extracted: false` — extraction happens lazily on first request in
 /// `serve_subtitle`.
-fn build_subtitle_metadata(
+async fn build_subtitle_metadata(
     sub_metas: &[SubtitleTrackMeta],
     segment_dir: &std::path::Path,
     storage_root: &str,
     file_id: Uuid,
 ) -> Vec<SubtitleFile> {
-    sub_metas
+    let mut files = Vec::new();
+    for sub in sub_metas
         .iter()
         .filter(|sub| !subtitle::is_bitmap_subtitle(&sub.codec))
-        .map(|sub| {
-            let track_id = Uuid::new_v4();
-            // Check if the media_probe job already extracted this track
-            let cached = subtitle::cache_path(storage_root, file_id, sub.stream_index, &sub.codec);
-            let (file_path, extracted) = if cached.exists() {
-                (cached, true)
-            } else {
-                let ext = subtitle::subtitle_extension(&sub.codec).unwrap_or("srt");
-                (segment_dir.join(format!("{track_id}.{ext}")), false)
-            };
-            SubtitleFile {
-                track_id,
-                stream_index: sub.stream_index,
-                codec: sub.codec.clone(),
-                language: sub.language.clone(),
-                title: sub.title.clone(),
-                file_path,
-                extracted,
-                is_forced: sub.is_forced,
-                is_hearing_impaired: sub.is_hearing_impaired,
-            }
-        })
-        .collect()
+    {
+        let track_id = Uuid::new_v4();
+        // Check if the media_probe job already extracted this track
+        let cached = subtitle::cache_path(storage_root, file_id, sub.stream_index, &sub.codec);
+        let (file_path, extracted) = if tokio::fs::try_exists(&cached).await.unwrap_or(false) {
+            (cached, true)
+        } else {
+            let ext = subtitle::subtitle_extension(&sub.codec).unwrap_or("srt");
+            (segment_dir.join(format!("{track_id}.{ext}")), false)
+        };
+        files.push(SubtitleFile {
+            track_id,
+            stream_index: sub.stream_index,
+            codec: sub.codec.clone(),
+            language: sub.language.clone(),
+            title: sub.title.clone(),
+            file_path,
+            extracted,
+            is_forced: sub.is_forced,
+            is_hearing_impaired: sub.is_hearing_impaired,
+        });
+    }
+    files
 }
 
 /// 410 rather than 404: a 404 here means "not generated yet", which a player keeps

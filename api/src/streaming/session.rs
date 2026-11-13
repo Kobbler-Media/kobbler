@@ -292,8 +292,6 @@ impl PlaybackSession {
     pub async fn cleanup(&mut self) {
         self.kill_all_transcodes().await;
         let dir = self.segment_dir();
-        if dir.exists() {
-            let _ = tokio::fs::remove_dir_all(dir).await;
-        }
+        let _ = tokio::fs::remove_dir_all(dir).await;
     }
 }

@@ -80,7 +80,10 @@ impl JobHandler for AudiobookConvertHandler {
             .as_ref()
             .map(PathBuf::from)
             .ok_or_else(|| JobError::ExecutionFailed("Source file has no path".to_string()))?;
-        if !source_path.is_file() {
+        if !tokio::fs::metadata(&source_path)
+            .await
+            .is_ok_and(|m| m.is_file())
+        {
             return Err(JobError::ExecutionFailed(format!(
                 "Source file does not exist: {}",
                 source_path.display()

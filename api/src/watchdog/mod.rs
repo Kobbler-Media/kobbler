@@ -1,4 +1,5 @@
 mod alerts;
+mod blocked;
 mod health;
 mod incident;
 mod monitor;

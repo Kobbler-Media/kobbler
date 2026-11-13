@@ -14,7 +14,7 @@ use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::media_cache::analyze::{AnalyzeInputs, run_analysis};
 use crate::media_cache::episode_cache::MediaKind;
-use crate::media_cache::writers::write_manifest_at;
+use crate::media_cache::writers::write_manifest_at_async;
 use crate::skip_detect::cache_detect::{
     EpisodeDiagnostics, MovieHandle, detect_movie_from_cache_with_chapters,
     detect_season_from_cache, season_episode_files,
@@ -226,7 +226,12 @@ impl JobHandler for DebridProcessHandler {
                 };
                 match run_analysis(inputs, &cancel).await {
                     Ok(outcome) => {
-                        if let Err(e) = write_manifest_at(&media_cache_dir, &outcome.manifest) {
+                        if let Err(e) = write_manifest_at_async(
+                            media_cache_dir.clone(),
+                            outcome.manifest.clone(),
+                        )
+                        .await
+                        {
                             warn!(error = %e, "debrid manifest write failed");
                         }
                         info!(

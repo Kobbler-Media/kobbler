@@ -165,12 +165,11 @@ pub fn ensure_dirs(storage_root: &str, file_id: Uuid) -> std::io::Result<()> {
 /// remove `episode_cache/{namespace}/{id}/` when a file row is deleted, so
 /// the file-bound cleanup is eager and complete. Best-effort — a missing
 /// directory is not an error.
-pub fn remove_per_file(storage_root: &str, file_id: Uuid) -> std::io::Result<()> {
-    let dir = cache_dir(storage_root, file_id);
-    if dir.is_dir() {
-        std::fs::remove_dir_all(dir)?;
+pub async fn remove_per_file(storage_root: &str, file_id: Uuid) -> std::io::Result<()> {
+    match tokio::fs::remove_dir_all(cache_dir(storage_root, file_id)).await {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        other => other,
     }
-    Ok(())
 }
 
 /// Convenience: full path to a `parent`-relative path, or itself if absolute.

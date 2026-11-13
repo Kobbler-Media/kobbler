@@ -223,7 +223,7 @@ impl ProgressiveDownloadManager {
         const MAX_RESUME_ATTEMPTS: u32 = 10;
 
         // Resume from existing partial download if present
-        let mut file = if dest.exists() {
+        let mut file = if tokio::fs::try_exists(dest).await.unwrap_or(false) {
             let existing_size = tokio::fs::metadata(dest)
                 .await
                 .map(|m| m.len() as i64)

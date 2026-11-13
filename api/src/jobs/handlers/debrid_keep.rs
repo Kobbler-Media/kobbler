@@ -127,8 +127,8 @@ async fn keep(
     import(state, &session, &cache_path, &target).await
 }
 
-fn on_disk(path: &Path) -> u64 {
-    std::fs::metadata(path).map_or(0, |m| m.len())
+async fn on_disk(path: &Path) -> u64 {
+    tokio::fs::metadata(path).await.map_or(0, |m| m.len())
 }
 
 /// Whether the live session is downloading the file itself, in which case a second
@@ -151,7 +151,7 @@ async fn finish_download(
     let mut ours: Option<JoinHandle<Result<(), String>>> = None;
     let mut failures = 0;
     loop {
-        let have = on_disk(cache_path);
+        let have = on_disk(cache_path).await;
         if total > 0 && have >= total {
             return Ok(());
         }
@@ -207,14 +207,15 @@ async fn start_download(
     }
     let cancel = CancellationToken::new();
     let total = session.filesize.max(0) as u64;
+    let have = on_disk(cache_path).await;
     let meter = match state.playback_sessions.get_mut(&session.id) {
         Some(mut live) => {
             live.download_cancel = Some(cancel.clone());
             live.download
                 .clone()
-                .unwrap_or_else(|| DownloadMeter::new(total, on_disk(cache_path)))
+                .unwrap_or_else(|| DownloadMeter::new(total, have))
         }
-        None => DownloadMeter::new(total, on_disk(cache_path)),
+        None => DownloadMeter::new(total, have),
     };
     let target = session.download_target(url, cache_path.to_path_buf());
     let state = state.clone();
@@ -332,7 +333,7 @@ async fn register(
     show_id: Option<Uuid>,
 ) -> Result<(), String> {
     let file_path = dest.to_string_lossy().to_string();
-    let file_size = Some(on_disk(dest) as i64);
+    let file_size = Some(on_disk(dest).await as i64);
     let format = session
         .filename
         .rsplit('.')

@@ -6,7 +6,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -185,6 +185,15 @@ pub fn write_manifest_at(cache_dir: &Path, manifest: &Manifest) -> std::io::Resu
     let bytes = serde_json::to_vec_pretty(manifest)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     write_atomic(&cache_dir.join("manifest.json"), &bytes)
+}
+
+pub async fn write_manifest_at_async(
+    cache_dir: PathBuf,
+    manifest: Manifest,
+) -> std::io::Result<()> {
+    tokio::task::spawn_blocking(move || write_manifest_at(&cache_dir, &manifest))
+        .await
+        .map_err(std::io::Error::other)?
 }
 
 /// Fresh manifest stub with an explicit trickplay_dir. Caller fills in

@@ -35,8 +35,8 @@ impl DebridCacheCleanupHandler {
 /// sidecar or sibling-dir failures because those are best-effort cleanup.
 pub(crate) async fn remove_cache_entry(file_path: &str) -> bool {
     let path = std::path::Path::new(file_path);
-    if path.exists()
-        && let Err(e) = tokio::fs::remove_file(path).await
+    if let Err(e) = tokio::fs::remove_file(path).await
+        && e.kind() != std::io::ErrorKind::NotFound
     {
         warn!(path = %file_path, error = %e, "Failed to delete debrid cache file");
         return false;
@@ -44,15 +44,15 @@ pub(crate) async fn remove_cache_entry(file_path: &str) -> bool {
     // The sidecar carries probe results for *this* file. Left behind, it is
     // trusted verbatim if the same info_hash is downloaded again later.
     let sidecar = crate::routes::admin::debrid_stream::probe_sidecar_path(path);
-    if sidecar.exists()
-        && let Err(e) = tokio::fs::remove_file(&sidecar).await
+    if let Err(e) = tokio::fs::remove_file(&sidecar).await
+        && e.kind() != std::io::ErrorKind::NotFound
     {
         warn!(path = %sidecar.display(), error = %e, "Failed to delete probe sidecar");
     }
     if let Some(parent) = path.parent() {
         let sibling = parent.join("media_cache");
-        if sibling.is_dir()
-            && let Err(e) = tokio::fs::remove_dir_all(&sibling).await
+        if let Err(e) = tokio::fs::remove_dir_all(&sibling).await
+            && e.kind() != std::io::ErrorKind::NotFound
         {
             warn!(path = %sibling.display(), error = %e, "Failed to prune sibling media_cache dir");
         }

@@ -1528,8 +1528,12 @@ async fn match_book_files(
 
             let mut content_results = Vec::new();
             if let Some(epub) = epub_file {
-                let path = std::path::Path::new(&epub.file_path);
-                match crate::ebook::extract::extract_content_sample(path, 200) {
+                let path = std::path::PathBuf::from(&epub.file_path);
+                let sample = tokio::task::spawn_blocking(move || {
+                    crate::ebook::extract::extract_content_sample(&path, 200)
+                })
+                .await;
+                match sample.unwrap_or(Ok(None)) {
                     Ok(Some(sample)) => {
                         debug!(
                             title = %meta.title,

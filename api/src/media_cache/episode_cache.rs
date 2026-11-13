@@ -174,12 +174,11 @@ pub fn write_episode_cache(
 /// Remove the entire cache directory for `kind`. Called from repository
 /// delete paths (`tv_episode_files`, `tv_episodes`, `movies`) so disk drops
 /// with the row. Best-effort — a missing directory is not an error.
-pub fn remove(storage_root: &str, kind: &MediaKind) -> std::io::Result<()> {
-    let dir = episode_cache_dir(storage_root, kind);
-    if dir.is_dir() {
-        fs::remove_dir_all(dir)?;
+pub async fn remove(storage_root: &str, kind: &MediaKind) -> std::io::Result<()> {
+    match tokio::fs::remove_dir_all(episode_cache_dir(storage_root, kind)).await {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        other => other,
     }
-    Ok(())
 }
 
 fn write_artefact(dir: &Path, branch: Branch, bytes: Option<&[u8]>) -> std::io::Result<()> {
@@ -378,8 +377,8 @@ mod tests {
         assert_eq!(MediaKind::for_debrid("audiobook", id), None);
     }
 
-    #[test]
-    fn remove_drops_the_dir() {
+    #[tokio::test]
+    async fn remove_drops_the_dir() {
         let tmp = TempDir::new().unwrap();
         let storage = tmp.path().to_string_lossy().into_owned();
         let kind = MediaKind::TvFile {
@@ -397,9 +396,9 @@ mod tests {
         )
         .unwrap();
         assert!(episode_cache_dir(&storage, &kind).is_dir());
-        remove(&storage, &kind).unwrap();
+        remove(&storage, &kind).await.unwrap();
         assert!(!episode_cache_dir(&storage, &kind).exists());
         // Idempotent — second remove is a no-op.
-        remove(&storage, &kind).unwrap();
+        remove(&storage, &kind).await.unwrap();
     }
 }

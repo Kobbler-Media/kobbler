@@ -1262,14 +1262,8 @@ pub async fn delete_book_file(
     }
 
     // Try to delete the physical file(s) - non-critical if this fails
-    for path in [&source_path, &file_path].into_iter().flatten() {
-        let file_path_buf = PathBuf::from(path);
-        if file_path_buf.exists()
-            && let Err(e) = fs::remove_file(&file_path_buf).await
-        {
-            tracing::warn!(error = %e, path = %path, "Failed to delete physical file");
-        }
-    }
+    let on_disk: Vec<String> = [source_path, file_path].into_iter().flatten().collect();
+    crate::repositories::cleanup_replaced_files(&on_disk).await;
 
     tracing::info!(book_id = %book_id, file_id = %file_id, "Deleted book file");
     record_event(

@@ -44,7 +44,7 @@ fn parse_position(value: &str) -> Option<(Uuid, f64)> {
 
 async fn probe_of(storage_root: &str, file_path: &str) -> Option<AudioProbeResult> {
     let full = super::path::resolve_file_path(storage_root, file_path);
-    if !full.is_file() {
+    if !tokio::fs::metadata(&full).await.is_ok_and(|m| m.is_file()) {
         return None;
     }
     probe::probe_audio(&full).await.ok()

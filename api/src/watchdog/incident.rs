@@ -23,7 +23,11 @@ pub enum Probe {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Culprit {
     pub spawned_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job: Option<String>,
     pub longest_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_in: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -81,11 +85,21 @@ impl Incident {
             parts.push(format!("{} slow task wake-ups ({worst})", self.slow_probes));
         }
         for c in &self.culprits {
-            parts.push(format!(
-                "a worker spent {:.1}s in one poll of a task spawned at {}",
-                c.longest_ms as f64 / 1000.0,
-                c.spawned_at
-            ));
+            let secs = c.longest_ms as f64 / 1000.0;
+            let mut part = match &c.job {
+                Some(job) => format!(
+                    "a worker spent {secs:.1}s in one poll of job {job} (spawned at {})",
+                    c.spawned_at
+                ),
+                None => format!(
+                    "a worker spent {secs:.1}s in one poll of a task spawned at {}",
+                    c.spawned_at
+                ),
+            };
+            if let Some(blocked) = &c.blocked_in {
+                part.push_str(&format!(", last seen in {blocked}"));
+            }
+            parts.push(part);
         }
         if self.killed {
             parts.push("the watchdog killed the process".into());
@@ -108,11 +122,23 @@ impl Incident {
     pub(super) fn record_poll(&mut self, poll: &LongPoll) {
         let at = poll.spawned_at.to_string();
         let ms = poll.running_for.as_millis() as u64;
-        match self.culprits.iter_mut().find(|c| c.spawned_at == at) {
-            Some(c) => c.longest_ms = c.longest_ms.max(ms),
+        match self
+            .culprits
+            .iter_mut()
+            .find(|c| c.spawned_at == at && c.job == poll.job)
+        {
+            Some(c) if ms >= c.longest_ms => {
+                c.longest_ms = ms;
+                if poll.blocked_in.is_some() {
+                    c.blocked_in.clone_from(&poll.blocked_in);
+                }
+            }
+            Some(_) => {}
             None => self.culprits.push(Culprit {
                 spawned_at: at,
+                job: poll.job.clone(),
                 longest_ms: ms,
+                blocked_in: poll.blocked_in.clone(),
             }),
         }
     }

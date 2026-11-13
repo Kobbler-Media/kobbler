@@ -156,9 +156,8 @@ pub type Result<T> = std::result::Result<T, RepositoryError>;
 /// Logs warnings on failure but never propagates errors.
 pub async fn cleanup_replaced_files(paths: &[String]) {
     for file_path in paths {
-        let path = std::path::Path::new(file_path);
-        if path.exists()
-            && let Err(e) = tokio::fs::remove_file(path).await
+        if let Err(e) = tokio::fs::remove_file(file_path).await
+            && e.kind() != std::io::ErrorKind::NotFound
         {
             tracing::warn!(error = %e, path = %file_path, "Failed to delete replaced file from disk");
         }
@@ -170,8 +169,8 @@ pub async fn cleanup_thumbnail_dir(storage_root: &str, file_id: uuid::Uuid) {
     let dir = std::path::PathBuf::from(storage_root)
         .join("thumbnails")
         .join(file_id.to_string());
-    if dir.exists()
-        && let Err(e) = tokio::fs::remove_dir_all(&dir).await
+    if let Err(e) = tokio::fs::remove_dir_all(&dir).await
+        && e.kind() != std::io::ErrorKind::NotFound
     {
         tracing::warn!(error = %e, dir = %dir.display(), "Failed to delete thumbnail directory");
     }

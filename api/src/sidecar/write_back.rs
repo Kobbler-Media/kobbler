@@ -504,7 +504,7 @@ async fn write_tvshow_sidecars_inner(
         crate::sidecar::write_sidecar(show_dir, "tvshow", &merged, &[SidecarFormat::Nfo]).await?;
 
         // Clean up stale movie.nfo that was incorrectly written for TV shows
-        cleanup_stale_movie_nfo(show_dir);
+        cleanup_stale_movie_nfo(show_dir).await;
     }
 
     // Write per-episode NFOs
@@ -607,7 +607,9 @@ async fn write_episode_sidecar_inner(
             .to_path_buf(),
     };
     let show_dir = show_dir.as_path();
-    if !show_dir.join("tvshow.nfo").exists()
+    if !tokio::fs::try_exists(show_dir.join("tvshow.nfo"))
+        .await
+        .unwrap_or(false)
         && let Some(enriched) = build_tvshow_sidecar(pool, show_id).await
     {
         let existing = crate::sidecar::read_tvshow_nfo(show_dir).await;
@@ -619,7 +621,7 @@ async fn write_episode_sidecar_inner(
             crate::sidecar::write_sidecar(show_dir, "tvshow", &merged, &[SidecarFormat::Nfo]).await;
 
         // Clean up stale movie.nfo that was incorrectly written for TV shows
-        cleanup_stale_movie_nfo(show_dir);
+        cleanup_stale_movie_nfo(show_dir).await;
     }
 
     Ok(())
@@ -629,14 +631,12 @@ async fn write_episode_sidecar_inner(
 ///
 /// Before the NFO filename fix, TV show sidecars were incorrectly written as `movie.nfo`.
 /// This cleans them up organically as shows get processed.
-fn cleanup_stale_movie_nfo(show_dir: &Path) {
+async fn cleanup_stale_movie_nfo(show_dir: &Path) {
     let stale = show_dir.join("movie.nfo");
-    let is_stale_tvshow = stale
-        .exists()
-        .then(|| std::fs::read_to_string(&stale).ok())
-        .flatten()
-        .is_some_and(|c| c.contains("<tvshow>") || c.contains("<tvshow "));
-    if is_stale_tvshow && let Err(e) = std::fs::remove_file(&stale) {
+    let is_stale_tvshow = tokio::fs::read_to_string(&stale)
+        .await
+        .is_ok_and(|c| c.contains("<tvshow>") || c.contains("<tvshow "));
+    if is_stale_tvshow && let Err(e) = tokio::fs::remove_file(&stale).await {
         warn!(path = %stale.display(), error = %e, "Failed to remove stale movie.nfo");
     }
 }

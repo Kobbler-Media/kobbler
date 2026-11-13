@@ -1855,7 +1855,9 @@ async fn purge_file_artifacts(state: &AppState, files: &[tv_episode_files::FileP
         if let Err(e) = crate::media_cache::episode_cache::remove(
             &state.config.storage_root,
             &crate::media_cache::episode_cache::MediaKind::TvFile { file_id: f.id },
-        ) {
+        )
+        .await
+        {
             tracing::warn!(error = %e, file_id = %f.id, "failed to remove episode_cache for deleted tv_file");
         }
     }
@@ -1865,7 +1867,8 @@ async fn purge_file_artifacts(state: &AppState, files: &[tv_episode_files::FileP
 
     for f in files {
         crate::repositories::cleanup_thumbnail_dir(&state.config.storage_root, f.id).await;
-        if let Err(e) = crate::media_cache::remove_per_file(&state.config.storage_root, f.id) {
+        if let Err(e) = crate::media_cache::remove_per_file(&state.config.storage_root, f.id).await
+        {
             tracing::warn!(error = %e, file_id = %f.id, "failed to remove per-file media_cache");
         }
     }
@@ -2585,7 +2588,9 @@ pub async fn delete_episode(
     if let Err(e) = crate::media_cache::episode_cache::remove(
         &state.config.storage_root,
         &crate::media_cache::episode_cache::MediaKind::DebridEpisode { episode_id: id },
-    ) {
+    )
+    .await
+    {
         tracing::warn!(error = %e, episode_id = %id, "failed to remove debrid_episode episode_cache");
     }
 
@@ -2728,7 +2733,9 @@ pub async fn bulk_episodes(
                     &crate::media_cache::episode_cache::MediaKind::DebridEpisode {
                         episode_id: *id,
                     },
-                ) {
+                )
+                .await
+                {
                     tracing::warn!(error = %e, episode_id = %id, "failed to remove debrid_episode episode_cache");
                 }
             }

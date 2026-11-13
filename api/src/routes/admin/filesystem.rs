@@ -53,74 +53,59 @@ pub async fn browse_directories(
     Query(query): Query<BrowseQuery>,
 ) -> impl IntoResponse {
     let path = PathBuf::from(&query.path);
-
-    // Resolve to canonical path (follows symlinks, normalises)
-    let canonical = match path.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": format!("Invalid path: {}", e)})),
-            )
-                .into_response();
-        }
-    };
-
-    if !canonical.is_dir() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": "Path is not a directory"})),
-        )
-            .into_response();
+    match tokio::task::spawn_blocking(move || list_directories(&path)).await {
+        Ok(Ok(listing)) => Json(listing).into_response(),
+        Ok(Err(error)) => bad_request(error),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
 
-    let current_path = canonical.to_string_lossy().to_string();
-    let parent_path = canonical.parent().map(|p| p.to_string_lossy().to_string());
+fn bad_request(error: String) -> axum::response::Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({ "error": error })),
+    )
+        .into_response()
+}
+
+fn canonical_dir(path: &Path) -> Result<PathBuf, String> {
+    // Follows symlinks and normalises.
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("Invalid path: {e}"))?;
+    if !canonical.is_dir() {
+        return Err("Path is not a directory".to_string());
+    }
+    Ok(canonical)
+}
+
+fn list_directories(path: &Path) -> Result<BrowseResponse, String> {
+    let canonical = canonical_dir(path)?;
+    let entries =
+        std::fs::read_dir(&canonical).map_err(|e| format!("Cannot read directory: {e}"))?;
 
     let mut directories = Vec::new();
-
-    let entries = match std::fs::read_dir(&canonical) {
-        Ok(e) => e,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": format!("Cannot read directory: {}", e)})),
-            )
-                .into_response();
-        }
-    };
-
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-
-        // Skip hidden directories
         if name.starts_with('.') {
             continue;
         }
-
-        // Follow symlinks when checking if it's a directory
+        // `metadata` follows symlinks, unlike `entry.file_type`.
         let entry_path = entry.path();
-        let is_dir = match entry_path.metadata() {
-            Ok(m) => m.is_dir(),
-            Err(_) => continue,
-        };
-
-        if is_dir {
+        if entry_path.metadata().is_ok_and(|m| m.is_dir()) {
             directories.push(DirectoryEntry {
                 path: entry_path.to_string_lossy().to_string(),
                 name,
             });
         }
     }
-
     directories.sort_by_key(|a| a.name.to_lowercase());
 
-    Json(BrowseResponse {
-        current_path,
-        parent_path,
+    Ok(BrowseResponse {
+        current_path: canonical.to_string_lossy().to_string(),
+        parent_path: canonical.parent().map(|p| p.to_string_lossy().to_string()),
         directories,
     })
-    .into_response()
 }
 
 // ============================================================================
@@ -273,27 +258,15 @@ pub async fn detect_media_type(
     Query(query): Query<BrowseQuery>,
 ) -> impl IntoResponse {
     let path = PathBuf::from(&query.path);
-
-    let canonical = match path.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": format!("Invalid path: {}", e)})),
-            )
-                .into_response();
-        }
+    let scan = match tokio::task::spawn_blocking(move || {
+        canonical_dir(&path).map(|dir| sample_directory(&dir))
+    })
+    .await
+    {
+        Ok(Ok(scan)) => scan,
+        Ok(Err(error)) => return bad_request(error),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
-
-    if !canonical.is_dir() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": "Path is not a directory"})),
-        )
-            .into_response();
-    }
-
-    let scan = sample_directory(&canonical);
 
     let counts = MediaTypeCounts {
         book: scan.book_count,

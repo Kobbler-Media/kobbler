@@ -237,7 +237,10 @@ impl ConversionPipeline {
         ) {
             return false;
         }
-        let missing = dangling_stylesheets(bytes);
+        let epub = bytes.to_vec();
+        let missing = tokio::task::spawn_blocking(move || dangling_stylesheets(&epub))
+            .await
+            .unwrap_or_default();
         if missing.is_empty() {
             return false;
         }

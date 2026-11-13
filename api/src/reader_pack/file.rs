@@ -85,16 +85,20 @@ async fn convert_to_epub(state: &AppState, book_id: Uuid) -> Option<()> {
     // The first convertible source that is actually on disk. A row can point
     // at a file that has gone away; skipping it lets a second source save the
     // request instead of 404ing on the first ghost.
-    let source = files
-        .iter()
-        .filter(|f| {
-            EPUB_CONVERTIBLE_FORMATS
-                .iter()
-                .any(|fmt| f.format.eq_ignore_ascii_case(fmt))
-        })
-        .find(|f| {
-            crate::audio::path::resolve_file_path(&state.config.storage_root, &f.file_path).exists()
-        })?;
+    let convertible = files.iter().filter(|f| {
+        EPUB_CONVERTIBLE_FORMATS
+            .iter()
+            .any(|fmt| f.format.eq_ignore_ascii_case(fmt))
+    });
+    let mut source = None;
+    for f in convertible {
+        let path = crate::audio::path::resolve_file_path(&state.config.storage_root, &f.file_path);
+        if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+            source = Some(f);
+            break;
+        }
+    }
+    let source = source?;
 
     let source_path =
         crate::audio::path::resolve_file_path(&state.config.storage_root, &source.file_path);

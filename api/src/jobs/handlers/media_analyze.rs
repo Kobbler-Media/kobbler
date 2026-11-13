@@ -30,7 +30,7 @@ use crate::jobs::{JobError, JobResult, MediaRootIoGate, PhaseTimings};
 use crate::media_cache::analyze::{AnalyzeInputs, run_analysis};
 use crate::media_cache::embeddings::{l2_normalise, pack_fp16};
 use crate::media_cache::picture_area::{self, PictureArea};
-use crate::media_cache::writers::{ArtefactInfo, write_atomic, write_manifest};
+use crate::media_cache::writers::{ArtefactInfo, write_atomic, write_manifest_at_async};
 use crate::media_cache::{self, Branch, PIPELINE_VERSION};
 use crate::repositories::media_cache_runs::{self, TriggeredBy};
 use crate::repositories::{
@@ -335,12 +335,11 @@ impl MediaAnalyzeHandler {
         }
 
         let manifest_started = Instant::now();
-        if let Some(dir) = supplement_target_dir.as_deref() {
-            if let Err(e) = crate::media_cache::writers::write_manifest_at(dir, &manifest) {
-                warn!(error = %e, "supplement: episode_cache manifest write failed");
-            }
-        } else if let Err(e) = write_manifest(&self.storage_root, payload.file_id, &manifest) {
-            warn!(error = %e, "supplement: per-file manifest write failed");
+        let dir = supplement_target_dir
+            .clone()
+            .unwrap_or_else(|| crate::media_cache::cache_dir(&self.storage_root, payload.file_id));
+        if let Err(e) = write_manifest_at_async(dir, manifest.clone()).await {
+            warn!(error = %e, "supplement: manifest write failed");
         }
         timings.record("post_decode_writes", manifest_started.elapsed());
 
@@ -1079,17 +1078,13 @@ impl JobHandler for MediaAnalyzeHandler {
         }
 
         let manifest_started = Instant::now();
-        if let Some(dir) = content_target_dir.as_deref() {
-            if let Err(e) = crate::media_cache::writers::write_manifest_at(dir, &outcome.manifest) {
-                warn!(error = %e, "episode_cache manifest write failed");
-            }
-        } else {
-            // No target — outcome.manifest IS the per-file manifest.
-            // analyze.rs didn't write it (write_manifest_on_success = false),
-            // so do it now.
-            if let Err(e) = write_manifest(&self.storage_root, payload.file_id, &outcome.manifest) {
-                warn!(error = %e, "per-file manifest write failed");
-            }
+        // No target: outcome.manifest IS the per-file manifest, which analyze.rs left
+        // unwritten (write_manifest_on_success = false).
+        let dir = content_target_dir
+            .clone()
+            .unwrap_or_else(|| crate::media_cache::cache_dir(&self.storage_root, payload.file_id));
+        if let Err(e) = write_manifest_at_async(dir, outcome.manifest.clone()).await {
+            warn!(error = %e, "manifest write failed");
         }
         timings.record(
             "post_decode_writes",

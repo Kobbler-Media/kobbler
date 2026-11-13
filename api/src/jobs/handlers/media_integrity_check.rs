@@ -343,10 +343,12 @@ impl MediaIntegrityCheckHandler {
         if let Err(e) = crate::media_cache::episode_cache::remove(
             &self.storage_root,
             &crate::media_cache::episode_cache::MediaKind::TvFile { file_id },
-        ) {
+        )
+        .await
+        {
             warn!(error = %e, file_id = %file_id, "integrity: episode_cache remove failed");
         }
-        if let Err(e) = crate::media_cache::remove_per_file(&self.storage_root, file_id) {
+        if let Err(e) = crate::media_cache::remove_per_file(&self.storage_root, file_id).await {
             warn!(error = %e, file_id = %file_id, "integrity: per-file cache remove failed");
         }
 

@@ -1195,46 +1195,51 @@ pub async fn season_episode_files(
     .fetch_all(pool)
     .await?;
 
-    let mut out = Vec::with_capacity(rows.len());
-    for row in rows {
-        let sib_id = row.episode_id;
-        // Try every linked file's tv_file/ cache first.
-        let mut found: Option<(Uuid, f64)> = None;
-        for fid in &row.file_ids {
-            let dir = episode_cache_dir(storage_root, &MediaKind::TvFile { file_id: *fid });
-            if let Some(m) = readers::read_manifest_at(&dir)
-                && m.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
-                && m.input_duration_seconds > 0.0
-            {
-                found = Some((*fid, m.input_duration_seconds));
-                break;
+    let storage_root = storage_root.to_string();
+    Ok(tokio::task::spawn_blocking(move || {
+        let mut out = Vec::with_capacity(rows.len());
+        for row in rows {
+            let sib_id = row.episode_id;
+            // Try every linked file's tv_file/ cache first.
+            let mut found: Option<(Uuid, f64)> = None;
+            for fid in &row.file_ids {
+                let dir = episode_cache_dir(&storage_root, &MediaKind::TvFile { file_id: *fid });
+                if let Some(m) = readers::read_manifest_at(&dir)
+                    && m.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
+                    && m.input_duration_seconds > 0.0
+                {
+                    found = Some((*fid, m.input_duration_seconds));
+                    break;
+                }
+            }
+            // No local file cache hit — try the debrid-only fallback.
+            if found.is_none() {
+                let dir = episode_cache_dir(
+                    &storage_root,
+                    &MediaKind::DebridEpisode { episode_id: sib_id },
+                );
+                if let Some(m) = readers::read_manifest_at(&dir)
+                    && m.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
+                    && m.input_duration_seconds > 0.0
+                {
+                    // Use sib_id as the file_id sentinel — unique within the
+                    // season; the loader will fall through to debrid_episode/.
+                    found = Some((sib_id, m.input_duration_seconds));
+                }
+            }
+            if let Some((file_id, duration)) = found {
+                out.push(crate::skip_detect::tv::EpisodeFile {
+                    file_id,
+                    file_path: String::new(),
+                    duration_seconds: duration,
+                    episode_id: Some(sib_id),
+                });
             }
         }
-        // No local file cache hit — try the debrid-only fallback.
-        if found.is_none() {
-            let dir = episode_cache_dir(
-                storage_root,
-                &MediaKind::DebridEpisode { episode_id: sib_id },
-            );
-            if let Some(m) = readers::read_manifest_at(&dir)
-                && m.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
-                && m.input_duration_seconds > 0.0
-            {
-                // Use sib_id as the file_id sentinel — unique within the
-                // season; the loader will fall through to debrid_episode/.
-                found = Some((sib_id, m.input_duration_seconds));
-            }
-        }
-        if let Some((file_id, duration)) = found {
-            out.push(crate::skip_detect::tv::EpisodeFile {
-                file_id,
-                file_path: String::new(),
-                duration_seconds: duration,
-                episode_id: Some(sib_id),
-            });
-        }
-    }
-    Ok(out)
+        out
+    })
+    .await
+    .unwrap_or_default())
 }
 
 /// Resolve where to read an episode's persisted artefacts from. Tries

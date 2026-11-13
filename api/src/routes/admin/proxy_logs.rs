@@ -355,65 +355,34 @@ pub async fn export_proxy_logs(
         })
         .collect();
 
-    // Create ZIP in memory
-    let mut zip_buffer = std::io::Cursor::new(Vec::new());
-    {
-        let mut zip = zip::ZipWriter::new(&mut zip_buffer);
-        let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-
-        // Add logs.json
-        if let Err(e) = zip.start_file("logs.json", options) {
-            tracing::error!(error = %e, "Failed to start logs.json in ZIP");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "failed to create export").into_response();
-        }
-        let logs_json = match serde_json::to_vec_pretty(&logs) {
-            Ok(json) => json,
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to serialize logs to JSON");
-                return (StatusCode::INTERNAL_SERVER_ERROR, "failed to create export")
-                    .into_response();
-            }
-        };
-        if let Err(e) = std::io::Write::write_all(&mut zip, &logs_json) {
-            tracing::error!(error = %e, "Failed to write logs.json");
-            return (StatusCode::INTERNAL_SERVER_ERROR, "failed to create export").into_response();
-        }
-
-        // Add blob files if requested
-        if include_blobs {
-            for row in &rows {
+    let blobs: Vec<(String, String)> = if include_blobs {
+        rows.iter()
+            .flat_map(|row| {
                 let log_id: Uuid = row.get("id");
-
-                // Request blob
-                if let Some(request_path) = row.get::<Option<String>, _>("request_blob_path") {
-                    let blob_filename = format!("request_blobs/{}_request.bin", log_id);
-                    if let Ok(data) = std::fs::read(&request_path)
-                        && zip.start_file(&blob_filename, options).is_ok()
-                    {
-                        let _ = std::io::Write::write_all(&mut zip, &data);
-                    }
-                }
-
-                // Response blob
-                if let Some(response_path) = row.get::<Option<String>, _>("response_blob_path") {
-                    let blob_filename = format!("response_blobs/{}_response.bin", log_id);
-                    if let Ok(data) = std::fs::read(&response_path)
-                        && zip.start_file(&blob_filename, options).is_ok()
-                    {
-                        let _ = std::io::Write::write_all(&mut zip, &data);
-                    }
-                }
-            }
-        }
-
-        if let Err(e) = zip.finish() {
-            tracing::error!(error = %e, "Failed to finish ZIP");
+                [
+                    row.get::<Option<String>, _>("request_blob_path")
+                        .map(|p| (format!("request_blobs/{log_id}_request.bin"), p)),
+                    row.get::<Option<String>, _>("response_blob_path")
+                        .map(|p| (format!("response_blobs/{log_id}_response.bin"), p)),
+                ]
+            })
+            .flatten()
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let zip_bytes = match tokio::task::spawn_blocking(move || build_export_zip(&logs, &blobs)).await
+    {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(e)) => {
+            tracing::error!(error = %e, "Failed to build proxy log export");
             return (StatusCode::INTERNAL_SERVER_ERROR, "failed to create export").into_response();
         }
-    }
-
-    let zip_bytes = zip_buffer.into_inner();
+        Err(e) => {
+            tracing::error!(error = %e, "proxy log export task panicked");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "failed to create export").into_response();
+        }
+    };
     let timestamp = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Iso8601::DEFAULT)
         .unwrap_or_else(|_| "unknown".to_string())
@@ -430,6 +399,27 @@ pub async fn export_proxy_logs(
     }
 
     (response_headers, zip_bytes).into_response()
+}
+
+fn build_export_zip(
+    logs: &[serde_json::Value],
+    blobs: &[(String, String)],
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut zip_buffer = std::io::Cursor::new(Vec::new());
+    let mut zip = zip::ZipWriter::new(&mut zip_buffer);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    zip.start_file("logs.json", options)?;
+    std::io::Write::write_all(&mut zip, &serde_json::to_vec_pretty(logs)?)?;
+    for (name, path) in blobs {
+        if let Ok(data) = std::fs::read(path)
+            && zip.start_file(name, options).is_ok()
+        {
+            let _ = std::io::Write::write_all(&mut zip, &data);
+        }
+    }
+    zip.finish()?;
+    Ok(zip_buffer.into_inner())
 }
 
 pub async fn download_proxy_log_blob(

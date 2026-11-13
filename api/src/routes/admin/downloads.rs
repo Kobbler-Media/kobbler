@@ -1148,14 +1148,7 @@ pub async fn replace_file(
     }
 
     // Delete physical files from disk (after commit so we don't orphan DB records on failure)
-    for file_path in &file_paths_to_delete {
-        let path_buf = std::path::PathBuf::from(file_path);
-        if path_buf.exists()
-            && let Err(e) = tokio::fs::remove_file(&path_buf).await
-        {
-            tracing::warn!(error = %e, path = %file_path, "Failed to delete physical file during replace");
-        }
-    }
+    crate::repositories::cleanup_replaced_files(&file_paths_to_delete).await;
 
     // Enqueue the appropriate want job (outside transaction)
     let nats = state.nats.publisher();

@@ -198,7 +198,7 @@ pub async fn move_book_to_media_root(
             continue;
         }
 
-        if target.exists() {
+        if tokio::fs::try_exists(&target).await.unwrap_or(false) {
             errors.push(format!(
                 "Target already exists: {} (source: {})",
                 target_str, file.path
@@ -206,7 +206,7 @@ pub async fn move_book_to_media_root(
             continue;
         }
 
-        if !FsPath::new(&file.path).exists() {
+        if !tokio::fs::try_exists(&file.path).await.unwrap_or(false) {
             errors.push(format!("Source file missing: {}", file.path));
             continue;
         }

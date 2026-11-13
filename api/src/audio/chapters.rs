@@ -136,7 +136,12 @@ pub async fn resolve_chapters_without_silence(
     }
 
     // 4. Try CUE sheet
-    if let Some(cue_path) = find_cue_file(file_path) {
+    let audio_path = file_path.to_owned();
+    let cue = tokio::task::spawn_blocking(move || find_cue_file(&audio_path))
+        .await
+        .ok()
+        .flatten();
+    if let Some(cue_path) = cue {
         match tokio::fs::read_to_string(&cue_path).await {
             Ok(contents) => {
                 let mut parsed = parse_cue_chapters(&contents);

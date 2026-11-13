@@ -75,7 +75,7 @@ impl JobHandler for FormatConversionHandler {
                 .await
                 .map_err(|e| JobError::ExecutionFailed(format!("DB error: {e}")))?;
         if let Some(p) = &existing
-            && std::path::Path::new(p).exists()
+            && tokio::fs::try_exists(p).await.unwrap_or(false)
         {
             info!(
                 book_id = %payload.book_id,
@@ -110,7 +110,7 @@ impl JobHandler for FormatConversionHandler {
         };
 
         let source = std::path::Path::new(&source_path);
-        if !source.exists() {
+        if !tokio::fs::try_exists(source).await.unwrap_or(false) {
             return Err(JobError::ExecutionFailed(format!(
                 "Source file not found: {source_path}"
             )));
@@ -223,23 +223,26 @@ impl FormatConversionHandler {
             return Value::Null;
         };
 
-        let checked: Vec<Value> = positions
-            .into_iter()
-            .map(|p| {
-                let kept = crate::kobo::position::position_survives(&bytes, &p);
-                if !kept {
-                    warn!(
-                        book_id = %book_id,
-                        device = %p.device_name,
-                        source = %p.source,
-                        span = %p.span,
-                        "saved reading position does not resolve in the new KEPUB"
-                    );
-                }
-                json!({ "device": p.device_name, "source": p.source, "kept": kept })
-            })
-            .collect();
-
-        json!(checked)
+        tokio::task::spawn_blocking(move || {
+            let checked: Vec<Value> = positions
+                .into_iter()
+                .map(|p| {
+                    let kept = crate::kobo::position::position_survives(&bytes, &p);
+                    if !kept {
+                        warn!(
+                            book_id = %book_id,
+                            device = %p.device_name,
+                            source = %p.source,
+                            span = %p.span,
+                            "saved reading position does not resolve in the new KEPUB"
+                        );
+                    }
+                    json!({ "device": p.device_name, "source": p.source, "kept": kept })
+                })
+                .collect();
+            json!(checked)
+        })
+        .await
+        .unwrap_or(Value::Null)
     }
 }

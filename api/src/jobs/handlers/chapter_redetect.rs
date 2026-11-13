@@ -68,7 +68,10 @@ impl JobHandler for ChapterRedetectHandler {
 
             let file_path =
                 crate::audio::path::resolve_file_path(&self.storage_root, &file.file_path);
-            if !file_path.is_file() {
+            if !tokio::fs::metadata(&file_path)
+                .await
+                .is_ok_and(|m| m.is_file())
+            {
                 warn!(
                     file_id = %file.id,
                     path = %file_path.display(),

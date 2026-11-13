@@ -836,7 +836,9 @@ pub async fn delete_movie(
     if let Err(e) = crate::media_cache::episode_cache::remove(
         &state.config.storage_root,
         &crate::media_cache::episode_cache::MediaKind::Movie { movie_id: id },
-    ) {
+    )
+    .await
+    {
         tracing::warn!(error = %e, movie_id = %id, "failed to remove episode_cache for deleted movie");
     }
 
@@ -862,7 +864,7 @@ pub async fn delete_movie(
     crate::repositories::cleanup_replaced_files(&file_paths).await;
     for fid in file_ids {
         crate::repositories::cleanup_thumbnail_dir(&state.config.storage_root, fid).await;
-        if let Err(e) = crate::media_cache::remove_per_file(&state.config.storage_root, fid) {
+        if let Err(e) = crate::media_cache::remove_per_file(&state.config.storage_root, fid).await {
             tracing::warn!(error = %e, file_id = %fid, "failed to remove per-file media_cache");
         }
     }
@@ -1112,7 +1114,9 @@ pub async fn delete_movie_file(
     // Best-effort cleanup of physical file, thumbnails, and per-file media_cache
     crate::repositories::cleanup_replaced_files(&[file.file_path]).await;
     crate::repositories::cleanup_thumbnail_dir(&state.config.storage_root, path.file_id).await;
-    if let Err(e) = crate::media_cache::remove_per_file(&state.config.storage_root, path.file_id) {
+    if let Err(e) =
+        crate::media_cache::remove_per_file(&state.config.storage_root, path.file_id).await
+    {
         tracing::warn!(error = %e, file_id = %path.file_id, "failed to remove per-file media_cache");
     }
 

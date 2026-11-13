@@ -3,6 +3,9 @@ use api::watchdog::{
     remote_wake_latency,
 };
 use chrono::{DateTime, Utc};
+use std::ffi::CString;
+use std::io::Read;
+use std::os::unix::ffi::OsStrExt;
 use std::panic::Location;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -66,6 +69,92 @@ fn a_worker_stuck_in_one_poll_is_reported_with_where_its_task_was_spawned() {
 
     std::thread::sleep(Duration::from_millis(600));
     assert!(tracker.long_polls(Duration::from_secs(1)).is_empty());
+    rt.shutdown_background();
+}
+
+fn first_long_poll(tracker: &PollTracker) -> LongPoll {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(poll) = tracker.long_polls(Duration::from_secs(1)).pop() {
+            return poll;
+        }
+        assert!(Instant::now() < deadline, "no worker was ever stuck");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// A NAS that stops answering parks a worker in a filesystem call. Naming the call and the
+/// file is what tells that apart from a task hogging the CPU.
+#[test]
+fn a_worker_blocked_in_a_syscall_is_reported_with_the_call_and_the_file() {
+    type Block = fn(&std::path::Path);
+    let cases: [(&str, Block); 2] = [
+        ("openat", |fifo| {
+            let _ = std::fs::File::open(fifo);
+        }),
+        ("read", |fifo| {
+            let mut f = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(fifo)
+                .unwrap();
+            let _ = f.read(&mut [0u8; 1]);
+        }),
+    ];
+    for (call, block) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let fifo = dir.path().join("nas-share-file");
+        let c_path = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+
+        let tracker = PollTracker::new(2);
+        let rt = build_runtime(2, tracker.clone()).unwrap();
+        let path = fifo.clone();
+        rt.spawn(async move { block(&path) });
+
+        let blocked = first_long_poll(&tracker).blocked_in.expect("blocked_in");
+        assert!(blocked.starts_with(call), "{call}: {blocked}");
+        assert!(
+            blocked.contains(&*fifo.to_string_lossy()),
+            "{call}: {blocked}"
+        );
+
+        let _unblock = std::fs::OpenOptions::new().write(true).open(&fifo);
+        std::io::Write::write_all(&mut _unblock.unwrap(), b"x").unwrap();
+        rt.shutdown_background();
+    }
+}
+
+#[test]
+fn a_worker_burning_cpu_in_one_poll_is_reported_as_running() {
+    let tracker = PollTracker::new(2);
+    let rt = build_runtime(2, tracker.clone()).unwrap();
+    rt.spawn(async {
+        let until = Instant::now() + Duration::from_millis(1600);
+        while Instant::now() < until {
+            std::hint::spin_loop();
+        }
+    });
+    assert_eq!(
+        first_long_poll(&tracker).blocked_in.as_deref(),
+        Some("running on CPU")
+    );
+    rt.shutdown_background();
+}
+
+#[test]
+fn a_worker_stuck_in_a_job_names_the_job() {
+    let tracker = PollTracker::new(2);
+    let rt = build_runtime(2, tracker.clone()).unwrap();
+    let job_id = uuid::Uuid::now_v7();
+    rt.spawn(async move {
+        let _running = nats_jobs::running::track_running("kobload_ingest", job_id);
+        std::thread::sleep(Duration::from_millis(1500));
+    });
+    assert_eq!(
+        first_long_poll(&tracker).job,
+        Some(format!("kobload_ingest {job_id}"))
+    );
     rt.shutdown_background();
 }
 
@@ -138,6 +227,10 @@ fn a_long_poll_opens_an_incident_at_once_and_names_where_the_task_was_spawned() 
         worker: 3,
         running_for: Duration::from_secs(secs),
         spawned_at: here,
+        job: Some("kobload_ingest 01a1d41c".into()),
+        blocked_in: Some(format!(
+            "newfstatat(\"/mnt/nasdaq/x.nfo\") in cifs_wait {secs}"
+        )),
     };
     assert_eq!(
         kinds(&m.observe(at(0), &[poll(1)], Probe::NotRun)),
@@ -152,6 +245,12 @@ fn a_long_poll_opens_an_incident_at_once_and_names_where_the_task_was_spawned() 
     assert_eq!(incident.culprits[0].longest_ms, 7_000);
     assert!(incident.culprits[0].spawned_at.contains("watchdog_test.rs"));
     assert!(incident.notable());
+    let summary = incident.summary();
+    assert!(
+        summary.contains("kobload_ingest 01a1d41c")
+            && summary.contains("newfstatat(\"/mnt/nasdaq/x.nfo\") in cifs_wait 7"),
+        "{summary}"
+    );
 }
 
 /// The 2026-11-12 wedge: wakes stayed slow for nine hours and nothing ever said so.

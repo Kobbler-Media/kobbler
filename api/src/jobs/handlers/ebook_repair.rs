@@ -310,7 +310,7 @@ impl EbookRepairHandler {
 
             let source_full =
                 crate::audio::path::resolve_file_path(&self.storage_root, &source_path);
-            if !source_full.exists() {
+            if !tokio::fs::try_exists(&source_full).await.unwrap_or(false) {
                 // The source row points at a file that is not on disk — a
                 // media root that is down, a file that was removed. There is
                 // nothing to convert from; the availability check owns that.

@@ -101,7 +101,10 @@ impl JobHandler for EnrichAudiobookHandler {
                 })?;
 
         let file_path = crate::audio::path::resolve_file_path(&self.storage_root, &file_path_str);
-        if !file_path.is_file() {
+        if !tokio::fs::metadata(&file_path)
+            .await
+            .is_ok_and(|m| m.is_file())
+        {
             return Err(JobError::ExecutionFailed(format!(
                 "File not found: {}",
                 file_path.display()

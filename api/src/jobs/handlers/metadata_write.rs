@@ -104,7 +104,7 @@ impl JobHandler for MetadataWriteHandler {
         for file in files {
             let path = PathBuf::from(&file.file_path);
 
-            if !path.exists() {
+            if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
                 warn!(path = %file.file_path, "File not found, skipping");
                 errors.push(format!("{}: file not found", file.format));
                 continue;

@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use kob_ffmpeg::single_pass::{
@@ -126,12 +127,14 @@ pub async fn run_analysis(
 ) -> JobResult<AnalyzeOutcome> {
     nats_jobs::check_cancelled(cancel)?;
 
-    std::fs::create_dir_all(&inputs.cache_dir).map_err(|e| {
-        JobError::ExecutionFailed(format!(
-            "create cache_dir {}: {e}",
-            inputs.cache_dir.display()
-        ))
-    })?;
+    tokio::fs::create_dir_all(&inputs.cache_dir)
+        .await
+        .map_err(|e| {
+            JobError::ExecutionFailed(format!(
+                "create cache_dir {}: {e}",
+                inputs.cache_dir.display()
+            ))
+        })?;
 
     // canonical vhash/embed_src windows when known_duration is set.
     let (vhash_windows, embed_windows) = match inputs.known_duration.filter(|d| *d > 0.0) {
@@ -220,7 +223,7 @@ pub async fn run_analysis(
     };
 
     let single_pass_started = Instant::now();
-    let mut result: SinglePassResult = tokio::task::spawn_blocking(move || {
+    let result: SinglePassResult = tokio::task::spawn_blocking(move || {
         kob_ffmpeg::single_pass::run_single_pass_with_sinks(req, None, custom_sinks)
     })
     .await
@@ -228,6 +231,28 @@ pub async fn run_analysis(
     .map_err(|e| JobError::ExecutionFailed(format!("single_pass failed: {e}")))?;
     let single_pass_duration = single_pass_started.elapsed();
 
+    let span = tracing::Span::current();
+    tokio::task::spawn_blocking(move || {
+        let _span = span.enter();
+        write_outcome(
+            inputs,
+            result,
+            sink_handle_arc,
+            req_corruption_enabled,
+            single_pass_duration,
+        )
+    })
+    .await
+    .map_err(|e| JobError::ExecutionFailed(format!("analysis write-out panicked: {e}")))?
+}
+
+fn write_outcome(
+    inputs: AnalyzeInputs,
+    mut result: SinglePassResult,
+    sink_handle_arc: Option<Arc<Mutex<IncrementalSpriteSink>>>,
+    req_corruption_enabled: bool,
+    single_pass_duration: Duration,
+) -> JobResult<AnalyzeOutcome> {
     let input_duration = result.input_duration_secs;
     let mut branch_results = Map::new();
     let per_branch_errors: Vec<(BranchId, String)> = result
