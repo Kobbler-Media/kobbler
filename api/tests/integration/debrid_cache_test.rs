@@ -421,6 +421,24 @@ async fn stored_picture(rig: &Rig, session: Uuid) -> Option<Value> {
         .unwrap()
 }
 
+async fn wait_for_picture(rig: &Rig, session: Uuid) {
+    let server = &rig.server;
+    wait_until_async(
+        Duration::from_secs(60),
+        "the bars were never measured",
+        || async move {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT picture IS NOT NULL FROM debrid_stream_sessions WHERE id = $1",
+            )
+            .bind(session)
+            .fetch_one(&server.pool)
+            .await
+            .unwrap()
+        },
+    )
+    .await;
+}
+
 /// 320x240 with the picture in rows 52..188.
 fn assert_letterbox(picture: &Value) {
     let near = |field: &str, want: f64| {
@@ -446,23 +464,10 @@ async fn a_debrid_stream_has_its_black_bars_measured_while_it_plays_and_a_replay
     assert_eq!(first["picture"], Value::Null, "{first}");
     let session = session_id_of(&first);
 
-    let server = &rig.server;
-    wait_until_async(
-        Duration::from_secs(60),
-        "the bars were never measured",
-        || async move {
-            sqlx::query_scalar::<_, bool>(
-                "SELECT picture IS NOT NULL FROM debrid_stream_sessions WHERE id = $1",
-            )
-            .bind(session)
-            .fetch_one(&server.pool)
-            .await
-            .unwrap()
-        },
-    )
-    .await;
+    wait_for_picture(&rig, session).await;
     assert_letterbox(&stored_picture(&rig, session).await.unwrap());
 
+    let server = &rig.server;
     let mut events = reqwest::Client::new()
         .get(format!(
             "{}/api/v1/admin/stream/{session}/status",
@@ -500,6 +505,21 @@ async fn a_debrid_stream_has_its_black_bars_measured_while_it_plays_and_a_replay
     let replay = rig.resolve_with(&body).await;
     assert_ne!(session_id_of(&replay), session);
     assert_letterbox(&replay["picture"]);
+}
+
+#[tokio::test]
+async fn a_release_played_from_disk_that_nobody_measured_has_its_bars_measured_then() {
+    let rig = Rig::start(UpstreamPlan::new(LETTERBOXED_FIXTURE.to_vec()), "film.mkv").await;
+    let body = orphaned_download(&rig, "diskbars").await;
+    sqlx::query("UPDATE debrid_stream_sessions SET picture = NULL")
+        .execute(&rig.server.pool)
+        .await
+        .unwrap();
+
+    let session = session_id_of(&rig.resolve_with(&body).await);
+
+    wait_for_picture(&rig, session).await;
+    assert_letterbox(&stored_picture(&rig, session).await.unwrap());
 }
 
 #[tokio::test]

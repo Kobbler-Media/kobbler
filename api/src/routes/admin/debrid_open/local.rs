@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use super::{OpenMode, Opened, SessionRow, audio_language, register};
 use crate::AppState;
+use crate::debrid_outcomes::StreamRelease;
 use crate::repositories::debrid_cache_files::{self as cache_files, CachedFile};
 use crate::routes::admin::debrid_stream::StreamResolveBody;
 use crate::routes::admin::streaming::{ChapterResponse, SessionResponse, build_audio_responses};
@@ -268,6 +269,20 @@ pub(super) async fn open(
     if matches!(mode, OpenMode::Play) {
         register(state, body, session_id);
     }
+    // A file cached before anything measured its bars, or whose measuring session is gone.
+    tokio::spawn(super::picture::measure_once_probed(
+        state.clone(),
+        session_id,
+        StreamRelease {
+            debrid_provider_id: Some(row.debrid_provider_id),
+            info_hash: row.info_hash.clone(),
+            file_id: row.file_id,
+            release_title: row.release_title.clone(),
+            filename: row.filename.clone(),
+        },
+        cached.file_path.clone(),
+        duration,
+    ));
 
     let base_url = format!("/api/v1/admin/playback/sessions/{session_id}");
     let response = SessionResponse {
