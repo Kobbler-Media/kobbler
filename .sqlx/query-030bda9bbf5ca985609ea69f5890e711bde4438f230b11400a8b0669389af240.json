@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT info_hash AS \"info_hash!\", file_id, release_title, cache_path\n        FROM debrid_stream_sessions\n        WHERE media_type = $1 AND media_id = $2\n          AND info_hash IS NOT NULL AND played_at IS NOT NULL\n        ORDER BY CASE WHEN cache_path IS NOT NULL THEN 0 ELSE 1 END, played_at DESC\n        LIMIT 20\n        ",
+  "query": "\n        SELECT info_hash AS \"info_hash!\", file_id, release_title, cache_path\n        FROM debrid_stream_sessions\n        WHERE media_type = $1 AND media_id = $2\n          AND info_hash IS NOT NULL AND played_at IS NOT NULL\n        ORDER BY played_at DESC\n        LIMIT 20\n        ",
   "describe": {
     "columns": [
       {
@@ -61,5 +61,5 @@
       true
     ]
   },
-  "hash": "4ba16d9f50d1fb4c6d101d2e04d65fc468ff589eae1c029744c73dddf73a93c2"
+  "hash": "030bda9bbf5ca985609ea69f5890e711bde4438f230b11400a8b0669389af240"
 }

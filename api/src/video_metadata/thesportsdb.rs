@@ -1304,6 +1304,7 @@ impl VideoMetadataProvider for TheSportsDbProvider {
             .and_then(|y| y.parse::<u16>().ok());
 
         Ok(TvShowDetails {
+            original_language: None,
             provider: "thesportsdb".to_string(),
             provider_id: league.id_league.clone(),
             title: league.str_league.unwrap_or_default(),

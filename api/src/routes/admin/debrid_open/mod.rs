@@ -4,6 +4,7 @@
 
 mod local;
 mod media;
+pub(crate) mod picture;
 mod prepare;
 mod remote;
 mod response;
@@ -27,12 +28,14 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::ffmpeg::persist::ChapterSkipSegment;
+use crate::media_cache::picture_area::PictureArea;
 use crate::repositories::debrid_cache_files as cache_files;
 use crate::repositories::debrid_stream_sessions;
 use crate::routes::admin::debrid_stream::StreamResolveBody;
 use crate::routes::admin::streaming::{ChapterResponse, SessionResponse, SkipSegmentResponse};
 use crate::streaming::loudness::PlaybackLoudness;
 use crate::streaming::progressive::DownloadTarget;
+use crate::video_metadata::original_language::Title;
 
 pub(crate) const VIDEO_CONTAINERS: &[&str] = &[
     "mkv", "mp4", "avi", "wmv", "webm", "m4v", "flv", "mov", "mpg", "mpeg", "ts", "m2ts", "vob",
@@ -82,6 +85,7 @@ pub(crate) struct Committed {
     pub media_type: String,
     pub skip_segments: Vec<SkipSegmentResponse>,
     pub loudness: PlaybackLoudness,
+    pub picture: Option<PictureArea>,
 }
 
 impl SessionRow {
@@ -92,6 +96,7 @@ impl SessionRow {
         media_id: Uuid,
         skip_segments: &[ChapterSkipSegment],
         loudness: PlaybackLoudness,
+        picture: Option<&serde_json::Value>,
     ) -> Result<(), sqlx::Error> {
         let skip_segments = (!skip_segments.is_empty())
             .then(|| serde_json::to_value(skip_segments).ok())
@@ -101,9 +106,10 @@ impl SessionRow {
             r#"INSERT INTO debrid_stream_sessions
                 (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
                  debrid_provider_id, quality, filename, filesize, file_id, cache_path,
-                 debrid_url, debrid_url_expires_at, skip_segments, lufs, downmix_peak_db, chapters)
+                 debrid_url, debrid_url_expires_at, skip_segments, lufs, downmix_peak_db, chapters,
+                 picture)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18, $19)"#,
+                    $17, $18, $19, $20)"#,
             self.session_id,
             self.user_id,
             media_type,
@@ -123,6 +129,7 @@ impl SessionRow {
             loudness.lufs,
             loudness.downmix_peak_db,
             chapters,
+            picture,
         )
         .execute(pool)
         .await?;
@@ -159,7 +166,14 @@ impl SessionRow {
             downmix_peak_db: analysis.downmix_peak_db,
         };
         if let Err(e) = self
-            .insert(&state.pool, &media_type, media_id, &skip_segments, loudness)
+            .insert(
+                &state.pool,
+                &media_type,
+                media_id,
+                &skip_segments,
+                loudness,
+                analysis.picture.as_ref(),
+            )
             .await
         {
             error!(error = %e, "failed to create stream session");
@@ -173,6 +187,7 @@ impl SessionRow {
             media_id,
             media_type,
             loudness,
+            picture: analysis.picture.and_then(picture::shown),
             skip_segments: skip_segments
                 .into_iter()
                 .map(|s| SkipSegmentResponse {
@@ -240,6 +255,37 @@ fn register(state: &AppState, body: &StreamResolveBody, session_id: Uuid) {
     if let Some(key) = release_key(body.info_hash.as_deref(), body.file_id) {
         state.debrid_session_index.insert(key, session_id);
     }
+}
+
+fn title_of(body: &StreamResolveBody) -> Option<Title> {
+    if let Some(id) = body.media_id.filter(|id| !id.is_nil()) {
+        return match body.media_type.as_str() {
+            "movie" => Some(Title::Movie(id)),
+            "episode" => Some(Title::Episode(id)),
+            _ => None,
+        };
+    }
+    let tmdb_id = body
+        .auto_create
+        .as_ref()?
+        .identifiers
+        .as_ref()?
+        .get("tmdb_id")
+        .and_then(|v| {
+            v.as_str()
+                .map(String::from)
+                .or_else(|| v.as_i64().map(|n| n.to_string()))
+        })?;
+    match body.media_type.as_str() {
+        "movie" => Some(Title::TmdbMovie(tmdb_id)),
+        "tv" | "episode" => Some(Title::TmdbShow(tmdb_id)),
+        _ => None,
+    }
+}
+
+/// What a dub would be marked in: the release's name and the name of the file in it.
+fn release_name(release_title: &str, filename: &str) -> String {
+    format!("{release_title} {filename}")
 }
 
 fn audio_language<'a>(

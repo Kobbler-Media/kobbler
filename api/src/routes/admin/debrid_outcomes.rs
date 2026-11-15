@@ -4,15 +4,19 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tracing::error;
 use uuid::Uuid;
 
 use crate::AppState;
 use crate::debrid_outcomes;
+use crate::jobs::handlers::debrid_cache_cleanup;
 use crate::repositories::debrid_stream_sessions;
-use crate::routes::AuthUser;
+use crate::routes::admin::debrid_open;
 use crate::routes::admin::debrid_stream::session_owner;
+use crate::routes::helpers::build_kobload_client;
+use crate::routes::{AuthUser, PlaybackAuth};
 
 #[derive(Debug, Deserialize)]
 pub struct OutcomeBody {
@@ -48,6 +52,53 @@ pub async fn stream_outcome(
             .filter(|r| !r.is_empty())
             .unwrap_or("client_reported");
         debrid_outcomes::report_failure(&state, &release.into(), reason).await;
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct BadCopyBody {
+    pub debrid_provider_id: Uuid,
+    pub info_hash: String,
+    #[serde(default)]
+    pub file_id: Option<i32>,
+    pub bad: bool,
+}
+
+/// POST /api/v1/admin/stream/bad
+///
+/// kobload ranks by it; the copy on disk goes at once, so nothing offers it meanwhile.
+pub async fn stream_bad(
+    State(state): State<AppState>,
+    auth: PlaybackAuth,
+    Json(body): Json<BadCopyBody>,
+) -> impl IntoResponse {
+    if auth.is_kids {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let runtime = state.runtime_config.get().await;
+    let client = match build_kobload_client(&runtime) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+    if let Err(e) = client.stream_bad(&json!(body)).await {
+        error!(error = %e, "bad copy report failed");
+        return (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({"error": format!("bad copy report failed: {e}")})),
+        )
+            .into_response();
+    }
+    if body.bad
+        && let Some(cached) = debrid_open::complete_cache_entry(
+            &state,
+            body.debrid_provider_id,
+            Some(&body.info_hash),
+            body.file_id,
+        )
+        .await
+    {
+        debrid_cache_cleanup::evict(&state.pool, &cached).await;
     }
     StatusCode::NO_CONTENT.into_response()
 }

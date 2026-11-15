@@ -13,6 +13,7 @@ pub mod language;
 pub mod loudness;
 pub mod offline_export;
 pub mod persist;
+pub mod presumed_audio;
 pub mod progressive;
 pub mod segment_cache;
 pub mod session;

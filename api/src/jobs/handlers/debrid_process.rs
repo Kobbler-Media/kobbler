@@ -9,12 +9,15 @@
 //! — the same shape kobbler-native content gets.
 
 use crate::RuntimeConfigManager;
+use crate::debrid_outcomes::StreamRelease;
 use crate::ffmpeg::probe;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::media_cache::analyze::{AnalyzeInputs, run_analysis};
 use crate::media_cache::episode_cache::MediaKind;
 use crate::media_cache::writers::write_manifest_at_async;
+use crate::repositories::debrid_stream_sessions;
+use crate::routes::admin::debrid_open;
 use crate::skip_detect::cache_detect::{
     EpisodeDiagnostics, MovieHandle, detect_movie_from_cache_with_chapters,
     detect_season_from_cache, season_episode_files,
@@ -24,7 +27,7 @@ use nats_jobs::Publisher;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::PgPool;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -53,6 +56,24 @@ impl DebridProcessHandler {
             pool,
             runtime_config,
             storage_root,
+        }
+    }
+
+    async fn measure_picture(&self, session_id: Uuid, cache_path: &Path, duration_secs: f64) {
+        let release: StreamRelease =
+            match debrid_stream_sessions::release(&self.pool, session_id, None).await {
+                Ok(Some(release)) => release.into(),
+                _ => return,
+            };
+        let source = cache_path.to_string_lossy();
+        let Some(picture) =
+            debrid_open::picture::measured(&self.pool, &release, &source, duration_secs).await
+        else {
+            return;
+        };
+        if let Err(e) = debrid_stream_sessions::set_picture(&self.pool, session_id, &picture).await
+        {
+            warn!(error = %e, %session_id, "failed to store debrid picture area");
         }
     }
 }
@@ -184,6 +205,15 @@ impl JobHandler for DebridProcessHandler {
         if !chapter_segments_initial.is_empty() {
             persist_skip_segments(&self.pool, session_id, &chapter_segments_initial).await?;
         }
+
+        // A release downloaded ahead was never opened, so nothing has measured its bars;
+        // done here, the episode starts with them already trimmed.
+        self.measure_picture(
+            session_id,
+            &cache_path,
+            probe_result.format.duration_seconds.unwrap_or_default(),
+        )
+        .await;
 
         let target = MediaKind::for_debrid(&session_row.media_type, session_row.media_id);
         let episode_cache_target_dir: Option<PathBuf> = target

@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT picture AS \"picture!\"\n        FROM debrid_stream_sessions\n        WHERE info_hash = $1 AND file_id IS NOT DISTINCT FROM $2 AND picture IS NOT NULL\n        ORDER BY updated_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "picture!",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "picture"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "2a3c7291afb654741c7768b7d96b29c1e1e18ce3f8950f00fcc998d58fd25dea"
+}

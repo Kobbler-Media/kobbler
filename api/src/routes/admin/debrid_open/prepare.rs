@@ -11,6 +11,7 @@ use crate::routes::admin::debrid_stream::probe_sidecar_path;
 use crate::streaming::decision::{ClientCapabilities, PlaybackMethod, ViewerPrefs};
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::session::PlaybackSession;
+use crate::video_metadata::original_language::Title;
 
 pub(super) struct Prepare {
     pub state: AppState,
@@ -25,6 +26,7 @@ pub(super) struct Prepare {
     pub start_time: Option<f64>,
     pub audio_language: String,
     pub audio_title: Option<String>,
+    pub title: Option<Title>,
     /// A warm session probes and decides, then holds off its transcode until claimed.
     pub warm: Option<WarmGate>,
 }
@@ -79,6 +81,7 @@ pub(super) async fn run(ctx: Prepare) {
         start_time,
         audio_language,
         audio_title,
+        title,
         warm,
     } = ctx;
 
@@ -194,7 +197,7 @@ pub(super) async fn run(ctx: Prepare) {
         interlaced: probe_info.interlaced,
         dynamic_range: probe_info.dynamic_range,
     };
-    let audio_metas: Vec<crate::streaming::decision::AudioTrackMeta> = probe_info
+    let mut audio_metas: Vec<crate::streaming::decision::AudioTrackMeta> = probe_info
         .audio_tracks
         .iter()
         .map(|a| crate::streaming::decision::AudioTrackMeta {
@@ -206,6 +209,13 @@ pub(super) async fn run(ctx: Prepare) {
             is_default: a.is_default,
         })
         .collect();
+    crate::streaming::presumed_audio::presume(
+        &bg_state.pool,
+        title.as_ref(),
+        &super::release_name(&bg_release.release_title, &bg_release.filename),
+        &mut audio_metas,
+    )
+    .await;
     // Resolve preferred audio from language settings
     let preferred_audio = crate::streaming::decision::preferred_audio(
         &audio_metas,
@@ -271,6 +281,18 @@ pub(super) async fn run(ctx: Prepare) {
             session.chapters = probe_info.chapters.clone();
         }
     }
+
+    tokio::spawn(super::picture::measure_once_probed(
+        bg_state.clone(),
+        session_id,
+        bg_release.clone(),
+        if download_meter.is_complete() {
+            local_cache_path.to_string_lossy().into_owned()
+        } else {
+            bg_stream_url.clone()
+        },
+        duration,
+    ));
 
     tokio::spawn(super::subtitles::name_once_head_arrives(
         bg_state.clone(),

@@ -9,9 +9,10 @@
     errors: string[];
     onClose: () => void;
     onPlay: (option: StreamOption) => void;
+    onReport: (option: StreamOption, bad: boolean) => void;
   }
 
-  let { options, loading, errors, onClose, onPlay }: Props = $props();
+  let { options, loading, errors, onClose, onPlay, onReport }: Props = $props();
 
   function formatSize(bytes: number): string {
     if (!bytes) return 'Unknown';
@@ -111,57 +112,75 @@
             {@const hdr = getHdr(option.quality)}
             {@const audio = getAudio(option.quality)}
             {@const sourceLabel = getSourceLabel(option.indexer)}
-            <button type="button" class="stream-item" onclick={() => onPlay(option)}>
-              <div class="stream-info">
-                <div class="stream-title-row">
-                  <span class="stream-title">{option.release_title}</span>
-                  <span class="score-pill {scoreClass(option.total_score)}"
-                    >{formatScore(option.total_score)}</span
-                  >
-                </div>
-                <div class="stream-badges">
-                  {#if sourceLabel}
-                    <span class="badge badge-source">{sourceLabel}</span>
-                  {/if}
-                  <!-- Only claim either end when the backend actually knows it:
+            {@const reportLabel = option.reported_bad ? 'Undo report' : 'Report bad copy'}
+            <div class="stream-item">
+              <button type="button" class="stream-play" onclick={() => onPlay(option)}>
+                <div class="stream-info">
+                  <div class="stream-title-row">
+                    <span class="stream-title">{option.release_title}</span>
+                    <span class="score-pill {scoreClass(option.total_score)}"
+                      >{formatScore(option.total_score)}</span
+                    >
+                  </div>
+                  <div class="stream-badges">
+                    {#if sourceLabel}
+                      <span class="badge badge-source">{sourceLabel}</span>
+                    {/if}
+                    <!-- Only claim either end when the backend actually knows it:
                      "likely" and "unknown" stay unlabelled rather than guessed. -->
-                  {#if option.cached || option.availability === 'ready'}
-                    <span class="badge badge-instant">
-                      <span class="material-icons-outlined badge-icon">bolt</span>
-                      Instant
-                    </span>
-                  {:else if option.availability === 'uncached'}
-                    <span class="badge badge-uncached">Needs download</span>
-                  {/if}
-                  {#if option.playback === 'worked'}
-                    <span class="badge badge-worked">Played before</span>
-                  {:else if option.playback === 'failed'}
-                    <span class="badge badge-failed">Failed before</span>
-                  {/if}
-                  {#if resolution}
-                    <span class="badge badge-quality">{resolution}</span>
-                  {/if}
-                  {#if codec}
-                    <span class="badge badge-codec">{codec}</span>
-                  {/if}
-                  {#if hdr}
-                    <span class="badge badge-hdr">{hdr}</span>
-                  {/if}
-                  {#if audio}
-                    <span class="badge badge-audio">{audio}</span>
-                  {/if}
+                    {#if option.cached || option.availability === 'ready'}
+                      <span class="badge badge-instant">
+                        <span class="material-icons-outlined badge-icon">bolt</span>
+                        Instant
+                      </span>
+                    {:else if option.availability === 'uncached'}
+                      <span class="badge badge-uncached">Needs download</span>
+                    {/if}
+                    {#if option.reported_bad}
+                      <span class="badge badge-failed">Reported bad</span>
+                    {:else if option.playback === 'worked'}
+                      <span class="badge badge-worked">Played before</span>
+                    {:else if option.playback === 'failed'}
+                      <span class="badge badge-failed">Failed before</span>
+                    {/if}
+                    {#if resolution}
+                      <span class="badge badge-quality">{resolution}</span>
+                    {/if}
+                    {#if codec}
+                      <span class="badge badge-codec">{codec}</span>
+                    {/if}
+                    {#if hdr}
+                      <span class="badge badge-hdr">{hdr}</span>
+                    {/if}
+                    {#if audio}
+                      <span class="badge badge-audio">{audio}</span>
+                    {/if}
+                  </div>
+                  <div class="stream-meta">
+                    <span class="meta-size">{formatSize(option.size)}</span>
+                    <span class="meta-indexer">{option.indexer}</span>
+                    <span class="meta-debrid">{option.debrid_provider}</span>
+                    {#if option.source_type === 'usenet'}
+                      <span class="meta-source">Usenet</span>
+                    {/if}
+                  </div>
                 </div>
-                <div class="stream-meta">
-                  <span class="meta-size">{formatSize(option.size)}</span>
-                  <span class="meta-indexer">{option.indexer}</span>
-                  <span class="meta-debrid">{option.debrid_provider}</span>
-                  {#if option.source_type === 'usenet'}
-                    <span class="meta-source">Usenet</span>
-                  {/if}
-                </div>
-              </div>
-              <span class="material-icons-outlined play-icon">play_circle</span>
-            </button>
+                <span class="material-icons-outlined play-icon">play_circle</span>
+              </button>
+              {#if option.info_hash}
+                <button
+                  type="button"
+                  class="report-btn"
+                  aria-label={reportLabel}
+                  title={reportLabel}
+                  onclick={() => onReport(option, !option.reported_bad)}
+                >
+                  <span class="material-icons-outlined">
+                    {option.reported_bad ? 'undo' : 'flag'}
+                  </span>
+                </button>
+              {/if}
+            </div>
           {/each}
         {/each}
       </div>
@@ -229,14 +248,11 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 4px;
     padding: 12px;
     border: 1px solid var(--ring);
     border-radius: 8px;
     background: var(--card);
-    cursor: pointer;
-    text-align: left;
-    width: 100%;
     transition:
       border-color 0.15s,
       background 0.15s;
@@ -245,6 +261,43 @@
   .stream-item:hover {
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 5%, var(--card));
+  }
+
+  .stream-play {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .report-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 6px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .report-btn:hover {
+    background: var(--ring);
+    color: var(--ink);
+  }
+
+  .report-btn .material-icons-outlined {
+    font-size: 18px;
   }
 
   .stream-info {

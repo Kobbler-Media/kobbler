@@ -617,7 +617,7 @@ pub fn language_matches(track_lang: Option<&str>, preferred: &str) -> bool {
     })
 }
 
-fn is_untagged(language: Option<&str>) -> bool {
+pub(super) fn is_untagged(language: Option<&str>) -> bool {
     language.is_none_or(|l| {
         l.trim().is_empty()
             || matches!(
@@ -678,7 +678,7 @@ fn is_commentary(title: Option<&str>) -> bool {
 
 /// The tracks that can stand for the title's own audio: commentary is passed over only
 /// for a real feature track, and an ambient feed only when anything else is there.
-fn feature_tracks(tracks: &[AudioTrackMeta]) -> Vec<&AudioTrackMeta> {
+pub(super) fn feature_tracks(tracks: &[AudioTrackMeta]) -> Vec<&AudioTrackMeta> {
     let narrated: Vec<_> = tracks
         .iter()
         .filter(|t| !is_ambient(t.title.as_deref()))

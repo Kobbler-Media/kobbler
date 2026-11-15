@@ -138,6 +138,15 @@ describe('fallbackCandidates', () => {
     expect(hashesOf(fallbackCandidates(opts, newWalkState()))).toEqual(['a', 'b', 'f', 'u']);
   });
 
+  it('never offers a release the viewer reported as a bad copy', () => {
+    const opts = [
+      option('a'),
+      option('r', { reported_bad: true, playback: 'failed' }),
+      option('b')
+    ];
+    expect(hashesOf(fallbackCandidates(opts, newWalkState()))).toEqual(['a', 'b']);
+  });
+
   it('leaves out what this run already tried', () => {
     const opts = [option('a'), option('b')];
     const state = newWalkState([optionKey(opts[0])]);

@@ -81,8 +81,9 @@ const isUncached = (o: StreamOption) => o.availability === 'uncached';
 
 // The server sinks failures already, but only the ones it saw before this
 // search; an uncached release goes last because resolving it starts a download.
+// A release the viewer reported as a bad copy is only ever played by picking it.
 export function fallbackCandidates(options: StreamOption[], state: WalkState): StreamOption[] {
-  const rest = untriedOptions(options, state);
+  const rest = untriedOptions(options, state).filter((o) => !o.reported_bad);
   const held = rest.filter((o) => !isUncached(o));
   return [
     ...held.filter((o) => o.playback !== 'failed'),

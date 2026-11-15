@@ -47,6 +47,8 @@
     pipSupported: boolean;
     aspectMode: 'auto' | 'fit' | 'fill';
     onAspectModeCycle: () => void;
+    trimBars?: boolean;
+    onTrimBarsToggle?: () => void;
     onSearchSubtitles?: () => void;
     onClose: () => void;
     mediaTitle?: string;
@@ -93,6 +95,8 @@
     pipSupported,
     aspectMode,
     onAspectModeCycle,
+    trimBars,
+    onTrimBarsToggle,
     onSearchSubtitles,
     onClose,
     mediaTitle,
@@ -544,6 +548,20 @@
           >
         </button>
 
+        {#if onTrimBarsToggle}
+          <button
+            class="ctrl-btn"
+            class:active={trimBars}
+            type="button"
+            onclick={onTrimBarsToggle}
+            aria-label="Trim black bars"
+            aria-pressed={trimBars}
+            title={trimBars ? 'Trim black bars: on' : 'Trim black bars: off'}
+          >
+            <span class="material-icons-outlined">crop</span>
+          </button>
+        {/if}
+
         <!-- Fullscreen -->
         <button
           class="ctrl-btn"
@@ -868,6 +886,10 @@
 
   .ctrl-btn:hover {
     background: rgba(255, 255, 255, 0.15);
+  }
+
+  .ctrl-btn.active {
+    color: var(--accent, #818cf8);
   }
 
   .ctrl-btn:focus {

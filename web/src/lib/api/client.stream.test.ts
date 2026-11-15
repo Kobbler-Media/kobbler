@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, getPlaybackSessionStatus, reportStreamOutcome, streamResolve } from './client';
+import {
+  ApiError,
+  getPlaybackSessionStatus,
+  reportBadRelease,
+  reportStreamOutcome,
+  streamPause,
+  streamResolve
+} from './client';
 
 function stubFetch(status: number, body: unknown) {
   const fetch = vi.fn(
@@ -45,6 +52,67 @@ describe('reportStreamOutcome', () => {
       );
     }
   );
+});
+
+describe('streamPause', () => {
+  it('asks about one provider and returns its pause', async () => {
+    const pause = { reason: 'adds_paused', seconds: 27 };
+    const fetch = stubFetch(200, { pause });
+    expect(await streamPause('p1')).toEqual(pause);
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/admin/stream/pause?provider_id=p1',
+      expect.anything()
+    );
+  });
+
+  it('reads no pause as null', async () => {
+    stubFetch(200, { pause: null });
+    expect(await streamPause('p')).toBeNull();
+  });
+
+  it.each([404, 500])('reads a %i as no pause', async (status) => {
+    stubFetch(status, { error: 'nope' });
+    expect(await streamPause('p')).toBeNull();
+  });
+
+  it('reads an unanswered request as no pause', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(new TypeError('offline')))
+    );
+    expect(await streamPause('p')).toBeNull();
+  });
+});
+
+describe('reportBadRelease', () => {
+  const release = {
+    debrid_provider_id: 'p',
+    info_hash: 'h',
+    files: [{ id: 3, path: 'a', size: 1 }]
+  };
+
+  it.each([true, false])('posts the release file with bad=%s', async (bad) => {
+    const fetch = stubFetch(204, undefined);
+    await reportBadRelease(release, bad);
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/admin/stream/bad',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ debrid_provider_id: 'p', info_hash: 'h', file_id: 3, bad })
+      })
+    );
+  });
+
+  it('sends a null file id for a release without files', async () => {
+    const fetch = stubFetch(204, undefined);
+    await reportBadRelease({ ...release, files: [] }, true);
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/v1/admin/stream/bad',
+      expect.objectContaining({
+        body: JSON.stringify({ debrid_provider_id: 'p', info_hash: 'h', file_id: null, bad: true })
+      })
+    );
+  });
 });
 
 describe('getPlaybackSessionStatus', () => {

@@ -38,6 +38,7 @@ use crate::streaming::decision::{
 use crate::streaming::feed::FeedStatus;
 use crate::streaming::loudness::PlaybackLoudness;
 use crate::streaming::persist::Progress;
+use crate::streaming::presumed_audio;
 use crate::streaming::segment_cache::SegmentCache;
 use crate::streaming::session::{
     MediaType, PendingSegmentRequest, PlaybackSession, SessionError, SubtitleFile,
@@ -45,6 +46,7 @@ use crate::streaming::session::{
 use crate::streaming::subtitle;
 use crate::streaming::variant::{self, QualityVariant, VariantSpec};
 use crate::types::MediaScope;
+use crate::video_metadata::original_language::Title;
 
 // =============================================================================
 // Stall detection thresholds
@@ -4149,7 +4151,7 @@ pub(crate) async fn load_playable_file(
     // session (which would map every seek to segment 0 and instant-ENDLIST).
     // An unrecorded field order only matters to a client that has said it cannot show fields.
     let interlace_unknown = stored.interlaced.is_none() && field_order_needed;
-    let meta = if stored.video_codec.is_empty()
+    let mut meta = if stored.video_codec.is_empty()
         || stored.container.is_empty()
         || stored.duration <= 0.0
         || interlace_unknown
@@ -4220,6 +4222,7 @@ pub(crate) async fn load_playable_file(
 
                 StoredFileMeta {
                     file_path: stored.file_path,
+                    title: stored.title,
                     container: probed_container,
                     video_codec: probed_video_codec,
                     duration: probed_duration,
@@ -4248,11 +4251,23 @@ pub(crate) async fn load_playable_file(
     } else {
         stored
     };
+    let file_name = full_path
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_default();
+    presumed_audio::presume(
+        &state.pool,
+        meta.title.as_ref(),
+        &file_name,
+        &mut meta.audio_metas,
+    )
+    .await;
     Ok((full_path, meta))
 }
 
 pub(crate) struct StoredFileMeta {
     pub(crate) file_path: String,
+    pub(crate) title: Option<Title>,
     pub(crate) container: String,
     pub(crate) video_codec: String,
     pub(crate) duration: f64,
@@ -4391,6 +4406,7 @@ async fn load_movie_file_meta(
 
     Ok(StoredFileMeta {
         file_path: file.file_path,
+        title: Some(Title::Movie(file.movie_id)),
         container: file.container.unwrap_or_default(),
         video_codec: file.video_codec.unwrap_or_default(),
         duration: file.duration_seconds.unwrap_or(0.0),
@@ -4459,6 +4475,7 @@ async fn load_episode_file_meta(
 
     Ok(StoredFileMeta {
         file_path: file.file_path,
+        title: Some(Title::EpisodeFile(file_id)),
         container: file.container.unwrap_or_default(),
         video_codec: file.video_codec.unwrap_or_default(),
         duration: file.duration_seconds.unwrap_or(0.0),
@@ -4503,6 +4520,7 @@ async fn load_recording_file_meta(
     // tables — the inline probe fallback in create_session handles discovery.
     Ok(StoredFileMeta {
         file_path,
+        title: None,
         container: rec.container.unwrap_or_default(),
         video_codec: rec.video_codec.unwrap_or_default(),
         duration: rec.duration_seconds.unwrap_or(0.0),

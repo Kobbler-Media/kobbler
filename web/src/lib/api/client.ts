@@ -6655,6 +6655,7 @@ export interface StreamOption {
   availability?: StreamAvailability;
   group?: StreamGroup;
   audio_languages?: string[];
+  reported_bad?: boolean;
 }
 
 export type StreamAvailability = 'ready' | 'likely' | 'unknown' | 'uncached';
@@ -6756,6 +6757,38 @@ export async function streamResolve(params: StreamResolveParams): Promise<Stream
   return request('/api/v1/admin/stream/resolve', {
     method: 'POST',
     body: JSON.stringify(params)
+  });
+}
+
+export interface StreamPause {
+  reason: string;
+  seconds: number;
+}
+
+// Advisory only: a server without the endpoint, or one that cannot answer, is not a pause.
+export async function streamPause(providerId: string): Promise<StreamPause | null> {
+  try {
+    const result = await request<{ pause: StreamPause | null }>(
+      `/api/v1/admin/stream/pause${buildQueryString({ provider_id: providerId })}`
+    );
+    return result?.pause ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function reportBadRelease(
+  release: Pick<StreamOption, 'debrid_provider_id' | 'info_hash' | 'files'>,
+  bad: boolean
+): Promise<void> {
+  return request('/api/v1/admin/stream/bad', {
+    method: 'POST',
+    body: JSON.stringify({
+      debrid_provider_id: release.debrid_provider_id,
+      info_hash: release.info_hash,
+      file_id: release.files[0]?.id ?? null,
+      bad
+    })
   });
 }
 

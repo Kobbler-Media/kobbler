@@ -342,6 +342,7 @@ impl VideoMetadataProvider for TvdbProvider {
             .collect();
 
         Ok(TvShowDetails {
+            original_language: None,
             provider: "tvdb".into(),
             provider_id: s.id.to_string(),
             title: s.name.unwrap_or_default(),

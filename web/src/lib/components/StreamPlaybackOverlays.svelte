@@ -17,6 +17,7 @@
     errors={stream.streamErrors}
     onClose={stream.closeModal}
     onPlay={stream.playOption}
+    onReport={stream.reportBad}
   />
 {/if}
 

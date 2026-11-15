@@ -4,9 +4,13 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 const MKV: &[u8] = include_bytes!("../fixtures/playback/interlaced.mkv");
-const SUB_STREAM: i32 = 2;
+pub(crate) const SUB_STREAM: i32 = 2;
 
-async fn seed_file(server: &TestServer, audio_language: Option<&str>) -> Uuid {
+pub(crate) async fn seed_file(
+    server: &TestServer,
+    audio_language: Option<&str>,
+    file_name: &str,
+) -> Uuid {
     let movie = server
         .admin_client()
         .post_json(
@@ -19,7 +23,7 @@ async fn seed_file(server: &TestServer, audio_language: Option<&str>) -> Uuid {
         .unwrap()
         .parse()
         .unwrap();
-    let path = std::path::Path::new(&server.storage_root()).join(format!("{movie_id}.mkv"));
+    let path = std::path::Path::new(&server.storage_root()).join(format!("{movie_id}-{file_name}"));
     std::fs::write(&path, MKV).unwrap();
     let file_id = movie_files::create(
         &server.pool,
@@ -84,7 +88,7 @@ async fn subtitles_switch_on_by_language_only_for_audio_the_viewer_does_not_spea
         (Some("jpn"), false, None),
     ];
     for (audio_language, subtitles_enabled, expected) in cases {
-        let file_id = seed_file(&server, audio_language).await;
+        let file_id = seed_file(&server, audio_language, "film.mkv").await;
         let resp = server
             .admin_client()
             .post_json(

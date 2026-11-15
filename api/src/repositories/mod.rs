@@ -97,6 +97,7 @@ pub mod movie_watch_states;
 pub mod movies;
 pub mod notification_agents;
 pub mod offline_exports;
+pub mod original_language;
 pub mod people;
 pub mod playback_sessions;
 pub mod playback_tokens;

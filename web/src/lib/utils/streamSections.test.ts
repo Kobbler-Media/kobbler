@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { StreamGroup, StreamOption } from '#lib/api/client.js';
 import { streamSections } from './streamSections';
 
-const option = (id: string, group?: StreamGroup) => ({ id, group }) as StreamOption;
+const option = (id: string, group?: StreamGroup, reported_bad?: boolean) =>
+  ({ id, group, reported_bad }) as StreamOption;
 
 describe('streamSections', () => {
   it('runs the server order under one heading per group', () => {
@@ -20,6 +21,21 @@ describe('streamSections', () => {
       ['Available', ['d']],
       ['Needs downloading', ['e']],
       ['Previously failed', ['f']]
+    ]);
+  });
+
+  it('gathers reported releases under one last heading wherever they sit', () => {
+    const sections = streamSections([
+      option('a', 'available'),
+      option('b', 'available', true),
+      option('c', 'available'),
+      option('d', 'failed'),
+      option('e', 'failed', true)
+    ]);
+    expect(sections.map((s) => [s.title, s.options.map((o) => o.id)])).toEqual([
+      ['Available', ['a', 'c']],
+      ['Previously failed', ['d']],
+      ['Reported bad', ['b', 'e']]
     ]);
   });
 

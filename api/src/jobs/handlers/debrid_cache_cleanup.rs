@@ -136,12 +136,16 @@ impl JobHandler for DebridCacheCleanupHandler {
 
 impl DebridCacheCleanupHandler {
     async fn evict(&self, file: &cache_files::CachedFile) -> bool {
-        if !remove_cache_entry(&file.file_path).await {
-            return false;
-        }
-        if let Err(e) = cache_files::forget(&self.pool, &file.file_path).await {
-            warn!(path = %file.file_path, error = %e, "Failed to forget evicted cache file");
-        }
-        true
+        evict(&self.pool, file).await
     }
+}
+
+pub(crate) async fn evict(pool: &sqlx::PgPool, file: &cache_files::CachedFile) -> bool {
+    if !remove_cache_entry(&file.file_path).await {
+        return false;
+    }
+    if let Err(e) = cache_files::forget(pool, &file.file_path).await {
+        warn!(path = %file.file_path, error = %e, "Failed to forget evicted cache file");
+    }
+    true
 }

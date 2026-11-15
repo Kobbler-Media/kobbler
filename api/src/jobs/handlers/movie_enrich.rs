@@ -6,7 +6,7 @@
 use crate::images::{self, ImageEntry};
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobContext, JobError, JobResult};
-use crate::repositories::{movies, people};
+use crate::repositories::{movies, original_language, people};
 use crate::video_metadata::{VideoProviderRegistry, types::VideoCapability};
 use async_trait::async_trait;
 use nats_jobs::Publisher;
@@ -231,6 +231,11 @@ pub async fn enrich_movie(
     movies::update(pool, movie_id, update)
         .await
         .map_err(|e| JobError::ExecutionFailed(format!("Failed to update movie: {e}")))?;
+    if let Some(language) = details.original_language {
+        original_language::set_movie(pool, movie_id, &language)
+            .await
+            .map_err(|e| JobError::ExecutionFailed(format!("Failed to update movie: {e}")))?;
+    }
 
     // Upsert people and replace cast
     let mut cast_inputs = Vec::new();

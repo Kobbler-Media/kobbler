@@ -63,6 +63,22 @@ pub fn title_words(preference: &str) -> Vec<String> {
     ]
 }
 
+/// Whether a track title names a language, by English name or three-letter code. Only
+/// languages that also have a two-letter code count: the rest of ISO 639-3 reads as
+/// codecs and plain words ("dts", "aac", "the").
+pub fn names_a_language(title: &str) -> bool {
+    title
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| word.len() > 2)
+        .any(|word| parse(word).is_some_and(|l| l.to_639_1().is_some()))
+}
+
+/// A language code in any form as the 639-2/B code a container would tag a track with.
+pub fn container_code(tag: &str) -> Option<&'static str> {
+    from_code(tag).map(|l| bibliographic(l.to_639_3()))
+}
+
 fn parse(tag: &str) -> Option<Language> {
     from_code(tag).or_else(|| from_name(tag))
 }
@@ -180,6 +196,38 @@ mod tests {
     fn a_title_names_a_language_by_its_name_or_three_letter_code() {
         assert_eq!(title_words("english"), ["english", "eng", "eng"]);
         assert_eq!(title_words("de"), ["german", "deu", "ger"]);
+    }
+
+    #[test]
+    fn a_title_names_a_language_only_in_words_that_cannot_be_anything_else() {
+        for (title, names) in [
+            ("AC3 [English]", true),
+            ("ENG 5.1", true),
+            ("Korean Stereo", true),
+            ("ger", true),
+            ("DTS-HD MA 5.1", false),
+            ("AAC Stereo", false),
+            ("Surround", false),
+            ("The Original Mix", false),
+            ("", false),
+        ] {
+            assert_eq!(names_a_language(title), names, "{title}");
+        }
+    }
+
+    #[test]
+    fn container_codes_are_bibliographic() {
+        for (tag, code) in [
+            ("ko", Some("kor")),
+            ("fr", Some("fre")),
+            ("ZH", Some("chi")),
+            ("deu", Some("ger")),
+            ("xx", None),
+            ("und", None),
+            ("", None),
+        ] {
+            assert_eq!(container_code(tag), code, "{tag}");
+        }
     }
 
     #[test]

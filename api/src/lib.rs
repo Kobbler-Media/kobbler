@@ -2057,6 +2057,14 @@ pub fn create_router(state: AppState) -> Router {
             get(debrid_stream_routes::stream_resolve_status),
         )
         .route(
+            "/api/v1/admin/stream/bad",
+            post(routes::admin::debrid_outcomes::stream_bad),
+        )
+        .route(
+            "/api/v1/admin/stream/pause",
+            get(debrid_stream_routes::stream_pause),
+        )
+        .route(
             "/api/v1/admin/stream/prewarm",
             post(routes::admin::stream_prewarm::prewarm),
         )

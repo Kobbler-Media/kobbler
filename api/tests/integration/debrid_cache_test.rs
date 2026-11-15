@@ -7,6 +7,8 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+use wiremock::matchers::{method, path_regex};
+use wiremock::{Mock, ResponseTemplate};
 
 async fn cache_rows(rig: &Rig, info_hash: &str) -> i64 {
     sqlx::query_scalar(
@@ -332,6 +334,213 @@ async fn a_title_with_its_release_on_disk_offers_it_without_a_search() {
     local_option(&rig, movie)
         .await
         .assert_status(StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_release_on_disk_is_not_offered_once_another_was_played_after_it() {
+    let rig = Rig::start(UpstreamPlan::new(ITA_ENG_FIXTURE.to_vec()), "film.mkv").await;
+    let movie = rig.movie().await;
+    let body = rig.resolve_body("localhash", movie, direct_play_caps());
+    let on_disk = session_id_of(&rig.resolve_with(&body).await);
+    rig.wait_for_complete("localhash").await;
+    wait_for_probe(&rig, on_disk).await;
+    local_option(&rig, movie).await.assert_ok();
+
+    sqlx::query(
+        "INSERT INTO debrid_stream_sessions
+            (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
+             debrid_provider_id, filename, filesize, file_id, played_at)
+         SELECT $1, user_id, media_type, media_id, 'Streamed.Release', 'streamedhash',
+                debrid_provider, debrid_provider_id, filename, filesize, file_id, NOW()
+         FROM debrid_stream_sessions WHERE id = $2",
+    )
+    .bind(Uuid::now_v7())
+    .bind(on_disk)
+    .execute(&rig.server.pool)
+    .await
+    .unwrap();
+    local_option(&rig, movie)
+        .await
+        .assert_status(StatusCode::NOT_FOUND);
+
+    rig.server
+        .admin_client()
+        .post_json(
+            &format!("/api/v1/admin/stream/{on_disk}/outcome"),
+            &json!({ "ok": true }),
+        )
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+    let again: Value = local_option(&rig, movie).await.json();
+    assert_eq!(again["info_hash"], "localhash", "{again}");
+}
+
+#[tokio::test]
+async fn a_copy_reported_bad_is_told_to_kobload_and_leaves_the_disk() {
+    let rig = Rig::start(UpstreamPlan::new(ITA_ENG_FIXTURE.to_vec()), "film.mkv").await;
+    Mock::given(method("POST"))
+        .and(path_regex("/api/v1/stream/bad$"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&rig.kobload)
+        .await;
+    let movie = rig.movie().await;
+    let body = rig.resolve_body("localhash", movie, direct_play_caps());
+    let session = session_id_of(&rig.resolve_with(&body).await);
+    rig.wait_for_complete("localhash").await;
+    wait_for_probe(&rig, session).await;
+    let report = json!({
+        "debrid_provider_id": body["debrid_provider_id"],
+        "info_hash": "localhash",
+        "file_id": body["file_id"],
+        "bad": true,
+    });
+
+    TestClient::new(&rig.server.api_url)
+        .post_json("/api/v1/admin/stream/bad", &report)
+        .await
+        .assert_status(StatusCode::UNAUTHORIZED);
+    local_option(&rig, movie).await.assert_ok();
+
+    rig.server
+        .admin_client()
+        .post_json("/api/v1/admin/stream/bad", &report)
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+    assert_eq!(rig.kobload_requests("/stream/bad").await, vec![report]);
+    assert!(!rig.cache_file("localhash").exists());
+    local_option(&rig, movie)
+        .await
+        .assert_status(StatusCode::NOT_FOUND);
+}
+
+async fn stored_picture(rig: &Rig, session: Uuid) -> Option<Value> {
+    sqlx::query_scalar("SELECT picture FROM debrid_stream_sessions WHERE id = $1")
+        .bind(session)
+        .fetch_one(&rig.server.pool)
+        .await
+        .unwrap()
+}
+
+/// 320x240 with the picture in rows 52..188.
+fn assert_letterbox(picture: &Value) {
+    let near = |field: &str, want: f64| {
+        let got = picture[field].as_f64().unwrap_or(f64::NAN);
+        assert!(
+            (got - want).abs() < 0.03,
+            "{field} {got}, want {want}: {picture}"
+        );
+    };
+    near("x", 0.0);
+    near("width", 1.0);
+    near("y", 52.0 / 240.0);
+    near("height", 136.0 / 240.0);
+}
+
+#[tokio::test]
+async fn a_debrid_stream_has_its_black_bars_measured_while_it_plays_and_a_replay_starts_with_them()
+{
+    let rig = Rig::start(UpstreamPlan::new(LETTERBOXED_FIXTURE.to_vec()), "film.mkv").await;
+    let movie = rig.movie().await;
+    let body = rig.resolve_body("barshash", movie, direct_play_caps());
+    let first = rig.resolve_with(&body).await;
+    assert_eq!(first["picture"], Value::Null, "{first}");
+    let session = session_id_of(&first);
+
+    let server = &rig.server;
+    wait_until_async(
+        Duration::from_secs(60),
+        "the bars were never measured",
+        || async move {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT picture IS NOT NULL FROM debrid_stream_sessions WHERE id = $1",
+            )
+            .bind(session)
+            .fetch_one(&server.pool)
+            .await
+            .unwrap()
+        },
+    )
+    .await;
+    assert_letterbox(&stored_picture(&rig, session).await.unwrap());
+
+    let mut events = reqwest::Client::new()
+        .get(format!(
+            "{}/api/v1/admin/stream/{session}/status",
+            server.api_url
+        ))
+        .header("Authorization", format!("Bearer {}", server.admin_token))
+        .send()
+        .await
+        .unwrap()
+        .bytes_stream();
+    let mut seen = String::new();
+    let told = async {
+        while !seen.contains("\"type\":\"picture\"") {
+            match futures::StreamExt::next(&mut events).await {
+                Some(Ok(chunk)) => seen.push_str(&String::from_utf8_lossy(&chunk)),
+                _ => break,
+            }
+        }
+    };
+    let _ = tokio::time::timeout(Duration::from_secs(10), told).await;
+    let event = seen
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l.strip_prefix("data:")?.trim()).ok())
+        .find(|e| e["type"] == "picture")
+        .unwrap_or_else(|| panic!("the client was never told: {seen}"));
+    assert_letterbox(&event["picture"]);
+
+    let rejoined = rig.resolve_with(&body).await;
+    assert_eq!(session_id_of(&rejoined), session);
+    assert_letterbox(&rejoined["picture"]);
+
+    let state = &rig.server.app_state;
+    state.playback_sessions.remove(&session);
+    state.debrid_session_index.clear();
+    let replay = rig.resolve_with(&body).await;
+    assert_ne!(session_id_of(&replay), session);
+    assert_letterbox(&replay["picture"]);
+}
+
+#[tokio::test]
+async fn a_release_downloaded_ahead_has_its_bars_measured_before_anyone_plays_it() {
+    let rig = Rig::start(UpstreamPlan::new(LETTERBOXED_FIXTURE.to_vec()), "film.mkv").await;
+    let movie = rig.movie().await;
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("ahead.mkv");
+    std::fs::write(&file, LETTERBOXED_FIXTURE).unwrap();
+    let session = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO debrid_stream_sessions
+            (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
+             filename, filesize, cache_path)
+         SELECT $1, id, 'movie', $2, 'Ahead.Release', 'aheadhash', 'realdebrid',
+                'ahead.mkv', $3, $4
+         FROM users WHERE role = 'admin' LIMIT 1",
+    )
+    .bind(session)
+    .bind(movie)
+    .bind(LETTERBOXED_FIXTURE.len() as i64)
+    .bind(file.to_string_lossy())
+    .execute(&rig.server.pool)
+    .await
+    .unwrap();
+
+    api::jobs::handlers::DebridProcessHandler::new(
+        rig.server.pool.clone(),
+        rig.server.nats_publisher.clone(),
+        rig.server.runtime_config.clone(),
+        rig.server.storage_root(),
+    )
+    .execute(
+        Uuid::now_v7(),
+        json!({ "session_id": session, "cache_path": file.to_string_lossy() }),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_letterbox(&stored_picture(&rig, session).await.unwrap());
 }
 
 fn chapter_titles(chapters: &Value) -> Vec<String> {

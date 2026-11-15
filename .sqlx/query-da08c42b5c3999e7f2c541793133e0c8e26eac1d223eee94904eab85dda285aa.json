@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT picture FROM debrid_stream_sessions WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "picture",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "picture"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "da08c42b5c3999e7f2c541793133e0c8e26eac1d223eee94904eab85dda285aa"
+}

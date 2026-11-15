@@ -11,7 +11,7 @@ use super::{OpenMode, Opened, SessionRow, audio_language, register};
 use crate::AppState;
 use crate::repositories::debrid_cache_files::{self as cache_files, CachedFile};
 use crate::routes::admin::debrid_stream::StreamResolveBody;
-use crate::routes::admin::streaming::{AudioTrackResponse, ChapterResponse, SessionResponse};
+use crate::routes::admin::streaming::{ChapterResponse, SessionResponse, build_audio_responses};
 use crate::runtime_config::RuntimeConfig;
 use crate::streaming::decision::{
     AAC_ENCODER, AudioMode, AudioTrackMeta, PlaybackDecision, PlaybackMethod, SubtitleHandling,
@@ -84,7 +84,7 @@ pub(super) async fn open(
         .map(|v| (v.width as u32, v.height as u32))
         .unwrap_or((0, 0));
     let container = filename.rsplit('.').next().unwrap_or("mkv").to_lowercase();
-    let audio_metas: Vec<AudioTrackMeta> = probe
+    let mut audio_metas: Vec<AudioTrackMeta> = probe
         .audio_streams
         .iter()
         .map(|a| AudioTrackMeta {
@@ -96,6 +96,13 @@ pub(super) async fn open(
             is_default: a.is_default,
         })
         .collect();
+    crate::streaming::presumed_audio::presume(
+        &state.pool,
+        super::title_of(body).as_ref(),
+        &super::release_name(&body.release_title, &filename),
+        &mut audio_metas,
+    )
+    .await;
     let preferred = crate::streaming::decision::preferred_audio(
         &audio_metas,
         body.preferred_audio_title.as_deref(),
@@ -201,19 +208,7 @@ pub(super) async fn open(
     let has_thumbnails = tokio::fs::try_exists(thumb_dir.join("thumbnails.vtt"))
         .await
         .unwrap_or(false);
-    let audio_tracks: Vec<AudioTrackResponse> = probe
-        .audio_streams
-        .iter()
-        .map(|a| AudioTrackResponse {
-            stream_index: a.index,
-            codec: a.codec.clone(),
-            channels: a.channels,
-            language_name: crate::streaming::language::display_name(a.language.as_deref()),
-            language: a.language.clone(),
-            title: a.title.clone(),
-            is_default: a.index == audio_index,
-        })
-        .collect();
+    let audio_tracks = build_audio_responses(&audio_metas, audio_index);
 
     let meter = DownloadMeter::new(filesize.max(0) as u64, filesize.max(0) as u64);
     tokio::spawn(super::subtitles::name_once_head_arrives(
@@ -293,6 +288,7 @@ pub(super) async fn open(
             .map(|c| c.skip_segments.clone())
             .unwrap_or_default(),
         loudness: media.as_ref().map(|c| c.loudness).unwrap_or_default(),
+        picture: media.as_ref().and_then(|c| c.picture),
         media_type: media.map(|c| c.media_type),
         file_id: None,
         selected_audio_index: Some(audio_index),
@@ -300,7 +296,6 @@ pub(super) async fn open(
         selected_subtitle_index: None,
         video_width: (width > 0).then_some(width),
         video_height: (height > 0).then_some(height),
-        picture: None,
     };
     Ok(Opened {
         session_id,

@@ -9,6 +9,7 @@ use crate::routes::helpers::build_kobload_client;
 
 pub const PREWARM_JOB: &str = "debrid_prewarm";
 
+#[derive(Clone)]
 pub struct StreamRelease {
     pub debrid_provider_id: Option<Uuid>,
     pub info_hash: Option<String>,
@@ -64,8 +65,8 @@ pub async fn report_failure(state: &AppState, release: &StreamRelease, reason: &
 /// for an episode, queues a search for the next one so kobload warms it in advance.
 pub async fn record_played(state: &AppState, session_id: Uuid) {
     let played = match sessions::mark_played(&state.pool, session_id).await {
-        Ok(Some(p)) => p,
-        Ok(None) => return,
+        Ok(Some(p)) if p.first => p,
+        Ok(_) => return,
         Err(e) => {
             warn!(error = %e, %session_id, "failed to mark stream session played");
             return;

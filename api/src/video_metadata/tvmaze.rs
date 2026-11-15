@@ -232,6 +232,7 @@ impl VideoMetadataProvider for TvMazeProvider {
         let network = s.network.map(|n| n.name);
 
         Ok(TvShowDetails {
+            original_language: None,
             provider: "tvmaze".into(),
             provider_id: s.id.to_string(),
             title: s.name.unwrap_or_default(),

@@ -7,7 +7,7 @@
 use crate::images::{self, ImageEntry};
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobContext, JobError, JobResult};
-use crate::repositories::{people, tv_episodes, tv_seasons, tv_shows};
+use crate::repositories::{original_language, people, tv_episodes, tv_seasons, tv_shows};
 use crate::video_metadata::{VideoProviderRegistry, types::VideoCapability};
 use async_trait::async_trait;
 use nats_jobs::Publisher;
@@ -272,6 +272,11 @@ pub async fn enrich_tv_show(
     tv_shows::update(pool, show_id, update)
         .await
         .map_err(|e| JobError::ExecutionFailed(format!("Failed to update show: {e}")))?;
+    if let Some(language) = details.original_language {
+        original_language::set_show(pool, show_id, &language)
+            .await
+            .map_err(|e| JobError::ExecutionFailed(format!("Failed to update show: {e}")))?;
+    }
 
     // Upsert seasons and episodes from TMDB
     for season_summary in &details.seasons {

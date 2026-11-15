@@ -462,6 +462,7 @@ async fn claim_prewarm(state: &AppState, prewarm: Prewarm) -> Response {
     base.media_type = Some(committed.media_type);
     base.skip_segments = committed.skip_segments;
     base.loudness = committed.loudness;
+    base.picture = committed.picture;
     let response = live_response(state, session_id, Some(&base)).unwrap_or(base);
     state
         .stream_prewarms

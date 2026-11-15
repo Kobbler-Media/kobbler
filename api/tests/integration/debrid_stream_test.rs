@@ -3,7 +3,7 @@ use reqwest::StatusCode;
 use serde_json::json;
 use std::io::Write;
 use uuid::Uuid;
-use wiremock::matchers::{header, method, path_regex};
+use wiremock::matchers::{header, method, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// When the debrid_url has no expiry (debrid_url_expires_at IS NULL),
@@ -887,4 +887,43 @@ async fn test_sse_stays_open_until_processing_has_delivered_its_segments() {
     );
     assert!(late.contains("\"type\":\"done\""), "{late}");
     assert!(closed, "the stream outlived the processing it reports on");
+}
+
+#[tokio::test]
+async fn test_a_paused_debrid_account_is_passed_on_to_whoever_is_waiting() {
+    let kobload = MockServer::start().await;
+    let paused = json!({"pause": {"reason": "adds_paused", "seconds": 27}});
+    Mock::given(method("GET"))
+        .and(path_regex("/api/v1/stream/pause$"))
+        .and(query_param(
+            "provider_id",
+            "00000000-0000-0000-0000-000000000001",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&paused))
+        .mount(&kobload)
+        .await;
+    let server = TestServer::start_api_only().await;
+    server
+        .admin_client()
+        .patch_json(
+            "/api/v1/admin/config",
+            &json!({"kobload_base_url": kobload.uri(), "kobload_api_key": "test-key"}),
+        )
+        .await
+        .assert_ok();
+    let path = "/api/v1/admin/stream/pause?provider_id=00000000-0000-0000-0000-000000000001";
+
+    let resp = server.admin_client().get(path).await;
+    resp.assert_ok();
+    assert_eq!(resp.json::<serde_json::Value>(), paused);
+
+    TestClient::new(&server.api_url)
+        .get(path)
+        .await
+        .assert_status(StatusCode::UNAUTHORIZED);
+    server
+        .admin_client()
+        .get("/api/v1/admin/stream/pause?provider_id=00000000-0000-0000-0000-000000000002")
+        .await
+        .assert_status(StatusCode::BAD_GATEWAY);
 }

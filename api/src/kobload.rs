@@ -599,6 +599,50 @@ impl KobloadClient {
         Ok(())
     }
 
+    /// A viewer's word that a copy is bad, or its withdrawal.
+    pub async fn stream_bad(&self, report: &serde_json::Value) -> Result<(), KobloadError> {
+        let url = format!("{}/api/v1/stream/bad", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.api_key)
+            .json(report)
+            .send()
+            .await
+            .map_err(KobloadError::Request)?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(KobloadError::Status(status, body));
+        }
+        Ok(())
+    }
+
+    /// What the provider's account is making callers wait out, as kobload reports it.
+    pub async fn stream_pause(&self, provider_id: &str) -> Result<serde_json::Value, KobloadError> {
+        let url = format!(
+            "{}/api/v1/stream/pause?provider_id={}",
+            self.base_url,
+            urlencoding::encode(provider_id),
+        );
+        let resp = self
+            .client
+            .get(&url)
+            .bearer_auth(&self.api_key)
+            .send()
+            .await
+            .map_err(KobloadError::Request)?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(KobloadError::Status(status, body));
+        }
+
+        resp.json().await.map_err(KobloadError::Request)
+    }
+
     /// Poll the status of an uncached torrent being downloaded on a debrid provider.
     pub async fn stream_resolve_status(
         &self,

@@ -514,6 +514,26 @@ impl TmdbProvider {
         Ok(filter_alternate_titles(resp.results, primary_title))
     }
 
+    /// `kind` is TMDB's own path segment, `movie` or `tv`.
+    pub async fn original_language(
+        &self,
+        kind: &str,
+        tmdb_id: &str,
+    ) -> Result<Option<String>, VideoProviderError> {
+        let key = self.require_key()?;
+        let url = format!("{}/{kind}/{tmdb_id}", self.base_url);
+        let resp = self.get(&url, key).send().await?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let detail: TmdbOriginalLanguage = resp
+            .error_for_status()
+            .map_err(VideoProviderError::Http)?
+            .json()
+            .await?;
+        Ok(detail.original_language.filter(|l| !l.is_empty()))
+    }
+
     /// Normalize a title or query for relevance comparison:
     /// lowercase, `&` → "and", collapse to a single alphanumeric-space stream.
     /// Used only for scoring — not displayed to the user.
@@ -953,6 +973,7 @@ impl VideoMetadataProvider for TmdbProvider {
             provider_id: m.id.to_string(),
             title: m.title.unwrap_or_default(),
             original_title: m.original_title,
+            original_language: m.original_language.filter(|l| !l.is_empty()),
             year: m
                 .release_date
                 .as_deref()
@@ -1140,6 +1161,7 @@ impl VideoMetadataProvider for TmdbProvider {
             provider: "tmdb".into(),
             provider_id: s.id.to_string(),
             title: s.name.unwrap_or_default(),
+            original_language: s.original_language.filter(|l| !l.is_empty()),
             year: s
                 .first_air_date
                 .as_deref()
@@ -1466,6 +1488,7 @@ struct TmdbMovieDetail {
     id: i64,
     title: Option<String>,
     original_title: Option<String>,
+    original_language: Option<String>,
     overview: Option<String>,
     tagline: Option<String>,
     runtime: Option<i32>,
@@ -1482,9 +1505,15 @@ struct TmdbMovieDetail {
 }
 
 #[derive(Deserialize)]
+struct TmdbOriginalLanguage {
+    original_language: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct TmdbTvDetail {
     id: i64,
     name: Option<String>,
+    original_language: Option<String>,
     overview: Option<String>,
     status: Option<String>,
     first_air_date: Option<String>,

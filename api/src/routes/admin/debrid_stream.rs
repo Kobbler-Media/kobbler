@@ -22,6 +22,7 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::debrid_outcomes;
 use crate::repositories::debrid_cache_files as cache_files;
+use crate::repositories::debrid_stream_sessions;
 use crate::routes::admin::debrid_errors::StreamFailure;
 use crate::routes::admin::stream_search_request::{self, SearchTarget};
 use crate::routes::admin::{debrid_open, stream_prewarm};
@@ -88,6 +89,7 @@ struct DebridStatusRow {
     probe_data: Option<serde_json::Value>,
     skip_segments: Option<serde_json::Value>,
     subtitle_tracks: Option<serde_json::Value>,
+    picture: Option<serde_json::Value>,
     chapters: Option<serde_json::Value>,
     lufs: Option<f64>,
     downmix_peak_db: Option<f64>,
@@ -212,7 +214,7 @@ pub async fn stream_resolve(
     // same release share one session.
     let _resolve_guard = match key {
         Some(ref key) => {
-            if let Some(resp) = dedup_hit(&state, key) {
+            if let Some(resp) = dedup_hit(&state, key).await {
                 return resp;
             }
             let guard = state
@@ -222,7 +224,7 @@ pub async fn stream_resolve(
                 .clone()
                 .lock_owned()
                 .await;
-            if let Some(resp) = dedup_hit(&state, key) {
+            if let Some(resp) = dedup_hit(&state, key).await {
                 return resp;
             }
             Some(guard)
@@ -236,14 +238,19 @@ pub async fn stream_resolve(
     }
 }
 
-fn dedup_hit(state: &AppState, key: &str) -> Option<axum::response::Response> {
+async fn dedup_hit(state: &AppState, key: &str) -> Option<axum::response::Response> {
     let existing_id = state.debrid_session_index.get(key).map(|e| *e)?;
     if let Some(mut session) = state.playback_sessions.get_mut(&existing_id) {
         session.touch();
     }
     match debrid_open::live_response(state, existing_id, None) {
-        Some(resp) => {
+        Some(mut resp) => {
             info!(session_id = %existing_id, cache_key = %key, "debrid session dedup hit");
+            resp.picture = debrid_stream_sessions::picture(&state.pool, existing_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(debrid_open::picture::shown);
             Some(Json(resp).into_response())
         }
         None => {
@@ -403,6 +410,36 @@ pub async fn stream_resolve_status(
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PauseQuery {
+    pub provider_id: String,
+}
+
+/// GET /api/v1/admin/stream/pause?provider_id={}
+///
+/// A resolve blocks while kobload waits the provider out; a client polls this alongside
+/// one to tell its viewer why.
+pub async fn stream_pause(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Query(query): Query<PauseQuery>,
+) -> impl IntoResponse {
+    let runtime = state.runtime_config.get().await;
+    let client = match build_kobload_client(&runtime) {
+        Ok(c) => c,
+        Err(e) => return e.into_response(),
+    };
+
+    match client.stream_pause(&query.provider_id).await {
+        Ok(resp) => Json(resp).into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(json!({"error": format!("stream pause failed: {e}")})),
+        )
+            .into_response(),
+    }
+}
+
 /// Sessions are addressed by an opaque id, so every read and write of one must
 /// still carry the owner predicate. `None` means admin — free to act on any
 /// session, matching the device-ownership rule elsewhere.
@@ -444,6 +481,7 @@ pub async fn stream_status(
         let mut last_skip: Option<serde_json::Value> = None;
         let mut last_subtitles: Option<serde_json::Value> = None;
         let mut last_chapters: Option<serde_json::Value> = None;
+        let mut last_picture: Option<serde_json::Value> = None;
         let mut last_loudness = PlaybackLoudness::default();
         let mut sent_thumbnails = false;
         let mut sent_download_complete = false;
@@ -471,7 +509,7 @@ pub async fn stream_status(
                 DebridStatusRow,
                 r#"
                 SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, downmix_peak_db,
-                       cache_path, filesize
+                       cache_path, filesize, picture
                 FROM debrid_stream_sessions
                 WHERE id = $1
                 "#,
@@ -555,6 +593,18 @@ pub async fn stream_status(
                         .data(serde_json::to_string(&event).unwrap_or_default()),
                 );
                 last_chapters = Some(chapters.clone());
+            }
+
+            // Measured from a few frames a moment after the probe; see debrid_open::picture.
+            if let Some(ref picture) = row.picture
+                && last_picture.as_ref() != Some(picture)
+            {
+                let event = json!({ "type": "picture", "picture": picture });
+                yield Ok(
+                    axum::response::sse::Event::default()
+                        .data(serde_json::to_string(&event).unwrap_or_default()),
+                );
+                last_picture = Some(picture.clone());
             }
 
             // Measured by the analysis that runs once the download completes.

@@ -2,6 +2,7 @@ pub mod cinemeta;
 pub mod jolpica;
 pub mod merge;
 mod omdb;
+pub mod original_language;
 pub mod pulselive;
 pub mod release_dates;
 pub mod thesportsdb;
@@ -1109,6 +1110,7 @@ mod cache_ttl_tests {
 
     fn show(status: Option<&str>) -> TvShowDetails {
         TvShowDetails {
+            original_language: None,
             provider: "tmdb".to_string(),
             provider_id: "12271".to_string(),
             title: "The Block".to_string(),

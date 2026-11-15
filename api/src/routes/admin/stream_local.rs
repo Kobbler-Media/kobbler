@@ -35,44 +35,46 @@ pub async fn local_release(
     }
 }
 
-/// The most recently played release of the title whose file is complete on disk, or is
-/// being downloaded ahead, in the shape of a search result.
+/// The release of the title last watched (or, never watched, last opened) when its file is
+/// complete on disk or being downloaded ahead, in the shape of a search result. An older
+/// release on disk is not offered in its place: the viewer moved off it.
 pub(crate) async fn local_option(
     state: &AppState,
     media_type: &str,
     media_id: Uuid,
 ) -> Result<Option<Value>, sqlx::Error> {
-    let mut releases = sqlx::query!(
+    let Some(r) = sqlx::query!(
         r#"
-        SELECT DISTINCT ON (info_hash, file_id)
-               info_hash AS "info_hash!", file_id, release_title, filename, filesize, quality,
-               debrid_provider, debrid_provider_id AS "debrid_provider_id!", updated_at
+        SELECT info_hash AS "info_hash!", file_id, release_title, filename, filesize, quality,
+               debrid_provider, debrid_provider_id AS "debrid_provider_id!"
         FROM debrid_stream_sessions
         WHERE media_type = $1 AND media_id = $2
           AND info_hash IS NOT NULL AND debrid_provider_id IS NOT NULL
-        ORDER BY info_hash, file_id, updated_at DESC
+        ORDER BY COALESCE(played_at, created_at) DESC
+        LIMIT 1
         "#,
         media_type,
         media_id,
     )
-    .fetch_all(&state.pool)
-    .await?;
-    releases.sort_by_key(|r| std::cmp::Reverse(r.updated_at));
-    for r in releases {
-        let downloading = release_key(Some(&r.info_hash), r.file_id)
-            .is_some_and(|key| state.downloads_ahead.contains(&key));
-        if !downloading
-            && complete_cache_entry(state, r.debrid_provider_id, Some(&r.info_hash), r.file_id)
-                .await
-                .is_none()
-        {
-            continue;
-        }
-        let files = r
-            .file_id
-            .map(|id| vec![json!({ "id": id, "path": r.filename, "size": r.filesize })])
-            .unwrap_or_default();
-        return Ok(Some(json!({
+    .fetch_optional(&state.pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+    let downloading = release_key(Some(&r.info_hash), r.file_id)
+        .is_some_and(|key| state.downloads_ahead.contains(&key));
+    if !downloading
+        && complete_cache_entry(state, r.debrid_provider_id, Some(&r.info_hash), r.file_id)
+            .await
+            .is_none()
+    {
+        return Ok(None);
+    }
+    let files = r
+        .file_id
+        .map(|id| vec![json!({ "id": id, "path": r.filename, "size": r.filesize })])
+        .unwrap_or_default();
+    Ok(Some(json!({
             "id": format!("local-{}-{}", r.info_hash, r.file_id.unwrap_or(-1)),
             "release_title": r.release_title,
             "size": r.filesize,
@@ -88,7 +90,5 @@ pub(crate) async fn local_option(
             "source_type": "torrent",
             "availability": "ready",
             "files": files,
-        })));
-    }
-    Ok(None)
+    })))
 }

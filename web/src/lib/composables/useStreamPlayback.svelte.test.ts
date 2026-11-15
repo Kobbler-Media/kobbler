@@ -13,6 +13,8 @@ const api = vi.hoisted(() => ({
   streamLocal: vi.fn(),
   streamResolve: vi.fn(),
   streamResolveStatus: vi.fn(),
+  streamPause: vi.fn(),
+  reportBadRelease: vi.fn(),
   deleteStreamSession: vi.fn(),
   reportStreamOutcome: vi.fn(),
   streamPrewarm: vi.fn(),
@@ -115,7 +117,7 @@ const resolved = () => api.streamResolve.mock.calls.map(([p]) => p.info_hash);
 const startTimes = () => api.streamResolve.mock.calls.map(([p]) => p.start_time);
 
 async function settle() {
-  for (let i = 0; i < 10; i++) await Promise.resolve();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
 }
 
 function failStart(
@@ -142,6 +144,8 @@ beforeEach(() => {
   api.touchStreamPrewarm.mockResolvedValue(undefined);
   api.releaseStreamPrewarm.mockResolvedValue(undefined);
   api.streamLocal.mockResolvedValue(null);
+  api.streamPause.mockResolvedValue(null);
+  api.reportBadRelease.mockResolvedValue(undefined);
 });
 
 describe('useStreamPlayback', () => {
@@ -373,6 +377,85 @@ describe('useStreamPlayback', () => {
     expect(stream.caching).toBeNull();
   });
 
+  it('stops at the panel when a picked release will not resolve', async () => {
+    serve(['a', 'b', 'c'], { b: 'timeout' });
+    const { stream, played } = setup();
+    await stream.playOption(option('b'));
+    expect(resolved()).toEqual(['b']);
+    expect(played()).toEqual([]);
+    expect(api.streamSearch).toHaveBeenCalledTimes(1);
+    expect(stream.failure).toMatchObject({
+      title: "Couldn't play this",
+      summary: "The stream we tried wouldn't play. Your debrid service took too long to respond.",
+      details: ['Release b: raw b'],
+      canTryAnother: true,
+      canChoose: true
+    });
+  });
+
+  it('stops at the panel when the player cannot start a picked release', async () => {
+    serve(['a', 'b']);
+    const { stream, played } = setup();
+    await stream.autoPlay();
+    await stream.playOption(option('b'));
+    expect(failStart(stream, 'b-1')).toBe(true);
+    await settle();
+    expect(resolved()).toEqual(['a', 'b']);
+    expect(played()).toEqual(['a-1', 'b-1']);
+    expect(stream.failure).toMatchObject({
+      title: "Couldn't play this",
+      summary: "The stream we tried wouldn't play. Your browser couldn't play them.",
+      canChoose: true
+    });
+  });
+
+  it('reopens a picked release once, then stops at the panel when it drops again', async () => {
+    serve(['a', 'b']);
+    const { stream, lastSession, onMessage } = setup();
+    await stream.playOption(option('a'));
+    failStart(stream, 'a-1', true, 600);
+    await settle();
+    expect(lastSession()).toBe('a-2');
+    failStart(stream, 'a-2', true, 630);
+    await settle();
+    expect(resolved()).toEqual(['a', 'a']);
+    expect(stream.failure).toMatchObject({ title: 'Playback stopped', canChoose: true });
+    expect(api.streamSearch).toHaveBeenCalledTimes(1);
+    expect(onMessage).not.toHaveBeenCalled();
+  });
+
+  it('stops at the panel when reopening a picked release is refused', async () => {
+    serve(['a', 'b']);
+    const { stream, played } = setup();
+    await stream.playOption(option('a'));
+    api.streamResolve.mockRejectedValueOnce(new ApiError(502, 'gone', 'timeout'));
+    failStart(stream, 'a-1', true, 100);
+    await settle();
+    expect(resolved()).toEqual(['a', 'a']);
+    expect(played()).toEqual(['a-1']);
+    expect(stream.failure).toMatchObject({ title: 'Playback stopped' });
+  });
+
+  it('walks on from a failed pick once Try another is pressed', async () => {
+    serve(['a', 'b', 'c'], { b: 'timeout' });
+    const { stream, played } = setup();
+    await stream.playOption(option('b'));
+    await stream.tryAnother();
+    expect(resolved()).toEqual(['b', 'a']);
+    failStart(stream, 'a-1');
+    await settle();
+    expect(played()).toEqual(['a-1', 'c-1']);
+    expect(stream.failure).toBeNull();
+  });
+
+  it('forgets the pick on the next automatic play', async () => {
+    serve(['a', 'b'], { a: 'timeout' });
+    const { stream, played } = setup();
+    await stream.playOption(option('a'));
+    await stream.autoPlay();
+    expect(played()).toEqual(['b-1']);
+  });
+
   it('says it is finding a stream from the moment Stream is pressed', async () => {
     serve(['a'], { a: 'hang' });
     const { stream, playback } = setup();
@@ -396,6 +479,80 @@ describe('useStreamPlayback', () => {
     void quiet.stream.autoPlay();
     await settle();
     expect(quiet.stream.playerProps.pendingStatus).toBe('Finding a stream…');
+  });
+
+  it('says why a resolve is being held while the debrid account is paused', async () => {
+    vi.useFakeTimers();
+    serve(['a'], { a: 'hang' });
+    const { stream } = setup();
+    void stream.autoPlay();
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(api.streamPause).toHaveBeenCalledWith('rd');
+    expect(stream.playerProps.pendingStatus).toBe('Finding a stream…');
+    api.streamPause.mockResolvedValue({ reason: 'adds_paused', seconds: 27 });
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(stream.playerProps.pendingStatus).toBe(
+      'Your debrid service is pausing new requests on your account. Trying again in about 27s…'
+    );
+    stream.cancel();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(api.streamPause).toHaveBeenCalledTimes(2);
+    expect(stream.playerProps.pendingStatus).toBeUndefined();
+  });
+
+  it('marks a reported release in place and undoes it without searching again', async () => {
+    serve(['a', 'b']);
+    const { stream, played } = setup();
+    stream.openModal();
+    await settle();
+    const worked = { ...stream.streamOptions[0], playback: 'worked' as const };
+    api.streamSearch.mockResolvedValue({ options: [worked, option('b')], errors: [] });
+    stream.reset();
+    stream.openModal();
+    await settle();
+    api.streamSearch.mockClear();
+
+    await stream.reportBad(stream.streamOptions[0], true);
+    expect(api.reportBadRelease).toHaveBeenCalledWith(worked, true);
+    expect(stream.streamOptions[0]).toMatchObject({ reported_bad: true, playback: 'failed' });
+    expect(stream.streamOptions[1].reported_bad).toBeUndefined();
+
+    await stream.autoPlay();
+    expect(played()).toEqual(['b-1']);
+
+    await stream.reportBad(stream.streamOptions[0], false);
+    expect(api.reportBadRelease).toHaveBeenLastCalledWith(expect.anything(), false);
+    expect(stream.streamOptions[0]).toEqual(worked);
+    expect(api.streamSearch).not.toHaveBeenCalled();
+  });
+
+  it('clears the failed mark of a release that arrived already reported', async () => {
+    serve([]);
+    const reported = { ...option('a'), reported_bad: true, playback: 'failed' as const };
+    api.streamSearch.mockResolvedValue({ options: [reported], errors: [] });
+    const { stream } = setup();
+    stream.openModal();
+    await settle();
+    await stream.reportBad(stream.streamOptions[0], false);
+    expect(stream.streamOptions[0]).toEqual(option('a'));
+  });
+
+  it('still plays a reported release the viewer picks', async () => {
+    serve(['a']);
+    const { stream, played } = setup();
+    await stream.playOption({ ...option('a'), reported_bad: true });
+    expect(played()).toEqual(['a-1']);
+  });
+
+  it('leaves the release alone and says so when the report is refused', async () => {
+    serve(['a']);
+    api.reportBadRelease.mockRejectedValue(new ApiError(500, 'Report failed'));
+    const { stream, onMessage } = setup();
+    stream.openModal();
+    await settle();
+    await stream.reportBad(stream.streamOptions[0], true);
+    expect(stream.streamOptions[0].reported_bad).toBeUndefined();
+    expect(onMessage).toHaveBeenCalledWith('Report failed');
   });
 
   it('stops walking when the debrid service is rate limiting', async () => {

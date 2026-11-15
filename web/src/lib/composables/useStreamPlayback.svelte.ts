@@ -7,8 +7,10 @@ import type {
 import {
   deleteStreamSession,
   isStreamCaching,
+  reportBadRelease,
   reportStreamOutcome,
   streamLocal,
+  streamPause,
   streamResolve,
   streamSearch
 } from '#lib/api/client.js';
@@ -26,6 +28,7 @@ import {
 } from '#lib/streaming/walk.js';
 import type { WalkResult, WalkState } from '#lib/streaming/walk.js';
 import { waitForCache } from '#lib/streaming/cacheWait.js';
+import { watchPause } from '#lib/streaming/pauseWatch.js';
 import { createPrewarm } from '#lib/streaming/prewarm.js';
 import type { CachingState } from '#lib/streaming/cacheWait.js';
 import {
@@ -105,6 +108,8 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
   let controller = new AbortController();
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let switching = false;
+  let pinned = false;
+  const playbackBeforeReport: Record<string, StreamOption['playback']> = {};
   const prewarm = createPrewarm();
 
   $effect(() => {
@@ -203,7 +208,15 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     return params;
   }
 
-  const resolveOption = (option: StreamOption) => streamResolve(buildResolveParams(option));
+  function resolveOption(option: StreamOption) {
+    const { signal } = controller;
+    return watchPause(
+      streamResolve(buildResolveParams(option)),
+      () => streamPause(option.debrid_provider_id),
+      (note) => (notice = note),
+      signal
+    );
+  }
 
   function beginAttempt(): AbortSignal {
     controller.abort();
@@ -224,6 +237,23 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
         isAborted: () => signal.aborted,
         onAttemptFailed: () => (notice = NEXT_STREAM_NOTE)
       });
+    } finally {
+      if (!signal.aborted) resolving = false;
+    }
+  }
+
+  async function resolvePick(signal: AbortSignal, option: StreamOption): Promise<WalkResult> {
+    resolving = true;
+    try {
+      const response = await resolveOption(option);
+      if (signal.aborted) return { kind: 'aborted' };
+      return isStreamCaching(response)
+        ? { kind: 'caching', option, response }
+        : { kind: 'ready', option, session: response };
+    } catch (e) {
+      if (signal.aborted) return { kind: 'aborted' };
+      run?.failures.push(toFailure(e, option));
+      return { kind: 'exhausted', stopped: false };
     } finally {
       if (!signal.aborted) resolving = false;
     }
@@ -257,8 +287,17 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     if (result.kind === 'aborted') return;
     if (result.kind === 'ready') return deliver(result.option, result.session, false);
     if (result.kind === 'caching') return waitCaching(signal, result.option, result.response);
+    if (pinned) return stopPinned(signal, false);
     if (switching) return showStopped(undefined);
     showExhausted(result.stopped);
+  }
+
+  // The panel offers the other releases, so they have to be known by then.
+  async function stopPinned(signal: AbortSignal, dropped: boolean) {
+    if (!searched) await search();
+    if (signal.aborted) return;
+    if (dropped) showStopped(undefined);
+    else showExhausted(false);
   }
 
   async function continueWalk(signal: AbortSignal) {
@@ -324,7 +363,7 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     const cause = stopped ? failures.slice(-1) : failures;
     showPanel({
       title: "Couldn't play this",
-      summary: summarizeFailures(cause, run?.tried.size ?? 0),
+      summary: summarizeFailures(cause, pinned ? 1 : (run?.tried.size ?? 0)),
       details: failureDetails(failures),
       canTryAnother: !stopped && canTryAnother()
     });
@@ -353,6 +392,7 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
   async function autoPlay() {
     const signal = beginAttempt();
     resumeOverride = undefined;
+    pinned = false;
     run = newWalkState();
     const claimed = await claimPrewarm(signal);
     if (signal.aborted) return;
@@ -374,17 +414,14 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     const signal = beginAttempt();
     resumeOverride = undefined;
     prewarm.release();
-    const key = optionKey(option);
-    run = newWalkState([...(run?.tried ?? [])].filter((k) => k !== key));
-    const result = await walk(signal, [option]);
-    if (result.kind === 'exhausted' && !result.stopped && !signal.aborted) {
-      return continueWalk(signal);
-    }
-    await settle(signal, result);
+    pinned = true;
+    run = newWalkState([...(run?.tried ?? []), optionKey(option)]);
+    await settle(signal, await resolvePick(signal, option));
   }
 
   async function tryAnother() {
     const signal = beginAttempt();
+    pinned = false;
     run ??= newWalkState();
     refillBudget(run);
     await continueWalk(signal);
@@ -402,6 +439,7 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     } finally {
       if (!signal.aborted) resolving = false;
     }
+    if (pinned) return stopPinned(signal, true);
     await switchSource(signal);
   }
 
@@ -438,7 +476,9 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     }
     if (f.started) resumeOverride = f.position;
     const signal = beginAttempt();
-    if (retried) {
+    if (pinned && (retried || !f.started)) {
+      void stopPinned(signal, f.started);
+    } else if (retried) {
       startReconnect(noted);
       void switchSource(signal);
     } else if (f.started) {
@@ -462,6 +502,22 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     } finally {
       wanting = false;
     }
+  }
+
+  async function reportBad(option: StreamOption, bad: boolean) {
+    try {
+      await reportBadRelease(option, bad);
+    } catch (e) {
+      opts.onMessage(e instanceof Error ? e.message : 'Failed to update the report');
+      return;
+    }
+    const key = optionKey(option);
+    streamOptions = streamOptions.map((o) => {
+      if (optionKey(o) !== key) return o;
+      if (!bad) return { ...o, reported_bad: undefined, playback: playbackBeforeReport[key] };
+      if (!o.reported_bad) playbackBeforeReport[key] = o.playback;
+      return { ...o, reported_bad: true, playback: 'failed' };
+    });
   }
 
   function openModal() {
@@ -507,6 +563,7 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     abort();
     prewarm.release();
     run = null;
+    pinned = false;
     searched = false;
     onDisk = undefined;
     streamOptions = [];
@@ -575,6 +632,7 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     want,
     dismissFailure,
     handlePlayerFailure,
+    reportBad,
     openModal,
     closeModal,
     cancel,

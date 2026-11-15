@@ -419,6 +419,52 @@ async fn test_search_prefers_the_latest_of_two_cached_plays() {
     assert_eq!(prefers, [json!("newhash")]);
 }
 
+/// The viewer moved off the copy on disk to one that only streams: going back to the
+/// cached copy because it is cached would undo their choice.
+#[tokio::test]
+async fn test_search_prefers_the_release_played_last_over_an_older_one_on_disk() {
+    let (server, mock) = kobload_server().await;
+    mount_search(
+        &mock,
+        vec![
+            option("diskhash", None, Some("worked")),
+            option("streamhash", None, Some("worked")),
+        ],
+    )
+    .await;
+    let user = admin_id(&server).await;
+    let movie = insert_movie(&server, "tt9000014").await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("disk.mkv");
+    std::fs::write(&path, b"x").unwrap();
+    let path = path.to_string_lossy().into_owned();
+
+    let mut on_disk = SessionSeed::new(movie, "diskhash");
+    on_disk.created_minutes_ago = 120;
+    on_disk.played = true;
+    on_disk.cache_path = Some(&path);
+    let on_disk = insert_session(&server, user, on_disk).await;
+    let mut streamed = SessionSeed::new(movie, "streamhash");
+    streamed.created_minutes_ago = 10;
+    streamed.played = true;
+    insert_session(&server, user, streamed).await;
+
+    let preferred =
+        async || search(&server, json!({ "movie_id": movie })).await["preferred_info_hash"].clone();
+    assert_eq!(preferred().await, "streamhash");
+
+    server
+        .admin_client()
+        .post_json(&outcome_path(on_disk), &json!({ "ok": true }))
+        .await
+        .assert_status(StatusCode::NO_CONTENT);
+    assert_eq!(
+        preferred().await,
+        "diskhash",
+        "played again, so chosen last"
+    );
+}
+
 #[tokio::test]
 async fn test_search_prefers_only_streams_that_played() {
     let (server, mock) = kobload_server().await;

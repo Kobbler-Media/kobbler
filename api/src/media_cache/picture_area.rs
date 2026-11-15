@@ -25,7 +25,7 @@ const MIN_BAR: f64 = 0.02;
 const MIN_FRAMES: usize = 12;
 
 /// Fractions of the frame, so they hold at any resolution the file is played at.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PictureArea {
     pub x: f64,
     pub y: f64,
@@ -40,6 +40,63 @@ impl PictureArea {
         width: 1.0,
         height: 1.0,
     };
+}
+
+const SAMPLES: usize = 24;
+/// Clear of most cold opens, title cards and credits, which a sample cannot be told from.
+const SAMPLED_SPAN: (f64, f64) = (0.08, 0.88);
+const SAMPLE_WIDTH: u32 = 320;
+const GRABS_AT_ONCE: usize = 3;
+const GRAB_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+fn sample_times(duration_secs: f64) -> Vec<f64> {
+    let (from, to) = SAMPLED_SPAN;
+    (0..SAMPLES)
+        .map(|i| duration_secs * (from + (to - from) * i as f64 / (SAMPLES - 1) as f64))
+        .collect()
+}
+
+async fn grab(source: &str, at: f64) -> Option<GrayImage> {
+    let run = tokio::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-nostdin",
+            "-ss",
+            &format!("{at:.3}"),
+            "-i",
+            source,
+        ])
+        .args(["-frames:v", "1", "-an", "-sn"])
+        .args(["-vf", &format!("scale={SAMPLE_WIDTH}:-2")])
+        .args(["-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "4", "-"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    let out = tokio::time::timeout(GRAB_TIMEOUT, run).await.ok()?.ok()?;
+    image::load_from_memory_with_format(&out.stdout, image::ImageFormat::Jpeg)
+        .ok()
+        .map(|frame| frame.to_luma8())
+}
+
+/// The same measurement for a file nothing has analysed, a debrid stream above all: a few
+/// frames are read from across it, by seeking, at a path or a URL. `None` when it cannot say.
+pub async fn check_source(source: &str, duration_secs: f64) -> Option<PictureArea> {
+    use futures::StreamExt;
+    if duration_secs <= 0.0 {
+        return None;
+    }
+    let frames: Vec<(f64, GrayImage)> = futures::stream::iter(sample_times(duration_secs))
+        .map(|at| async move { grab(source, at).await.map(|frame| (at, frame)) })
+        .buffer_unordered(GRABS_AT_ONCE)
+        .filter_map(|frame| async move { frame })
+        .collect()
+        .await;
+    tokio::task::spawn_blocking(move || detect(&frames, &[]))
+        .await
+        .ok()
+        .flatten()
 }
 
 /// `None` when too few frames could be read to say; [`PictureArea::FULL`] when there are no bars.

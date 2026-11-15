@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, downmix_peak_db,\n                       cache_path, filesize\n                FROM debrid_stream_sessions\n                WHERE id = $1\n                ",
+  "query": "\n                SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, downmix_peak_db,\n                       cache_path, filesize, picture\n                FROM debrid_stream_sessions\n                WHERE id = $1\n                ",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,17 @@
             "name": "filesize"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "picture",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "picture"
+          }
+        }
       }
     ],
     "parameters": {
@@ -105,8 +116,9 @@
       true,
       true,
       true,
-      false
+      false,
+      true
     ]
   },
-  "hash": "f75a2e56db06d7129e7351414135458f3754fa9e3fb162c55ac9a77634572d58"
+  "hash": "7347e886f4bd74014f1e4d482d0ec17990d9bda0d568306ba647a6ba7e37192b"
 }

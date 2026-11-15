@@ -142,6 +142,7 @@ mod playback_auth_test;
 mod playback_features_test;
 mod playback_status_test;
 mod player_token_test;
+mod presumed_audio_test;
 mod profile_pin_test;
 mod provider_id_ambiguity_test;
 mod proxy_logs_test;

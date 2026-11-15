@@ -258,6 +258,7 @@ pub(super) async fn open(
             .map(|c| c.skip_segments.clone())
             .unwrap_or_default(),
         loudness: media.as_ref().map(|c| c.loudness).unwrap_or_default(),
+        picture: media.as_ref().and_then(|c| c.picture),
         media_type: media.map(|c| c.media_type),
         file_id: None,
         selected_audio_index: None,
@@ -265,7 +266,6 @@ pub(super) async fn open(
         selected_subtitle_index: None,
         video_width: None,
         video_height: None,
-        picture: None,
     };
 
     let target = DownloadTarget {
@@ -313,6 +313,7 @@ pub(super) async fn open(
         start_time: body.start_time,
         audio_language: audio_language(body, runtime).to_string(),
         audio_title: body.preferred_audio_title.clone(),
+        title: super::title_of(body),
         warm,
     }));
 

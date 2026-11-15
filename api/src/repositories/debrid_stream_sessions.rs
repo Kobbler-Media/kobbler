@@ -13,6 +13,7 @@ pub struct SessionRelease {
 
 #[derive(Debug, Clone)]
 pub struct PlayedSession {
+    pub first: bool,
     pub user_id: Uuid,
     pub media_type: String,
     pub media_id: Uuid,
@@ -54,7 +55,8 @@ where
     Ok(row)
 }
 
-/// `None` when the session is unknown or had already played.
+/// Stamps every report, so `played_at` orders a title's releases by when each was last
+/// watched. `None` when the session is unknown.
 pub async fn mark_played<'e, E>(exec: E, session_id: Uuid) -> Result<Option<PlayedSession>>
 where
     E: Executor<'e, Database = Postgres>,
@@ -62,11 +64,12 @@ where
     let row = sqlx::query_as!(
         PlayedSession,
         r#"
-        UPDATE debrid_stream_sessions
+        UPDATE debrid_stream_sessions s
         SET played_at = NOW()
-        WHERE id = $1 AND played_at IS NULL
-        RETURNING user_id, media_type, media_id, info_hash, file_id, debrid_provider,
-                  release_title, filename
+        FROM (SELECT id, played_at FROM debrid_stream_sessions WHERE id = $1 FOR UPDATE) prior
+        WHERE s.id = prior.id
+        RETURNING prior.played_at IS NULL AS "first!", s.user_id, s.media_type, s.media_id,
+                  s.info_hash, s.file_id, s.debrid_provider, s.release_title, s.filename
         "#,
         session_id,
     )
@@ -75,7 +78,7 @@ where
     Ok(row)
 }
 
-/// Played releases of one title, local cache first, then most recently played.
+/// Played releases of one title, the one watched last first.
 pub async fn played_for_title<'e, E>(
     exec: E,
     media_type: &str,
@@ -91,7 +94,7 @@ where
         FROM debrid_stream_sessions
         WHERE media_type = $1 AND media_id = $2
           AND info_hash IS NOT NULL AND played_at IS NOT NULL
-        ORDER BY CASE WHEN cache_path IS NOT NULL THEN 0 ELSE 1 END, played_at DESC
+        ORDER BY played_at DESC
         LIMIT 20
         "#,
         media_type,
@@ -156,14 +159,72 @@ where
     Ok(done.rows_affected() > 0)
 }
 
+/// Whether the row was there to take it, as with [`set_subtitle_tracks`].
+pub async fn set_picture<'e, E>(
+    exec: E,
+    session_id: Uuid,
+    picture: &serde_json::Value,
+) -> Result<bool>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let done = sqlx::query!(
+        "UPDATE debrid_stream_sessions SET picture = $1, updated_at = NOW() WHERE id = $2",
+        picture,
+        session_id,
+    )
+    .execute(exec)
+    .await?;
+    Ok(done.rows_affected() > 0)
+}
+
+pub async fn picture<'e, E>(exec: E, session_id: Uuid) -> Result<Option<serde_json::Value>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let picture = sqlx::query_scalar!(
+        "SELECT picture FROM debrid_stream_sessions WHERE id = $1",
+        session_id,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(picture.flatten())
+}
+
+/// The picture area any earlier session measured for this release.
+pub async fn release_picture<'e, E>(
+    exec: E,
+    info_hash: &str,
+    file_id: Option<i32>,
+) -> Result<Option<serde_json::Value>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let picture = sqlx::query_scalar!(
+        r#"
+        SELECT picture AS "picture!"
+        FROM debrid_stream_sessions
+        WHERE info_hash = $1 AND file_id IS NOT DISTINCT FROM $2 AND picture IS NOT NULL
+        ORDER BY updated_at DESC
+        LIMIT 1
+        "#,
+        info_hash,
+        file_id,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(picture)
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ReleaseAnalysis {
     pub skip_segments: Option<serde_json::Value>,
     pub lufs: Option<f64>,
     pub downmix_peak_db: Option<f64>,
+    pub picture: Option<serde_json::Value>,
 }
 
-/// Intro, credits and loudness are measured on one file, so only an earlier session of
+/// Intro, credits, loudness and bars are measured on one file, so only an earlier session of
 /// this same release can lend them to a new one.
 pub async fn release_analysis<'e, E>(
     exec: E,
@@ -179,11 +240,11 @@ where
     let row = sqlx::query_as!(
         ReleaseAnalysis,
         r#"
-        SELECT skip_segments, lufs, downmix_peak_db
+        SELECT skip_segments, lufs, downmix_peak_db, picture
         FROM debrid_stream_sessions
         WHERE media_type = $1 AND media_id = $2
           AND ((info_hash = $3 AND file_id IS NOT DISTINCT FROM $4) OR cache_path = $5)
-          AND (skip_segments IS NOT NULL OR lufs IS NOT NULL)
+          AND (skip_segments IS NOT NULL OR lufs IS NOT NULL OR picture IS NOT NULL)
         ORDER BY updated_at DESC
         LIMIT 1
         "#,

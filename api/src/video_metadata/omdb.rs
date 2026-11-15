@@ -190,6 +190,7 @@ impl VideoMetadataProvider for OmdbProvider {
             provider_id: resp.imdb_id.clone().unwrap_or_default(),
             title: resp.title.unwrap_or_default(),
             original_title: None,
+            original_language: None,
             year: resp
                 .year
                 .as_deref()

@@ -43,6 +43,17 @@
   import { playbackClientId } from '#lib/utils/playback-client.js';
   import PlayerControls from './PlayerControls.svelte';
   import { SEGMENT_LABELS, creditsSkipTarget } from './segments';
+  import {
+    cropArea,
+    cuePlacement,
+    frameStyle,
+    placeCues,
+    resolveFit,
+    sessionPicture,
+    videoFrameRect,
+    type AspectMode,
+    type PictureArea
+  } from './pictureCrop';
   import { showMessage } from '#lib/context/app.svelte.js';
   import UpNextOverlay from './UpNextOverlay.svelte';
   import HandoffPrompt from './HandoffPrompt.svelte';
@@ -530,7 +541,6 @@
   // auto: cover when content AR matches screen AR (within 15%), contain otherwise
   // fit: always object-fit: contain (letterbox)
   // fill: always object-fit: cover (crop to fill, draws behind notches)
-  type AspectMode = 'auto' | 'fit' | 'fill';
   const ASPECT_STORAGE_KEY = 'kobbler-video-aspect-mode';
   let aspectMode = $state<AspectMode>(
     untrack(() => {
@@ -543,17 +553,57 @@
   let videoIntrinsicHeight = $state(0);
   let viewportWidth = $state(typeof window !== 'undefined' ? window.innerWidth : 0);
   let viewportHeight = $state(typeof window !== 'undefined' ? window.innerHeight : 0);
-  const ASPECT_TOLERANCE = 0.15;
-  let effectiveObjectFit = $derived.by(() => {
-    if (aspectMode === 'fit') return 'contain';
-    if (aspectMode === 'fill') return 'cover';
-    if (videoIntrinsicWidth <= 0 || videoIntrinsicHeight <= 0) return 'contain';
-    if (viewportWidth <= 0 || viewportHeight <= 0) return 'contain';
-    const contentAR = videoIntrinsicWidth / videoIntrinsicHeight;
-    const screenAR = viewportWidth / viewportHeight;
-    const diff = Math.abs(contentAR - screenAR) / screenAR;
-    return diff <= ASPECT_TOLERANCE ? 'cover' : 'contain';
+  const TRIM_BARS_STORAGE_KEY = 'video:trimBlackBars';
+  let trimBars = $state(
+    typeof localStorage !== 'undefined' && localStorage.getItem(TRIM_BARS_STORAGE_KEY) === 'true'
+  );
+  let latePicture = $state<{ sessionId: string; picture: PictureArea } | null>(null);
+  let containerWidth = $state(0);
+  let containerHeight = $state(0);
+  let crop = $derived(
+    trimBars
+      ? cropArea(
+          sessionPicture(session, latePicture),
+          session.subtitles.find((s) => s.track_id === activeSubtitleId)?.format
+        )
+      : null
+  );
+  let effectiveObjectFit = $derived(
+    resolveFit(
+      aspectMode,
+      videoIntrinsicWidth * (crop?.width ?? 1),
+      videoIntrinsicHeight * (crop?.height ?? 1),
+      viewportWidth,
+      viewportHeight
+    )
+  );
+  let frameRect = $derived(
+    crop
+      ? videoFrameRect(
+          effectiveObjectFit,
+          videoIntrinsicWidth,
+          videoIntrinsicHeight,
+          containerWidth,
+          containerHeight,
+          crop
+        )
+      : null
+  );
+  let cueBox = $derived(
+    frameRect ? cuePlacement(frameRect, containerWidth, containerHeight) : null
+  );
+
+  $effect(() => {
+    const placement = cueBox;
+    if (activeVttTextTrack) placeCues(activeVttTextTrack, placement);
   });
+
+  function toggleTrimBars() {
+    trimBars = !trimBars;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(TRIM_BARS_STORAGE_KEY, String(trimBars));
+    }
+  }
 
   function cycleAspectMode() {
     const order: AspectMode[] = ['auto', 'fit', 'fill'];
@@ -1865,6 +1915,7 @@
       }
     }
 
+    placeCues(activeVttTextTrack, cueBox);
     activeVttTextTrack.mode = 'showing';
     vttAppliedOffset = offset;
   }
@@ -2782,6 +2833,11 @@
               session.thumbnails_url = data.thumbnails_url;
             }
             break;
+          case 'picture':
+            if (data.picture) {
+              latePicture = { sessionId, picture: data.picture };
+            }
+            break;
           case 'download_complete':
             // Cache file is ready — no action needed, stream_play will use it
             break;
@@ -2981,8 +3037,11 @@
 <div
   class="video-player-overlay"
   class:pip-active={isPip}
+  class:trimmed={frameRect !== null}
   use:portal
   bind:this={containerEl}
+  bind:clientWidth={containerWidth}
+  bind:clientHeight={containerHeight}
   onmousemove={handleMouseMove}
   onclick={handleContainerClick}
   ontouchend={handleTouchEnd}
@@ -3051,7 +3110,8 @@
     <video
       bind:this={videoEl}
       class="video-element {castingMode ? 'hidden' : ''}"
-      style="object-fit: {effectiveObjectFit};"
+      class:framed={frameRect !== null}
+      style={frameRect ? frameStyle(frameRect) : `object-fit: ${effectiveObjectFit};`}
       ontimeupdate={handleTimeUpdate}
       onplay={handlePlay}
       onplaying={handlePlaying}
@@ -3059,6 +3119,7 @@
       ondurationchange={handleDurationChange}
       onloadeddata={handleLoadedData}
       onloadedmetadata={handleLoadedMetadata}
+      onresize={handleLoadedMetadata}
       onwaiting={handleWaiting}
       oncanplay={handleCanPlay}
       onended={handleEnded}
@@ -3203,6 +3264,8 @@
       {pipSupported}
       {aspectMode}
       onAspectModeCycle={cycleAspectMode}
+      {trimBars}
+      onTrimBarsToggle={isLive ? undefined : toggleTrimBars}
       onSearchSubtitles={isLive ? undefined : () => (showSubtitleSearch = true)}
       onClose={handleClose}
       mediaTitle={activeMediaInfo?.title}
@@ -3267,6 +3330,18 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+  }
+
+  .video-player-overlay.trimmed {
+    overflow: hidden;
+  }
+
+  /* Out of flow so the frame can overhang the screen, and behind everything: a positioned
+     video would otherwise paint over the overlays that precede it in the markup. */
+  .video-element.framed {
+    position: absolute;
+    z-index: -1;
+    object-fit: fill;
   }
 
   .video-element::cue {
