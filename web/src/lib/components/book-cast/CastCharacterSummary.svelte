@@ -36,7 +36,7 @@
 
   {#if traits.length > 0}
     <ul class="traits">
-      {#each traits as t (t)}<li>{t}</li>{/each}
+      {#each traits as t, i (i)}<li>{t}</li>{/each}
     </ul>
   {/if}
   {#if personality}<p class="personality">{personality}</p>{/if}
