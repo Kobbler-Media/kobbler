@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT (ds.probe_data->>'duration')::float8 AS \"duration!\",\n               (SELECT MIN((seg->>'start_seconds')::float8)\n                FROM jsonb_array_elements(\n                    CASE WHEN jsonb_typeof(f.skip_segments) = 'array'\n                         THEN f.skip_segments ELSE '[]'::jsonb END) seg\n                WHERE seg->>'segment_type' = 'credits') AS file_credits\n        FROM debrid_stream_sessions ds\n        LEFT JOIN debrid_files f ON f.cache_path = ds.cache_path\n        WHERE ds.media_type = $1 AND ds.media_id = $2\n          AND (ds.probe_data->>'duration')::float8 > 0\n        ORDER BY ds.updated_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "duration!",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "file_credits",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "f455e4b92548400fa5afa11acfc36f6d8b6f7480a77799fe9f5e14dc766a0130"
+}

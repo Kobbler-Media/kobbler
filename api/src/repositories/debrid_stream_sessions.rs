@@ -218,14 +218,13 @@ where
 
 #[derive(Debug, Clone, Default)]
 pub struct ReleaseAnalysis {
-    pub skip_segments: Option<serde_json::Value>,
     pub lufs: Option<f64>,
     pub downmix_peak_db: Option<f64>,
     pub picture: Option<serde_json::Value>,
 }
 
-/// Intro, credits, loudness and bars are measured on one file, so only an earlier session of
-/// this same release can lend them to a new one.
+/// Loudness and bars are measured on one file, so only an earlier session of this same
+/// release can lend them to a new one.
 pub async fn release_analysis<'e, E>(
     exec: E,
     media_type: &str,
@@ -240,11 +239,11 @@ where
     let row = sqlx::query_as!(
         ReleaseAnalysis,
         r#"
-        SELECT skip_segments, lufs, downmix_peak_db, picture
+        SELECT lufs, downmix_peak_db, picture
         FROM debrid_stream_sessions
         WHERE media_type = $1 AND media_id = $2
           AND ((info_hash = $3 AND file_id IS NOT DISTINCT FROM $4) OR cache_path = $5)
-          AND (skip_segments IS NOT NULL OR lufs IS NOT NULL OR picture IS NOT NULL)
+          AND (lufs IS NOT NULL OR picture IS NOT NULL)
         ORDER BY updated_at DESC
         LIMIT 1
         "#,

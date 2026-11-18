@@ -20,9 +20,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::routes::PlaybackAuth;
-use crate::routes::admin::debrid_open::{
-    self, OpenMode, WarmGate, chapters_json, live_response, probe_json,
-};
+use crate::routes::admin::debrid_open::{self, OpenMode, WarmGate, live_response, probe_json};
 use crate::routes::admin::debrid_stream::{AutoCreateMedia, StreamResolveBody, kids_may_resolve};
 use crate::routes::admin::stream_local;
 use crate::routes::admin::stream_search_request::{self, SearchTarget};
@@ -439,16 +437,20 @@ async fn claim_prewarm(state: &AppState, prewarm: Prewarm) -> Response {
         .playback_sessions
         .get(&session_id)
         .filter(|s| !s.file_path.as_os_str().is_empty())
-        .map(|s| (probe_json(&s), chapters_json(&s.chapters)));
+        .map(|s| (probe_json(&s), s.chapters.clone()));
     if let Some((probe, chapters)) = probe {
         let _ = sqlx::query(
-            "UPDATE debrid_stream_sessions SET probe_data = $1, chapters = $3, updated_at = NOW() \
-             WHERE id = $2",
+            "UPDATE debrid_stream_sessions SET probe_data = $1, updated_at = NOW() WHERE id = $2",
         )
         .bind(probe)
         .bind(session_id)
-        .bind(chapters)
         .execute(&state.pool)
+        .await;
+        let _ = crate::repositories::debrid_files::record_session_chapters(
+            &state.pool,
+            session_id,
+            &chapters,
+        )
         .await;
     }
     if let Some(key) = &prewarm.release_key {

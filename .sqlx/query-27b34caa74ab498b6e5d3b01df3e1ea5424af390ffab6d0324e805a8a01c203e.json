@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM debrid_files f\n        WHERE (f.media_type = 'episode' AND NOT EXISTS (SELECT 1 FROM tv_episodes e WHERE e.id = f.media_id))\n           OR (f.media_type = 'movie' AND NOT EXISTS (SELECT 1 FROM movies m WHERE m.id = f.media_id))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "27b34caa74ab498b6e5d3b01df3e1ea5424af390ffab6d0324e805a8a01c203e"
+}

@@ -9,7 +9,7 @@
 use crate::common::*;
 use api::media_cache::episode_cache::{MediaKind, episode_cache_dir};
 use api::media_cache::writers::{new_manifest_at, write_manifest_at};
-use api::repositories::tv_episode_files;
+use api::repositories::{debrid_files, tv_episode_files};
 use api::skip_detect::cache_detect::season_episode_files;
 use serde_json::json;
 use sqlx::PgPool;
@@ -111,29 +111,44 @@ async fn season_files_list_in_episode_order() {
     assert_eq!(listed, file_ids);
 }
 
+/// The download being processed stands for its own episode; its siblings are matched
+/// through their library files.
 #[tokio::test]
 async fn debrid_season_episode_files_are_in_episode_order() {
     let server = TestServer::start_api_only().await;
     let storage_root = server.storage_root();
     let (episode_ids, file_ids) = seed_reversed_season(&server.pool, 4).await;
-    for fid in &file_ids {
-        let dir = episode_cache_dir(&storage_root, &MediaKind::TvFile { file_id: *fid });
+    let streamed = debrid_files::upsert(&server.pool, "/debrid/e3.mkv", "episode", episode_ids[2])
+        .await
+        .unwrap();
+    let kinds = file_ids
+        .iter()
+        .map(|file_id| MediaKind::TvFile { file_id: *file_id })
+        .chain([MediaKind::DebridFile {
+            file_id: streamed.id,
+        }]);
+    for kind in kinds {
+        let dir = episode_cache_dir(&storage_root, &kind);
         std::fs::create_dir_all(&dir).unwrap();
         write_manifest_at(&dir, &new_manifest_at(&dir, 1800.0)).unwrap();
     }
 
-    let listed: Vec<Uuid> = season_episode_files(&server.pool, &storage_root, episode_ids[2])
+    let listed: Vec<Uuid> = season_episode_files(&server.pool, &storage_root, &streamed)
         .await
         .unwrap()
         .into_iter()
         .map(|e| e.file_id)
         .collect();
-    assert_eq!(listed, file_ids);
+    assert_eq!(
+        listed,
+        vec![file_ids[0], file_ids[1], streamed.id, file_ids[3]]
+    );
 }
 
-/// Chapter titles are evidence for detection; a debrid sibling's come from its stream.
+/// Chapter titles are evidence for detection; a debrid sibling's come from its download.
 #[tokio::test]
-async fn season_chapters_come_from_library_files_and_debrid_streams_alike() {
+async fn season_chapters_come_from_library_files_and_debrid_downloads_alike() {
+    use api::routes::admin::streaming::ChapterResponse;
     use api::skip_detect::cache_detect::season_chapters;
     use api::skip_detect::tv::EpisodeFile;
     let server = TestServer::start_api_only().await;
@@ -146,35 +161,43 @@ async fn season_chapters_come_from_library_files_and_debrid_streams_alike() {
     .execute(&server.pool)
     .await
     .unwrap();
-    let user: Uuid = sqlx::query_scalar("SELECT id FROM users LIMIT 1")
-        .fetch_one(&server.pool)
+    let streamed = debrid_files::upsert(&server.pool, "/debrid/e2.mkv", "episode", episode_ids[1])
         .await
         .unwrap();
-    sqlx::query(
-        "INSERT INTO debrid_stream_sessions \
-             (id, user_id, media_type, media_id, release_title, debrid_provider, filename, filesize, chapters) \
-         VALUES ($1, $2, 'episode', $3, 'R', 'rd', 'r.mkv', 1, $4)",
+    debrid_files::set_chapters(
+        &server.pool,
+        streamed.id,
+        &[ChapterResponse {
+            index: 0,
+            title: Some("Opening Credits".to_string()),
+            start_seconds: 12.0,
+            end_seconds: 70.0,
+        }],
     )
-    .bind(Uuid::now_v7())
-    .bind(user)
-    .bind(episode_ids[1])
-    .bind(json!([{ "index": 0, "title": "Opening Credits", "start_seconds": 12.0, "end_seconds": 70.0 }]))
-    .execute(&server.pool)
     .await
     .unwrap();
 
-    let file = |file_id, episode_id| EpisodeFile {
+    let file = |file_id, cache| EpisodeFile {
         file_id,
         file_path: String::new(),
         duration_seconds: 1800.0,
-        episode_id: Some(episode_id),
+        cache,
     };
-    // A debrid-only sibling is keyed by its episode id.
     let chapters = season_chapters(
         &server.pool,
         &[
-            file(file_ids[0], episode_ids[0]),
-            file(episode_ids[1], episode_ids[1]),
+            file(
+                file_ids[0],
+                MediaKind::TvFile {
+                    file_id: file_ids[0],
+                },
+            ),
+            file(
+                streamed.id,
+                MediaKind::DebridFile {
+                    file_id: streamed.id,
+                },
+            ),
         ],
     )
     .await;
@@ -183,7 +206,7 @@ async fn season_chapters_come_from_library_files_and_debrid_streams_alike() {
         vec![(30.0, Some("Library Intro".to_string()))]
     );
     assert_eq!(
-        chapters[&episode_ids[1]],
+        chapters[&streamed.id],
         vec![(12.0, Some("Opening Credits".to_string()))]
     );
 }

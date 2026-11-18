@@ -812,7 +812,10 @@ async fn test_sse_stays_open_until_processing_has_delivered_its_segments() {
     let tmp_dir = tempfile::tempdir().unwrap();
     let cache_file = tmp_dir.path().join("done.mkv");
     std::fs::write(&cache_file, vec![0u8; 100]).unwrap();
-    let trickplay = tmp_dir.path().join("media_cache").join("trickplay");
+    let trickplay = tmp_dir
+        .path()
+        .join("done.mkv.media_cache")
+        .join("trickplay");
     std::fs::create_dir_all(&trickplay).unwrap();
     std::fs::write(trickplay.join("thumbnails.vtt"), "WEBVTT\n").unwrap();
     let cache_path = cache_file.to_str().unwrap();
@@ -863,10 +866,17 @@ async fn test_sse_stays_open_until_processing_has_delivered_its_segments() {
     );
 
     sqlx::query(
-        r#"UPDATE debrid_stream_sessions
-           SET skip_segments = '[{"segment_type":"credits","start_seconds":2800.0,"end_seconds":3000.0}]',
-               lufs = -20.5, downmix_peak_db = -3.5
-           WHERE id = $1"#,
+        r#"INSERT INTO debrid_files (cache_path, media_type, media_id, skip_segments)
+           VALUES ($1, 'movie', $2,
+                   '[{"segment_type":"credits","start_seconds":2800.0,"end_seconds":3000.0}]')"#,
+    )
+    .bind(cache_path)
+    .bind(movie_id)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE debrid_stream_sessions SET lufs = -20.5, downmix_peak_db = -3.5 WHERE id = $1",
     )
     .bind(session_id)
     .execute(&server.pool)

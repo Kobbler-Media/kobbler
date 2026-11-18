@@ -67,10 +67,9 @@ pub struct AnalyzeInputs {
     /// `"episode" | "movie" | "audiobook" | "recording" | "debrid" | ...`.
     /// Recorded for logging only — branch selection uses `is_video`.
     pub media_type: String,
-    /// If true, write the manifest to disk before returning. The native
-    /// kobbler handler sets this to false because it will update the manifest
-    /// with embeddings info and write it once at the end. Path-based callers
-    /// (debrid, iptv) that don't do embeddings set this to true.
+    /// Write the returned manifest before returning. Callers that add embeddings to it
+    /// write it themselves afterwards. With `episode_cache_dir` set, the per-file
+    /// manifest (trickplay, audio_peaks) is written regardless: nothing is added to it.
     pub write_manifest_on_success: bool,
     /// Supplement-pass mode. When true, only the embed_src branch runs — all
     /// other branches (trickplay, vhash, chromaprint, silence, loudness,
@@ -117,6 +116,18 @@ pub struct AnalyzeOutcome {
     pub corrupt_ranges: Vec<crate::corruption::CorruptRange>,
     pub single_pass_duration: Duration,
     pub post_decode_duration: Duration,
+}
+
+impl AnalyzeOutcome {
+    /// Frames were captured for the vision service and the branch that grabbed them
+    /// finished cleanly.
+    pub fn embed_src_ok(&self) -> bool {
+        !self.embed_src_frames.is_empty()
+            && !self
+                .per_branch_errors
+                .iter()
+                .any(|(id, _)| matches!(id, BranchId::EmbedSrc))
+    }
 }
 
 /// Run the single-pass decode, write sidecars + trickplay sprites, return
@@ -632,15 +643,19 @@ fn write_outcome(
     if target_dir.is_none() {
         merge_content_into_per_file(&content_manifest, &mut per_file_manifest);
     }
-    if inputs.write_manifest_on_success {
-        if let Err(e) = write_manifest_at(&inputs.cache_dir, &per_file_manifest) {
-            warn!(error = %e, "per-file manifest write failed");
-        }
-        if let Some(dir) = target_dir
-            && let Err(e) = write_manifest_at(dir, &content_manifest)
-        {
-            warn!(error = %e, "episode_cache manifest write failed");
-        }
+    // A supplement pass produced no file-bound artefacts, so its per-file manifest would
+    // record trickplay as missing over the one the full pass wrote.
+    let per_file_complete = target_dir.is_some() && !inputs.only_embed_src;
+    if (per_file_complete || inputs.write_manifest_on_success)
+        && let Err(e) = write_manifest_at(&inputs.cache_dir, &per_file_manifest)
+    {
+        warn!(error = %e, "per-file manifest write failed");
+    }
+    if inputs.write_manifest_on_success
+        && let Some(dir) = target_dir
+        && let Err(e) = write_manifest_at(dir, &content_manifest)
+    {
+        warn!(error = %e, "episode_cache manifest write failed");
     }
 
     let post_decode_duration = post_decode_started.elapsed();

@@ -33,7 +33,10 @@ use super::{
     SegmentType, earliest_credits_start, extract_duration_secs, extraction_windows,
 };
 use crate::embedding::{EmbeddingClient, profile};
+use crate::media_cache::MIN_SUPPORTED_PIPELINE_VERSION;
+use crate::media_cache::episode_cache::{MediaKind, episode_cache_dir};
 use crate::media_cache::readers::{self, BlackGap, EmbeddingsView, SilenceGap};
+use crate::repositories::debrid_files::{self, DebridFile};
 use crate::repositories::video_chapters;
 use kob_ffmpeg::filter::detect::{BlackInterval, SilenceInterval};
 
@@ -120,11 +123,8 @@ const VISION_WINDOW_EDGE_SECS: f64 = 3.0;
 /// intro is preferred over a wrong one.
 const MIN_VHASH_ONLY_INTRO_DURATION: f64 = 10.0;
 
-/// Per-episode intermediate state captured during detection.
-///
-/// Production callers discard this via the DB-wrapping `detect_season_from_cache`
-/// (and `detect_movie_from_cache`) entry points. Debug / bench tools use the
-/// `_with_chapters` variants and print every pass's output.
+/// Per-episode intermediate state captured during detection, which
+/// [`super::diagnostics`] stores and logs for library files and debrid downloads alike.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct EpisodeDiagnostics {
     pub file_id: Uuid,
@@ -194,15 +194,12 @@ pub struct PairDiag {
     pub lhs_end: f64,
 }
 
-/// Movie-file handle for cache-driven detection. `movie_id` is the canonical
-/// `movies.id` UUID when known; the cache_detect resolver prefers
-/// `episode_cache/movie/{movie_id}/` over `media_cache/{file_id}/` when set.
-/// Native ingest callers without a canonical id pass `None`.
+/// A movie file for cache-driven detection, and where its analysis is cached.
 #[derive(Debug, Clone, Copy)]
 pub struct MovieHandle {
     pub file_id: Uuid,
     pub duration_seconds: f64,
-    pub movie_id: Option<Uuid>,
+    pub cache: MediaKind,
 }
 
 /// Per-episode cache view built up by [`detect_season_from_cache`]. Re-used
@@ -359,10 +356,7 @@ pub async fn detect_season_from_cache_with_chapters(
         None => false,
     };
 
-    // Minimum sibling agreement for vhash-only fallback matches. 4+ ep seasons
-    // require ≥3 agreeing episodes; 2-3 ep seasons accept whatever's possible
-    // (cap at `ep_count - 1`). Same reasoning as chromaprint's min_matches_per_ep.
-    let min_vhash_pairs: usize = 3.min(caches.len().saturating_sub(1));
+    let min_vhash_pairs = super::tv::min_sibling_agreement(caches.len());
 
     let partner_tails: HashMap<usize, PartnerTail> = caches
         .iter()
@@ -484,7 +478,11 @@ pub async fn detect_season_from_cache_with_chapters(
                 vhash_match.end_seconds,
                 &cache.black_frames,
             );
-            if vhash_match.pair_count < min_vhash_pairs {
+            if !super::tv::intro_quorum_met(
+                vhash_match.pair_count,
+                caches.len(),
+                vhash_match.closes_triangle,
+            ) {
                 diag.notes.push(format!(
                     "intro vhash has only {} pair(s) (<{min_vhash_pairs}) — dropped",
                     vhash_match.pair_count
@@ -816,7 +814,7 @@ pub async fn detect_movie_from_cache(
     movie: &MovieHandle,
     storage_root: &str,
 ) -> (Vec<DetectedSegment>, EpisodeDiagnostics) {
-    let chapters = load_chapters_for_file(pool, movie.file_id).await;
+    let chapters = file_chapters(pool, movie.file_id, &movie.cache).await;
     detect_movie_from_cache_with_chapters(text_embed_url, movie, storage_root, &chapters).await
 }
 
@@ -1143,37 +1141,16 @@ fn pick_credits_start(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Build an [`EpisodeFile`] list for every sibling tv_episode in the same
-/// season as `episode_id`. Each sibling's cache is sourced via the
-/// junction-aware path: prefer `episode_cache/tv_file/{file_id}/` (any local
-/// `tv_episode_files` row linked via `tv_episode_file_episodes`), fall back
-/// to `episode_cache/debrid_episode/{episode_id}/` (debrid-only history).
-/// Episodes whose cache is missing, malformed, or below
-/// [`MIN_SUPPORTED_PIPELINE_VERSION`] are skipped silently — the
-/// cross-episode detector treats fewer than 2 loaded caches as the
-/// single-file fallback case.
-///
-/// `file_id` on each returned [`EpisodeFile`] is the resolved cache key:
-/// the linked `tv_episode_files.id` for native, or the sibling episode_id
-/// when only debrid_episode/ is present. Used only as a unique in-memory
-/// key for per-episode result attribution.
+/// The season around the debrid download `target`, one file per episode so no two
+/// releases of one episode are matched against each other: `target` for its own
+/// episode; for each sibling its library file (the newest, which is the one that
+/// plays), else its most recently analysed debrid download. Files without a usable
+/// cache are left out — fewer than 2 loaded caches is the single-file case.
 pub async fn season_episode_files(
     pool: &PgPool,
     storage_root: &str,
-    episode_id: Uuid,
-) -> Result<Vec<crate::skip_detect::tv::EpisodeFile>, sqlx::Error> {
-    use crate::media_cache::MIN_SUPPORTED_PIPELINE_VERSION;
-    use crate::media_cache::episode_cache::{MediaKind, episode_cache_dir};
-
-    // Sibling episodes + an aggregated list of file_ids linked via the
-    // junction. Multiple files per episode (re-encodes, mixed releases) all
-    // get tried in turn; the first hit with a valid manifest wins.
-    //
-    // The agg order is newest-first to match `tv_episode_files::
-    // get_preferred_available`, so detection reads the cache of the file that
-    // actually plays. Unordered, two cached re-encodes give two different
-    // durations, and the winner is persisted to `cached_segments` for every
-    // later viewer of the episode.
+    target: &DebridFile,
+) -> Result<Vec<EpisodeFile>, sqlx::Error> {
     let rows = sqlx::query!(
         r#"
         SELECT
@@ -1182,7 +1159,13 @@ pub async fn season_episode_files(
                 array_agg(j.episode_file_id ORDER BY f.created_at DESC, f.id DESC)
                     FILTER (WHERE j.episode_file_id IS NOT NULL),
                 '{}'::uuid[]
-            ) AS "file_ids!: Vec<Uuid>"
+            ) AS "library_ids!: Vec<Uuid>",
+            COALESCE(
+                (SELECT array_agg(d.id ORDER BY d.updated_at DESC, d.id DESC)
+                   FROM debrid_files d
+                  WHERE d.media_type = 'episode' AND d.media_id = e.id),
+                '{}'::uuid[]
+            ) AS "debrid_ids!: Vec<Uuid>"
         FROM tv_episodes e
         LEFT JOIN tv_episode_file_episodes j ON j.episode_id = e.id
         LEFT JOIN tv_episode_files f ON f.id = j.episode_file_id
@@ -1190,113 +1173,68 @@ pub async fn season_episode_files(
         GROUP BY e.id
         ORDER BY e.episode_sort_order, e.id
         "#,
-        episode_id,
+        target.media_id,
     )
     .fetch_all(pool)
     .await?;
 
     let storage_root = storage_root.to_string();
+    let target = target.id;
+    let target_episode_files: Vec<(Uuid, Vec<MediaKind>)> = rows
+        .into_iter()
+        .map(|row| {
+            let kinds = if row.debrid_ids.contains(&target) {
+                vec![MediaKind::DebridFile { file_id: target }]
+            } else {
+                row.library_ids
+                    .into_iter()
+                    .map(|file_id| MediaKind::TvFile { file_id })
+                    .chain(
+                        row.debrid_ids
+                            .into_iter()
+                            .map(|file_id| MediaKind::DebridFile { file_id }),
+                    )
+                    .collect()
+            };
+            (row.episode_id, kinds)
+        })
+        .collect();
     Ok(tokio::task::spawn_blocking(move || {
-        let mut out = Vec::with_capacity(rows.len());
-        for row in rows {
-            let sib_id = row.episode_id;
-            // Try every linked file's tv_file/ cache first.
-            let mut found: Option<(Uuid, f64)> = None;
-            for fid in &row.file_ids {
-                let dir = episode_cache_dir(&storage_root, &MediaKind::TvFile { file_id: *fid });
-                if let Some(m) = readers::read_manifest_at(&dir)
-                    && m.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
-                    && m.input_duration_seconds > 0.0
-                {
-                    found = Some((*fid, m.input_duration_seconds));
-                    break;
-                }
-            }
-            // No local file cache hit — try the debrid-only fallback.
-            if found.is_none() {
-                let dir = episode_cache_dir(
-                    &storage_root,
-                    &MediaKind::DebridEpisode { episode_id: sib_id },
-                );
-                if let Some(m) = readers::read_manifest_at(&dir)
-                    && m.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
-                    && m.input_duration_seconds > 0.0
-                {
-                    // Use sib_id as the file_id sentinel — unique within the
-                    // season; the loader will fall through to debrid_episode/.
-                    found = Some((sib_id, m.input_duration_seconds));
-                }
-            }
-            if let Some((file_id, duration)) = found {
-                out.push(crate::skip_detect::tv::EpisodeFile {
-                    file_id,
-                    file_path: String::new(),
-                    duration_seconds: duration,
-                    episode_id: Some(sib_id),
-                });
-            }
-        }
-        out
+        target_episode_files
+            .into_iter()
+            .filter_map(|(_, kinds)| {
+                kinds.into_iter().find_map(|kind| {
+                    let m = readers::read_manifest_at(&episode_cache_dir(&storage_root, &kind))?;
+                    (m.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
+                        && m.input_duration_seconds > 0.0)
+                        .then(|| EpisodeFile {
+                            file_id: kind.id(),
+                            file_path: String::new(),
+                            duration_seconds: m.input_duration_seconds,
+                            cache: kind,
+                        })
+                })
+            })
+            .collect()
     })
     .await
     .unwrap_or_default())
 }
 
-/// Resolve where to read an episode's persisted artefacts from. Tries
-/// `tv_file/{file_id}/` first (native ingest, junction-linked file), falls
-/// back to `debrid_episode/{episode_id}/` if `episode_id` is set. Returns
-/// `None` if neither has a manifest at or above
-/// [`MIN_SUPPORTED_PIPELINE_VERSION`].
-fn resolve_episode_cache_dir(
-    storage_root: &str,
-    ep: &EpisodeFile,
-) -> Option<(uuid::Uuid, std::path::PathBuf)> {
-    use crate::media_cache::MIN_SUPPORTED_PIPELINE_VERSION;
-    use crate::media_cache::episode_cache::{MediaKind, episode_cache_dir};
-
-    let tv_file_dir = episode_cache_dir(
-        storage_root,
-        &MediaKind::TvFile {
-            file_id: ep.file_id,
-        },
-    );
-    if let Some(m) = readers::read_manifest_at(&tv_file_dir)
-        && m.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
-    {
-        return Some((ep.file_id, tv_file_dir));
-    }
-
-    if let Some(episode_id) = ep.episode_id {
-        let debrid_dir = episode_cache_dir(storage_root, &MediaKind::DebridEpisode { episode_id });
-        if let Some(m) = readers::read_manifest_at(&debrid_dir)
-            && m.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
-        {
-            let provenance = m.analyzed_file_id.unwrap_or(episode_id);
-            return Some((provenance, debrid_dir));
-        }
-    }
-    None
-}
-
 fn load_cache_for_episode(storage_root: &str, ep: &EpisodeFile) -> Option<EpisodeCache> {
-    let (file_id, dir) = resolve_episode_cache_dir(storage_root, ep)?;
-    load_cache_from_dir(&dir, file_id, ep.duration_seconds)
+    load_cache_from_dir(
+        &episode_cache_dir(storage_root, &ep.cache),
+        ep.file_id,
+        ep.duration_seconds,
+    )
 }
 
 fn load_cache_for_movie(storage_root: &str, movie: &MovieHandle) -> Option<EpisodeCache> {
-    use crate::media_cache::MIN_SUPPORTED_PIPELINE_VERSION;
-    use crate::media_cache::episode_cache::{MediaKind, episode_cache_dir};
-
-    if let Some(movie_id) = movie.movie_id {
-        let dir = episode_cache_dir(storage_root, &MediaKind::Movie { movie_id });
-        if let Some(manifest) = readers::read_manifest_at(&dir)
-            && manifest.pipeline_version >= MIN_SUPPORTED_PIPELINE_VERSION
-        {
-            let provenance = manifest.analyzed_file_id.unwrap_or(movie.file_id);
-            return load_cache_from_dir(&dir, provenance, movie.duration_seconds);
-        }
-    }
-    None
+    load_cache_from_dir(
+        &episode_cache_dir(storage_root, &movie.cache),
+        movie.file_id,
+        movie.duration_seconds,
+    )
 }
 
 fn load_cache_from_dir(
@@ -1304,8 +1242,6 @@ fn load_cache_from_dir(
     file_id: Uuid,
     duration: f64,
 ) -> Option<EpisodeCache> {
-    use crate::media_cache::MIN_SUPPORTED_PIPELINE_VERSION;
-
     let manifest = readers::read_manifest_at(dir)?;
     if manifest.pipeline_version < MIN_SUPPORTED_PIPELINE_VERSION {
         return None;
@@ -1433,58 +1369,41 @@ fn build_vhash_slices(caches: &[EpisodeCache]) -> (EpVhashSeqs, EpVhashSeqs) {
     (start, end)
 }
 
-/// Each episode's chapters, keyed as [`season_episode_files`] keys them: a library file's
-/// from the DB, a debrid-only episode's (keyed by its own id) from its latest stream.
+/// Each episode's chapters, from wherever its file keeps them.
 pub async fn season_chapters(
     pool: &PgPool,
     episodes: &[EpisodeFile],
 ) -> HashMap<Uuid, Vec<(f64, Option<String>)>> {
     let mut by_file = HashMap::new();
     for ep in episodes {
-        let chapters = if ep.episode_id == Some(ep.file_id) {
-            load_debrid_chapters(pool, ep.file_id).await
-        } else {
-            load_chapters_for_file(pool, ep.file_id).await
-        };
-        by_file.insert(ep.file_id, chapters);
+        by_file.insert(ep.file_id, file_chapters(pool, ep.file_id, &ep.cache).await);
     }
     by_file
 }
 
-async fn load_debrid_chapters(pool: &PgPool, episode_id: Uuid) -> Vec<(f64, Option<String>)> {
-    let chapters = sqlx::query_scalar!(
-        r#"
-        SELECT chapters AS "chapters!"
-        FROM debrid_stream_sessions
-        WHERE media_type = 'episode' AND media_id = $1 AND chapters IS NOT NULL
-        ORDER BY updated_at DESC
-        LIMIT 1
-        "#,
-        episode_id,
-    )
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-    chapters
-        .and_then(|c| {
-            serde_json::from_value::<Vec<crate::routes::admin::streaming::ChapterResponse>>(c).ok()
-        })
-        .unwrap_or_default()
+/// A file's chapters as `(start, title)`: a library file's from `video_chapters`, a
+/// debrid download's from its own row.
+pub async fn file_chapters(
+    pool: &PgPool,
+    file_id: Uuid,
+    cache: &MediaKind,
+) -> Vec<(f64, Option<String>)> {
+    let rows = match cache {
+        MediaKind::TvFile { .. } => video_chapters::list_by_episode_file(pool, file_id).await,
+        MediaKind::Movie { .. } => video_chapters::list_by_movie_file(pool, file_id).await,
+        MediaKind::DebridFile { file_id } => {
+            return debrid_files::chapters(pool, *file_id)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|c| (c.start_seconds, c.title))
+                .collect();
+        }
+    };
+    rows.unwrap_or_default()
         .into_iter()
         .map(|c| (c.start_seconds, c.title))
         .collect()
-}
-
-async fn load_chapters_for_file(pool: &PgPool, file_id: Uuid) -> Vec<(f64, Option<String>)> {
-    video_chapters::list_by_episode_file(pool, file_id)
-        .await
-        .map(|chs| {
-            chs.into_iter()
-                .map(|c| (c.start_seconds, c.title))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// Intro and credits as the file's chapters mark them, validated against the
@@ -2838,59 +2757,35 @@ mod resolver_tests {
     }
 
     #[test]
-    fn tv_file_wins_over_debrid_episode_when_both_exist() {
+    fn each_release_loads_its_own_cache() {
+        let tmp = TempDir::new().unwrap();
+        let storage = tmp.path().to_string_lossy().into_owned();
+        let (a, b) = (Uuid::now_v7(), Uuid::now_v7());
+        populate(&storage, &MediaKind::DebridFile { file_id: a }, 0xAA);
+        populate(&storage, &MediaKind::DebridFile { file_id: b }, 0xBB);
+
+        for (file_id, marker) in [(a, 0xAAu32), (b, 0xBBu32)] {
+            let ep = EpisodeFile {
+                file_id,
+                file_path: String::new(),
+                duration_seconds: 100.0,
+                cache: MediaKind::DebridFile { file_id },
+            };
+            let cache = load_cache_for_episode(&storage, &ep).expect("cache loads");
+            assert_eq!(cache.chromaprint.first(), Some(&marker));
+        }
+    }
+
+    #[test]
+    fn returns_none_when_nothing_is_cached() {
         let tmp = TempDir::new().unwrap();
         let storage = tmp.path().to_string_lossy().into_owned();
         let file_id = Uuid::now_v7();
-        let episode_id = Uuid::now_v7();
-
-        // Both namespaces populated. tv_file/ should win.
-        populate(&storage, &MediaKind::TvFile { file_id }, 0xAA);
-        populate(&storage, &MediaKind::DebridEpisode { episode_id }, 0xBB);
-
         let ep = EpisodeFile {
             file_id,
             file_path: String::new(),
             duration_seconds: 100.0,
-            episode_id: Some(episode_id),
-        };
-        let cache = load_cache_for_episode(&storage, &ep).expect("cache loads");
-        assert_eq!(
-            cache.chromaprint.first(),
-            Some(&0xAAu32),
-            "tv_file/ takes priority over debrid_episode/"
-        );
-    }
-
-    #[test]
-    fn debrid_episode_used_when_tv_file_missing() {
-        let tmp = TempDir::new().unwrap();
-        let storage = tmp.path().to_string_lossy().into_owned();
-        let file_id = Uuid::now_v7();
-        let episode_id = Uuid::now_v7();
-
-        // Only debrid_episode/ populated.
-        populate(&storage, &MediaKind::DebridEpisode { episode_id }, 0xBB);
-
-        let ep = EpisodeFile {
-            file_id,
-            file_path: String::new(),
-            duration_seconds: 100.0,
-            episode_id: Some(episode_id),
-        };
-        let cache = load_cache_for_episode(&storage, &ep).expect("cache loads");
-        assert_eq!(cache.chromaprint.first(), Some(&0xBBu32));
-    }
-
-    #[test]
-    fn returns_none_when_neither_namespace_populated() {
-        let tmp = TempDir::new().unwrap();
-        let storage = tmp.path().to_string_lossy().into_owned();
-        let ep = EpisodeFile {
-            file_id: Uuid::now_v7(),
-            file_path: String::new(),
-            duration_seconds: 100.0,
-            episode_id: Some(Uuid::now_v7()),
+            cache: MediaKind::DebridFile { file_id },
         };
         assert!(load_cache_for_episode(&storage, &ep).is_none());
     }
@@ -2905,7 +2800,7 @@ mod resolver_tests {
         let movie = MovieHandle {
             file_id: Uuid::now_v7(),
             duration_seconds: 100.0,
-            movie_id: Some(movie_id),
+            cache: MediaKind::Movie { movie_id },
         };
         let cache = load_cache_for_movie(&storage, &movie).expect("cache loads");
         assert_eq!(cache.chromaprint.first(), Some(&0xCCu32));
@@ -3062,6 +2957,7 @@ mod season_merge_tests {
             density: 0.98,
             mean_similarity: 0.99,
             pair_count: 11,
+            closes_triangle: false,
             pairwise: Vec::<VHashPairDetail>::new(),
         };
         assert_eq!(
@@ -3080,6 +2976,7 @@ mod season_merge_tests {
             density: 0.97,
             mean_similarity: 0.94,
             pair_count: 2,
+            closes_triangle: false,
             pairwise: Vec::<VHashPairDetail>::new(),
         };
         assert_eq!(extend_with_vhash(83.86, 103.21, Some(&vm)), (83.86, 103.21));

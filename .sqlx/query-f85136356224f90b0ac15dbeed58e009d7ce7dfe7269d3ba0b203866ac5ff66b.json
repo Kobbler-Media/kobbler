@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT (SELECT MIN((seg->>'start_seconds')::float8)\n                FROM jsonb_array_elements(f.skip_segments) seg\n                WHERE seg->>'segment_type' = 'credits') AS start\n        FROM debrid_files f\n        WHERE f.media_type = $1 AND f.media_id = $2\n          AND jsonb_typeof(f.skip_segments) = 'array'\n        ORDER BY f.skip_detect_ran_at DESC NULLS LAST, f.updated_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "start",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "f85136356224f90b0ac15dbeed58e009d7ce7dfe7269d3ba0b203866ac5ff66b"
+}

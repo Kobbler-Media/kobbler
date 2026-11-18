@@ -28,7 +28,7 @@ pub(crate) mod debrid_cache_cleanup;
 mod debrid_download_ahead;
 mod debrid_keep;
 mod debrid_prewarm;
-mod debrid_process;
+pub(crate) mod debrid_process;
 pub mod discover_sync;
 pub mod downmix_peak_fill;
 mod ebook_extract;

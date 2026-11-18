@@ -16,36 +16,7 @@ const JOB: &str = "debrid_download_ahead";
 
 /// Episodes 1..=3 of one season; the first has a 3000 s library file.
 async fn season(server: &TestServer) -> Vec<Uuid> {
-    let show = Uuid::now_v7();
-    sqlx::query("INSERT INTO tv_shows (id, title, year) VALUES ($1, 'Ahead Show', 2024)")
-        .bind(show)
-        .execute(&server.pool)
-        .await
-        .unwrap();
-    let season = Uuid::now_v7();
-    sqlx::query(
-        "INSERT INTO tv_seasons (id, show_id, season_identifier, season_sort_order) VALUES ($1, $2, '1', 1)",
-    )
-    .bind(season)
-    .bind(show)
-    .execute(&server.pool)
-    .await
-    .unwrap();
-    let mut episodes = Vec::new();
-    for n in 1..=3 {
-        let id = Uuid::now_v7();
-        sqlx::query(
-            "INSERT INTO tv_episodes (id, season_id, episode_identifier, episode_sort_order) VALUES ($1, $2, $3, $4)",
-        )
-        .bind(id)
-        .bind(season)
-        .bind(n.to_string())
-        .bind(n)
-        .execute(&server.pool)
-        .await
-        .unwrap();
-        episodes.push(id);
-    }
+    let episodes = season_of(server, 3).await;
     library_file(server, episodes[0]).await;
     episodes
 }

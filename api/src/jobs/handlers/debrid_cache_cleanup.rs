@@ -30,7 +30,7 @@ impl DebridCacheCleanupHandler {
 }
 
 /// Remove the cached video file, its probe sidecar, and its sibling
-/// `media_cache/` dir produced by `debrid_process`. Returns `true` iff the
+/// `<file>.media_cache/` dir produced by `debrid_process`. Returns `true` iff the
 /// video file was removed (or was already absent); logs and continues past any
 /// sidecar or sibling-dir failures because those are best-effort cleanup.
 pub(crate) async fn remove_cache_entry(file_path: &str) -> bool {
@@ -49,13 +49,11 @@ pub(crate) async fn remove_cache_entry(file_path: &str) -> bool {
     {
         warn!(path = %sidecar.display(), error = %e, "Failed to delete probe sidecar");
     }
-    if let Some(parent) = path.parent() {
-        let sibling = parent.join("media_cache");
-        if let Err(e) = tokio::fs::remove_dir_all(&sibling).await
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
-            warn!(path = %sibling.display(), error = %e, "Failed to prune sibling media_cache dir");
-        }
+    let sibling = crate::media_cache::debrid_file_cache_dir(path);
+    if let Err(e) = tokio::fs::remove_dir_all(&sibling).await
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        warn!(path = %sibling.display(), error = %e, "Failed to prune sibling media_cache dir");
     }
     true
 }

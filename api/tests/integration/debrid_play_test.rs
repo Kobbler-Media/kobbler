@@ -343,6 +343,7 @@ async fn processing_a_deleted_session_is_a_no_op() {
         server.pool.clone(),
         server.nats_publisher.clone(),
         server.runtime_config.clone(),
+        server.app_state.gpu_lock.clone(),
         server.storage_root(),
     );
 

@@ -11,14 +11,9 @@
 //! ```text
 //! episode_cache/
 //! ├── tv_file/{tv_episode_files.id}/      ← native TV. Multi-ep files share one dir.
-//! ├── movie/{movies.id}/                  ← movies (native + debrid converge).
-//! └── debrid_episode/{tv_episodes.id}/    ← debrid TV (always single-ep).
+//! ├── movie/{movies.id}/                  ← native movies.
+//! └── debrid_file/{debrid_files.id}/      ← a debrid download, episode or movie.
 //! ```
-//!
-//! Reading for a TV episode: query `tv_episode_file_episodes` for the
-//! episode_id → file_ids; try `tv_file/{file_id}/` for each, fall back to
-//! `debrid_episode/{episode_id}/`. No symlinks, no duplication on disk —
-//! the junction does the multi-ep deduplication transparently.
 //!
 //! Replacement policy is `pipeline_version`-gated: a write proceeds iff the
 //! incoming manifest's version is `>=` the existing one. Older-version
@@ -42,12 +37,10 @@ pub enum MediaKind {
     /// `tv_episode_files.id`. One physical file may map to N episodes via
     /// `tv_episode_file_episodes` — they all share this cache.
     TvFile { file_id: Uuid },
-    /// `movies.id`. Native and debrid movie analyses converge here.
+    /// `movies.id`.
     Movie { movie_id: Uuid },
-    /// `tv_episodes.id`. Used when there's no local file row to anchor to —
-    /// i.e. debrid streams of episodes the user doesn't own locally. Always
-    /// keyed by a single episode (debrid streams target one episode).
-    DebridEpisode { episode_id: Uuid },
+    /// `debrid_files.id`: one release's download, so each release keeps its own.
+    DebridFile { file_id: Uuid },
 }
 
 impl MediaKind {
@@ -55,7 +48,7 @@ impl MediaKind {
         match self {
             MediaKind::TvFile { .. } => "tv_file",
             MediaKind::Movie { .. } => "movie",
-            MediaKind::DebridEpisode { .. } => "debrid_episode",
+            MediaKind::DebridFile { .. } => "debrid_file",
         }
     }
 
@@ -63,33 +56,14 @@ impl MediaKind {
         match self {
             MediaKind::TvFile { file_id } => *file_id,
             MediaKind::Movie { movie_id } => *movie_id,
-            MediaKind::DebridEpisode { episode_id } => *episode_id,
-        }
-    }
-
-    /// Resolve a debrid session's `(media_type, media_id)` into the right
-    /// namespace. Returns `None` for media types that don't get an
-    /// episode_cache copy (audiobook, recording, …).
-    pub fn for_debrid(media_type: &str, media_id: Uuid) -> Option<Self> {
-        match media_type {
-            "tv_episode" | "episode" => Some(MediaKind::DebridEpisode {
-                episode_id: media_id,
-            }),
-            "movie" => Some(MediaKind::Movie { movie_id: media_id }),
-            _ => None,
+            MediaKind::DebridFile { file_id } => *file_id,
         }
     }
 }
 
-/// Resolve the directory holding `kind`'s artefacts.
-/// The measured loudness of a debrid title, from whichever release was analysed for it.
-pub fn debrid_title_loudness(
-    storage_root: &str,
-    media_type: &str,
-    media_id: Uuid,
-) -> PlaybackLoudness {
-    MediaKind::for_debrid(media_type, media_id)
-        .and_then(|kind| super::readers::read_loudness_at(&episode_cache_dir(storage_root, &kind)))
+/// The measured loudness of an analysed file.
+pub fn loudness(storage_root: &str, kind: &MediaKind) -> PlaybackLoudness {
+    super::readers::read_loudness_at(&episode_cache_dir(storage_root, kind))
         .map(|l| PlaybackLoudness {
             lufs: l.integrated_lufs,
             downmix_peak_db: l.downmix_peak_db,
@@ -242,8 +216,8 @@ mod tests {
             PathBuf::from(format!("/x/episode_cache/movie/{id}"))
         );
         assert_eq!(
-            episode_cache_dir("/x", &MediaKind::DebridEpisode { episode_id: id }),
-            PathBuf::from(format!("/x/episode_cache/debrid_episode/{id}"))
+            episode_cache_dir("/x", &MediaKind::DebridFile { file_id: id }),
+            PathBuf::from(format!("/x/episode_cache/debrid_file/{id}"))
         );
     }
 
@@ -342,8 +316,8 @@ mod tests {
     fn malformed_existing_manifest_treated_as_missing() {
         let tmp = TempDir::new().unwrap();
         let storage = tmp.path().to_string_lossy().into_owned();
-        let kind = MediaKind::DebridEpisode {
-            episode_id: Uuid::now_v7(),
+        let kind = MediaKind::DebridFile {
+            file_id: Uuid::now_v7(),
         };
         let dir = episode_cache_dir(&storage, &kind);
         std::fs::create_dir_all(&dir).unwrap();
@@ -361,20 +335,6 @@ mod tests {
         .unwrap();
         assert_eq!(outcome, WriteOutcome::Wrote);
         assert!(read_manifest(&storage, &kind).is_some());
-    }
-
-    #[test]
-    fn for_debrid_routes_media_types() {
-        let id = Uuid::now_v7();
-        assert_eq!(
-            MediaKind::for_debrid("tv_episode", id),
-            Some(MediaKind::DebridEpisode { episode_id: id })
-        );
-        assert_eq!(
-            MediaKind::for_debrid("movie", id),
-            Some(MediaKind::Movie { movie_id: id })
-        );
-        assert_eq!(MediaKind::for_debrid("audiobook", id), None);
     }
 
     #[tokio::test]

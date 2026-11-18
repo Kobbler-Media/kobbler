@@ -122,15 +122,9 @@ impl JobHandler for DebridDownloadAheadHandler {
                 time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
             }),
             chapters: Vec::new(),
+            downloaded: false,
         }
-        .insert(
-            &state.pool,
-            "episode",
-            episode_id,
-            &[],
-            Default::default(),
-            None,
-        )
+        .insert(&state.pool, "episode", episode_id, Default::default(), None)
         .await?;
 
         let target = DownloadTarget {

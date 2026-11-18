@@ -149,6 +149,8 @@ pub const TABLES_IN_ORDER: &[&str] = &[
     "tv_episode_files",
     // Depends on tv_episode_files, tv_episodes
     "tv_episode_file_episodes",
+    // Before skip_detect_candidates, which references it
+    "debrid_files",
     // Depends on tv_seasons, movie_files
     "skip_detect_candidates",
     // Depends on file_id from movie_files / tv_episode_files / audiobook_files (logical FK only)

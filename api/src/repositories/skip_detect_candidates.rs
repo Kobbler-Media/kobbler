@@ -9,24 +9,51 @@ use serde_json::Value as JsonValue;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-/// Replace a TV season's candidate rows in a single round trip.
+/// Which detection run's rows to replace: a library season, a library movie file, or
+/// the debrid downloads named by the rows' own `file_id`s.
+pub enum Scope<'a> {
+    Season(Uuid),
+    MovieFile(Uuid),
+    DebridFiles(&'a [Uuid]),
+}
+
+/// Replace one scope's candidate rows in a single round trip.
 ///
 /// `skip_detect_candidates` is debug-audit data — it can get large (every
 /// episode × every segment type × every path the detector explored), so the
 /// DELETE + INSERT pair uses UNNEST-array parameters to do the whole batch
 /// in one statement each. No per-row round trips.
-pub async fn replace_season_candidates(
+pub async fn replace(
     pool: &PgPool,
-    season_id: Uuid,
+    scope: Scope<'_>,
     candidates: &[CandidateRow],
     config_tag: &str,
 ) -> Result<usize> {
     let mut tx = pool.begin().await?;
 
-    sqlx::query("DELETE FROM skip_detect_candidates WHERE season_id = $1")
-        .bind(season_id)
-        .execute(&mut *tx)
-        .await?;
+    let (season_id, movie_file_id, debrid) = match scope {
+        Scope::Season(id) => {
+            sqlx::query("DELETE FROM skip_detect_candidates WHERE season_id = $1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            (Some(id), None, false)
+        }
+        Scope::MovieFile(id) => {
+            sqlx::query("DELETE FROM skip_detect_candidates WHERE movie_file_id = $1")
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            (None, Some(id), false)
+        }
+        Scope::DebridFiles(ids) => {
+            sqlx::query("DELETE FROM skip_detect_candidates WHERE debrid_file_id = ANY($1)")
+                .bind(ids)
+                .execute(&mut *tx)
+                .await?;
+            (None, None, true)
+        }
+    };
 
     if candidates.is_empty() {
         tx.commit().await?;
@@ -37,14 +64,16 @@ pub async fn replace_season_candidates(
     sqlx::query(
         r#"
         INSERT INTO skip_detect_candidates
-            (id, season_id, file_id, segment_type, start_seconds, end_seconds,
+            (id, season_id, movie_file_id, debrid_file_id, file_id, segment_type,
+             start_seconds, end_seconds,
              chromaprint_score, dhash_score, boundary_has_black_frame, boundary_has_silence,
              boundary_refined_start, boundary_refined_end, audio_profile,
              credit_text_score, chapter_agreement,
              file_duration, audio_pass_at, visual_pass_at, fused_at,
              config_tag, selected, rejection_reason)
         SELECT
-            id, $2, file_id, segment_type, start_seconds, end_seconds,
+            id, $2, $20, CASE WHEN $21 THEN file_id END, file_id, segment_type,
+            start_seconds, end_seconds,
             chromaprint_score, dhash_score, boundary_has_black_frame, boundary_has_silence,
             boundary_refined_start, boundary_refined_end, audio_profile,
             credit_text_score, chapter_agreement,
@@ -84,84 +113,8 @@ pub async fn replace_season_candidates(
     .bind(&cols.selected)
     .bind(&cols.rejection_reason)
     .bind(config_tag)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-    Ok(candidates.len())
-}
-
-/// Replace a movie file's candidate rows in a single round trip.
-/// Mirrors [`replace_season_candidates`] — see that doc for rationale.
-pub async fn replace_movie_candidates(
-    pool: &PgPool,
-    movie_file_id: Uuid,
-    candidates: &[CandidateRow],
-    config_tag: &str,
-) -> Result<usize> {
-    let mut tx = pool.begin().await?;
-
-    sqlx::query("DELETE FROM skip_detect_candidates WHERE movie_file_id = $1")
-        .bind(movie_file_id)
-        .execute(&mut *tx)
-        .await?;
-
-    if candidates.is_empty() {
-        tx.commit().await?;
-        return Ok(0);
-    }
-
-    let cols = split_rows(candidates);
-    sqlx::query(
-        r#"
-        INSERT INTO skip_detect_candidates
-            (id, movie_file_id, file_id, segment_type, start_seconds, end_seconds,
-             chromaprint_score, dhash_score, boundary_has_black_frame, boundary_has_silence,
-             boundary_refined_start, boundary_refined_end, audio_profile,
-             credit_text_score, chapter_agreement,
-             file_duration, audio_pass_at, visual_pass_at, fused_at,
-             config_tag, selected, rejection_reason)
-        SELECT
-            id, $2, file_id, segment_type, start_seconds, end_seconds,
-            chromaprint_score, dhash_score, boundary_has_black_frame, boundary_has_silence,
-            boundary_refined_start, boundary_refined_end, audio_profile,
-            credit_text_score, chapter_agreement,
-            file_duration, now(), now(), now(),
-            $19, selected, rejection_reason
-        FROM UNNEST(
-            $1::uuid[], $3::uuid[], $4::text[], $5::float8[], $6::float8[],
-            $7::float8[], $8::float8[], $9::bool[], $10::bool[],
-            $11::float8[], $12::float8[], $13::text[],
-            $14::float8[], $15::float8[],
-            $16::float8[], $17::bool[], $18::text[]
-        ) AS t(
-            id, file_id, segment_type, start_seconds, end_seconds,
-            chromaprint_score, dhash_score, boundary_has_black_frame, boundary_has_silence,
-            boundary_refined_start, boundary_refined_end, audio_profile,
-            credit_text_score, chapter_agreement,
-            file_duration, selected, rejection_reason
-        )
-        "#,
-    )
-    .bind(&cols.ids)
     .bind(movie_file_id)
-    .bind(&cols.file_ids)
-    .bind(&cols.segment_types)
-    .bind(&cols.start_seconds)
-    .bind(&cols.end_seconds)
-    .bind(&cols.chromaprint_score)
-    .bind(&cols.dhash_score)
-    .bind(&cols.boundary_has_black_frame)
-    .bind(&cols.boundary_has_silence)
-    .bind(&cols.boundary_refined_start)
-    .bind(&cols.boundary_refined_end)
-    .bind(&cols.audio_profile)
-    .bind(&cols.credit_text_score)
-    .bind(&cols.chapter_agreement)
-    .bind(&cols.file_duration)
-    .bind(&cols.selected)
-    .bind(&cols.rejection_reason)
-    .bind(config_tag)
+    .bind(debrid)
     .execute(&mut *tx)
     .await?;
 

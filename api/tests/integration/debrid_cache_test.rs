@@ -185,39 +185,28 @@ async fn orphaned_cache_entries_are_still_evicted_by_ttl_lru_and_size() {
     );
 }
 
-async fn cache_movie_segments(rig: &Rig, movie_id: Uuid, segments: &Value) {
-    sqlx::query(
-        "INSERT INTO movie_cached_segments (movie_id, segments, pipeline_version) VALUES ($1, $2, $3)",
-    )
-    .bind(movie_id)
-    .bind(segments)
-    .bind(api::media_cache::PIPELINE_VERSION)
-    .execute(&rig.server.pool)
-    .await
-    .unwrap();
-}
-
-async fn end_playback(rig: &Rig, session_id: Uuid) {
-    rig.server
-        .admin_client()
-        .delete(&format!("/api/v1/admin/playback/sessions/{session_id}"))
-        .await;
-}
-
 const PEAK_DB: f64 = -4.5;
 
+/// What analysis of the session's download left: its intro/credits on the download, its
+/// loudness on the session.
 async fn record_analysis(rig: &Rig, session_id: Uuid, segments: &Value, lufs: f64) {
     sqlx::query(
-        "UPDATE debrid_stream_sessions SET skip_segments = $2, lufs = $3, downmix_peak_db = $4 \
-         WHERE id = $1",
+        "INSERT INTO debrid_files (cache_path, media_type, media_id, skip_segments)
+         SELECT cache_path, media_type, media_id, $2 FROM debrid_stream_sessions WHERE id = $1
+         ON CONFLICT (cache_path) DO UPDATE SET skip_segments = EXCLUDED.skip_segments",
     )
     .bind(session_id)
     .bind(segments)
-    .bind(lufs)
-    .bind(PEAK_DB)
     .execute(&rig.server.pool)
     .await
     .unwrap();
+    sqlx::query("UPDATE debrid_stream_sessions SET lufs = $2, downmix_peak_db = $3 WHERE id = $1")
+        .bind(session_id)
+        .bind(lufs)
+        .bind(PEAK_DB)
+        .execute(&rig.server.pool)
+        .await
+        .unwrap();
 }
 
 fn served_segments(resp: &Value) -> Vec<(String, f64)> {
@@ -238,7 +227,6 @@ fn served_segments(resp: &Value) -> Vec<(String, f64)> {
 /// Intro and credits are timed to one file; another release of the title has its own.
 #[tokio::test]
 async fn a_session_opens_with_what_analysis_found_in_its_own_release_only() {
-    use api::media_cache::episode_cache::{MediaKind, episode_cache_dir};
     let rig = Rig::start(UpstreamPlan::new(ITA_ENG_FIXTURE.to_vec()), "film.mkv").await;
     let movie = rig.movie().await;
     let segments = json!([
@@ -250,18 +238,7 @@ async fn a_session_opens_with_what_analysis_found_in_its_own_release_only() {
     rig.wait_for_complete("ownrelease").await;
     wait_for_probe(&rig, first).await;
     record_analysis(&rig, first, &segments, -23.5).await;
-    cache_movie_segments(&rig, movie, &segments).await;
-    let analysed = episode_cache_dir(
-        &rig.server.storage_root(),
-        &MediaKind::Movie { movie_id: movie },
-    );
-    std::fs::create_dir_all(&analysed).unwrap();
-    std::fs::write(
-        analysed.join("loudness.json"),
-        r#"{"integrated_lufs":-23.5,"downmix_peak_db":-4.5}"#,
-    )
-    .unwrap();
-    end_playback(&rig, first).await;
+    end_playback(&rig.server, first).await;
 
     let replay = rig.resolve_with(&body).await;
     let other = rig
@@ -282,12 +259,14 @@ async fn a_session_opens_with_what_analysis_found_in_its_own_release_only() {
         ("replay", &replay, Some(&segments)),
         ("other release", &other, None),
     ] {
-        let stored: Option<Value> =
-            sqlx::query_scalar("SELECT skip_segments FROM debrid_stream_sessions WHERE id = $1")
-                .bind(session_id_of(resp))
-                .fetch_one(&rig.server.pool)
-                .await
-                .unwrap();
+        let stored: Option<Value> = sqlx::query_scalar(
+            "SELECT f.skip_segments FROM debrid_stream_sessions s
+             LEFT JOIN debrid_files f ON f.cache_path = s.cache_path WHERE s.id = $1",
+        )
+        .bind(session_id_of(resp))
+        .fetch_one(&rig.server.pool)
+        .await
+        .unwrap();
         assert_eq!(
             stored.as_ref(),
             expected,
@@ -529,36 +508,8 @@ async fn a_release_downloaded_ahead_has_its_bars_measured_before_anyone_plays_it
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("ahead.mkv");
     std::fs::write(&file, LETTERBOXED_FIXTURE).unwrap();
-    let session = Uuid::now_v7();
-    sqlx::query(
-        "INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
-             filename, filesize, cache_path)
-         SELECT $1, id, 'movie', $2, 'Ahead.Release', 'aheadhash', 'realdebrid',
-                'ahead.mkv', $3, $4
-         FROM users WHERE role = 'admin' LIMIT 1",
-    )
-    .bind(session)
-    .bind(movie)
-    .bind(LETTERBOXED_FIXTURE.len() as i64)
-    .bind(file.to_string_lossy())
-    .execute(&rig.server.pool)
-    .await
-    .unwrap();
-
-    api::jobs::handlers::DebridProcessHandler::new(
-        rig.server.pool.clone(),
-        rig.server.nats_publisher.clone(),
-        rig.server.runtime_config.clone(),
-        rig.server.storage_root(),
-    )
-    .execute(
-        Uuid::now_v7(),
-        json!({ "session_id": session, "cache_path": file.to_string_lossy() }),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
+    let session = downloaded_session(&rig.server, "movie", movie, "aheadhash", &file).await;
+    process_download(&rig.server, session, &file).await;
 
     assert_letterbox(&stored_picture(&rig, session).await.unwrap());
 }
@@ -615,7 +566,7 @@ async fn a_debrid_session_carries_the_loudness_and_chapters_of_its_file() {
     rig.wait_for_complete("chapterhash").await;
     wait_for_probe(&rig, session).await;
     record_analysis(&rig, session, &json!([]), -23.5).await;
-    end_playback(&rig, session).await;
+    end_playback(&rig.server, session).await;
     let replay = rig.resolve_with(&body).await;
     assert_eq!(replay["lufs"], json!(-23.5), "{replay}");
     assert_eq!(replay["downmix_peak_db"], json!(PEAK_DB), "{replay}");

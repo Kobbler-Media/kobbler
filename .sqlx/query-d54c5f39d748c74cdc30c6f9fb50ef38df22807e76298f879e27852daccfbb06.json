@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE debrid_stream_sessions\n        SET lufs = COALESCE($2, lufs), downmix_peak_db = COALESCE($3, downmix_peak_db),\n            updated_at = NOW()\n        WHERE cache_path = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d54c5f39d748c74cdc30c6f9fb50ef38df22807e76298f879e27852daccfbb06"
+}

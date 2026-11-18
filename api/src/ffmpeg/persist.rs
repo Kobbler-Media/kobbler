@@ -272,6 +272,18 @@ pub struct ChapterSkipSegment {
     pub end_seconds: f64,
 }
 
+/// What a file's chapter titles mark for detection to fall back on. A movie keeps only
+/// its credits: its other chapters are scenes, whatever they are called.
+pub fn chapter_fallback_segments(
+    chapters: &[probe::ChapterInfo],
+    media_type: &str,
+) -> Vec<ChapterSkipSegment> {
+    detect_skip_segments_from_chapter_titles(chapters)
+        .into_iter()
+        .filter(|s| media_type != "movie" || s.segment_type == "credits")
+        .collect()
+}
+
 /// Detect intro/credits/recap skip segments from chapter titles (pure function).
 ///
 /// Scans chapter titles for patterns like "Opening", "OP", "Credits", "ED".

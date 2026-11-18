@@ -508,10 +508,11 @@ pub async fn stream_status(
             let row = sqlx::query_as!(
                 DebridStatusRow,
                 r#"
-                SELECT probe_data, skip_segments, subtitle_tracks, chapters, lufs, downmix_peak_db,
-                       cache_path, filesize, picture
-                FROM debrid_stream_sessions
-                WHERE id = $1
+                SELECT s.probe_data, f.skip_segments, s.subtitle_tracks, f.chapters, s.lufs,
+                       s.downmix_peak_db, s.cache_path, s.filesize, s.picture
+                FROM debrid_stream_sessions s
+                LEFT JOIN debrid_files f ON f.cache_path = s.cache_path
+                WHERE s.id = $1
                 "#,
                 session_id,
             )
@@ -662,11 +663,8 @@ pub async fn stream_status(
 
                 // Check if thumbnails have been generated
                 if !sent_thumbnails {
-                    let thumb_dir = path
-                        .parent()
-                        .unwrap_or(&path)
-                        .join("media_cache")
-                        .join("trickplay");
+                    let thumb_dir =
+                        crate::media_cache::debrid_file_cache_dir(&path).join("trickplay");
                     let vtt_path = thumb_dir.join("thumbnails.vtt");
                     if vtt_path.exists() {
                         let url = format!(

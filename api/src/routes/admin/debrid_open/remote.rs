@@ -113,6 +113,7 @@ pub(super) async fn open(
             time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
         }),
         chapters: Vec::new(),
+        downloaded: false,
     };
     let media = match mode {
         OpenMode::Play => Some(row.commit(state, body).await?),
@@ -167,6 +168,14 @@ pub(super) async fn open(
     };
 
     let download_cancel = CancellationToken::new();
+    // Ranges analysis or an earlier play found broken in this download, transcoded
+    // ahead of the playhead as a library file's are.
+    let corrupt_ranges = crate::repositories::debrid_files::corrupt_ranges_at(
+        &state.pool,
+        &local_cache_path.to_string_lossy(),
+    )
+    .await
+    .unwrap_or_default();
     state.playback_sessions.insert(
         session_id,
         crate::streaming::session::PlaybackSession {
@@ -212,7 +221,7 @@ pub(super) async fn open(
             audio_metas: vec![],
             preferred_audio_index: None,
             force_video_transcode: false,
-            corrupt_ranges: Vec::new(),
+            corrupt_ranges,
             chapters: Vec::new(),
             overlay_spawned_starts: std::collections::HashSet::new(),
             highest_served_segment: None,

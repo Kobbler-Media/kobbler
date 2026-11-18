@@ -205,7 +205,7 @@ impl JobHandler for SportEventDedupeHandler {
                 .await
                 .map_err(|e| JobError::ExecutionFailed(format!("repoint activity_log: {e}")))?;
 
-                // Delete the loser; CASCADE clears wanted_attempts, cached_segments and any
+                // Delete the loser; CASCADE clears wanted_attempts and any
                 // leftover (conflicting) file/watch links.
                 sqlx::query!("DELETE FROM tv_episodes WHERE id = $1", loser.id)
                     .execute(&mut *tx)

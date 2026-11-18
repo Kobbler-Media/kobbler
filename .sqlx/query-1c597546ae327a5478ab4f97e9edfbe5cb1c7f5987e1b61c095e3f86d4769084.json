@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT skip_segments FROM debrid_files WHERE cache_path = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "skip_segments",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_files",
+            "name": "skip_segments"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "1c597546ae327a5478ab4f97e9edfbe5cb1c7f5987e1b61c095e3f86d4769084"
+}

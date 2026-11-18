@@ -2963,6 +2963,10 @@ pub async fn decode_error(
         let pool = state.pool.clone();
         let media_type = session.media_type;
         let file_id = session.file_id;
+        let debrid_download = session
+            .debrid_cache_key
+            .is_some()
+            .then(|| session.file_path.to_string_lossy().into_owned());
         let observed_range = crate::corruption::CorruptRange {
             start_secs: (at - 2.0).max(0.0),
             end_secs: at + 10.0,
@@ -2976,14 +2980,23 @@ pub async fn decode_error(
         tokio::spawn(async move {
             use crate::repositories::{movie_files, tv_episode_files};
             use crate::streaming::session::MediaType;
-            let res = match media_type {
-                MediaType::Episode => {
+            let res = match (debrid_download, media_type) {
+                // A debrid session's file_id is its own id; the range belongs to its download.
+                (Some(path), _) => {
+                    crate::repositories::debrid_files::append_corrupt_range(
+                        &pool,
+                        &path,
+                        observed_range,
+                    )
+                    .await
+                }
+                (None, MediaType::Episode) => {
                     tv_episode_files::append_corrupt_range(&pool, file_id, observed_range).await
                 }
-                MediaType::Movie => {
+                (None, MediaType::Movie) => {
                     movie_files::append_corrupt_range(&pool, file_id, observed_range).await
                 }
-                MediaType::Recording => Ok(false), // recordings aren't tracked in either table
+                (None, MediaType::Recording) => Ok(false), // recordings aren't tracked in either table
             };
             if let Err(e) = res {
                 warn!(%file_id, error = %e, "decode-error: append_corrupt_range failed");

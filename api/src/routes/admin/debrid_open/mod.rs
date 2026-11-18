@@ -11,7 +11,7 @@ mod response;
 mod subtitles;
 
 pub(crate) use media::commit_media;
-pub(crate) use prepare::{chapters_json, probe_json};
+pub(crate) use prepare::probe_json;
 pub(crate) use remote::WARM_HEAD_BYTES;
 pub(crate) use response::live_response;
 
@@ -28,8 +28,10 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::ffmpeg::persist::ChapterSkipSegment;
+use crate::jobs::handlers::debrid_process;
 use crate::media_cache::picture_area::PictureArea;
 use crate::repositories::debrid_cache_files as cache_files;
+use crate::repositories::debrid_files;
 use crate::repositories::debrid_stream_sessions;
 use crate::routes::admin::debrid_stream::StreamResolveBody;
 use crate::routes::admin::streaming::{ChapterResponse, SessionResponse, SkipSegmentResponse};
@@ -78,6 +80,8 @@ pub(crate) struct SessionRow {
     pub debrid_url: Option<String>,
     pub debrid_url_expires_at: Option<OffsetDateTime>,
     pub chapters: Vec<ChapterResponse>,
+    /// The file at `cache_path` is complete, so nothing else will analyse it.
+    pub downloaded: bool,
 }
 
 pub(crate) struct Committed {
@@ -94,22 +98,16 @@ impl SessionRow {
         pool: &sqlx::PgPool,
         media_type: &str,
         media_id: Uuid,
-        skip_segments: &[ChapterSkipSegment],
         loudness: PlaybackLoudness,
         picture: Option<&serde_json::Value>,
     ) -> Result<(), sqlx::Error> {
-        let skip_segments = (!skip_segments.is_empty())
-            .then(|| serde_json::to_value(skip_segments).ok())
-            .flatten();
-        let chapters = chapters_json(&self.chapters);
         sqlx::query!(
             r#"INSERT INTO debrid_stream_sessions
                 (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
                  debrid_provider_id, quality, filename, filesize, file_id, cache_path,
-                 debrid_url, debrid_url_expires_at, skip_segments, lufs, downmix_peak_db, chapters,
-                 picture)
+                 debrid_url, debrid_url_expires_at, lufs, downmix_peak_db, picture)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18, $19, $20)"#,
+                    $17, $18)"#,
             self.session_id,
             self.user_id,
             media_type,
@@ -125,14 +123,17 @@ impl SessionRow {
             self.cache_path,
             self.debrid_url,
             self.debrid_url_expires_at,
-            skip_segments,
             loudness.lufs,
             loudness.downmix_peak_db,
-            chapters,
             picture,
         )
         .execute(pool)
         .await?;
+        if let Err(e) =
+            debrid_files::record_session_chapters(pool, self.session_id, &self.chapters).await
+        {
+            warn!(error = %e, session_id = %self.session_id, "storing the download's chapters failed");
+        }
         Ok(())
     }
 
@@ -157,10 +158,15 @@ impl SessionRow {
             warn!(error = %e, %media_id, "earlier analysis of the release unreadable");
             Default::default()
         });
-        let skip_segments: Vec<ChapterSkipSegment> = analysis
-            .skip_segments
-            .and_then(|v| serde_json::from_value(v).ok())
-            .unwrap_or_default();
+        let skip_segments: Vec<ChapterSkipSegment> = match self.cache_path.as_deref() {
+            Some(path) => debrid_files::skip_segments_at(&state.pool, path)
+                .await
+                .unwrap_or_else(|e| {
+                    warn!(error = %e, %media_id, "the download's analysis unreadable");
+                    Vec::new()
+                }),
+            None => Vec::new(),
+        };
         let loudness = PlaybackLoudness {
             lufs: analysis.lufs,
             downmix_peak_db: analysis.downmix_peak_db,
@@ -170,7 +176,6 @@ impl SessionRow {
                 &state.pool,
                 &media_type,
                 media_id,
-                &skip_segments,
                 loudness,
                 analysis.picture.as_ref(),
             )
@@ -182,6 +187,11 @@ impl SessionRow {
                 Json(json!({"error": "failed to create session"})),
             )
                 .into_response());
+        }
+        if self.downloaded
+            && let Some(path) = self.cache_path.clone()
+        {
+            reanalyse_if_outdated(state, self.session_id, path).await;
         }
         Ok(Committed {
             media_id,
@@ -313,4 +323,37 @@ fn segment_dir(
                 .join("transcode")
         })
         .join(session_id.to_string())
+}
+
+/// A download analysed by an older kobbler, or never analysed at all, is analysed again
+/// while it plays.
+async fn reanalyse_if_outdated(state: &AppState, session_id: Uuid, cache_path: String) {
+    let config = state.runtime_config.get().await;
+    if !config.enrichment_enabled {
+        return;
+    }
+    let vision = config.effective_vision_url().is_some_and(|u| !u.is_empty());
+    let file = match debrid_files::at(&state.pool, &cache_path).await {
+        Ok(file) => file.map(|f| f.id),
+        Err(e) => {
+            warn!(error = %e, %session_id, "debrid file lookup failed");
+            return;
+        }
+    };
+    let storage_root = state.config.storage_root.clone();
+    let path = cache_path.clone();
+    let outdated = tokio::task::spawn_blocking(move || {
+        debrid_process::analysis_outdated(&storage_root, file, &path, vision)
+    })
+    .await
+    .unwrap_or(false);
+    if outdated {
+        debrid_process::enqueue(
+            &state.pool,
+            state.nats.publisher(),
+            session_id,
+            std::path::Path::new(&cache_path),
+        )
+        .await;
+    }
 }

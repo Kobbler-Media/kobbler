@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT corrupt_ranges FROM debrid_files WHERE cache_path = $1 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "corrupt_ranges",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_files",
+            "name": "corrupt_ranges"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bf6a1a881af0a2a9e38fc9c830bbac0bb3ece34a130cf9c17b9284fbf2da322f"
+}

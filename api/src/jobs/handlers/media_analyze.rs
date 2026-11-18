@@ -23,14 +23,13 @@
 //! (including `embeddings.bin` when vision is configured) is durable.
 
 use crate::RuntimeConfigManager;
-use crate::embedding::{EMBED_DIM, EMBED_MODEL, EmbeddingClient, IMAGE_TOKENS};
 use crate::gpu::GpuLock;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult, MediaRootIoGate, PhaseTimings};
 use crate::media_cache::analyze::{AnalyzeInputs, run_analysis};
-use crate::media_cache::embeddings::{l2_normalise, pack_fp16};
+use crate::media_cache::embeddings::{embed_frames, embeddings_failure, ready_vision_gpu};
 use crate::media_cache::picture_area::{self, PictureArea};
-use crate::media_cache::writers::{ArtefactInfo, write_atomic, write_manifest_at_async};
+use crate::media_cache::writers::{ArtefactInfo, write_manifest_at_async};
 use crate::media_cache::{self, Branch, PIPELINE_VERSION};
 use crate::repositories::media_cache_runs::{self, TriggeredBy};
 use crate::repositories::{
@@ -52,11 +51,6 @@ use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
-
-/// Frames-per-second at which embed_src is grabbed.
-const EMBED_FPS: f64 = 1.0;
-/// embed_src JPEG width — must match the vision server's expected input.
-const EMBED_WIDTH: i32 = 768;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct MediaAnalyzePayload {
@@ -285,17 +279,12 @@ impl MediaAnalyzeHandler {
                 Branch::Embeddings,
                 ArtefactInfo {
                     present: false,
-                    params: embeddings_params_failure("embed_src produced no frames"),
+                    params: embeddings_failure("embed_src produced no frames"),
                 },
             );
             Err("embed_src produced no frames".to_string())
         } else {
-            self.gpu_lock.set_enabled(config.gpu_preempt_tts);
-            self.gpu_lock.set_service_urls(
-                config.stt_service_url.clone(),
-                config.tts_service_url.clone(),
-                config.vision_service_url.clone(),
-            );
+            ready_vision_gpu(&self.gpu_lock, config);
             let gpu_guard = timings
                 .time_async("wait_gpu_lock", self.gpu_lock.acquire_for_vision())
                 .await;
@@ -311,7 +300,7 @@ impl MediaAnalyzeHandler {
                     timings
                         .time_async(
                             "vision_call",
-                            embed_frames_inline(
+                            embed_frames(
                                 dir,
                                 vision_url.as_deref(),
                                 frames,
@@ -889,9 +878,7 @@ impl JobHandler for MediaAnalyzeHandler {
                 known_duration,
                 want_embed_src,
                 media_type: payload.media_type.clone(),
-                // Handler writes the (content) manifest itself after the
-                // embeddings step. analyze.rs still writes the per-file
-                // manifest at cache_dir for trickplay+audio_peaks coverage.
+                // Written below, once the embeddings are in it.
                 write_manifest_on_success: false,
                 only_embed_src: false,
                 episode_cache_dir: content_target_dir.clone(),
@@ -1013,6 +1000,7 @@ impl JobHandler for MediaAnalyzeHandler {
             }
         }
 
+        let embed_src_ok = outcome.embed_src_ok();
         let mut branch_results = outcome.branch_results;
         let input_duration = outcome.input_duration_secs;
 
@@ -1020,19 +1008,9 @@ impl JobHandler for MediaAnalyzeHandler {
         // Embeddings are content-bound: lands in episode_cache_dir alongside
         // vhash et al. When no target is set (audiobooks), embed_src is also
         // off — `embed_src_ok` will be false and this block is skipped.
-        let embed_src_ok = !outcome.embed_src_frames.is_empty()
-            && !outcome
-                .per_branch_errors
-                .iter()
-                .any(|(id, _)| matches!(id, BranchId::EmbedSrc));
         let embeddings_ok = if embed_src_ok && let Some(dir) = content_target_dir.as_deref() {
             let frames = std::mem::take(&mut outcome.embed_src_frames);
-            self.gpu_lock.set_enabled(config.gpu_preempt_tts);
-            self.gpu_lock.set_service_urls(
-                config.stt_service_url.clone(),
-                config.tts_service_url.clone(),
-                config.vision_service_url.clone(),
-            );
+            ready_vision_gpu(&self.gpu_lock, &config);
             let gpu_guard = timings
                 .time_async("wait_gpu_lock", self.gpu_lock.acquire_for_vision())
                 .await;
@@ -1043,7 +1021,7 @@ impl JobHandler for MediaAnalyzeHandler {
             match timings
                 .time_async(
                     "vision_call",
-                    embed_frames_inline(
+                    embed_frames(
                         dir,
                         vision_url.as_deref(),
                         frames,
@@ -1068,8 +1046,6 @@ impl JobHandler for MediaAnalyzeHandler {
         };
 
         // ── 8. Write content manifest to episode_cache_dir (if any).
-        // The per-file manifest (trickplay + audio_peaks) was already written
-        // by analyze.rs into cache_dir; nothing for us to do there.
         // Record what was actually read, so a later integrity pass can tell
         // whether this cache still describes the file on disk.
         if let Some((size, mtime)) = verified_stamp {
@@ -1257,150 +1233,6 @@ impl JobHandler for MediaAnalyzeHandler {
             "branch_results": branch_results_json,
         }))
     }
-}
-
-/// Send in-memory JPEG frames to the vision service, pack to fp16, and write
-/// `embeddings.bin` + patch the manifest. Replaces the previous disk-spool +
-/// `generate_embeddings` job hop.
-///
-/// On success: returns `Ok(count)` and the manifest carries `present: true`
-/// with `start_time_secs` so `EmbeddingsView::window` can index correctly.
-///
-/// On failure (vision down, zero frames returned, etc.): returns `Err(reason)`
-/// AND records `present: false` in the manifest with `attempted_at` +
-/// `error`. The `attempted_at` field is what distinguishes "never ran"
-/// (no manifest entry at all) from "ran and produced nothing" in the
-/// supplementation gate — critical for avoiding endless reruns when vision
-/// is off but skip_detect still enqueues normally.
-async fn embed_frames_inline(
-    target_dir: &Path,
-    vision_url: Option<&str>,
-    frames: Vec<kob_ffmpeg::thumbnails::JpegFrame>,
-    manifest: &mut crate::media_cache::writers::Manifest,
-    cancel: &CancellationToken,
-) -> Result<usize, String> {
-    let start_time_secs = frames.first().map(|f| f.timestamp_secs).unwrap_or(0.0);
-    let result = do_embed_frames(target_dir, vision_url, frames, cancel).await;
-    match &result {
-        Ok(count) => {
-            manifest.artefacts.set(
-                Branch::Embeddings,
-                ArtefactInfo {
-                    present: true,
-                    params: embeddings_params_success(*count, start_time_secs),
-                },
-            );
-        }
-        Err(reason) => {
-            manifest.artefacts.set(
-                Branch::Embeddings,
-                ArtefactInfo {
-                    present: false,
-                    params: embeddings_params_failure(reason),
-                },
-            );
-        }
-    }
-    result
-}
-
-async fn do_embed_frames(
-    target_dir: &Path,
-    vision_url: Option<&str>,
-    frames: Vec<kob_ffmpeg::thumbnails::JpegFrame>,
-    cancel: &CancellationToken,
-) -> Result<usize, String> {
-    let vision_url = vision_url
-        .filter(|u| !u.is_empty())
-        .ok_or_else(|| "vision_service_url not configured".to_string())?;
-
-    let client = EmbeddingClient::for_url(vision_url);
-    if !client.health().await {
-        return Err("vision service not healthy".to_string());
-    }
-
-    // The client pipelines each batch as 4 requests of 4 images. We still chunk
-    // here so a cancel mid-file aborts promptly between batches rather than only
-    // between files.
-    let mut jpegs: Vec<Vec<u8>> = frames.into_iter().map(|f| f.jpeg_data).collect();
-    let total = jpegs.len();
-    let mut all_embeddings: Vec<Vec<f32>> = Vec::with_capacity(total);
-    let batch = 16;
-    let mut start = 0;
-    while start < jpegs.len() {
-        nats_jobs::check_cancelled(cancel).map_err(|e| format!("cancelled: {e}"))?;
-        let end = (start + batch).min(jpegs.len());
-        let chunk: Vec<Vec<u8>> = jpegs[start..end].to_vec();
-        let chunk_embeddings = client
-            .embed_images(&chunk)
-            .await
-            .map_err(|e| format!("vision embed failed at batch {start}..{end}: {e}"))?;
-        all_embeddings.extend(chunk_embeddings);
-        start = end;
-    }
-    jpegs.clear();
-
-    if all_embeddings.is_empty() {
-        return Err("vision service returned no embeddings".to_string());
-    }
-    // The manifest records `EMBED_MODEL` and its width, and the reader decodes
-    // rows at that width: vectors of any other width are another model's.
-    if let Some(bad) = all_embeddings.iter().find(|v| v.len() != EMBED_DIM) {
-        return Err(format!(
-            "vision service returned {}-dimensional embeddings, expected {EMBED_DIM} ({EMBED_MODEL})",
-            bad.len()
-        ));
-    }
-
-    l2_normalise(&mut all_embeddings);
-    let packed = pack_fp16(&all_embeddings);
-
-    let target_dir = target_dir.to_path_buf();
-    tokio::task::spawn_blocking(move || {
-        let sidecar = target_dir.join(
-            crate::media_cache::sidecar_filename(Branch::Embeddings)
-                .expect("embeddings is a file branch"),
-        );
-        write_atomic(&sidecar, &packed)
-    })
-    .await
-    .map_err(|e| format!("write task panicked: {e}"))?
-    .map_err(|e| format!("embeddings write failed: {e}"))?;
-
-    Ok(all_embeddings.len())
-}
-
-/// Seconds-since-UNIX-epoch as f64; stored in the manifest so readers can
-/// distinguish "never ran" (no attempted_at) from "ran but empty".
-fn now_unix_secs() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0)
-}
-
-fn embeddings_params_success(count: usize, start_time_secs: f64) -> serde_json::Map<String, Value> {
-    let mut params = serde_json::Map::new();
-    params.insert("dim".into(), json!(EMBED_DIM));
-    params.insert("count".into(), json!(count));
-    params.insert("fps".into(), json!(EMBED_FPS));
-    params.insert("dtype".into(), json!("f16"));
-    params.insert("model".into(), json!(EMBED_MODEL));
-    params.insert("image_tokens".into(), json!(IMAGE_TOKENS));
-    params.insert("width".into(), json!(EMBED_WIDTH));
-    params.insert("start_time_secs".into(), json!(start_time_secs));
-    params.insert("attempted_at".into(), json!(now_unix_secs()));
-    params
-}
-
-/// Carries the model too: an attempt that failed under the current model is not
-/// stale, so skip_detect does not keep re-requesting it.
-fn embeddings_params_failure(reason: &str) -> serde_json::Map<String, Value> {
-    let mut params = serde_json::Map::new();
-    params.insert("model".into(), json!(EMBED_MODEL));
-    params.insert("attempted_at".into(), json!(now_unix_secs()));
-    params.insert("error".into(), json!(reason));
-    params
 }
 
 /// A negative `media_cache_version` is the sentinel `create_or_update` writes

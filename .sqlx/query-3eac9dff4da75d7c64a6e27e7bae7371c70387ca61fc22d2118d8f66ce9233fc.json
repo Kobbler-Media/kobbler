@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE debrid_files SET chapters = COALESCE($2, chapters), updated_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3eac9dff4da75d7c64a6e27e7bae7371c70387ca61fc22d2118d8f66ce9233fc"
+}

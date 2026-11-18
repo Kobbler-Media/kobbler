@@ -61,6 +61,7 @@ mod contract_test;
 mod cue_trim_test;
 mod dashboard_test;
 mod database_cleanup_test;
+mod debrid_analysis_test;
 mod debrid_audio_test;
 mod debrid_cache_test;
 mod debrid_dead_source_test;

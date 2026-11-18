@@ -12,18 +12,14 @@ use super::chromaprint::{Fingerprint, MatchedRegion, find_pairwise_matches};
 use super::vhash;
 use super::{INTRO_MAX_BER, MIN_MATCH_DENSITY};
 
-/// An episode file to analyze. Both the file_id for DB writes and the path
-/// for ffmpeg are carried — callers choose which to use. `episode_id` is the
-/// canonical TV-episode UUID when known; the cache_detect resolver prefers
-/// `episode_cache/{episode_id}/` over `media_cache/{file_id}/` when set.
-/// Native ingest callers that don't carry the canonical id pass `None` and
-/// fall through to the file-keyed reader.
+/// An episode file to analyze: its id for attributing results, and where its
+/// analysis is cached.
 #[derive(Debug, Clone)]
 pub struct EpisodeFile {
     pub file_id: Uuid,
     pub file_path: String,
     pub duration_seconds: f64,
-    pub episode_id: Option<Uuid>,
+    pub cache: crate::media_cache::episode_cache::MediaKind,
 }
 
 /// Per-episode matched position derived from pairwise chromaprint comparisons.
@@ -82,11 +78,7 @@ pub(crate) fn find_per_episode_positions_and_shared(
     (positions, shared)
 }
 
-/// Pairwise intro region aggregation. An episode with only two partners
-/// is kept when those two partners also match each other at the same place:
-/// a theme shared by just three episodes of a season (IASIP S15's Ireland
-/// run). A recap matches its source scene, which is not where the other
-/// recap's source sits, so it rarely closes the triangle.
+/// Pairwise intro region aggregation, short of the quorum kept per [`intro_quorum_met`].
 pub(crate) fn find_per_episode_intro_positions(
     fps: &[(usize, Fingerprint)],
     min_duration: f64,
@@ -109,18 +101,37 @@ pub(crate) type SharedSpans = HashMap<usize, Vec<SharedSpan>>;
 
 type EpRegions = HashMap<usize, Vec<(MatchedRegion, usize, MatchedRegion)>>;
 
-fn overlaps(a: &MatchedRegion, b: &MatchedRegion) -> bool {
-    a.start_seconds < b.end_seconds && b.start_seconds < a.end_seconds
+/// A stretch of one episode matched against a sibling, in either signal.
+pub(crate) trait Span {
+    fn span(&self) -> (f64, f64);
 }
 
-/// Two of `ep`'s regions, against different partners, that overlap in `ep`
-/// and whose partners match each other on the same stretch.
-fn closed_triangle(
-    ep_regions: &EpRegions,
-    regions: &[(MatchedRegion, usize, MatchedRegion)],
-) -> Option<Vec<(MatchedRegion, usize, MatchedRegion)>> {
+impl Span for MatchedRegion {
+    fn span(&self) -> (f64, f64) {
+        (self.start_seconds, self.end_seconds)
+    }
+}
+
+impl Span for vhash::VHashMatch {
+    fn span(&self) -> (f64, f64) {
+        (self.start_seconds, self.end_seconds)
+    }
+}
+
+fn overlaps(a: &impl Span, b: &impl Span) -> bool {
+    let ((a0, a1), (b0, b1)) = (a.span(), b.span());
+    a0 < b1 && b0 < a1
+}
+
+/// Two of an episode's `regions`, against different partners, that overlap in the
+/// episode and whose partners match each other on the same stretch: three episodes
+/// that all share it. Indices into `regions`.
+fn closed_triangle<R: Span>(
+    ep_regions: &HashMap<usize, Vec<(R, usize, R)>>,
+    regions: &[(R, usize, R)],
+) -> Option<(usize, usize)> {
     for (i, (mine_a, p, theirs_a)) in regions.iter().enumerate() {
-        for (mine_b, q, theirs_b) in &regions[i + 1..] {
+        for (j, (mine_b, q, theirs_b)) in regions.iter().enumerate().skip(i + 1) {
             if p == q || !overlaps(mine_a, mine_b) {
                 continue;
             }
@@ -130,14 +141,33 @@ fn closed_triangle(
                 })
             });
             if closes {
-                return Some(vec![
-                    (mine_a.clone(), *p, theirs_a.clone()),
-                    (mine_b.clone(), *q, theirs_b.clone()),
-                ]);
+                return Some((i, j));
             }
         }
     }
     None
+}
+
+/// Whether `pairs` siblings agreeing on an intro is enough in a season of `episodes`,
+/// for chromaprint and vhash alike. Short of the quorum, a closed triangle is: a title
+/// sequence shared by just three episodes (IASIP S15's Ireland run), or by the three
+/// that are one release when a fourth comes from another (AGG S1). A recap matches its
+/// source scene, which is not where the other recap's source sits, so it rarely closes.
+pub(crate) fn intro_quorum_met(pairs: usize, episodes: usize, closes_triangle: bool) -> bool {
+    let need = min_sibling_agreement(episodes);
+    pairs >= need || (need == 3 && closes_triangle)
+}
+
+/// Siblings that must agree on a match for an episode of a season with `episodes` analysed.
+///
+/// 2-pair matches on a 4+ episode season are almost always recaps or mid-episode
+/// recurring scenes, not intros/credits — Leftovers S2x01's 2-pair chromaprint
+/// "credits" at 1656s is the canonical example. Below that one partner is all
+/// there is: requiring "everyone else" of three would let one episode with
+/// nothing in common (another release, a pilot without the titles) undo a match
+/// the other two make on their own.
+pub(super) fn min_sibling_agreement(episodes: usize) -> usize {
+    if episodes >= 4 { 3 } else { 1 }
 }
 
 fn per_episode_positions(
@@ -149,13 +179,7 @@ fn per_episode_positions(
         return (HashMap::new(), HashMap::new());
     }
 
-    // Require ≥3 siblings to agree on a match when the season has enough
-    // episodes to support that (4+ episodes). Short seasons (2-3 episodes)
-    // fall back to requiring "everyone else" because that's the best we can
-    // do. 2-pair matches on a 4+ ep season are almost always recaps or
-    // mid-episode recurring scenes, not intros/credits — Leftovers S2x01's
-    // 2-pair chromaprint "credits" at 1656s is the canonical example.
-    let min_matches_per_ep = 3.min(fps.len() - 1);
+    let min_matches_per_ep = min_sibling_agreement(fps.len());
 
     // Collect all positions per episode from pairwise matches.
     let mut ep_regions: EpRegions = HashMap::new();
@@ -188,10 +212,10 @@ fn per_episode_positions(
         let regions = if regions.len() >= min_matches_per_ep {
             regions
         } else if accept_closed_triangles
-            && min_matches_per_ep == 3
-            && let Some(t) = closed_triangle(&ep_regions, regions)
+            && let Some((a, b)) = closed_triangle(&ep_regions, regions)
+            && intro_quorum_met(regions.len(), fps.len(), true)
         {
-            triangle = t;
+            triangle = vec![regions[a].clone(), regions[b].clone()];
             &triangle
         } else {
             continue;
@@ -321,6 +345,8 @@ pub struct VHashMatchWithDetail {
     /// why this differs from `density`.
     pub mean_similarity: f64,
     pub pair_count: usize,
+    /// Two of the pairs behind the match have partners that match each other there.
+    pub closes_triangle: bool,
     pub pairwise: Vec<VHashPairDetail>,
 }
 
@@ -489,16 +515,28 @@ pub fn find_per_episode_vhash(
     );
 
     let mut result = HashMap::new();
-    for (ep_idx, matches) in ep_matches {
+    for (&ep_idx, matches) in &ep_matches {
         if matches.is_empty() {
             continue;
         }
 
-        let clustered = cluster_matches(&matches);
+        let clustered = cluster_matches(matches);
         let lhs_only: Vec<vhash::VHashMatch> = clustered.iter().map(|m| m.0.clone()).collect();
         let Some(pick) = pick_winning_start_cluster(&lhs_only, START_CLUSTER_GAP_SECS) else {
             continue;
         };
+        let picked = vhash::VHashMatch {
+            start_seconds: pick.start_seconds,
+            end_seconds: pick.end_seconds,
+            density: pick.density,
+            mean_similarity: pick.mean_similarity,
+        };
+        let behind_pick: Vec<_> = clustered
+            .iter()
+            .filter(|m| overlaps(&m.0, &picked))
+            .map(|m| (*m).clone())
+            .collect();
+        let closes_triangle = closed_triangle(&ep_matches, &behind_pick).is_some();
 
         let pairwise = matches
             .iter()
@@ -521,6 +559,7 @@ pub fn find_per_episode_vhash(
                 density: pick.density,
                 mean_similarity: pick.mean_similarity,
                 pair_count: pick.pair_count,
+                closes_triangle,
                 pairwise,
             },
         );
@@ -1017,6 +1056,32 @@ mod tests {
             result.is_empty(),
             "Should reject episodes with only 1 matching pair in large season"
         );
+    }
+
+    #[test]
+    fn a_good_girls_guide_s1_a_third_episode_cut_differently_does_not_hide_the_other_two() {
+        // E1 was another release with nothing in common; E2 and E3 share their
+        // titles. Two episodes alone would match, so adding E1 must not undo it.
+        let titles = Fingerprint {
+            data: vec![100; 20],
+            duration_seconds: 20.0,
+        };
+        let other_cut = Fingerprint {
+            data: vec![0xAAAAAAAA; 20],
+            duration_seconds: 20.0,
+        };
+        let fps = vec![(0, other_cut), (1, titles.clone()), (2, titles)];
+        for res in [
+            find_per_episode_positions(&fps, 3.0),
+            find_per_episode_intro_positions(&fps, 3.0),
+        ] {
+            assert!(
+                res.contains_key(&1) && res.contains_key(&2),
+                "{:?}",
+                res.keys()
+            );
+            assert!(!res.contains_key(&0));
+        }
     }
 
     #[test]

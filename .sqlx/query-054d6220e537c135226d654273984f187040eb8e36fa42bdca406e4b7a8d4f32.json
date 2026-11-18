@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT chapters FROM debrid_files WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "chapters",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_files",
+            "name": "chapters"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "054d6220e537c135226d654273984f187040eb8e36fa42bdca406e4b7a8d4f32"
+}

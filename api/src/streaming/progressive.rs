@@ -457,63 +457,13 @@ impl ProgressiveDownloadManager {
     /// Enqueues a `debrid_process` job that chains: probe → thumbnails → skip_detect.
     /// Each stage updates the session row and emits SSE events.
     async fn trigger_processing(&self, session_id: Uuid, cache_path: &Path) {
-        let cache_path_str = cache_path.to_string_lossy().to_string();
-
-        // Skip if a debrid_process job for this file is already pending/running
-        let already_queued: bool = sqlx::query_scalar(
-            r#"
-            SELECT EXISTS(
-                SELECT 1 FROM job_status
-                WHERE job_type = 'debrid_process'
-                  AND status IN ('pending', 'running')
-                  AND payload->>'cache_path' = $1
-            )
-            "#,
-        )
-        .bind(&cache_path_str)
-        .fetch_one(&self.pool)
-        .await
-        .unwrap_or(false);
-
-        if already_queued {
-            info!(
-                session_id = %session_id,
-                path = %cache_path_str,
-                "Skipping debrid_process — job already queued for this file"
-            );
-            return;
-        }
-
-        info!(
-            session_id = %session_id,
-            path = %cache_path_str,
-            "Triggering processing pipeline for cached debrid file"
-        );
-
-        let payload = serde_json::json!({
-            "session_id": session_id,
-            "cache_path": cache_path_str,
-        });
-        let context = crate::jobs::JobContext::for_entity(
-            "debrid_session",
-            session_id,
-            "Processing cached debrid stream",
-        );
-        if let Err(e) = crate::jobs::enqueue(
+        crate::jobs::handlers::debrid_process::enqueue(
             &self.pool,
             &self.nats_publisher,
-            "debrid_process",
-            payload,
-            context,
+            session_id,
+            cache_path,
         )
-        .await
-        {
-            error!(
-                session_id = %session_id,
-                error = %e,
-                "Failed to enqueue debrid_process job"
-            );
-        }
+        .await;
     }
 }
 

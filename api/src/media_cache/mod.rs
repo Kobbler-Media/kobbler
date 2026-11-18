@@ -89,6 +89,14 @@ pub fn cache_dir(storage_root: &str, file_id: Uuid) -> PathBuf {
         .join(file_id.to_string())
 }
 
+/// A debrid download's own artefacts (trickplay sprites), beside the download and
+/// named for it: a season pack downloads every episode into one directory.
+pub fn debrid_file_cache_dir(cache_path: &Path) -> PathBuf {
+    let mut name = cache_path.file_name().unwrap_or_default().to_os_string();
+    name.push(".media_cache");
+    cache_path.with_file_name(name)
+}
+
 /// Trickplay sprites stay at `{storage_root}/thumbnails/<file_id>/`.
 pub fn trickplay_dir(storage_root: &str, file_id: Uuid) -> PathBuf {
     PathBuf::from(storage_root)

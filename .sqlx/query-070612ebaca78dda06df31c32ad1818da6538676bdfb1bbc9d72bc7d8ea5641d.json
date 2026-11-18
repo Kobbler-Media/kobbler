@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO debrid_files (cache_path, media_type, media_id, chapters)\n        SELECT cache_path, media_type, media_id, $2\n        FROM debrid_stream_sessions\n        WHERE id = $1 AND cache_path IS NOT NULL\n        ON CONFLICT (cache_path) DO UPDATE SET chapters = EXCLUDED.chapters, updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "070612ebaca78dda06df31c32ad1818da6538676bdfb1bbc9d72bc7d8ea5641d"
+}

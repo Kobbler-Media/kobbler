@@ -366,3 +366,94 @@ pub async fn proxied_mkv_session(
     );
     (server, upstream, session_id, dir)
 }
+
+/// Episodes 1..=`count` of one new season.
+pub async fn season_of(server: &TestServer, count: i32) -> Vec<Uuid> {
+    let show = Uuid::now_v7();
+    sqlx::query("INSERT INTO tv_shows (id, title, year) VALUES ($1, 'Ahead Show', 2024)")
+        .bind(show)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+    let season = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO tv_seasons (id, show_id, season_identifier, season_sort_order) VALUES ($1, $2, '1', 1)",
+    )
+    .bind(season)
+    .bind(show)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    let mut episodes = Vec::new();
+    for n in 1..=count {
+        let id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO tv_episodes (id, season_id, episode_identifier, episode_sort_order) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(id)
+        .bind(season)
+        .bind(n.to_string())
+        .bind(n)
+        .execute(&server.pool)
+        .await
+        .unwrap();
+        episodes.push(id);
+    }
+    episodes
+}
+
+/// A release of `media_id` downloaded to `path` by nobody in particular: nothing has
+/// processed it yet.
+pub async fn downloaded_session(
+    server: &TestServer,
+    media_type: &str,
+    media_id: Uuid,
+    info_hash: &str,
+    path: &std::path::Path,
+) -> Uuid {
+    let session = Uuid::now_v7();
+    let size = std::fs::metadata(path).map(|m| m.len() as i64).unwrap_or(0);
+    sqlx::query(
+        "INSERT INTO debrid_stream_sessions
+            (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
+             filename, filesize, cache_path)
+         SELECT $1, id, $2, $3, 'Ahead.Release', $4, 'realdebrid', $5, $6, $7
+         FROM users WHERE role = 'admin' LIMIT 1",
+    )
+    .bind(session)
+    .bind(media_type)
+    .bind(media_id)
+    .bind(info_hash)
+    .bind(path.file_name().unwrap().to_string_lossy())
+    .bind(size)
+    .bind(path.to_string_lossy())
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    session
+}
+
+pub async fn process_download(server: &TestServer, session: Uuid, path: &std::path::Path) {
+    use api::jobs::worker::JobHandler;
+    api::jobs::handlers::DebridProcessHandler::new(
+        server.pool.clone(),
+        server.nats_publisher.clone(),
+        server.runtime_config.clone(),
+        server.app_state.gpu_lock.clone(),
+        server.storage_root(),
+    )
+    .execute(
+        Uuid::now_v7(),
+        json!({ "session_id": session, "cache_path": path.to_string_lossy() }),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+}
+
+pub async fn end_playback(server: &TestServer, session_id: Uuid) {
+    server
+        .admin_client()
+        .delete(&format!("/api/v1/admin/playback/sessions/{session_id}"))
+        .await;
+}

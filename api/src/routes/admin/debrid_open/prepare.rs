@@ -57,15 +57,6 @@ pub(crate) fn probe_json(session: &PlaybackSession) -> serde_json::Value {
     })
 }
 
-/// `None` for none, so the status stream has nothing to announce.
-pub(crate) fn chapters_json(
-    chapters: &[crate::routes::admin::streaming::ChapterResponse],
-) -> Option<serde_json::Value> {
-    (!chapters.is_empty())
-        .then(|| serde_json::to_value(chapters).ok())
-        .flatten()
-}
-
 /// Probe, decide, and start whatever transcode the decision needs.
 pub(super) async fn run(ctx: Prepare) {
     let Prepare {
@@ -269,11 +260,7 @@ pub(super) async fn run(ctx: Prepare) {
             session.video_codec = video_codec.clone();
             session.source_resolution = (video_width, video_height);
             session.thumbnail_dir = Some(
-                local_cache_path
-                    .parent()
-                    .unwrap_or(&local_cache_path)
-                    .join("media_cache")
-                    .join("trickplay"),
+                crate::media_cache::debrid_file_cache_dir(&local_cache_path).join("trickplay"),
             );
             session.audio_metas = audio_metas.clone();
             session.preferred_audio_index = preferred_audio;
@@ -310,14 +297,21 @@ pub(super) async fn run(ctx: Prepare) {
         .map(|s| probe_json(&s))
         .unwrap_or_default();
     let _ = sqlx::query(
-        "UPDATE debrid_stream_sessions SET probe_data = $1, chapters = $3, updated_at = NOW() \
-         WHERE id = $2",
+        "UPDATE debrid_stream_sessions SET probe_data = $1, updated_at = NOW() WHERE id = $2",
     )
     .bind(&probe_json)
     .bind(session_id)
-    .bind(chapters_json(&probe_info.chapters))
     .execute(&bg_state.pool)
     .await;
+    if let Err(e) = crate::repositories::debrid_files::record_session_chapters(
+        &bg_state.pool,
+        session_id,
+        &probe_info.chapters,
+    )
+    .await
+    {
+        warn!(error = %e, %session_id, "storing the download's chapters failed");
+    }
 
     // DirectPlay: client handles the container natively — no FFmpeg needed.
     // All session fields were set above; nothing more to do.

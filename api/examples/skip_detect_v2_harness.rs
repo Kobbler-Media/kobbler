@@ -131,7 +131,9 @@ async fn main() {
                 file_id: ep.file_id,
                 file_path: ep.source_path.to_string_lossy().into_owned(),
                 duration_seconds: ep.duration_seconds,
-                episode_id: None,
+                cache: MediaKind::TvFile {
+                    file_id: ep.file_id,
+                },
             })
             .collect();
         let mut chapters_by_file: HashMap<Uuid, Vec<(f64, Option<String>)>> = HashMap::new();

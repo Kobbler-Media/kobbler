@@ -433,6 +433,8 @@ async fn test_save_without_a_file_has_no_watched_verdict() {
     }
 }
 
+/// A session that streamed `media_id`; with segments, from a download that analysis found
+/// them in.
 async fn insert_debrid_session(
     server: &TestServer,
     media_type: &str,
@@ -444,45 +446,59 @@ async fn insert_debrid_session(
         .fetch_one(&server.pool)
         .await
         .unwrap();
+    let media_id = Uuid::parse_str(media_id).unwrap();
+    let cache_path = match skip_segments {
+        Some(segments) => Some(analysed_download(server, media_type, media_id, segments).await),
+        None => None,
+    };
     sqlx::query(
         "INSERT INTO debrid_stream_sessions \
              (id, user_id, media_type, media_id, release_title, debrid_provider, filename, \
-              filesize, probe_data, skip_segments) \
-         VALUES ($1, $2, $3, $4::uuid, 'Release', 'rd', 'release.mkv', 1, $5, $6)",
+              filesize, probe_data, cache_path) \
+         VALUES ($1, $2, $3, $4, 'Release', 'rd', 'release.mkv', 1, $5, $6)",
     )
     .bind(Uuid::now_v7())
     .bind(user_id)
     .bind(media_type)
-    .bind(Uuid::parse_str(media_id).unwrap())
+    .bind(media_id)
     .bind(json!({ "duration": duration }))
-    .bind(skip_segments)
+    .bind(cache_path)
     .execute(&server.pool)
     .await
     .unwrap();
+}
+
+/// A download of the title whose analysis found `segments`. Returns its path.
+async fn analysed_download(
+    server: &TestServer,
+    media_type: &str,
+    media_id: Uuid,
+    segments: Value,
+) -> String {
+    let path = format!("/debrid/{}.mkv", Uuid::now_v7());
+    sqlx::query(
+        "INSERT INTO debrid_files (cache_path, media_type, media_id, skip_segments, skip_detect_ran_at) \
+         VALUES ($1, $2, $3, $4, NOW())",
+    )
+    .bind(&path)
+    .bind(media_type)
+    .bind(media_id)
+    .bind(segments)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    path
 }
 
 fn credits_json(start: f64, end: f64) -> Value {
     json!([{ "segment_type": "credits", "start_seconds": start, "end_seconds": end }])
 }
 
-const EPISODE_CACHED: &str = "INSERT INTO tv_episode_cached_segments \
-     (episode_id, segments, pipeline_version) VALUES ($1::uuid, $2, 2)";
-const MOVIE_CACHED: &str = "INSERT INTO movie_cached_segments \
-     (movie_id, segments, pipeline_version) VALUES ($1::uuid, $2, 2)";
-
-async fn insert_cached_credits(server: &TestServer, sql: &'static str, id: &str, start: f64) {
-    sqlx::query(sql)
-        .bind(Uuid::parse_str(id).unwrap())
-        .bind(credits_json(start, CREDITS_CASE_DURATION))
-        .execute(&server.pool)
-        .await
-        .unwrap();
-}
-
 enum DebridCredits {
     None,
     Session(f64),
-    Cached(f64),
+    /// The session's own download is gone; another of the title's was analysed.
+    OtherDownload(f64),
 }
 
 struct DebridCase {
@@ -512,14 +528,14 @@ const DEBRID_CASES: &[DebridCase] = &[
         watched: true,
     },
     DebridCase {
-        name: "inside the cached credits",
-        credits: DebridCredits::Cached(2918.0),
+        name: "inside credits another download found",
+        credits: DebridCredits::OtherDownload(2918.0),
         position: 2948,
         watched: true,
     },
     DebridCase {
-        name: "just before the cached credits",
-        credits: DebridCredits::Cached(2918.0),
+        name: "just before credits another download found",
+        credits: DebridCredits::OtherDownload(2918.0),
         position: 2900,
         watched: false,
     },
@@ -533,17 +549,15 @@ async fn test_debrid_only_titles_complete_from_the_streamed_release() {
     for (n, case) in DEBRID_CASES.iter().enumerate() {
         let ep_id = create_episode(&server, &season_id, n as i32 + 1, case.name).await;
         let movie_id = create_movie(&server, case.name).await;
-        for (media_type, id, cached_sql, path) in [
+        for (media_type, id, path) in [
             (
                 "episode",
                 &ep_id,
-                EPISODE_CACHED,
                 format!("/api/v1/admin/tv/episodes/{ep_id}/watch-state"),
             ),
             (
                 "movie",
                 &movie_id,
-                MOVIE_CACHED,
                 format!("/api/v1/admin/movies/{movie_id}/watch-state"),
             ),
         ] {
@@ -559,8 +573,14 @@ async fn test_debrid_only_titles_complete_from_the_streamed_release() {
                 session_segments,
             )
             .await;
-            if let DebridCredits::Cached(start) = case.credits {
-                insert_cached_credits(&server, cached_sql, id, start).await;
+            if let DebridCredits::OtherDownload(start) = case.credits {
+                analysed_download(
+                    &server,
+                    media_type,
+                    Uuid::parse_str(id).unwrap(),
+                    credits_json(start, CREDITS_CASE_DURATION),
+                )
+                .await;
             }
             let saved: Value = server
                 .admin_client()

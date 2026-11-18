@@ -568,6 +568,7 @@ pub async fn start_nats_worker(
         pool.clone(),
         nats_publisher.clone(),
         runtime_config.clone(),
+        gpu_lock.clone(),
         storage_root.clone(),
     )));
     worker.register_handler(HandlerAdapter::new(EpisodeCacheGcHandler::new(

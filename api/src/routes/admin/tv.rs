@@ -2513,15 +2513,7 @@ pub async fn delete_episode(
 
     purge_file_artifacts(&state, &files).await;
 
-    // debrid_episode/{ep_id}/ — the debrid history is now stale.
-    if let Err(e) = crate::media_cache::episode_cache::remove(
-        &state.config.storage_root,
-        &crate::media_cache::episode_cache::MediaKind::DebridEpisode { episode_id: id },
-    )
-    .await
-    {
-        tracing::warn!(error = %e, episode_id = %id, "failed to remove debrid_episode episode_cache");
-    }
+    forget_debrid_files(&state, &[id]).await;
 
     let _ = state
         .library_events
@@ -2655,19 +2647,7 @@ pub async fn bulk_episodes(
 
             purge_file_artifacts(&state, &files).await;
 
-            // Debrid history for these episodes now points at nothing.
-            for id in &episode_ids {
-                if let Err(e) = crate::media_cache::episode_cache::remove(
-                    &state.config.storage_root,
-                    &crate::media_cache::episode_cache::MediaKind::DebridEpisode {
-                        episode_id: *id,
-                    },
-                )
-                .await
-                {
-                    tracing::warn!(error = %e, episode_id = %id, "failed to remove debrid_episode episode_cache");
-                }
-            }
+            forget_debrid_files(&state, &episode_ids).await;
 
             info!(
                 episodes = episode_ids.len(),
@@ -4296,4 +4276,29 @@ pub async fn genres(
         })
         .collect();
     Ok(Json(GenresResponse { genres }))
+}
+
+/// Debrid downloads of deleted episodes, and what was analysed from them.
+async fn forget_debrid_files(state: &AppState, episode_ids: &[Uuid]) {
+    let ids = match crate::repositories::debrid_files::delete_for_media(
+        &state.pool,
+        "episode",
+        episode_ids,
+    )
+    .await
+    {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to forget debrid files of deleted episodes");
+            return;
+        }
+    };
+    for file_id in ids {
+        let kind = crate::media_cache::episode_cache::MediaKind::DebridFile { file_id };
+        if let Err(e) =
+            crate::media_cache::episode_cache::remove(&state.config.storage_root, &kind).await
+        {
+            tracing::warn!(error = %e, %file_id, "failed to remove debrid file analysis");
+        }
+    }
 }

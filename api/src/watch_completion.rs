@@ -3,7 +3,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::repositories::cached_segments;
+use crate::repositories::debrid_files;
 
 const FINISHED_FRACTION: f64 = 0.9;
 /// Credits detected earlier than this are a misdetection, not an ending; trusting
@@ -89,18 +89,19 @@ pub async fn for_movie(pool: &PgPool, movie_id: Uuid) -> Option<PlaybackExtent> 
 }
 
 /// A title with no library file finishes against the release it was last streamed
-/// from: that session's duration, and its credits where detect has run on it, else
-/// the credits cached for the title from another release.
+/// from: that session's duration, and the credits analysis found in its download, else
+/// in the download of the title analysed last.
 async fn for_debrid(pool: &PgPool, media_type: &str, media_id: Uuid) -> Option<PlaybackExtent> {
     let row = sqlx::query!(
         r#"
         SELECT (ds.probe_data->>'duration')::float8 AS "duration!",
                (SELECT MIN((seg->>'start_seconds')::float8)
                 FROM jsonb_array_elements(
-                    CASE WHEN jsonb_typeof(ds.skip_segments) = 'array'
-                         THEN ds.skip_segments ELSE '[]'::jsonb END) seg
-                WHERE seg->>'segment_type' = 'credits') AS session_credits
+                    CASE WHEN jsonb_typeof(f.skip_segments) = 'array'
+                         THEN f.skip_segments ELSE '[]'::jsonb END) seg
+                WHERE seg->>'segment_type' = 'credits') AS file_credits
         FROM debrid_stream_sessions ds
+        LEFT JOIN debrid_files f ON f.cache_path = ds.cache_path
         WHERE ds.media_type = $1 AND ds.media_id = $2
           AND (ds.probe_data->>'duration')::float8 > 0
         ORDER BY ds.updated_at DESC
@@ -112,14 +113,13 @@ async fn for_debrid(pool: &PgPool, media_type: &str, media_id: Uuid) -> Option<P
     .fetch_optional(pool)
     .await
     .ok()??;
-    let cached_credits = cached_segments::current(pool, media_type, media_id)
-        .await
-        .ok()?
-        .into_iter()
-        .filter(|s| s.segment_type == "credits")
-        .map(|s| s.start_seconds)
-        .min_by(f64::total_cmp);
-    PlaybackExtent::new(row.duration, row.session_credits.or(cached_credits))
+    let credits = match row.file_credits {
+        Some(credits) => Some(credits),
+        None => debrid_files::latest_credits_start(pool, media_type, media_id)
+            .await
+            .ok()?,
+    };
+    PlaybackExtent::new(row.duration, credits)
 }
 
 #[cfg(test)]

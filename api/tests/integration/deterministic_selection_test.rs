@@ -542,10 +542,30 @@ async fn season_cache_lookup_uses_the_newest_file() {
     write_manifest(storage.path(), old_file, 1000.0);
     write_manifest(storage.path(), new_file, 2000.0);
 
+    let other_episode: Uuid = server
+        .admin_client()
+        .post_json(
+            &format!("/api/v1/admin/tv/seasons/{season_id}/episodes"),
+            &json!({ "episode_identifier": "2", "episode_sort_order": 2, "title": "Ep 2" }),
+        )
+        .await
+        .json::<Value>()["id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let streamed = api::repositories::debrid_files::upsert(
+        &server.pool,
+        "/debrid/ep2.mkv",
+        "episode",
+        other_episode,
+    )
+    .await
+    .unwrap();
     let files = api::skip_detect::cache_detect::season_episode_files(
         &server.pool,
         &storage.path().to_string_lossy(),
-        episode_id,
+        &streamed,
     )
     .await
     .expect("season episode files");

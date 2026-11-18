@@ -25,21 +25,22 @@
 
 use crate::RuntimeConfigManager;
 use crate::enrichment_config::skip_detect_config_tag;
-use crate::ffmpeg::persist::detect_skip_segments_from_chapter_titles;
+use crate::ffmpeg::persist::chapter_fallback_segments;
 use crate::ffmpeg::probe::ChapterInfo;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::media_cache;
 use crate::repositories::{
     episode_skip_segments, media_cache_runs, movie_files, movie_skip_segments,
-    skip_detect_candidates::{self, CandidateRow},
+    skip_detect_candidates::{self, CandidateRow, Scope},
     tv_episode_files, video_chapters,
 };
 use crate::skip_detect::cache_detect::{
     EpisodeDiagnostics, MovieHandle, detect_movie_from_cache, detect_season_from_cache,
 };
+use crate::skip_detect::diagnostics;
 use crate::skip_detect::tv::EpisodeFile;
-use crate::skip_detect::{AudioProfile, Candidate, DetectedSegment, PipelineMode};
+use crate::skip_detect::{DetectedSegment, PipelineMode};
 use async_trait::async_trait;
 use nats_jobs::Publisher;
 use serde::{Deserialize, Serialize};
@@ -337,22 +338,24 @@ async fn run_movie(
     let handle = MovieHandle {
         file_id: file.id,
         duration_seconds: file.duration_seconds.unwrap_or(0.0),
-        movie_id: Some(file.movie_id),
+        cache: crate::media_cache::episode_cache::MediaKind::Movie {
+            movie_id: file.movie_id,
+        },
     };
     let (segments, diag) =
         detect_movie_from_cache(pool, embed.text_url.as_deref(), &handle, storage_root).await;
 
     // Chapter-sourced segments (reads already-persisted video_chapters).
-    let chapter_segments = load_chapter_segments_movie(pool, file_id).await;
+    let chapter_segments = load_chapter_segments(pool, file_id, "movie").await;
 
-    let rows = candidate_rows_from_diag(file_id, &diag);
+    let rows = diagnostics::candidate_rows(file_id, &diag);
     let candidate_count = rows.len();
     if let Err(e) =
-        skip_detect_candidates::replace_movie_candidates(pool, file_id, &rows, config_tag).await
+        skip_detect_candidates::replace(pool, Scope::MovieFile(file_id), &rows, config_tag).await
     {
-        warn!(error = %e, file_id = %file_id, "replace_movie_candidates failed");
+        warn!(error = %e, file_id = %file_id, "storing movie candidates failed");
     }
-    emit_diagnostics_log(file_id, "movie", &[diag]);
+    diagnostics::log(file_id, "movie", &[diag]);
 
     let (saved_fusion, saved_chapters) =
         persist_movie_segments(pool, file_id, &segments, &chapter_segments, config_tag).await;
@@ -559,11 +562,7 @@ async fn run_episode(
             file_id: row.id,
             file_path: row.file_path,
             duration_seconds: duration,
-            // Native ingest reads from per-file media_cache/{file_id}/ — the
-            // junction `tv_episode_file_episodes` is many-to-many for multi-ep
-            // files, so there's no single canonical episode_id to pick here.
-            // Setting `None` keeps the existing media_cache reader path.
-            episode_id: None,
+            cache: crate::media_cache::episode_cache::MediaKind::TvFile { file_id: row.id },
         });
     }
     if episodes.is_empty() {
@@ -582,7 +581,7 @@ async fn run_episode(
     for ep in &episodes {
         chapter_by_file.insert(
             ep.file_id,
-            load_chapter_segments_episode(pool, ep.file_id).await,
+            load_chapter_segments(pool, ep.file_id, "episode").await,
         );
     }
 
@@ -594,21 +593,17 @@ async fn run_episode(
     let mut candidate_rows: Vec<CandidateRow> = Vec::new();
     let mut diags: Vec<EpisodeDiagnostics> = Vec::with_capacity(per_ep_segments.len());
     for (fid, _segs, diag) in &per_ep_segments {
-        candidate_rows.extend(candidate_rows_from_diag(*fid, diag));
+        candidate_rows.extend(diagnostics::candidate_rows(*fid, diag));
         diags.push(diag.clone());
     }
     let candidate_count = candidate_rows.len();
-    if let Err(e) = skip_detect_candidates::replace_season_candidates(
-        pool,
-        season_id,
-        &candidate_rows,
-        config_tag,
-    )
-    .await
+    if let Err(e) =
+        skip_detect_candidates::replace(pool, Scope::Season(season_id), &candidate_rows, config_tag)
+            .await
     {
-        warn!(error = %e, season_id = %season_id, "replace_season_candidates failed");
+        warn!(error = %e, season_id = %season_id, "storing season candidates failed");
     }
-    emit_diagnostics_log(file_id, "season", &diags);
+    diagnostics::log(file_id, "season", &diags);
 
     let mut fusion_saved = 0usize;
     let mut chapter_saved = 0usize;
@@ -659,148 +654,6 @@ async fn run_episode(
         // have just gained segments too.
         "detected_file_ids": detected_ids,
     }))
-}
-
-/// Build a flat list of `CandidateRow`s for a single file from its
-/// diagnostics — both fusion winners (selected=true) and rejected
-/// candidates (selected=false with `rejection_reason` set).
-///
-/// Match winners back to their pre-fusion `Candidate` by (segment_type,
-/// start_seconds) within a 0.5s epsilon so the stored row carries the full
-/// signal breakdown, not just the post-score summary.
-fn candidate_rows_from_diag(file_id: Uuid, diag: &EpisodeDiagnostics) -> Vec<CandidateRow> {
-    const MATCH_EPSILON: f64 = 0.5;
-    let mut rows: Vec<CandidateRow> = Vec::new();
-
-    for seg in &diag.final_segments {
-        let matched = diag.candidates_pre_fusion.iter().find(|c| {
-            c.segment_type == seg.segment_type
-                && (c.start_seconds - seg.start_seconds).abs() < MATCH_EPSILON
-        });
-        match matched {
-            Some(c) => rows.push(candidate_to_row(file_id, c, true, None)),
-            None => {
-                // Fallback: fusion produced a segment we can't tie back to a
-                // pre-fusion candidate (e.g. synthesized downstream). Store a
-                // minimal row so the audit still shows the winner.
-                rows.push(CandidateRow {
-                    file_id,
-                    segment_type: seg.segment_type.as_str().to_string(),
-                    start_seconds: seg.start_seconds,
-                    end_seconds: seg.end_seconds,
-                    chromaprint_score: None,
-                    dhash_score: None,
-                    boundary_has_black_frame: None,
-                    boundary_has_silence: None,
-                    boundary_refined_start: None,
-                    boundary_refined_end: None,
-                    audio_profile: None,
-                    credit_text_score: None,
-                    chapter_agreement: None,
-                    file_duration: Some(diag.duration),
-                    selected: true,
-                    rejection_reason: None,
-                });
-            }
-        }
-    }
-
-    for rej in &diag.rejected_candidates {
-        rows.push(candidate_to_row(
-            file_id,
-            &rej.candidate,
-            false,
-            Some(rej.reason.clone()),
-        ));
-    }
-
-    rows
-}
-
-fn candidate_to_row(
-    file_id: Uuid,
-    c: &Candidate,
-    selected: bool,
-    rejection_reason: Option<String>,
-) -> CandidateRow {
-    let (boundary_black, boundary_silence, boundary_start, boundary_end) =
-        match &c.signals.boundary_match {
-            Some(b) => (
-                Some(b.has_black_frame),
-                Some(b.has_silence),
-                Some(b.refined_start),
-                Some(b.refined_end),
-            ),
-            None => (None, None, None, None),
-        };
-    CandidateRow {
-        file_id,
-        segment_type: c.segment_type.as_str().to_string(),
-        start_seconds: c.start_seconds,
-        end_seconds: c.end_seconds,
-        chromaprint_score: c.signals.chromaprint_score,
-        dhash_score: c.signals.dhash_score,
-        boundary_has_black_frame: boundary_black,
-        boundary_has_silence: boundary_silence,
-        boundary_refined_start: boundary_start,
-        boundary_refined_end: boundary_end,
-        audio_profile: c
-            .signals
-            .audio_profile
-            .map(audio_profile_to_str)
-            .map(String::from),
-        credit_text_score: c.signals.credit_text_score,
-        chapter_agreement: c.signals.chapter_agreement,
-        file_duration: c.file_duration,
-        selected,
-        rejection_reason,
-    }
-}
-
-fn audio_profile_to_str(p: AudioProfile) -> &'static str {
-    match p {
-        AudioProfile::MusicOnly => "music_only",
-        AudioProfile::Dialogue => "dialogue",
-        AudioProfile::NarrationLoop => "narration_loop",
-        AudioProfile::Mixed => "mixed",
-        AudioProfile::Unknown => "unknown",
-    }
-}
-
-/// Emit one compact structured log line per file so operators can answer
-/// "why didn't this episode get a segment?" from `docker logs` without
-/// querying the candidates table. Mirrors the `"media_analyze timing"`
-/// shape — one line, JSON in a tracing field.
-fn emit_diagnostics_log(anchor_file_id: Uuid, scope: &str, diags: &[EpisodeDiagnostics]) {
-    for diag in diags {
-        let rejected_summary: Vec<serde_json::Value> = diag
-            .rejected_candidates
-            .iter()
-            .map(|r| {
-                json!({
-                    "segment_type": r.candidate.segment_type.as_str(),
-                    "start_seconds": r.candidate.start_seconds,
-                    "end_seconds": r.candidate.end_seconds,
-                    "reason": r.reason,
-                })
-            })
-            .collect();
-        info!(
-            anchor_file_id = %anchor_file_id,
-            file_id = %diag.file_id,
-            scope = scope,
-            duration = diag.duration,
-            chromaprint_samples = diag.chromaprint_samples,
-            vhash_frames = diag.vhash_frames,
-            chapter_count = diag.chapter_count,
-            pre_fusion = diag.candidates_pre_fusion.len(),
-            persisted = diag.final_segments.len(),
-            rejected = diag.rejected_candidates.len(),
-            notes = %serde_json::to_string(&diag.notes).unwrap_or_default(),
-            rejected_detail = %serde_json::to_string(&rejected_summary).unwrap_or_default(),
-            "skip_detect diag"
-        );
-    }
 }
 
 /// What detection needs to know about the embedding services.
@@ -938,14 +791,18 @@ async fn lookup_season_for_file(pool: &PgPool, file_id: Uuid) -> Option<Uuid> {
         .flatten()
 }
 
-async fn load_chapter_segments_episode(
+async fn load_chapter_segments(
     pool: &PgPool,
     file_id: Uuid,
+    media_type: &str,
 ) -> Vec<crate::ffmpeg::persist::ChapterSkipSegment> {
-    let chapters = video_chapters::list_by_episode_file(pool, file_id)
-        .await
-        .unwrap_or_default();
+    let chapters = if media_type == "movie" {
+        video_chapters::list_by_movie_file(pool, file_id).await
+    } else {
+        video_chapters::list_by_episode_file(pool, file_id).await
+    };
     let chapter_infos: Vec<ChapterInfo> = chapters
+        .unwrap_or_default()
         .into_iter()
         .map(|c| ChapterInfo {
             index: c.chapter_index,
@@ -954,30 +811,7 @@ async fn load_chapter_segments_episode(
             title: c.title,
         })
         .collect();
-    detect_skip_segments_from_chapter_titles(&chapter_infos)
-}
-
-async fn load_chapter_segments_movie(
-    pool: &PgPool,
-    file_id: Uuid,
-) -> Vec<crate::ffmpeg::persist::ChapterSkipSegment> {
-    let chapters = video_chapters::list_by_movie_file(pool, file_id)
-        .await
-        .unwrap_or_default();
-    let chapter_infos: Vec<ChapterInfo> = chapters
-        .into_iter()
-        .map(|c| ChapterInfo {
-            index: c.chapter_index,
-            start_seconds: c.start_seconds,
-            end_seconds: c.end_seconds,
-            title: c.title,
-        })
-        .collect();
-    detect_skip_segments_from_chapter_titles(&chapter_infos)
-        .into_iter()
-        // Movies only care about credits per V1's chapter movie path.
-        .filter(|s| s.segment_type == "credits")
-        .collect()
+    chapter_fallback_segments(&chapter_infos, media_type)
 }
 
 /// Chapter-derived segments that still get a row: those of a type detection

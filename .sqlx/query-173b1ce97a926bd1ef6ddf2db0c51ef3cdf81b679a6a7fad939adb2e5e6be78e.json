@@ -1,0 +1,66 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO debrid_files (cache_path, media_type, media_id)\n        VALUES ($1, $2, $3)\n        ON CONFLICT (cache_path) DO UPDATE\n            SET media_type = EXCLUDED.media_type, media_id = EXCLUDED.media_id\n        RETURNING id, cache_path, media_type, media_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_files",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "cache_path",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_files",
+            "name": "cache_path"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_files",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "media_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_files",
+            "name": "media_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "173b1ce97a926bd1ef6ddf2db0c51ef3cdf81b679a6a7fad939adb2e5e6be78e"
+}

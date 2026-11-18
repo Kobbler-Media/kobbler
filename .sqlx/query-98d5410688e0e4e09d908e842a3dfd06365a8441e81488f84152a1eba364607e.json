@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            e.id AS \"episode_id!\",\n            COALESCE(\n                array_agg(j.episode_file_id ORDER BY f.created_at DESC, f.id DESC)\n                    FILTER (WHERE j.episode_file_id IS NOT NULL),\n                '{}'::uuid[]\n            ) AS \"library_ids!: Vec<Uuid>\",\n            COALESCE(\n                (SELECT array_agg(d.id ORDER BY d.updated_at DESC, d.id DESC)\n                   FROM debrid_files d\n                  WHERE d.media_type = 'episode' AND d.media_id = e.id),\n                '{}'::uuid[]\n            ) AS \"debrid_ids!: Vec<Uuid>\"\n        FROM tv_episodes e\n        LEFT JOIN tv_episode_file_episodes j ON j.episode_id = e.id\n        LEFT JOIN tv_episode_files f ON f.id = j.episode_file_id\n        WHERE e.season_id = (SELECT season_id FROM tv_episodes WHERE id = $1)\n        GROUP BY e.id\n        ORDER BY e.episode_sort_order, e.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "episode_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "library_ids!: Vec<Uuid>",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "debrid_ids!: Vec<Uuid>",
+        "type_info": "UuidArray",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "98d5410688e0e4e09d908e842a3dfd06365a8441e81488f84152a1eba364607e"
+}

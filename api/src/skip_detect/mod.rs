@@ -8,6 +8,7 @@
 pub mod boundary;
 pub mod cache_detect;
 pub mod chromaprint;
+pub mod diagnostics;
 pub mod fusion;
 pub mod post_credits;
 pub mod primitives;

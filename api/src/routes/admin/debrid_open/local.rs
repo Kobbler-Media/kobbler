@@ -75,6 +75,7 @@ pub(super) async fn open(
                 end_seconds: ch.end_seconds,
             })
             .collect(),
+        downloaded: true,
     };
     let _ = cache_files::touch(&state.pool, &cached.file_path).await;
 
@@ -201,11 +202,7 @@ pub(super) async fn open(
     if let Some(st) = body.start_time {
         segment_cache.set_playback_start(segment_cache.time_to_segment(st), st);
     }
-    let thumb_dir = file_path
-        .parent()
-        .unwrap_or(&file_path)
-        .join("media_cache")
-        .join("trickplay");
+    let thumb_dir = crate::media_cache::debrid_file_cache_dir(&file_path).join("trickplay");
     let has_thumbnails = tokio::fs::try_exists(thumb_dir.join("thumbnails.vtt"))
         .await
         .unwrap_or(false);
@@ -219,6 +216,12 @@ pub(super) async fn open(
         meter.clone(),
         duration,
     ));
+    // Ranges analysis or an earlier play found broken in this download, transcoded
+    // ahead of the playhead as a library file's are.
+    let corrupt_ranges =
+        crate::repositories::debrid_files::corrupt_ranges_at(&state.pool, &cached.file_path)
+            .await
+            .unwrap_or_default();
     state.playback_sessions.insert(
         session_id,
         PlaybackSession {
@@ -256,7 +259,7 @@ pub(super) async fn open(
             audio_metas,
             preferred_audio_index: preferred,
             force_video_transcode: false,
-            corrupt_ranges: Vec::new(),
+            corrupt_ranges,
             chapters: row.chapters.clone(),
             overlay_spawned_starts: std::collections::HashSet::new(),
             highest_served_segment: None,

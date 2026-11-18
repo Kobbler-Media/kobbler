@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE debrid_files SET corrupt_ranges = $2 WHERE cache_path = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "525f95e2bc9047c0afd4adf17e20444e391dade74a734d1f159f40874d4e1704"
+}

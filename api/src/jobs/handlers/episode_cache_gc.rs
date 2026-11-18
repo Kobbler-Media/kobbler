@@ -1,9 +1,8 @@
 //! Janitor for `{storage_root}/episode_cache/`.
 //!
 //! Walks each of the three namespaces and removes directories whose
-//! authoritative DB row no longer exists. Also drops `debrid_episode/{id}/`
-//! entries when the episode now has a `tv_episode_files` row — the local
-//! file's `tv_file/{file_id}/` cache supersedes.
+//! authoritative DB row no longer exists. `debrid_files` rows of titles that
+//! are gone are deleted first, so their analyses go with them.
 //!
 //! Independent of `debrid_cache_cleanup`, which only touches the per-file
 //! `media_cache/` tree adjacent to debrid-streamed video files. The two
@@ -58,23 +57,14 @@ impl JobHandler for EpisodeCacheGcHandler {
             .map_err(|e| JobError::Retryable(e.to_string()))?
             .into_iter()
             .collect();
-        let live_episodes: HashSet<Uuid> = sqlx::query_scalar!("SELECT id FROM tv_episodes")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(|e| JobError::Retryable(e.to_string()))?
-            .into_iter()
-            .collect();
         let live_movies: HashSet<Uuid> = sqlx::query_scalar!("SELECT id FROM movies")
             .fetch_all(&self.pool)
             .await
             .map_err(|e| JobError::Retryable(e.to_string()))?
             .into_iter()
             .collect();
-        // Episodes that now have a local file row — their debrid_episode/
-        // copy is superseded and can be dropped.
-        let episodes_with_files: HashSet<Uuid> =
-            sqlx::query_scalar!("SELECT DISTINCT episode_id FROM tv_episode_file_episodes")
-                .fetch_all(&self.pool)
+        let live_debrid: HashSet<Uuid> =
+            crate::repositories::debrid_files::prune_orphans(&self.pool)
                 .await
                 .map_err(|e| JobError::Retryable(e.to_string()))?
                 .into_iter()
@@ -85,55 +75,29 @@ impl JobHandler for EpisodeCacheGcHandler {
         // dead entry. On a runtime worker that starves tokio's I/O driver and
         // the whole API stops answering until the GC finishes, so run them
         // together on the blocking pool.
-        let (removed_orphans, removed_stale, removed_superseded) = {
+        let (removed_orphans, removed_stale) = {
             let storage_root = self.storage_root.clone();
             let cancel = cancel.clone();
             tokio::task::spawn_blocking(move || {
-                let mut removed_orphans = 0usize;
                 let mut removed_stale = 0usize;
-                let mut removed_superseded = 0usize;
-
-                removed_orphans += sweep(
-                    &storage_root,
-                    Namespace::TvFile,
-                    &live_files,
-                    &cancel,
-                    &mut removed_stale,
-                    &HashSet::new(),
-                    &mut removed_superseded,
-                );
-                removed_orphans += sweep(
-                    &storage_root,
-                    Namespace::Movie,
-                    &live_movies,
-                    &cancel,
-                    &mut removed_stale,
-                    &HashSet::new(),
-                    &mut removed_superseded,
-                );
-                removed_orphans += sweep(
-                    &storage_root,
-                    Namespace::DebridEpisode,
-                    &live_episodes,
-                    &cancel,
-                    &mut removed_stale,
-                    &episodes_with_files,
-                    &mut removed_superseded,
-                );
-                (removed_orphans, removed_stale, removed_superseded)
+                let removed_orphans = [
+                    (Namespace::TvFile, &live_files),
+                    (Namespace::Movie, &live_movies),
+                    (Namespace::DebridFile, &live_debrid),
+                ]
+                .into_iter()
+                .map(|(ns, live)| sweep(&storage_root, ns, live, &cancel, &mut removed_stale))
+                .sum::<usize>();
+                (removed_orphans, removed_stale)
             })
             .await
             .expect("episode_cache_gc sweep task panicked")
         };
 
-        info!(
-            removed_orphans,
-            removed_stale, removed_superseded, "episode_cache_gc complete"
-        );
+        info!(removed_orphans, removed_stale, "episode_cache_gc complete");
         Ok(json!({
             "removed_orphans": removed_orphans,
             "removed_stale": removed_stale,
-            "removed_superseded": removed_superseded,
         }))
     }
 }
@@ -142,7 +106,7 @@ impl JobHandler for EpisodeCacheGcHandler {
 enum Namespace {
     TvFile,
     Movie,
-    DebridEpisode,
+    DebridFile,
 }
 
 impl Namespace {
@@ -150,7 +114,7 @@ impl Namespace {
         match self {
             Namespace::TvFile => "tv_file",
             Namespace::Movie => "movie",
-            Namespace::DebridEpisode => "debrid_episode",
+            Namespace::DebridFile => "debrid_file",
         }
     }
 
@@ -158,7 +122,7 @@ impl Namespace {
         match self {
             Namespace::TvFile => MediaKind::TvFile { file_id: id },
             Namespace::Movie => MediaKind::Movie { movie_id: id },
-            Namespace::DebridEpisode => MediaKind::DebridEpisode { episode_id: id },
+            Namespace::DebridFile => MediaKind::DebridFile { file_id: id },
         }
     }
 }
@@ -169,15 +133,12 @@ fn namespace_dir(storage_root: &str, ns: Namespace) -> PathBuf {
         .join(ns.dir_name())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn sweep(
     storage_root: &str,
     ns: Namespace,
     live_ids: &HashSet<Uuid>,
     cancel: &CancellationToken,
     removed_stale: &mut usize,
-    superseded_ids: &HashSet<Uuid>,
-    removed_superseded: &mut usize,
 ) -> usize {
     let dir = namespace_dir(storage_root, ns);
     if !dir.is_dir() {
@@ -212,13 +173,6 @@ fn sweep(
             // Orphan: id no longer in DB.
             try_rm(&path, "orphan");
             removed += 1;
-            continue;
-        }
-
-        if ns == Namespace::DebridEpisode && superseded_ids.contains(&id) {
-            // Local copy now exists; debrid_episode/ is superseded.
-            try_rm(&path, "superseded");
-            *removed_superseded += 1;
             continue;
         }
 
@@ -307,15 +261,12 @@ mod tests {
 
         let live: HashSet<Uuid> = std::iter::once(live_id).collect();
         let mut removed_stale = 0usize;
-        let mut removed_superseded = 0usize;
         let removed = sweep(
             &storage,
             Namespace::TvFile,
             &live,
             &CancellationToken::new(),
             &mut removed_stale,
-            &HashSet::new(),
-            &mut removed_superseded,
         );
         assert_eq!(removed, 1);
         assert_eq!(removed_stale, 0);
@@ -338,52 +289,16 @@ mod tests {
         .unwrap();
         let live: HashSet<Uuid> = std::iter::once(live_id).collect();
         let mut removed_stale = 0usize;
-        let mut removed_superseded = 0usize;
         let removed = sweep(
             &storage,
             Namespace::Movie,
             &live,
             &CancellationToken::new(),
             &mut removed_stale,
-            &HashSet::new(),
-            &mut removed_superseded,
         );
         assert_eq!(removed, 0);
         assert_eq!(removed_stale, 1);
         assert!(!episode_cache_dir(&storage, &MediaKind::Movie { movie_id: live_id }).exists());
-    }
-
-    #[tokio::test]
-    async fn sweep_removes_superseded_debrid_episode_when_local_exists() {
-        let tmp = TempDir::new().unwrap();
-        let storage = tmp.path().to_string_lossy().into_owned();
-        let ep_id = Uuid::now_v7();
-
-        write_episode_cache(
-            &storage,
-            &MediaKind::DebridEpisode { episode_id: ep_id },
-            &fresh_manifest(PIPELINE_VERSION),
-            &no_artefacts(),
-        )
-        .unwrap();
-        let live_episodes: HashSet<Uuid> = std::iter::once(ep_id).collect();
-        let superseded: HashSet<Uuid> = std::iter::once(ep_id).collect();
-        let mut removed_stale = 0usize;
-        let mut removed_superseded = 0usize;
-        let removed = sweep(
-            &storage,
-            Namespace::DebridEpisode,
-            &live_episodes,
-            &CancellationToken::new(),
-            &mut removed_stale,
-            &superseded,
-            &mut removed_superseded,
-        );
-        assert_eq!(removed, 0, "live episode, not orphan");
-        assert_eq!(removed_superseded, 1);
-        assert!(
-            !episode_cache_dir(&storage, &MediaKind::DebridEpisode { episode_id: ep_id }).exists()
-        );
     }
 
     #[tokio::test]
@@ -394,15 +309,12 @@ mod tests {
         std::fs::create_dir_all(dir.join("not-a-uuid")).unwrap();
 
         let mut removed_stale = 0usize;
-        let mut removed_superseded = 0usize;
         let removed = sweep(
             &storage,
             Namespace::TvFile,
             &HashSet::new(),
             &CancellationToken::new(),
             &mut removed_stale,
-            &HashSet::new(),
-            &mut removed_superseded,
         );
         assert_eq!(removed, 0);
         assert_eq!(removed_stale, 0);
