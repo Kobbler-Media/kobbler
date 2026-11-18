@@ -116,3 +116,57 @@ async fn subtitles_switch_on_by_language_only_for_audio_the_viewer_does_not_spea
         );
     }
 }
+
+#[tokio::test]
+async fn a_forced_track_switches_on_only_in_a_language_the_viewer_reads() {
+    let server = TestServer::start_api_only().await;
+    let cases: [(Option<&str>, Option<i32>); 4] = [
+        (Some("cze"), None),
+        (Some("eng"), Some(SUB_STREAM + 1)),
+        (Some("en"), Some(SUB_STREAM + 1)),
+        (None, Some(SUB_STREAM + 1)),
+    ];
+    for (forced_language, expected) in cases {
+        let file_id = seed_file(&server, Some("eng"), "film.mkv").await;
+        subtitle_tracks::create(
+            &server.pool,
+            &subtitle_tracks::SubtitleTrackInput {
+                movie_file_id: Some(file_id),
+                episode_file_id: None,
+                track_index: SUB_STREAM + 1,
+                codec: "subrip".to_string(),
+                language: forced_language.map(str::to_string),
+                title: Some("Forced".to_string()),
+                is_forced: true,
+                is_default: false,
+                is_hearing_impaired: false,
+            },
+        )
+        .await
+        .unwrap();
+        let resp = server
+            .admin_client()
+            .post_json(
+                "/api/v1/admin/playback/sessions",
+                &json!({
+                    "media_type": "movie",
+                    "file_id": file_id.to_string(),
+                    "preferred_audio_language": "english",
+                    "preferred_subtitle_language": "english",
+                    "capabilities": {
+                        "video_codecs": ["h264"],
+                        "audio_codecs": ["aac"],
+                        "containers": ["mkv", "matroska", "webm"]
+                    }
+                }),
+            )
+            .await;
+        resp.assert_ok();
+        let session: Value = resp.json();
+        assert_eq!(
+            session["selected_subtitle_index"].as_i64(),
+            expected.map(i64::from),
+            "forced track in {forced_language:?}: {session}"
+        );
+    }
+}

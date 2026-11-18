@@ -350,6 +350,7 @@ pub fn decide(
         subtitle_tracks,
         prefs.preferred_subtitle_index,
         audio_understood,
+        prefs.understood_language,
         prefs.subtitle_language,
     );
 
@@ -488,6 +489,7 @@ fn decide_subtitles(
     tracks: &[SubtitleTrackMeta],
     preferred_index: Option<i32>,
     audio_understood: bool,
+    understood_language: &str,
     subtitle_language: &str,
 ) -> SubtitleHandling {
     let track = if let Some(idx) = preferred_index {
@@ -496,7 +498,20 @@ fn decide_subtitles(
         // Bitmap subs force an expensive video transcode, so they auto-select
         // only as the viewer's subtitle language under foreign audio.
         let is_text = |t: &SubtitleTrackMeta| !is_bitmap_codec(&t.codec);
-        if let Some(forced) = tracks.iter().find(|t| t.is_forced && is_text(t)) {
+        // Releases ship a forced track per dubbed language; one in a language
+        // the viewer doesn't read translates nothing for them.
+        let readable = |t: &SubtitleTrackMeta| {
+            let read = [understood_language, subtitle_language];
+            is_untagged(t.language.as_deref())
+                || read.iter().all(|l| l.is_empty())
+                || read
+                    .iter()
+                    .any(|l| !l.is_empty() && language_matches(t.language.as_deref(), l))
+        };
+        if let Some(forced) = tracks
+            .iter()
+            .find(|t| t.is_forced && is_text(t) && readable(t))
+        {
             Some(forced)
         } else if audio_understood {
             None
