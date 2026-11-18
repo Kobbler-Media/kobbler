@@ -436,7 +436,7 @@ async fn test_watch_next_new_season_exception_expires_after_30_days() {
         .await
         .unwrap();
 
-    // New season exists but was added > 30 days ago (stale Trakt import scenario)
+    // New season exists but was added > 30 days ago
     let s2 = create_season(pool, show_id, 2).await;
     let s2e1 = create_episode(pool, s2, 1).await;
     create_stub_episode_file(pool, s2e1).await;

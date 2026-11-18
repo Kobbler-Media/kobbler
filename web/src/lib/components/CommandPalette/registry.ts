@@ -336,7 +336,7 @@ export const pages: PageItem[] = [
     id: 'watch-history',
     label: 'Watch History',
     path: '/settings/watch-history',
-    aliases: ['history', 'watched', 'recommendations', 'for you', 'trakt', 'hide', 'remove'],
+    aliases: ['history', 'watched', 'recommendations', 'for you', 'hide', 'remove'],
     icon: icons.chatMemory
   },
   {

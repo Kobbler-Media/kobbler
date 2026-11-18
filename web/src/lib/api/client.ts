@@ -50,9 +50,6 @@ import type {
   TvEpisode,
   TvEpisodeFile,
   TvWatchState,
-  VideoSyncProvider,
-  TraktDeviceCode,
-  TraktPollResult,
   MediaRoot,
   MediaRootFile,
   PlaybackHandoffResponse,
@@ -3993,51 +3990,6 @@ export function episodeStillUrl(id: string): string {
   return `${apiBase}/api/v1/admin/tv/episodes/${id}/still`;
 }
 
-// Video Sync Providers (Trakt, etc.)
-
-export async function getVideoSyncProviders(): Promise<VideoSyncProvider[]> {
-  return request('/api/v1/admin/video-sync/providers');
-}
-
-export async function updateVideoSyncProvider(
-  providerType: string,
-  data: { enabled?: boolean; config?: Record<string, unknown> }
-): Promise<void> {
-  return request(`/api/v1/admin/video-sync/providers/${providerType}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data)
-  });
-}
-
-export async function traktAuthorize(clientId: string): Promise<TraktDeviceCode> {
-  return request('/api/v1/admin/video-sync/trakt/authorize', {
-    method: 'POST',
-    body: JSON.stringify({ client_id: clientId })
-  });
-}
-
-export async function traktPollDeviceCode(
-  deviceCode: string,
-  clientId: string,
-  clientSecret: string
-): Promise<TraktPollResult> {
-  return request(`/api/v1/admin/video-sync/trakt/poll/${deviceCode}`, {
-    method: 'POST',
-    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret })
-  });
-}
-
-export async function traktDisconnect(): Promise<void> {
-  return request('/api/v1/admin/video-sync/trakt/disconnect', { method: 'POST' });
-}
-
-export async function traktImportHistory(mediaType?: string): Promise<{ status: string }> {
-  return request('/api/v1/admin/video-sync/trakt/import-history', {
-    method: 'POST',
-    body: JSON.stringify({ media_type: mediaType })
-  });
-}
-
 // Filesystem Browsing
 
 export type DirectoryEntry = {
@@ -5864,7 +5816,7 @@ export async function dismissUpNext(mediaType: UpNextMediaType, mediaId: string)
   });
 }
 
-export type WatchHistorySource = 'local' | 'trakt' | 'stremio';
+export type WatchHistorySource = 'local' | 'stremio';
 
 export interface WatchHistoryItem {
   media_type: 'movie' | 'tv';

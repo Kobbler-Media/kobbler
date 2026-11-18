@@ -2017,22 +2017,6 @@ pub async fn update_watch_state(
         crate::jobs::enqueue_tv_show_index(&state.pool, state.nats.publisher(), show_id).await;
     }
 
-    // Fire-and-forget: sync watch state to Trakt (if configured)
-    let _ = crate::jobs::enqueue_routine(
-        &state.pool,
-        state.nats.publisher(),
-        "trakt_sync_watch_state",
-        serde_json::json!({
-            "user_id": user_id,
-            "media_type": "episode",
-            "media_id": id,
-            "watched": body.watched,
-            "watched_at": body.watched_at.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap()),
-        }),
-        crate::jobs::JobContext::new("Syncing episode watch state to Trakt"),
-    )
-    .await;
-
     Ok(Json(json!({ "id": ws_id })))
 }
 
@@ -2065,44 +2049,11 @@ pub async fn bulk_update_show_watch_state(
 
     let count = affected_episode_ids.len();
 
-    after_bulk_watch(&state, user_id, id, &affected_episode_ids, body.watched).await;
+    crate::jobs::enqueue_tv_show_index(&state.pool, state.nats.publisher(), id).await;
 
     info!(show_id = %id, user_id = %user_id, watched = body.watched, count, "Bulk updated show watch state");
 
     Ok(Json(json!({ "updated_count": count })))
-}
-
-/// Re-indexes the show and syncs the changed episodes to Trakt in one call.
-async fn after_bulk_watch(
-    state: &AppState,
-    user_id: Uuid,
-    show_id: Uuid,
-    episode_ids: &[Uuid],
-    watched: bool,
-) {
-    crate::jobs::enqueue_tv_show_index(&state.pool, state.nats.publisher(), show_id).await;
-    if episode_ids.is_empty() {
-        return;
-    }
-    let watched_at = watched.then(|| {
-        OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap()
-    });
-    let _ = crate::jobs::enqueue_routine(
-        &state.pool,
-        state.nats.publisher(),
-        "trakt_bulk_sync_watch_state",
-        serde_json::json!({
-            "user_id": user_id,
-            "show_id": show_id,
-            "episode_ids": episode_ids,
-            "watched": watched,
-            "watched_at": watched_at,
-        }),
-        crate::jobs::JobContext::new("Syncing bulk watch state to Trakt"),
-    )
-    .await;
 }
 
 /// PUT /api/v1/admin/tv/episodes/:id/watch-state/earlier
@@ -2142,7 +2093,7 @@ pub async fn mark_earlier_episodes_watched(
     .map_err(|e| AppError::Internal(format!("Failed to bulk update watch states: {e}")))?;
 
     let count = affected_episode_ids.len();
-    after_bulk_watch(&state, user_id, season.show_id, &affected_episode_ids, true).await;
+    crate::jobs::enqueue_tv_show_index(&state.pool, state.nats.publisher(), season.show_id).await;
     info!(episode_id = %id, user_id = %user_id, count, "Marked earlier episodes watched");
 
     Ok(Json(json!({ "updated_count": count })))
@@ -2178,14 +2129,7 @@ pub async fn bulk_update_season_watch_state(
 
     let count = affected_episode_ids.len();
 
-    after_bulk_watch(
-        &state,
-        user_id,
-        season.show_id,
-        &affected_episode_ids,
-        body.watched,
-    )
-    .await;
+    crate::jobs::enqueue_tv_show_index(&state.pool, state.nats.publisher(), season.show_id).await;
 
     info!(season_id = %id, user_id = %user_id, watched = body.watched, count, "Bulk updated season watch state");
 
@@ -2248,21 +2192,6 @@ pub async fn update_episode_position(
             crate::jobs::enqueue_tv_show_index(&state.pool, state.nats.publisher(), show_id)
                 .await;
         }
-
-        // Sync to Trakt
-        let _ = crate::jobs::enqueue_routine(
-            &state.pool,
-            state.nats.publisher(),
-            "trakt_sync_watch_state",
-            serde_json::json!({
-                "user_id": user_id,
-                "media_type": "episode",
-                "media_id": id,
-                "watched": true,
-            }),
-            crate::jobs::JobContext::new("Syncing episode watch state to Trakt"),
-        )
-        .await;
     } else if extent.is_some() {
         // Seeking back out of the ending: if auto-watched, reset to unwatched so it
         // re-appears in dashboard "in progress".
@@ -2855,40 +2784,6 @@ pub async fn bulk_episodes(
             .map_err(|e| AppError::Internal(format!("Failed to bulk update watch states: {e}")))?;
 
             response.episodes_affected = affected.len();
-
-            if !affected.is_empty() {
-                let watched_at_str = watched.then(|| {
-                    OffsetDateTime::now_utc()
-                        .format(&time::format_description::well_known::Rfc3339)
-                        .unwrap_or_default()
-                });
-                let affected: std::collections::HashSet<Uuid> = affected.into_iter().collect();
-                // Trakt syncs per show, so a cross-show selection needs one job each.
-                for show_id in &show_ids {
-                    let ids: Vec<Uuid> = scopes
-                        .iter()
-                        .filter(|s| s.show_id == *show_id && affected.contains(&s.id))
-                        .map(|s| s.id)
-                        .collect();
-                    if ids.is_empty() {
-                        continue;
-                    }
-                    let _ = crate::jobs::enqueue_routine(
-                        &state.pool,
-                        state.nats.publisher(),
-                        "trakt_bulk_sync_watch_state",
-                        json!({
-                            "user_id": auth.user_id,
-                            "show_id": show_id,
-                            "episode_ids": ids,
-                            "watched": watched,
-                            "watched_at": watched_at_str,
-                        }),
-                        JobContext::new("Syncing bulk watch state to Trakt"),
-                    )
-                    .await;
-                }
-            }
         }
     }
 

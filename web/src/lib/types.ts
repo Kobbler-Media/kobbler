@@ -1468,32 +1468,6 @@ export type TvShowWatchState = {
 };
 
 // =============================================================================
-// Video Sync Providers
-// =============================================================================
-
-export type VideoSyncProvider = {
-  provider_type: string;
-  enabled: boolean;
-  config: Record<string, unknown>;
-  display_name: string;
-  description: string;
-  website: string;
-  uses_oauth: boolean;
-};
-
-export type TraktDeviceCode = {
-  device_code: string;
-  user_code: string;
-  verification_url: string;
-  expires_in: number;
-  interval: number;
-};
-
-export type TraktPollResult = {
-  status: 'authorized' | 'pending' | 'expired' | 'denied';
-};
-
-// =============================================================================
 // Dashboard Types
 // =============================================================================
 

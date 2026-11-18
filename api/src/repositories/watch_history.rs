@@ -1,6 +1,6 @@
 //! A user's watch history, one row per title, from every source the For You seeds read:
-//! library watch state (written here, or imported from Trakt or Stremio) and the
-//! Stremio account's own history.
+//! library watch state (written here, or imported from Stremio) and the Stremio
+//! account's own history.
 
 use serde::Deserialize;
 use sqlx::{Executor, PgPool, Postgres};
@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use super::Result;
 
-pub const SOURCES: &[&str] = &["local", "trakt", "stremio"];
+pub const SOURCES: &[&str] = &["local", "stremio"];
 
 #[derive(Debug, Deserialize)]
 pub struct HistoryRow {

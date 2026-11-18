@@ -105,40 +105,6 @@ where
     Ok(row)
 }
 
-/// A watch recorded somewhere else. It never clears or backdates what the library
-/// already knows, and a row the library wrote keeps its source.
-pub async fn upsert_imported<'e, E>(
-    exec: E,
-    movie_id: Uuid,
-    user_id: Uuid,
-    watched_at: Option<OffsetDateTime>,
-    source: &str,
-) -> Result<Uuid>
-where
-    E: Executor<'e, Database = Postgres>,
-{
-    let row = sqlx::query_scalar!(
-        r#"
-        INSERT INTO movie_watch_states (id, movie_id, user_id, watched, watched_at, source)
-        VALUES ($1, $2, $3, TRUE, $4, $5)
-        ON CONFLICT (movie_id, user_id)
-        DO UPDATE SET
-            watched = TRUE,
-            watched_at = GREATEST(movie_watch_states.watched_at, EXCLUDED.watched_at),
-            updated_at = NOW()
-        RETURNING id
-        "#,
-        Uuid::now_v7(),
-        movie_id,
-        user_id,
-        watched_at,
-        source,
-    )
-    .fetch_one(exec)
-    .await?;
-    Ok(row)
-}
-
 /// Unwatches every library copy of the given TMDB titles for one user.
 pub async fn clear_for_tmdb<'e, E>(exec: E, user_id: Uuid, tmdb_ids: &[String]) -> Result<u64>
 where

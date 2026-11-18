@@ -105,40 +105,6 @@ where
     Ok(row)
 }
 
-/// A watch recorded somewhere else. It never clears or backdates what the library
-/// already knows, and a row the library wrote keeps its source.
-pub async fn upsert_imported<'e, E>(
-    exec: E,
-    episode_id: Uuid,
-    user_id: Uuid,
-    watched_at: Option<OffsetDateTime>,
-    source: &str,
-) -> Result<Uuid>
-where
-    E: Executor<'e, Database = Postgres>,
-{
-    let row = sqlx::query_scalar!(
-        r#"
-        INSERT INTO tv_watch_states (id, episode_id, user_id, watched, watched_at, source)
-        VALUES ($1, $2, $3, TRUE, $4, $5)
-        ON CONFLICT (episode_id, user_id)
-        DO UPDATE SET
-            watched = TRUE,
-            watched_at = GREATEST(tv_watch_states.watched_at, EXCLUDED.watched_at),
-            updated_at = NOW()
-        RETURNING id
-        "#,
-        Uuid::now_v7(),
-        episode_id,
-        user_id,
-        watched_at,
-        source,
-    )
-    .fetch_one(exec)
-    .await?;
-    Ok(row)
-}
-
 /// Fetch all watch states for a show's episodes (for a given user).
 /// Joins through tv_episodes → tv_seasons to find episodes belonging to the show.
 pub async fn list_for_show<'e, E>(
@@ -221,7 +187,7 @@ where
 
 /// Bulk mark all episodes in a show as watched for a user.
 /// Uses a single INSERT ... SELECT ON CONFLICT to upsert all episode watch states.
-/// Returns the list of affected episode IDs (for Trakt sync).
+/// Returns the list of affected episode IDs.
 pub async fn bulk_mark_show_watched<'e, E>(
     exec: E,
     show_id: Uuid,
@@ -258,7 +224,7 @@ where
 }
 
 /// Bulk mark all episodes in a show as unwatched for a user, clearing saved positions too
-/// so the show starts over. Returns only the episodes that were watched (for Trakt sync).
+/// so the show starts over. Returns only the episodes that were watched.
 pub async fn bulk_mark_show_unwatched<'e, E>(
     exec: E,
     show_id: Uuid,
@@ -289,7 +255,7 @@ where
 }
 
 /// Bulk mark all episodes in a season as watched for a user.
-/// Returns the list of affected episode IDs (for Trakt sync).
+/// Returns the list of affected episode IDs.
 pub async fn bulk_mark_season_watched<'e, E>(
     exec: E,
     season_id: Uuid,
@@ -367,7 +333,7 @@ where
 }
 
 /// Bulk mark all episodes in a season as unwatched for a user, clearing saved positions too.
-/// Returns only the episodes that were watched (for Trakt sync).
+/// Returns only the episodes that were watched.
 pub async fn bulk_mark_season_unwatched<'e, E>(
     exec: E,
     season_id: Uuid,
@@ -397,7 +363,7 @@ where
 }
 
 /// Bulk mark an explicit set of episodes as watched for a user.
-/// Returns the affected episode IDs (for Trakt sync).
+/// Returns the affected episode IDs.
 pub async fn bulk_mark_episodes_watched<'e, E>(
     exec: E,
     episode_ids: &[Uuid],

@@ -9,12 +9,10 @@
   const SOURCES: [WatchHistorySource | null, string][] = [
     [null, 'All'],
     ['local', 'Library'],
-    ['trakt', 'Trakt'],
     ['stremio', 'Stremio']
   ];
   const SOURCE_LABELS: Record<WatchHistorySource, string> = {
     local: 'Library',
-    trakt: 'Trakt',
     stremio: 'Stremio'
   };
 
@@ -150,9 +148,9 @@
   </div>
 
   <p class="muted intro">
-    Everything For You learns from. Imported Trakt or Stremio history can include what other people
-    in the house watched: hide those titles so they stop shaping recommendations, or remove them to
-    clear the watched marks too. Nothing is changed on Trakt or Stremio.
+    Everything For You learns from. Imported Stremio history can include what other people in the
+    house watched: hide those titles so they stop shaping recommendations, or remove them to clear
+    the watched marks too. Nothing is changed on Stremio.
   </p>
 
   <div class="toolbar">

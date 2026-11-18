@@ -375,7 +375,6 @@ const ROUTINE_JOB_TYPES: &[&str] = &[
     "offline_export_gc",
     // Background processing
     "notification_send",
-    "trakt_sync_watch_state",
     "keyframe_backfill",
     "audiobook_transcribe",
     "transcribe_backfill",

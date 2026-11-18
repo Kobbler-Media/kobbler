@@ -1,5 +1,5 @@
 //! The watch history behind For You, and the bulk edits that clean it up — chiefly
-//! imported Trakt or Stremio history that belongs to someone else.
+//! imported Stremio history that belongs to someone else.
 
 use axum::{
     Json,
@@ -175,9 +175,6 @@ pub struct RemoveInput {
 }
 
 /// POST /api/v1/admin/watch-history/remove
-///
-/// Local only: the titles are not unmarked on Trakt, since the history being removed is
-/// usually someone else's and the account it came from is theirs.
 pub async fn remove(
     State(state): State<AppState>,
     auth: AuthUser,

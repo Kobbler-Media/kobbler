@@ -125,9 +125,6 @@ use crate::jobs::handlers::{
     SubtitleSearchHandler,
     SyncProviderHandler,
     TempFileCleanupHandler,
-    TraktBulkSyncWatchStateHandler,
-    TraktImportHistoryHandler,
-    TraktSyncWatchStateHandler,
     TranscribeBackfillHandler,
     TranscribeRefreshHandler,
     TvMonitorHandler,
@@ -615,18 +612,6 @@ pub async fn start_nats_worker(
 
     // Notification send handler
     worker.register_handler(HandlerAdapter::new(NotificationSendHandler::new(
-        pool.clone(),
-    )));
-
-    // Trakt sync handlers
-    worker.register_handler(HandlerAdapter::new(TraktImportHistoryHandler::new(
-        pool.clone(),
-        crate::video_sync_providers::VideoSyncProviderRegistry::new(),
-    )));
-    worker.register_handler(HandlerAdapter::new(TraktSyncWatchStateHandler::new(
-        pool.clone(),
-    )));
-    worker.register_handler(HandlerAdapter::new(TraktBulkSyncWatchStateHandler::new(
         pool.clone(),
     )));
 

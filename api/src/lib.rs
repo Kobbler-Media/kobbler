@@ -73,7 +73,6 @@ pub mod tracking;
 pub mod tts;
 pub mod types;
 pub mod video_metadata;
-pub mod video_sync_providers;
 pub mod wanted;
 pub mod watch_completion;
 pub mod watch_handoff;
@@ -122,7 +121,6 @@ use routes::admin::tts_cast as tts_cast_routes;
 use routes::admin::tv as tv_routes;
 use routes::admin::up_next as up_next_routes;
 use routes::admin::video_metadata as video_metadata_routes;
-use routes::admin::video_sync as video_sync_routes;
 use routes::admin::watch_history as watch_history_routes;
 use routes::admin::watchlist as watchlist_routes;
 use routes::providers::library as provider_library_routes;
@@ -1164,31 +1162,6 @@ pub fn create_router(state: AppState) -> Router {
         .route(
             "/api/v1/admin/subtitle-providers/{id}",
             patch(subtitle_provider_routes::update_provider),
-        )
-        // Video sync providers (Trakt, etc.)
-        .route(
-            "/api/v1/admin/video-sync/providers",
-            get(video_sync_routes::list_providers),
-        )
-        .route(
-            "/api/v1/admin/video-sync/providers/{provider_type}",
-            patch(video_sync_routes::update_provider),
-        )
-        .route(
-            "/api/v1/admin/video-sync/trakt/authorize",
-            post(video_sync_routes::trakt_authorize),
-        )
-        .route(
-            "/api/v1/admin/video-sync/trakt/poll/{device_code}",
-            post(video_sync_routes::trakt_poll),
-        )
-        .route(
-            "/api/v1/admin/video-sync/trakt/disconnect",
-            post(video_sync_routes::trakt_disconnect),
-        )
-        .route(
-            "/api/v1/admin/video-sync/trakt/import-history",
-            post(video_sync_routes::trakt_import_history),
         )
         // Movies
         .route(

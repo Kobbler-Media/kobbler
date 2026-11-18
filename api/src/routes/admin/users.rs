@@ -466,7 +466,6 @@ pub async fn get_sync_providers(
         .await
         .unwrap_or_default();
 
-    // Only show reading providers (not video providers like Trakt which share the table)
     let registry = crate::sync_providers::SyncProviderRegistry::new();
     let available = registry.available_providers();
 

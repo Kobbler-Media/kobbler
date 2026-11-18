@@ -1,8 +1,7 @@
 //! User sync provider repository operations.
 //!
-//! Per-user sync provider configuration (API keys, OAuth tokens, enabled flags)
-//! and per-device sync provider toggles. Used for both book sync (Hardcover)
-//! and video sync (Trakt, etc.) providers.
+//! Per-user sync provider configuration (API keys, enabled flags)
+//! and per-device sync provider toggles.
 
 use super::Result;
 use serde_json::Value;
@@ -117,75 +116,6 @@ where
     Ok(id)
 }
 
-/// Update just the enabled flag for a user's sync provider.
-pub async fn update_enabled<'e, E>(
-    exec: E,
-    user_id: Uuid,
-    provider_type: &str,
-    enabled: bool,
-) -> Result<bool>
-where
-    E: Executor<'e, Database = Postgres>,
-{
-    let result = sqlx::query!(
-        r#"
-        UPDATE user_sync_providers SET enabled = $3, updated_at = NOW()
-        WHERE user_id = $1 AND provider_type = $2
-        "#,
-        user_id,
-        provider_type,
-        enabled,
-    )
-    .execute(exec)
-    .await?;
-
-    Ok(result.rows_affected() > 0)
-}
-
-/// Update the config JSONB with merge semantics (null values remove keys).
-pub async fn update_config_merge(
-    pool: &sqlx::PgPool,
-    user_id: Uuid,
-    provider_type: &str,
-    config_updates: &std::collections::HashMap<String, Value>,
-) -> Result<bool> {
-    let current: Option<Value> = sqlx::query_scalar!(
-        "SELECT config FROM user_sync_providers WHERE user_id = $1 AND provider_type = $2",
-        user_id,
-        provider_type,
-    )
-    .fetch_optional(pool)
-    .await?;
-
-    let mut merged = current
-        .and_then(|v| v.as_object().cloned())
-        .unwrap_or_default();
-
-    for (key, value) in config_updates {
-        if value.is_null() {
-            merged.remove(key);
-        } else {
-            merged.insert(key.clone(), value.clone());
-        }
-    }
-
-    let new_config = Value::Object(merged);
-
-    let result = sqlx::query!(
-        r#"
-        UPDATE user_sync_providers SET config = $3, updated_at = NOW()
-        WHERE user_id = $1 AND provider_type = $2
-        "#,
-        user_id,
-        provider_type,
-        new_config,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(result.rows_affected() > 0)
-}
-
 /// List all sync providers for a user.
 pub async fn list_for_user<'e, E>(exec: E, user_id: Uuid) -> Result<Vec<StoredProvider>>
 where
@@ -268,22 +198,6 @@ where
     .await?;
 
     Ok(rows.into_iter().map(|r| (r.user_id, r.api_key)).collect())
-}
-
-/// Delete a user's sync provider config.
-pub async fn delete<'e, E>(exec: E, user_id: Uuid, provider_type: &str) -> Result<bool>
-where
-    E: Executor<'e, Database = Postgres>,
-{
-    let result = sqlx::query!(
-        "DELETE FROM user_sync_providers WHERE user_id = $1 AND provider_type = $2",
-        user_id,
-        provider_type,
-    )
-    .execute(exec)
-    .await?;
-
-    Ok(result.rows_affected() > 0)
 }
 
 // =============================================================================

@@ -7,7 +7,6 @@
     updateSyncProvider,
     type SyncProviderSettings
   } from '#lib/api/client.js';
-  import TraktSection from '#lib/components/TraktSection.svelte';
 
   const PROVIDER_INFO: Record<string, { name: string; website: string; capabilities: string[] }> = {
     hardcover: {
@@ -295,8 +294,6 @@
     {:else}
       <p class="muted description">No reading tracker providers available.</p>
     {/if}
-
-    <TraktSection />
   </div>
 {/if}
 

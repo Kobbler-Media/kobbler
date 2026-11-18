@@ -72,9 +72,9 @@ describe('recommendation edits', () => {
 
   it('filters the history by source and pages it', async () => {
     const fetch = stubFetch(200, { items: [], total: 0 });
-    await getWatchHistory({ source: 'trakt', limit: 100, offset: 200 });
+    await getWatchHistory({ source: 'stremio', limit: 100, offset: 200 });
     expect(fetch).toHaveBeenCalledWith(
-      '/api/v1/admin/watch-history?source=trakt&limit=100&offset=200',
+      '/api/v1/admin/watch-history?source=stremio&limit=100&offset=200',
       expect.anything()
     );
   });

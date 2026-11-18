@@ -397,8 +397,6 @@ const OPEN_BROWSE_ROUTES: &[&str] = &[
     "/api/v1/admin/video-metadata/search/tv?q=friends",
     "/api/v1/admin/metadata/providers",
     "/api/v1/admin/chat/status",
-    // Per-user integration rows, secrets masked in the response.
-    "/api/v1/admin/video-sync/providers",
     // Push subscriptions are per-user; everyone can opt in.
     "/api/v1/admin/notifications/webpush/vapid-key",
 ];

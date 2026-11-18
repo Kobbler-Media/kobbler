@@ -29,8 +29,6 @@ pub mod provider_ids {
     pub const TVMAZE: &str = "tvmaze";
     pub const OMDB: &str = "omdb";
     pub const THESPORTSDB: &str = "thesportsdb";
-    // Video sync
-    pub const TRAKT: &str = "trakt";
 }
 
 /// Governor rate limiter type alias for readability.

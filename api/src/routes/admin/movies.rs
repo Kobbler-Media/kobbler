@@ -1327,22 +1327,6 @@ pub async fn update_watch_state(
     // Re-index movie in search (watched/rating changed)
     crate::jobs::enqueue_movie_index(&state.pool, state.nats.publisher(), id).await;
 
-    // Fire-and-forget: sync watch state to Trakt (if configured)
-    let _ = crate::jobs::enqueue_routine(
-        &state.pool,
-        state.nats.publisher(),
-        "trakt_sync_watch_state",
-        serde_json::json!({
-            "user_id": user_id,
-            "media_type": "movie",
-            "media_id": id,
-            "watched": body.watched,
-            "watched_at": body.watched_at.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap()),
-        }),
-        crate::jobs::JobContext::new("Syncing movie watch state to Trakt"),
-    )
-    .await;
-
     Ok(Json(json!({ "id": ws_id })))
 }
 
@@ -1389,21 +1373,6 @@ pub async fn update_position(
 
         // Re-index movie in search
         crate::jobs::enqueue_movie_index(&state.pool, state.nats.publisher(), id).await;
-
-        // Sync to Trakt
-        let _ = crate::jobs::enqueue_routine(
-            &state.pool,
-            state.nats.publisher(),
-            "trakt_sync_watch_state",
-            serde_json::json!({
-                "user_id": user_id,
-                "media_type": "movie",
-                "media_id": id,
-                "watched": true,
-            }),
-            crate::jobs::JobContext::new("Syncing movie watch state to Trakt"),
-        )
-        .await;
     } else if extent.is_some() {
         // Seeking back out of the ending: if auto-watched, reset to unwatched so it
         // re-appears in dashboard "in progress".
