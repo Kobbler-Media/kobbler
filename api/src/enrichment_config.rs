@@ -41,7 +41,7 @@ pub fn stt_config_tag(config: &RuntimeConfig) -> String {
     )
 }
 
-pub const STT_GENERATION: &str = "g3";
+pub const STT_GENERATION: &str = "g4";
 
 fn stt_config_tag_inner(stt_url: &Option<String>, override_tag: Option<&str>) -> String {
     let model = match (override_tag.map(str::trim), stt_url.as_deref()) {
@@ -73,10 +73,10 @@ mod tests {
 
     #[test]
     fn stt_tags() {
-        assert_eq!(stt_config_tag_inner(&None, None), "none/g3");
+        assert_eq!(stt_config_tag_inner(&None, None), "none/g4");
         let tag1 = stt_config_tag_inner(&Some("http://stt:8880".into()), None);
         let tag2 = stt_config_tag_inner(&Some("http://other-stt:8880".into()), None);
-        assert!(tag1.starts_with("stt:") && tag1.ends_with("/g3"));
+        assert!(tag1.starts_with("stt:") && tag1.ends_with("/g4"));
         assert_ne!(tag1, tag2);
         assert_eq!(
             tag1,
@@ -88,11 +88,11 @@ mod tests {
     fn stt_tag_override_pins_the_model_half() {
         assert_eq!(
             stt_config_tag_inner(&Some("http://stt:8880".into()), Some("stt:45fe0e56")),
-            "stt:45fe0e56/g3"
+            "stt:45fe0e56/g4"
         );
         assert_eq!(
             stt_config_tag_inner(&Some("http://other-stt:9999".into()), Some("stt:45fe0e56")),
-            "stt:45fe0e56/g3"
+            "stt:45fe0e56/g4"
         );
         assert_eq!(
             stt_config_tag_inner(&Some("http://stt:8880".into()), Some("  ")),
