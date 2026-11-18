@@ -100,6 +100,7 @@ pub struct RecentItem {
     link: String,
     #[serde(with = "time::serde::rfc3339")]
     added_at: OffsetDateTime,
+    watched: bool,
 }
 
 #[derive(Serialize)]
@@ -121,6 +122,7 @@ pub struct RecentMovie {
     backdrop_url: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     added_at: OffsetDateTime,
+    watched: bool,
 }
 
 #[derive(Serialize)]
@@ -135,6 +137,7 @@ pub struct RecentTvEntry {
     episode_title: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     added_at: OffsetDateTime,
+    watched: bool,
 }
 
 // =============================================================================
@@ -155,9 +158,19 @@ pub async fn get_dashboard(
             recent_books(&state.pool, BookShelf::Any),
             recent_books(&state.pool, BookShelf::Ebook),
             recent_books(&state.pool, BookShelf::Audiobook),
-            crate::repositories::dashboard::recent_movies(&state.pool, auth.is_kids),
-            crate::repositories::dashboard::recent_episodes(&state.pool, "tv", auth.is_kids),
-            crate::repositories::dashboard::recent_episodes(&state.pool, "sport", auth.is_kids),
+            crate::repositories::dashboard::recent_movies(&state.pool, auth.user_id, auth.is_kids),
+            crate::repositories::dashboard::recent_episodes(
+                &state.pool,
+                auth.user_id,
+                "tv",
+                auth.is_kids
+            ),
+            crate::repositories::dashboard::recent_episodes(
+                &state.pool,
+                auth.user_id,
+                "sport",
+                auth.is_kids
+            ),
         )
         .map_err(|e| AppError::Internal(format!("Dashboard query failed: {e}")))?;
 
@@ -199,6 +212,7 @@ pub async fn get_dashboard(
                     "/backdrop",
                 ),
                 added_at: r.added_at,
+                watched: r.watched,
             }
         })
         .collect();
@@ -230,6 +244,7 @@ pub async fn get_dashboard(
                 episode_identifier: r.episode_identifier.clone(),
                 episode_title: r.episode_title.clone(),
                 added_at: r.added_at,
+                watched: r.watched,
             }
         })
         .collect();
@@ -261,6 +276,7 @@ pub async fn get_dashboard(
                 episode_identifier: r.episode_identifier.clone(),
                 episode_title: r.episode_title.clone(),
                 added_at: r.added_at,
+                watched: r.watched,
             }
         })
         .collect();
@@ -529,9 +545,9 @@ pub async fn fetch_home_sections(
     let (watch_next, book_rows, movie_rows, tv_rows, sport_rows) = tokio::try_join!(
         fetch_watch_next(state, user_id, kids_only),
         recent_books(&state.pool, BookShelf::Any),
-        crate::repositories::dashboard::recent_movies(&state.pool, kids_only),
-        crate::repositories::dashboard::recent_episodes(&state.pool, "tv", kids_only),
-        crate::repositories::dashboard::recent_episodes(&state.pool, "sport", kids_only),
+        crate::repositories::dashboard::recent_movies(&state.pool, user_id, kids_only),
+        crate::repositories::dashboard::recent_episodes(&state.pool, user_id, "tv", kids_only),
+        crate::repositories::dashboard::recent_episodes(&state.pool, user_id, "sport", kids_only),
     )?;
 
     let mut unified: Vec<RecentItem> = Vec::new();
@@ -547,6 +563,7 @@ pub async fn fetch_home_sections(
             backdrop_url: None,
             link: format!("/library/books/{}", r.id),
             added_at: r.added_at,
+            watched: false,
         });
     }
     for r in &movie_rows {
@@ -566,6 +583,7 @@ pub async fn fetch_home_sections(
             ),
             link: format!("/movies/{}", r.id),
             added_at: r.added_at,
+            watched: r.watched,
         });
     }
     for r in &tv_rows {
@@ -595,6 +613,7 @@ pub async fn fetch_home_sections(
             ),
             link: format!("/tv/{}", r.show_id),
             added_at: r.added_at,
+            watched: r.watched,
         });
     }
     for r in &sport_rows {
@@ -624,6 +643,7 @@ pub async fn fetch_home_sections(
             ),
             link: format!("/sports/{}", r.show_id),
             added_at: r.added_at,
+            watched: r.watched,
         });
     }
     unified.sort_by_key(|b| std::cmp::Reverse(b.added_at));

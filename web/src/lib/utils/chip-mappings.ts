@@ -4,6 +4,12 @@ export interface ChipDef {
   color: string;
 }
 
+export const WATCHED_CHIP: ChipDef = {
+  icon: 'visibility',
+  label: 'Watched',
+  color: 'var(--success, #22c55e)'
+};
+
 export function mediaTypeChip(mediaType: string): ChipDef {
   switch (mediaType) {
     case 'book':

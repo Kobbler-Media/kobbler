@@ -57,7 +57,7 @@ pub async fn dispatch(ctx: &Ctx<'_>, name: &str, args: &Value) -> ToolOutcome {
         Tool::LibraryStats => read::library_stats(ctx.state).await,
         Tool::FindPassage => read::find_passage(ctx.state, args).await,
         Tool::WhatsDownloading => read::whats_downloading(ctx.state, args).await,
-        Tool::RecentlyAdded => read::recently_added(ctx.state, args).await,
+        Tool::RecentlyAdded => read::recently_added(ctx.state, ctx.auth.user_id, args).await,
         Tool::NextAiring => read::next_airing(ctx.state, args).await,
         Tool::SeasonStatus => seasons::season_status(ctx.state, args).await,
         Tool::Recommend => {

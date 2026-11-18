@@ -624,7 +624,7 @@ pub async fn whats_downloading(state: &AppState, args: &Value) -> ToolOutcome {
     )
 }
 
-pub async fn recently_added(state: &AppState, args: &Value) -> ToolOutcome {
+pub async fn recently_added(state: &AppState, user_id: Uuid, args: &Value) -> ToolOutcome {
     let want = limit(args, 10, MAX_RECENT);
     let media_type = arg_str(args, "media_type").unwrap_or("any");
     let mut items: Vec<(time::OffsetDateTime, Value, Option<Source>)> = Vec::new();
@@ -658,11 +658,11 @@ pub async fn recently_added(state: &AppState, args: &Value) -> ToolOutcome {
         }
     }
     if matches!(media_type, "any" | "movie") {
-        match dashboard::recent_movies(&state.pool, false).await {
+        match dashboard::recent_movies(&state.pool, user_id, false).await {
             Ok(rows) => items.extend(rows.into_iter().map(|r| {
                 (
                     r.added_at,
-                    json!({"type": "movie", "id": r.id, "title": r.title, "year": r.year}),
+                    json!({"type": "movie", "id": r.id, "title": r.title, "year": r.year, "watched": r.watched}),
                     Some(Source {
                         item_type: "movie".to_string(),
                         url: crate::chatbot::events::source_url("movie", &r.id.to_string()),
@@ -687,7 +687,7 @@ pub async fn recently_added(state: &AppState, args: &Value) -> ToolOutcome {
         if !wanted {
             continue;
         }
-        match dashboard::recent_episodes(&state.pool, category, false).await {
+        match dashboard::recent_episodes(&state.pool, user_id, category, false).await {
             Ok(rows) => items.extend(rows.into_iter().map(|r| {
                 let label = format!("S{}E{}", r.season_identifier, r.episode_identifier);
                 (
@@ -698,6 +698,7 @@ pub async fn recently_added(state: &AppState, args: &Value) -> ToolOutcome {
                         "show": r.show_title,
                         "episode": label,
                         "title": r.episode_title,
+                        "watched": r.watched,
                     }),
                     Some(Source {
                         item_type: "tv_episode".to_string(),

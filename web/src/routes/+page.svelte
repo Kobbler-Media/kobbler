@@ -3,7 +3,7 @@
   import { showMessage } from '#lib/context/app.svelte.js';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { mediaTypeChip } from '#lib/utils/chip-mappings.js';
+  import { mediaTypeChip, WATCHED_CHIP } from '#lib/utils/chip-mappings.js';
   import { getProviderName, getProviderColor, formatDuration } from '#lib/utils/format.js';
   import IconChip from '#lib/components/shared/IconChip.svelte';
   import MediaCard from '#lib/components/shared/MediaCard.svelte';
@@ -864,6 +864,11 @@
                 <span class="chip-pos-left">
                   <IconChip chip={mediaTypeChip(item.item_type)} />
                 </span>
+                {#if item.watched}
+                  <span class="chip-pos">
+                    <IconChip chip={WATCHED_CHIP} />
+                  </span>
+                {/if}
               {/snippet}
               <strong class="card-title">{item.title}</strong>
               <div class="card-sub">{item.subtitle}</div>

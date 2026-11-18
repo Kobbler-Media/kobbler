@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Movie } from '#lib/types.js';
-  import { movieStatusChip } from '#lib/utils/chip-mappings.js';
+  import { movieStatusChip, WATCHED_CHIP } from '#lib/utils/chip-mappings.js';
   import IconChip from '#lib/components/shared/IconChip.svelte';
   import MediaCard from '#lib/components/shared/MediaCard.svelte';
   import { isActivelyWanted } from '#lib/utils/want-status.js';
@@ -37,7 +37,7 @@
   {#snippet posterOverlay()}
     {#if movie.watched === true}
       <span class="chip-pos-left">
-        <IconChip icon="visibility" label="Watched" color="var(--success, #22c55e)" />
+        <IconChip chip={WATCHED_CHIP} />
       </span>
     {/if}
     {#if statusBadge}

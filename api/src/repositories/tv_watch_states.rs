@@ -146,6 +146,35 @@ where
         .collect())
 }
 
+/// Of `show_ids`, the shows whose every library episode (specials aside) the user has
+/// watched. Episodes without a file don't count: a show is caught up with what is here.
+pub async fn fully_watched_shows<'e, E>(
+    exec: E,
+    show_ids: &[Uuid],
+    user_id: Uuid,
+) -> Result<std::collections::HashSet<Uuid>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let ids = sqlx::query_scalar!(
+        r#"
+        SELECT s.show_id
+        FROM tv_episodes e
+        JOIN tv_seasons s ON s.id = e.season_id
+        LEFT JOIN tv_watch_states ws ON ws.episode_id = e.id AND ws.user_id = $2
+        WHERE s.show_id = ANY($1) AND s.is_special = FALSE
+          AND EXISTS (SELECT 1 FROM tv_episode_file_episodes efe WHERE efe.episode_id = e.id)
+        GROUP BY s.show_id
+        HAVING BOOL_AND(COALESCE(ws.watched, FALSE))
+        "#,
+        show_ids,
+        user_id,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(ids.into_iter().collect())
+}
+
 /// Fetch all watch states for a season's episodes (for a given user).
 pub async fn list_for_season<'e, E>(
     exec: E,

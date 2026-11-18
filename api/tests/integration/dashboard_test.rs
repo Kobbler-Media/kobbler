@@ -923,12 +923,15 @@ async fn test_recent_shelves_split_by_format() {
     add_ebook_file(&server, ebook).await;
     let audiobook = create_book(&server, "Audiobook").await;
     add_audiobook_file(&server, audiobook).await;
+    create_book(&server, "Metadata Only").await;
 
     let json = get_dashboard(&server).await;
 
-    let recent_books = ids(&json["recent_books"]);
-    assert!(recent_books.contains(&ebook.to_string()));
-    assert!(recent_books.contains(&audiobook.to_string()));
+    let mut recent_books = ids(&json["recent_books"]);
+    recent_books.sort();
+    let mut owned = vec![ebook.to_string(), audiobook.to_string()];
+    owned.sort();
+    assert_eq!(recent_books, owned);
 
     assert_eq!(ids(&json["recent_ebooks"]), vec![ebook.to_string()]);
     assert_eq!(ids(&json["recent_audiobooks"]), vec![audiobook.to_string()]);
@@ -980,4 +983,66 @@ async fn test_recent_audiobooks_ordered_by_audio_added_at() {
         ids(&json["recent_books"]),
         vec![older_audio.to_string(), late_audio.to_string()]
     );
+}
+
+fn watched_by_id(items: &Value, id_field: &str) -> std::collections::HashMap<String, bool> {
+    items
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| {
+            let watched = i["watched"].as_bool().expect("watched missing");
+            (i[id_field].as_str().unwrap().to_string(), watched)
+        })
+        .collect()
+}
+
+/// Recently added rails mark what this viewer has already watched — another viewer's
+/// watch state stays theirs.
+#[tokio::test]
+async fn test_recently_added_carries_viewer_watched_state() {
+    let server = TestServer::start_api_only().await;
+    let pool = &server.pool;
+
+    let seen_movie = create_movie(&server, "Seen Movie").await;
+    let fresh_movie = create_movie(&server, "Fresh Movie").await;
+    create_stub_movie_file(pool, seen_movie).await;
+    create_stub_movie_file(pool, fresh_movie).await;
+    server
+        .admin_client()
+        .put_json(
+            &format!("/api/v1/admin/movies/{seen_movie}/watch-state"),
+            &json!({ "watched": true }),
+        )
+        .await
+        .assert_ok();
+
+    let seen_show = create_show(&server, "Seen Show").await;
+    let seen_ep = create_episode(pool, create_season(pool, seen_show, 1).await, 1).await;
+    create_stub_episode_file(pool, seen_ep).await;
+    mark_watched(&server, seen_ep).await;
+    let fresh_show = create_show(&server, "Fresh Show").await;
+    let fresh_ep = create_episode(pool, create_season(pool, fresh_show, 1).await, 1).await;
+    create_stub_episode_file(pool, fresh_ep).await;
+
+    let discover = get_discover(&server).await;
+    let recent = watched_by_id(&discover["recently_added"], "id");
+    assert!(recent[&seen_movie.to_string()]);
+    assert!(!recent[&fresh_movie.to_string()]);
+    assert!(recent[&seen_ep.to_string()]);
+    assert!(!recent[&fresh_ep.to_string()]);
+
+    let dashboard = get_dashboard(&server).await;
+    let movies = watched_by_id(&dashboard["recent_movies"], "id");
+    assert!(movies[&seen_movie.to_string()]);
+    assert!(!movies[&fresh_movie.to_string()]);
+    let tv = watched_by_id(&dashboard["recent_tv"], "episode_id");
+    assert!(tv[&seen_ep.to_string()]);
+    assert!(!tv[&fresh_ep.to_string()]);
+
+    let other = create_user_client(&server, "other@test.com", "viewer").await;
+    let resp = other.get("/api/v1/admin/discover").await;
+    resp.assert_ok();
+    let recent = watched_by_id(&resp.json::<Value>()["recently_added"], "id");
+    assert!(recent.values().all(|w| !w));
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            m.id,\n            m.title,\n            m.year,\n            m.images as \"images: serde_json::Value\",\n            MAX(mf.created_at) as \"added_at!: OffsetDateTime\"\n        FROM movies m\n        JOIN movie_files mf ON mf.movie_id = m.id AND mf.available = true\n        WHERE $1 = FALSE OR kids_allowed(m.kids_override, m.content_rating)\n        GROUP BY m.id, m.title, m.year, m.images\n        ORDER BY MAX(mf.created_at) DESC\n        LIMIT 12\n        ",
+  "query": "\n        SELECT\n            m.id,\n            m.title,\n            m.year,\n            m.images as \"images: serde_json::Value\",\n            MAX(mf.created_at) as \"added_at!: OffsetDateTime\",\n            COALESCE(BOOL_OR(mws.watched), FALSE) as \"watched!\"\n        FROM movies m\n        JOIN movie_files mf ON mf.movie_id = m.id AND mf.available = true\n        LEFT JOIN movie_watch_states mws ON mws.movie_id = m.id AND mws.user_id = $2\n        WHERE $1 = FALSE OR kids_allowed(m.kids_override, m.content_rating)\n        GROUP BY m.id, m.title, m.year, m.images\n        ORDER BY MAX(mf.created_at) DESC\n        LIMIT 12\n        ",
   "describe": {
     "columns": [
       {
@@ -52,11 +52,18 @@
         "name": "added_at!: OffsetDateTime",
         "type_info": "Timestamptz",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "watched!",
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {
       "Left": [
-        "Bool"
+        "Bool",
+        "Uuid"
       ]
     },
     "nullable": [
@@ -64,8 +71,9 @@
       false,
       true,
       false,
+      null,
       null
     ]
   },
-  "hash": "8ed6565edb56c7119b756aadab1e14316a28f23aea42de89710ed2be7e47d76e"
+  "hash": "767a1a6792d3c5958434ee8cd38a727fc6675d1858f11c2875552f9b45c8ae78"
 }

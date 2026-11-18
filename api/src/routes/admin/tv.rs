@@ -101,6 +101,7 @@ struct ShowListResponse {
     updated_at: OffsetDateTime,
     aired_episode_count: i64,
     in_library_count: i64,
+    watched: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -509,7 +510,7 @@ pub async fn list_shows(
             None
         };
 
-        let items = to_show_list_responses(combined);
+        let items = to_show_list_responses(&state, auth.user_id, combined).await?;
         return Ok(Json(PaginatedResponse {
             items,
             next_cursor,
@@ -592,7 +593,7 @@ pub async fn list_shows(
         None
     };
 
-    let response_items = to_show_list_responses(items);
+    let response_items = to_show_list_responses(&state, auth.user_id, items).await?;
 
     Ok(Json(PaginatedResponse {
         items: response_items,
@@ -602,8 +603,17 @@ pub async fn list_shows(
     }))
 }
 
-fn to_show_list_responses(rows: Vec<tv_shows::TvShowRow>) -> Vec<ShowListResponse> {
-    rows.into_iter()
+async fn to_show_list_responses(
+    state: &AppState,
+    user_id: Uuid,
+    rows: Vec<tv_shows::TvShowRow>,
+) -> Result<Vec<ShowListResponse>, AppError> {
+    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+    let watched = tv_watch_states::fully_watched_shows(&state.pool, &ids, user_id)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to load watch states: {e}")))?;
+    Ok(rows
+        .into_iter()
         .map(|r| {
             let poster_url = endpoint_url(
                 &r.images,
@@ -622,6 +632,7 @@ fn to_show_list_responses(rows: Vec<tv_shows::TvShowRow>) -> Vec<ShowListRespons
             let logo_url =
                 endpoint_url(&r.images, "logo", "/api/v1/admin/tv/shows/", r.id, "/logo");
             ShowListResponse {
+                watched: watched.contains(&r.id),
                 id: r.id,
                 title: r.title,
                 sort_title: r.sort_title,
@@ -642,7 +653,7 @@ fn to_show_list_responses(rows: Vec<tv_shows::TvShowRow>) -> Vec<ShowListRespons
                 in_library_count: r.in_library_count,
             }
         })
-        .collect()
+        .collect())
 }
 
 // =============================================================================

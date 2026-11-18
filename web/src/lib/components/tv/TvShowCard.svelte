@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TvShow } from '#lib/types.js';
-  import { tvStatusChip } from '#lib/utils/chip-mappings.js';
+  import { tvStatusChip, WATCHED_CHIP } from '#lib/utils/chip-mappings.js';
   import IconChip from '#lib/components/shared/IconChip.svelte';
   import MediaCard from '#lib/components/shared/MediaCard.svelte';
 
@@ -48,6 +48,11 @@
 
 <MediaCard {posterUrl} placeholderIcon="tv" {selected} itemId={show.id} onclick={handleClick}>
   {#snippet posterOverlay()}
+    {#if show.watched && !selectionMode}
+      <span class="chip-pos-left">
+        <IconChip chip={WATCHED_CHIP} />
+      </span>
+    {/if}
     {#if statusBadge}
       {@const chip = tvStatusChip(statusBadge.class)}
       <span class="chip-pos">

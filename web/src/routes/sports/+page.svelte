@@ -25,6 +25,8 @@
   import ReleaseSearchModal from '#lib/components/ReleaseSearchModal.svelte';
   import { ExpandableSidebar } from '@koblibs/ui';
   import ErrorBanner from '#lib/components/shared/ErrorBanner.svelte';
+  import IconChip from '#lib/components/shared/IconChip.svelte';
+  import { WATCHED_CHIP } from '#lib/utils/chip-mappings.js';
   import BidirectionalScroll from '#lib/components/BidirectionalScroll.svelte';
   import VideoPlayer from '#lib/components/VideoPlayer/VideoPlayer.svelte';
   import { showMessage } from '#lib/context/app.svelte.js';
@@ -864,6 +866,9 @@
                 {#if badge}
                   <span class="status-badge {badge.cls}">{badge.label}</span>
                 {/if}
+                {#if league.watched}
+                  <span class="watched-chip"><IconChip chip={WATCHED_CHIP} /></span>
+                {/if}
               </div>
               <div class="meta">
                 <strong class="title">{league.title}</strong>
@@ -1355,6 +1360,12 @@
     height: 100%;
     color: var(--muted);
     opacity: 0.4;
+  }
+
+  .watched-chip {
+    position: absolute;
+    top: 8px;
+    left: 8px;
   }
 
   .status-badge {

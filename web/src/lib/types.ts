@@ -1424,6 +1424,7 @@ export type TvShow = {
   total_episode_count: number | null;
   aired_episode_count?: number;
   in_library_count?: number;
+  watched?: boolean;
   created_at: string;
   updated_at: string;
   streamed_at: string | null;
@@ -1480,6 +1481,7 @@ export type RecentItem = {
   backdrop_url: string | null;
   link: string;
   added_at: string;
+  watched: boolean;
 };
 
 export type RecentBook = {
@@ -1497,6 +1499,7 @@ export type RecentMovie = {
   poster_url: string | null;
   backdrop_url: string | null;
   added_at: string;
+  watched: boolean;
 };
 
 export type RecentTvEntry = {
@@ -1509,6 +1512,7 @@ export type RecentTvEntry = {
   episode_identifier: string;
   episode_title: string | null;
   added_at: string;
+  watched: boolean;
 };
 
 export type WatchNextItem = {

@@ -15,7 +15,7 @@
   import { watchStateVersion } from '#lib/stores/watchState.svelte.js';
   import type { RecentBook, RecentMovie, RecentTvEntry, ReadNextItem } from '#lib/types.js';
   import { formatDuration, formatEpisodeCode } from '#lib/utils/format.js';
-  import { mediaTypeChip } from '#lib/utils/chip-mappings.js';
+  import { mediaTypeChip, WATCHED_CHIP } from '#lib/utils/chip-mappings.js';
   import IconChip from '#lib/components/shared/IconChip.svelte';
   import MediaCard from '#lib/components/shared/MediaCard.svelte';
   import ScrollRow from '#lib/components/shared/ScrollRow.svelte';
@@ -283,6 +283,11 @@
       <ScrollRow title="Recently Added Movies" viewAllHref="/movies">
         {#each recentMovies as movie (movie.id)}
           <MediaCard posterUrl={movie.poster_url} placeholderIcon="movie" href="/movies/{movie.id}">
+            {#snippet posterOverlay()}
+              {#if movie.watched}
+                <span class="chip-pos"><IconChip chip={WATCHED_CHIP} /></span>
+              {/if}
+            {/snippet}
             <strong class="card-title">{movie.title}</strong>
             <div class="card-sub">{movie.year ?? ''}</div>
           </MediaCard>
@@ -299,6 +304,11 @@
             placeholderIcon="tv"
             href="/tv/{entry.show_id}"
           >
+            {#snippet posterOverlay()}
+              {#if entry.watched}
+                <span class="chip-pos"><IconChip chip={WATCHED_CHIP} /></span>
+              {/if}
+            {/snippet}
             <strong class="card-title">{entry.show_title}</strong>
             <div class="card-sub">{episodeLabel(entry)}</div>
           </MediaCard>
@@ -315,6 +325,11 @@
             placeholderIcon="sports_soccer"
             href="/sports/{entry.show_id}"
           >
+            {#snippet posterOverlay()}
+              {#if entry.watched}
+                <span class="chip-pos"><IconChip chip={WATCHED_CHIP} /></span>
+              {/if}
+            {/snippet}
             <strong class="card-title">{entry.show_title}</strong>
             <div class="card-sub">{sportLabel(entry)}</div>
           </MediaCard>

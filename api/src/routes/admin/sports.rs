@@ -91,6 +91,7 @@ struct LeagueListResponse {
     created_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     updated_at: OffsetDateTime,
+    watched: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -437,7 +438,7 @@ pub async fn list_leagues(
             None
         };
 
-        let items = to_league_list_responses(combined);
+        let items = to_league_list_responses(&state, auth.user_id, combined).await?;
         return Ok(Json(PaginatedResponse {
             items,
             next_cursor,
@@ -519,7 +520,7 @@ pub async fn list_leagues(
         None
     };
 
-    let response_items = to_league_list_responses(items);
+    let response_items = to_league_list_responses(&state, auth.user_id, items).await?;
 
     Ok(Json(PaginatedResponse {
         items: response_items,
@@ -529,14 +530,24 @@ pub async fn list_leagues(
     }))
 }
 
-fn to_league_list_responses(rows: Vec<tv_shows::TvShowRow>) -> Vec<LeagueListResponse> {
-    rows.into_iter()
+async fn to_league_list_responses(
+    state: &AppState,
+    user_id: Uuid,
+    rows: Vec<tv_shows::TvShowRow>,
+) -> Result<Vec<LeagueListResponse>, AppError> {
+    let ids: Vec<Uuid> = rows.iter().map(|r| r.id).collect();
+    let watched = tv_watch_states::fully_watched_shows(&state.pool, &ids, user_id)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to load watch states: {e}")))?;
+    Ok(rows
+        .into_iter()
         .map(|r| {
             let poster_url = endpoint_url(&r.images, "poster", LEAGUE_IMAGE_BASE, r.id, "/poster");
             let backdrop_url =
                 endpoint_url(&r.images, "backdrop", LEAGUE_IMAGE_BASE, r.id, "/backdrop");
             let logo_url = endpoint_url(&r.images, "logo", LEAGUE_IMAGE_BASE, r.id, "/logo");
             LeagueListResponse {
+                watched: watched.contains(&r.id),
                 id: r.id,
                 title: r.title,
                 sort_title: r.sort_title,
@@ -554,7 +565,7 @@ fn to_league_list_responses(rows: Vec<tv_shows::TvShowRow>) -> Vec<LeagueListRes
                 updated_at: r.updated_at,
             }
         })
-        .collect()
+        .collect())
 }
 
 // =============================================================================

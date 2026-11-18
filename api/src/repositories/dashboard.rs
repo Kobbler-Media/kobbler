@@ -29,6 +29,7 @@ pub struct MovieRow {
     pub year: Option<i32>,
     pub images: serde_json::Value,
     pub added_at: OffsetDateTime,
+    pub watched: bool,
 }
 
 pub struct EpisodeRow {
@@ -40,6 +41,7 @@ pub struct EpisodeRow {
     pub episode_identifier: String,
     pub episode_title: Option<String>,
     pub added_at: OffsetDateTime,
+    pub watched: bool,
 }
 
 pub struct InProgressMovieRow {
@@ -443,20 +445,24 @@ where
                  WHERE ba2.book_id = b.id),
                 '[]'::jsonb
             ) as "authors: serde_json::Value",
-            (CASE WHEN $1 THEN ebook.added_at WHEN $2 THEN audio.added_at ELSE b.created_at END) as "added_at!"
-        FROM books b
-        LEFT JOIN LATERAL (
-            SELECT MAX(bf.added_at) AS added_at FROM book_files bf WHERE bf.book_id = b.id
-        ) ebook ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT MAX(af.added_at) AS added_at FROM audiobook_files af WHERE af.book_id = b.id
-        ) audio ON TRUE
+            (CASE WHEN $1 THEN f.ebook_added_at WHEN $2 THEN f.audio_added_at ELSE b.created_at END) as "added_at!"
+        FROM (
+            SELECT book_id, MAX(ebook_added_at) AS ebook_added_at, MAX(audio_added_at) AS audio_added_at
+            FROM (
+                SELECT bf.book_id, bf.added_at AS ebook_added_at, NULL::timestamptz AS audio_added_at
+                FROM book_files bf
+                UNION ALL
+                SELECT af.book_id, NULL, af.added_at FROM audiobook_files af
+            ) files
+            GROUP BY book_id
+        ) f
+        JOIN books b ON b.id = f.book_id
         WHERE CASE
-            WHEN $1 THEN ebook.added_at IS NOT NULL
-            WHEN $2 THEN audio.added_at IS NOT NULL
-            ELSE ebook.added_at IS NOT NULL OR audio.added_at IS NOT NULL
+            WHEN $1 THEN f.ebook_added_at IS NOT NULL
+            WHEN $2 THEN f.audio_added_at IS NOT NULL
+            ELSE TRUE
         END
-        ORDER BY (CASE WHEN $1 THEN ebook.added_at WHEN $2 THEN audio.added_at ELSE b.created_at END) DESC
+        ORDER BY (CASE WHEN $1 THEN f.ebook_added_at WHEN $2 THEN f.audio_added_at ELSE b.created_at END) DESC
         LIMIT 12
         "#,
         ebook,
@@ -466,7 +472,11 @@ where
     .await
 }
 
-pub async fn recent_movies<'e, E>(exec: E, kids_only: bool) -> Result<Vec<MovieRow>, sqlx::Error>
+pub async fn recent_movies<'e, E>(
+    exec: E,
+    user_id: Uuid,
+    kids_only: bool,
+) -> Result<Vec<MovieRow>, sqlx::Error>
 where
     E: Executor<'e, Database = Postgres>,
 {
@@ -478,15 +488,18 @@ where
             m.title,
             m.year,
             m.images as "images: serde_json::Value",
-            MAX(mf.created_at) as "added_at!: OffsetDateTime"
+            MAX(mf.created_at) as "added_at!: OffsetDateTime",
+            COALESCE(BOOL_OR(mws.watched), FALSE) as "watched!"
         FROM movies m
         JOIN movie_files mf ON mf.movie_id = m.id AND mf.available = true
+        LEFT JOIN movie_watch_states mws ON mws.movie_id = m.id AND mws.user_id = $2
         WHERE $1 = FALSE OR kids_allowed(m.kids_override, m.content_rating)
         GROUP BY m.id, m.title, m.year, m.images
         ORDER BY MAX(mf.created_at) DESC
         LIMIT 12
         "#,
         kids_only,
+        user_id,
     )
     .fetch_all(exec)
     .await
@@ -494,6 +507,7 @@ where
 
 pub async fn recent_episodes<'e, E>(
     exec: E,
+    user_id: Uuid,
     content_category: &str,
     kids_only: bool,
 ) -> Result<Vec<EpisodeRow>, sqlx::Error>
@@ -511,7 +525,8 @@ where
             sub.episode_id as "episode_id!",
             sub.episode_identifier as "episode_identifier!",
             sub.episode_title,
-            sub.added_at as "added_at!"
+            sub.added_at as "added_at!",
+            COALESCE(tws.watched, FALSE) as "watched!"
         FROM (
             SELECT DISTINCT ON (tshow.id)
                 tshow.id as show_id,
@@ -531,11 +546,13 @@ where
               AND ($2 = FALSE OR kids_allowed(tshow.kids_override, tshow.content_rating))
             ORDER BY tshow.id, tef.created_at DESC
         ) sub
+        LEFT JOIN tv_watch_states tws ON tws.episode_id = sub.episode_id AND tws.user_id = $3
         ORDER BY sub.added_at DESC
         LIMIT 12
         "#,
         content_category,
         kids_only,
+        user_id,
     )
     .fetch_all(exec)
     .await
