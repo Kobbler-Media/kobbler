@@ -35,14 +35,31 @@ video {
   position: fixed;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 48px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.5);
+  gap: 28px;
   opacity: 0;
   transition: opacity 0.5s ease;
+}
+
+.idle-logo {
+  width: 30vh;
+  height: 30vh;
+  animation: idle-breathe 3s ease-in-out infinite;
+}
+
+.idle-name {
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+@keyframes idle-breathe {
+  50% {
+    transform: scale(1.04);
+  }
 }
 
 .idle.visible {
