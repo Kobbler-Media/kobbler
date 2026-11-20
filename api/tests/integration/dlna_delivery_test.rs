@@ -550,7 +550,8 @@ fn seed_1080p60(dir: &Path) -> PathBuf {
     out
 }
 
-fn h264_level(bytes: &[u8]) -> u32 {
+/// (level, r_frame_rate, height) of the first video stream as ffprobe reads it.
+fn video_shape(bytes: &[u8]) -> (u64, String, u64) {
     let file = tempfile::NamedTempFile::with_suffix(".ts").unwrap();
     std::fs::write(file.path(), bytes).unwrap();
     let out = std::process::Command::new("ffprobe")
@@ -560,19 +561,20 @@ fn h264_level(bytes: &[u8]) -> u32 {
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=level",
+            "stream=level,r_frame_rate,height",
             "-of",
-            "csv=p=0",
+            "json",
         ])
         .arg(file.path())
         .output()
         .expect("ffprobe");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    stdout
-        .lines()
-        .next()
-        .and_then(|level| level.parse().ok())
-        .unwrap_or_else(|| panic!("ffprobe level {stdout:?}"))
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let stream = &v["streams"][0];
+    (
+        stream["level"].as_u64().unwrap(),
+        stream["r_frame_rate"].as_str().unwrap().to_string(),
+        stream["height"].as_u64().unwrap(),
+    )
 }
 
 #[tokio::test]
@@ -582,7 +584,7 @@ async fn a_transcode_for_a_capped_client_declares_no_more_than_its_level() {
     std::fs::create_dir_all(&dir).unwrap();
     let file_id = seed_file(&server, &seed_1080p60(&dir)).await;
 
-    for (max_level, expected) in [(None, 42), (Some(41), 41)] {
+    for (max_level, expected) in [(None, (42, "60/1")), (Some(41), (41, "30/1"))] {
         let session = open(
             &server,
             file_id,
@@ -599,7 +601,9 @@ async fn a_transcode_for_a_capped_client_declares_no_more_than_its_level() {
             .get(session["progressive_url"].as_str().unwrap())
             .await;
         resp.assert_ok();
-        assert_eq!(h264_level(resp.bytes()), expected, "cap {max_level:?}");
+        let (level, rate, height) = video_shape(resp.bytes());
+        assert_eq!((level, rate.as_str()), expected, "cap {max_level:?}");
+        assert_eq!(height, 1080, "cap {max_level:?}");
     }
 }
 
