@@ -7,13 +7,19 @@
  */
 
 import { createPlaybackToken, revokePlaybackToken } from '#lib/api/client.js';
-import { getAudioPlayerState, pause, getFileIds } from '#lib/stores/audioplayer.svelte.js';
+import {
+  getAudioPlayerState,
+  pause,
+  getFileIds,
+  togglePlayPause
+} from '#lib/stores/audioplayer.svelte.js';
 import { getCastState } from '#lib/stores/cast.svelte.js';
 import { sendMessage } from '#lib/cast/sender.js';
 import type { InitAudiobookPayload } from '#lib/cast/messages.js';
 
 let audiobookCastToken: string | null = null;
 let audiobookCasting = false;
+let playingBeforeCast = false;
 
 export function isAudiobookCasting(): boolean {
   return audiobookCasting;
@@ -32,7 +38,7 @@ export async function startAudiobookCast(): Promise<void> {
 
   if (!player.currentBook || !player.currentFileId || !cast.connected) return;
 
-  // Pause local playback
+  playingBeforeCast = player.playing;
   pause();
 
   try {
@@ -79,6 +85,13 @@ export async function startAudiobookCast(): Promise<void> {
       audiobookCastToken = null;
     }
   }
+}
+
+/** The receiver refused the book: playback carries on here as it was. */
+export function keepAudiobookLocal(): void {
+  stopAudiobookCast();
+  if (playingBeforeCast) togglePlayPause();
+  playingBeforeCast = false;
 }
 
 /**

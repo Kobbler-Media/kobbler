@@ -16,9 +16,15 @@ import {
   isSdkReady,
   getDeviceName as sdkGetDeviceName
 } from '#lib/cast/sender.js';
-import { startAudiobookCast, stopAudiobookCast, isAudiobookCasting } from '#lib/cast/audiobook.js';
+import {
+  startAudiobookCast,
+  stopAudiobookCast,
+  isAudiobookCasting,
+  keepAudiobookLocal
+} from '#lib/cast/audiobook.js';
 import { getAudioPlayerState } from '#lib/stores/audioplayer.svelte.js';
-import type { InitSessionPayload, ReceiverStatus } from '#lib/cast/messages.js';
+import { showToast } from '#lib/stores/ui.svelte.js';
+import type { InitSessionPayload, ReceiverStatus, UnsupportedInit } from '#lib/cast/messages.js';
 
 // ── State ──────────────────────────────────────────────────────
 
@@ -27,6 +33,11 @@ let castConnected = $state(false);
 let castDeviceName = $state<string | null>(null);
 let castMediaState = $state<ReceiverStatus | null>(null);
 let initialized = false;
+
+const UNSUPPORTED_LABELS: Record<UnsupportedInit, string> = {
+  INIT_AUDIOBOOK: 'audiobooks',
+  INIT_TTS: 'read-aloud'
+};
 
 // ── Accessor ───────────────────────────────────────────────────
 
@@ -105,6 +116,11 @@ export async function initCast(receiverAppId: string): Promise<void> {
             }
           };
         }
+      } else if (msg.type === 'UNSUPPORTED') {
+        if (msg.payload.type === 'INIT_AUDIOBOOK') keepAudiobookLocal();
+        showToast(
+          `${castDeviceName ?? 'The cast device'} can't play ${UNSUPPORTED_LABELS[msg.payload.type]}`
+        );
       }
     });
   }

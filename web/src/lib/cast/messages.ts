@@ -85,7 +85,7 @@ export type CastMessage =
   | { type: 'TOKEN_REFRESH'; payload: { token: string } }
   | { type: 'STATUS_REQUEST' }
   | { type: 'CAPABILITIES_REQUEST' }
-  | { type: 'CAPABILITIES'; payload: ClientCapabilities }
+  | { type: 'CAPABILITIES'; payload: ReceiverCapabilities }
   | { type: 'TRACKS_REQUEST' }
   | { type: 'TRACKS'; payload: ReceiverTracks }
   | { type: 'SKIP_SEGMENT'; payload: { segmentType: string; endSeconds: number } | null }
@@ -110,7 +110,15 @@ export type CastMessage =
       payload: { fileIndex: number; fileId: string };
     }
   | { type: 'MEDIA_FINISHED' }
-  | { type: 'SESSION_EXPIRED' };
+  | { type: 'SESSION_EXPIRED' }
+  | { type: 'UNSUPPORTED'; payload: { type: UnsupportedInit } };
+
+export type UnsupportedInit = 'INIT_AUDIOBOOK' | 'INIT_TTS';
+
+export type ReceiverFeature = 'receiver_reports_progress' | 'hls';
+
+/** A receiver that sends no `features` supports all of them. */
+export type ReceiverCapabilities = ClientCapabilities & { features?: ReceiverFeature[] };
 
 export type EnrichmentPayload = {
   duration?: number;
