@@ -26,7 +26,11 @@
   import { showsStartShell } from '#lib/streaming/startShell.js';
   import { streamPosition } from '#lib/streaming/streamPosition.js';
   import { reconnectStep } from '#lib/streaming/reconnect.js';
-  import { levellingGain } from '#lib/streaming/loudness.js';
+  import {
+    activeTrackLoudness,
+    levellingGain,
+    withTrackLoudness
+  } from '#lib/streaming/loudness.js';
   import { startingAudio } from '#lib/streaming/audioPreference.js';
   import { liveSyncRate, liveTargetLatency } from '#lib/streaming/liveLatency.js';
   import { useKeep } from '#lib/composables/useKeep.svelte.js';
@@ -1613,9 +1617,16 @@
     }
   }
 
-  // A debrid stream's loudness is measured after it has started playing.
+  const activeLoudness = $derived(activeTrackLoudness(session.audio_tracks, activeAudioIndex));
+
+  $effect(() => {
+    if (activeLoudness.lufs != null) ensureNormalization();
+  });
+
+  // A debrid stream's loudness is measured after it has started playing, and a track
+  // switched to may be the first one measured.
   function ensureNormalization() {
-    if (session.lufs == null || !videoEl) return;
+    if (activeLoudness.lufs == null || !videoEl) return;
     if (audioGainNode) return applyVideoNormalization();
     try {
       audioContext = new AudioContext();
@@ -1632,8 +1643,8 @@
   }
 
   function applyVideoNormalization() {
-    if (!audioGainNode || session.lufs == null) return;
-    audioGainNode.gain.value = normalizeVolume ? levellingGain(session) : 1.0;
+    if (!audioGainNode || activeLoudness.lufs == null) return;
+    audioGainNode.gain.value = normalizeVolume ? levellingGain(activeLoudness) : 1.0;
   }
 
   /**
@@ -2822,9 +2833,8 @@
             }
             break;
           case 'loudness':
-            if (typeof data.lufs === 'number') {
-              session.lufs = data.lufs;
-              session.downmix_peak_db = data.downmix_peak_db ?? null;
+            if (Array.isArray(data.tracks)) {
+              session.audio_tracks = withTrackLoudness(session.audio_tracks, data.tracks);
               ensureNormalization();
             }
             break;

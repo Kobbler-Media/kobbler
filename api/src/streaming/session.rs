@@ -131,6 +131,7 @@ pub struct PlaybackSession {
     /// Audio track metadata from probe/DB — stored so the decision engine can be
     /// re-run when switching audio tracks without re-probing the file.
     pub audio_metas: Vec<AudioTrackMeta>,
+    pub audio_loudness: Vec<crate::streaming::loudness::TrackLoudness>,
     /// Debrid sessions only: the audio track the viewer's language preference picks, once
     /// the probe has listed the tracks. `None` when no track matches.
     pub preferred_audio_index: Option<i32>,
@@ -226,6 +227,7 @@ impl PlaybackSession {
             thumbnail_dir: None,
             debrid_cache_key: None,
             audio_metas: vec![],
+            audio_loudness: vec![],
             preferred_audio_index: None,
             force_video_transcode: false,
             corrupt_ranges: Vec::new(),

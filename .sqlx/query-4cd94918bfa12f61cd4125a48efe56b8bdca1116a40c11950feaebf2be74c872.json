@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT audio_loudness AS \"audio_loudness: Json<Vec<TrackLoudness>>\", picture\n        FROM debrid_stream_sessions\n        WHERE media_type = $1 AND media_id = $2\n          AND ((info_hash = $3 AND file_id IS NOT DISTINCT FROM $4) OR cache_path = $5)\n          AND (audio_loudness IS NOT NULL OR picture IS NOT NULL)\n        ORDER BY updated_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "audio_loudness: Json<Vec<TrackLoudness>>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "audio_loudness"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "picture",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "picture"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "4cd94918bfa12f61cd4125a48efe56b8bdca1116a40c11950feaebf2be74c872"
+}

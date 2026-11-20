@@ -31,12 +31,13 @@ use crate::media_cache::embeddings::{embed_frames, embeddings_failure, ready_vis
 use crate::media_cache::picture_area::{self, PictureArea};
 use crate::media_cache::writers::{ArtefactInfo, write_manifest_at_async};
 use crate::media_cache::{self, Branch, PIPELINE_VERSION};
+use crate::repositories::file_loudness::FileKind;
 use crate::repositories::media_cache_runs::{self, TriggeredBy};
 use crate::repositories::{
     audiobook_files, file_loudness, media_roots, movie_files, tv_episode_files,
 };
 use crate::skip_detect::PipelineMode;
-use crate::streaming::loudness::PlaybackLoudness;
+use crate::streaming::loudness::TrackLoudness;
 use crate::streaming::session::MediaType;
 use async_trait::async_trait;
 use kob_ffmpeg::single_pass::BranchId;
@@ -981,23 +982,24 @@ impl JobHandler for MediaAnalyzeHandler {
         // decode while we run ~14s of non-NAS work.
         drop(io_permits);
 
-        if let Some(loud) = outcome.manifest.artefacts.loudness.as_ref() {
-            let param = |k: &str| loud.params.get(k).and_then(|v| v.as_f64());
-            let loudness = PlaybackLoudness {
-                lufs: param("integrated_lufs"),
-                downmix_peak_db: param("downmix_peak_db"),
-            };
-            if loudness.lufs.is_some()
-                && let Err(e) = file_loudness::record(
-                    &self.pool,
-                    &payload.media_type,
-                    payload.file_id,
-                    loudness,
-                )
-                .await
-            {
-                warn!(error = %e, "loudness DB update failed");
-            }
+        let kind = match payload.media_type.as_str() {
+            "movie" => Some(FileKind::Movie),
+            "episode" => Some(FileKind::Episode),
+            "audiobook" => Some(FileKind::Audiobook),
+            _ => None,
+        };
+        if let Some(kind) = kind
+            && let Some(tracks) = outcome
+                .manifest
+                .artefacts
+                .loudness
+                .as_ref()
+                .and_then(|l| l.params.get("tracks"))
+                .and_then(|t| serde_json::from_value::<Vec<TrackLoudness>>(t.clone()).ok())
+            && let Err(e) =
+                file_loudness::record_tracks(&self.pool, kind, payload.file_id, &tracks).await
+        {
+            warn!(error = %e, "loudness DB update failed");
         }
 
         let embed_src_ok = outcome.embed_src_ok();

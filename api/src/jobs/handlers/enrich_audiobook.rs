@@ -139,7 +139,7 @@ impl JobHandler for EnrichAudiobookHandler {
         }
 
         let loudness = match loudness_result {
-            Ok(l) => PlaybackLoudness::from(l),
+            Ok(tracks) => tracks.first().map(|t| t.loudness).unwrap_or_default(),
             Err(e) => {
                 warn!(error = %e, "Loudness measurement failed (non-fatal)");
                 PlaybackLoudness::default()
@@ -147,7 +147,7 @@ impl JobHandler for EnrichAudiobookHandler {
         };
         if loudness.lufs.is_some()
             && let Err(e) =
-                file_loudness::record(&self.pool, "audiobook", payload.file_id, loudness).await
+                file_loudness::record_audiobook(&self.pool, payload.file_id, loudness).await
         {
             warn!(error = %e, "Failed to save audiobook loudness");
         }

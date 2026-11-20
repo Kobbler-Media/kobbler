@@ -1877,7 +1877,15 @@ export type PlaybackSubtitleTrack = {
   requires_transcode: boolean;
 };
 
-export type PlaybackAudioTrack = {
+export type PlaybackLoudness = {
+  lufs?: number | null;
+  /** True peak (dBTP) of the stereo fold-down the player renders; caps the levelling boost. */
+  downmix_peak_db?: number | null;
+};
+
+export type TrackLoudness = PlaybackLoudness & { stream_index: number };
+
+export type PlaybackAudioTrack = PlaybackLoudness & {
   stream_index: number;
   codec: string;
   channels: number;
@@ -1887,13 +1895,7 @@ export type PlaybackAudioTrack = {
   is_default: boolean;
 };
 
-export type PlaybackLoudness = {
-  lufs?: number | null;
-  /** True peak (dBTP) of the stereo fold-down the player renders; caps the levelling boost. */
-  downmix_peak_db?: number | null;
-};
-
-export type PlaybackSessionResponse = PlaybackLoudness & {
+export type PlaybackSessionResponse = {
   session_id: string;
   method: PlaybackMethod;
   playlist_url: string | null;

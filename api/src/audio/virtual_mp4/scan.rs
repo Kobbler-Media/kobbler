@@ -52,7 +52,7 @@ pub fn scan(source: &Path) -> Result<FrameTable, VirtualMp4Error> {
     let audio = input
         .find_best_stream(MediaType::Audio)
         .ok_or_else(|| VirtualMp4Error::Unsupported("no audio stream".into()))?;
-    input.discard_all_except(audio);
+    input.discard_all_except(&[audio]);
     let stream = input.stream(audio).expect("best stream exists");
     if stream.codec_id() != kob_ffmpeg::ffi::AV_CODEC_ID_MP3 {
         return Err(VirtualMp4Error::Unsupported("audio is not mp3".into()));

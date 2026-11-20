@@ -432,6 +432,9 @@ async fn claim_prewarm(state: &AppState, prewarm: Prewarm) -> Response {
         Err(resp) => return resp,
     };
     let session_id = prewarm.session_id;
+    if let Some(mut session) = state.playback_sessions.get_mut(&session_id) {
+        session.audio_loudness = committed.audio_loudness.clone();
+    }
     // The probe may have landed before the row existed; its own write then went nowhere.
     let probe = state
         .playback_sessions
@@ -463,7 +466,6 @@ async fn claim_prewarm(state: &AppState, prewarm: Prewarm) -> Response {
     base.media_id = Some(committed.media_id.to_string());
     base.media_type = Some(committed.media_type);
     base.skip_segments = committed.skip_segments;
-    base.loudness = committed.loudness;
     base.picture = committed.picture;
     let response = live_response(state, session_id, Some(&base)).unwrap_or(base);
     state

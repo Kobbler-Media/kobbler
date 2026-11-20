@@ -1,6 +1,7 @@
-//! Gives files analysed before the downmix peak existed just that measurement: an audio-only
-//! decode, far cheaper than re-running the whole single pass. Its own job type, so a library's
-//! worth of re-measuring never queues ahead of a new import's analysis.
+//! Gives files analysed before each audio stream was measured on its own — and finished
+//! debrid downloads nothing measured — just that measurement: an audio-only decode, far
+//! cheaper than re-running the whole single pass. Its own job type, so a library's worth of
+//! re-measuring never queues ahead of a new import's analysis.
 
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult, MediaRootIoGate};
@@ -16,21 +17,21 @@ use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-pub const JOB_TYPE: &str = "downmix_peak_fill";
+pub const JOB_TYPE: &str = "track_loudness_fill";
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DownmixPeakFillPayload {
+pub struct TrackLoudnessFillPayload {
     pub kind: FileKind,
     pub file_id: Uuid,
 }
 
-pub struct DownmixPeakFillHandler {
+pub struct TrackLoudnessFillHandler {
     pool: PgPool,
     storage_root: String,
     io_gate: MediaRootIoGate,
 }
 
-impl DownmixPeakFillHandler {
+impl TrackLoudnessFillHandler {
     pub fn new(pool: PgPool, storage_root: String, io_gate: MediaRootIoGate) -> Self {
         Self {
             pool,
@@ -50,20 +51,45 @@ impl DownmixPeakFillHandler {
             FileKind::Audiobook => {
                 sqlx::query_scalar("SELECT file_path FROM audiobook_files WHERE id = $1")
             }
+            FileKind::Debrid => {
+                sqlx::query_scalar("SELECT cache_path FROM debrid_files WHERE id = $1")
+            }
         }
         .bind(file_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| JobError::ExecutionFailed(format!("DB error: {e}")))?;
-        Ok(path.map(|p| match kind {
-            FileKind::Audiobook => crate::audio::path::resolve_file_path(&self.storage_root, &p),
-            _ => PathBuf::from(p),
-        }))
+        Ok(path
+            .map(|p| match kind {
+                FileKind::Audiobook => {
+                    crate::audio::path::resolve_file_path(&self.storage_root, &p)
+                }
+                _ => PathBuf::from(p),
+            })
+            .filter(|p| kind != FileKind::Debrid || p.is_file()))
+    }
+
+    async fn has_gap(&self, kind: FileKind, file_id: Uuid) -> JobResult<bool> {
+        let db = |e: crate::repositories::RepositoryError| {
+            JobError::ExecutionFailed(format!("DB error: {e}"))
+        };
+        Ok(match kind {
+            FileKind::Audiobook => {
+                let current = file_loudness::audiobook(&self.pool, file_id)
+                    .await
+                    .map_err(db)?;
+                current.lufs.is_some() && current.downmix_peak_db.is_none()
+            }
+            _ => file_loudness::tracks(&self.pool, kind, file_id)
+                .await
+                .map_err(db)?
+                .is_none(),
+        })
     }
 }
 
 #[async_trait]
-impl JobHandler for DownmixPeakFillHandler {
+impl JobHandler for TrackLoudnessFillHandler {
     fn job_type(&self) -> &'static str {
         JOB_TYPE
     }
@@ -80,17 +106,14 @@ impl JobHandler for DownmixPeakFillHandler {
         cancel: CancellationToken,
     ) -> JobResult<Value> {
         nats_jobs::check_cancelled(&cancel)?;
-        let DownmixPeakFillPayload { kind, file_id } = serde_json::from_value(payload)
+        let TrackLoudnessFillPayload { kind, file_id } = serde_json::from_value(payload)
             .map_err(|e| JobError::ExecutionFailed(format!("Invalid payload: {e}")))?;
         let db = |e: crate::repositories::RepositoryError| {
             JobError::ExecutionFailed(format!("DB error: {e}"))
         };
         let _file_lock = crate::jobs::file_lock::lock_file(file_id).await;
 
-        let current = file_loudness::get(&self.pool, kind, file_id)
-            .await
-            .map_err(db)?;
-        if current.lufs.is_none() || current.downmix_peak_db.is_some() {
+        if !self.has_gap(kind, file_id).await? {
             return Ok(json!({"status": "no_gap", "file_id": file_id}));
         }
         let Some(file_path) = self.file_path(kind, file_id).await? else {
@@ -100,6 +123,8 @@ impl JobHandler for DownmixPeakFillHandler {
         let spool = media_cache::source_spool_path(&self.storage_root, file_id);
         let (path, permits) = if spool.is_file() {
             (spool, Vec::new())
+        } else if kind == FileKind::Debrid {
+            (file_path, Vec::new())
         } else {
             let roots =
                 media_roots::resolve_media_root_ids_for_file(&self.pool, kind.as_str(), file_id)
@@ -113,18 +138,24 @@ impl JobHandler for DownmixPeakFillHandler {
             .map_err(|e| JobError::ExecutionFailed(e.to_string()))?;
         drop(permits);
 
-        let peak = measured.downmix_peak_db;
-        file_loudness::record(
-            &self.pool,
-            kind.as_str(),
-            file_id,
-            PlaybackLoudness {
-                lufs: None,
-                downmix_peak_db: peak,
-            },
-        )
-        .await
-        .map_err(db)?;
-        Ok(json!({"status": "filled", "file_id": file_id, "downmix_peak_db": peak}))
+        match kind {
+            FileKind::Audiobook => {
+                let downmix_peak_db = measured.first().and_then(|t| t.loudness.downmix_peak_db);
+                file_loudness::record_audiobook(
+                    &self.pool,
+                    file_id,
+                    PlaybackLoudness {
+                        lufs: None,
+                        downmix_peak_db,
+                    },
+                )
+                .await
+                .map_err(db)?;
+            }
+            _ => file_loudness::record_tracks(&self.pool, kind, file_id, &measured)
+                .await
+                .map_err(db)?,
+        }
+        Ok(json!({"status": "filled", "file_id": file_id, "tracks": measured}))
     }
 }

@@ -46,7 +46,6 @@ use crate::jobs::handlers::{
     DebridPrewarmHandler,
     DebridProcessHandler,
     DiscoverSyncHandler,
-    DownmixPeakFillHandler,
     EbookExtractHandler,
     EbookRepairHandler,
     EnrichAudiobookHandler,
@@ -125,6 +124,7 @@ use crate::jobs::handlers::{
     SubtitleSearchHandler,
     SyncProviderHandler,
     TempFileCleanupHandler,
+    TrackLoudnessFillHandler,
     TranscribeBackfillHandler,
     TranscribeRefreshHandler,
     TvMonitorHandler,
@@ -765,7 +765,7 @@ pub async fn start_nats_worker(
         media_root_io_gate.clone(),
     )));
 
-    worker.register_handler(HandlerAdapter::new(DownmixPeakFillHandler::new(
+    worker.register_handler(HandlerAdapter::new(TrackLoudnessFillHandler::new(
         pool.clone(),
         storage_root.clone(),
         media_root_io_gate.clone(),

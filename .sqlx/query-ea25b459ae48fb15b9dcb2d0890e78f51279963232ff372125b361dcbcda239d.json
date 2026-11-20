@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT s.probe_data, f.skip_segments, s.subtitle_tracks, f.chapters, s.lufs,\n                       s.downmix_peak_db, s.cache_path, s.filesize, s.picture\n                FROM debrid_stream_sessions s\n                LEFT JOIN debrid_files f ON f.cache_path = s.cache_path\n                WHERE s.id = $1\n                ",
+  "query": "\n                SELECT s.probe_data, f.skip_segments, s.subtitle_tracks, f.chapters,\n                       s.audio_loudness, s.cache_path, s.filesize, s.picture\n                FROM debrid_stream_sessions s\n                LEFT JOIN debrid_files f ON f.cache_path = s.cache_path\n                WHERE s.id = $1\n                ",
   "describe": {
     "columns": [
       {
@@ -49,28 +49,17 @@
       },
       {
         "ordinal": 4,
-        "name": "lufs",
-        "type_info": "Float8",
+        "name": "audio_loudness",
+        "type_info": "Jsonb",
         "origin": {
           "Table": {
             "table": "debrid_stream_sessions",
-            "name": "lufs"
+            "name": "audio_loudness"
           }
         }
       },
       {
         "ordinal": 5,
-        "name": "downmix_peak_db",
-        "type_info": "Float8",
-        "origin": {
-          "Table": {
-            "table": "debrid_stream_sessions",
-            "name": "downmix_peak_db"
-          }
-        }
-      },
-      {
-        "ordinal": 6,
         "name": "cache_path",
         "type_info": "Text",
         "origin": {
@@ -81,7 +70,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "filesize",
         "type_info": "Int8",
         "origin": {
@@ -92,7 +81,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "picture",
         "type_info": "Jsonb",
         "origin": {
@@ -115,10 +104,9 @@
       true,
       true,
       true,
-      true,
       false,
       true
     ]
   },
-  "hash": "ed263dd338b5877663ce33f3a3fff5e4c6137c1d59d7297a2158ff7241a21a82"
+  "hash": "ea25b459ae48fb15b9dcb2d0890e78f51279963232ff372125b361dcbcda239d"
 }

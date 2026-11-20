@@ -1,6 +1,6 @@
-import type { PlaybackLoudness } from '#lib/types.js';
+import type { PlaybackAudioTrack, PlaybackLoudness, TrackLoudness } from '#lib/types.js';
 
-const TARGET_LUFS = -14;
+const TARGET_LUFS = -20;
 const MAX_BOOST_DB = 6;
 const PEAK_CEILING_DB = -1;
 
@@ -23,4 +23,23 @@ export function loudnessByFile(
   return Object.fromEntries(
     files.map((f) => [f.id, { lufs: f.lufs, downmix_peak_db: f.downmix_peak_db }])
   );
+}
+
+export function withTrackLoudness(
+  tracks: PlaybackAudioTrack[],
+  measured: TrackLoudness[]
+): PlaybackAudioTrack[] {
+  return tracks.map((t) => {
+    const m = measured.find((l) => l.stream_index === t.stream_index);
+    return m ? { ...t, lufs: m.lufs, downmix_peak_db: m.downmix_peak_db } : t;
+  });
+}
+
+/** The levels of the track playing, or of the default track until one is chosen. */
+export function activeTrackLoudness(
+  tracks: PlaybackAudioTrack[],
+  activeIndex: number | null
+): PlaybackLoudness {
+  const t = tracks.find((t) => t.stream_index === activeIndex) ?? tracks.find((t) => t.is_default);
+  return t?.lufs == null ? {} : { lufs: t.lufs, downmix_peak_db: t.downmix_peak_db };
 }

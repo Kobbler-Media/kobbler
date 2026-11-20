@@ -33,8 +33,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use uuid::Uuid;
 
-use super::downmix_peak_fill::{DownmixPeakFillPayload, JOB_TYPE as PEAK_JOB};
 use super::media_analyze::MediaAnalyzePayload;
+use super::track_loudness_fill::{JOB_TYPE as LOUDNESS_JOB, TrackLoudnessFillPayload};
 
 #[derive(Debug, Default, Deserialize)]
 pub struct MediaAnalyzeBackfillPayload {
@@ -205,13 +205,13 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
             }
         }
 
-        // ── Downmix peaks ──
-        // A file due a full analysis gets its peak from that instead.
-        let peak_gaps = file_loudness::list_needing_downmix_peak(&self.pool, GAPS_PER_RUN)
+        // ── Loudness ──
+        // A file due a full analysis gets its loudness from that instead.
+        let loudness_gaps = file_loudness::list_needing_loudness(&self.pool, GAPS_PER_RUN)
             .await
-            .map_err(|e| JobError::ExecutionFailed(format!("DB error (peak gaps): {e}")))?;
-        let mut peak_gaps_enqueued = 0u32;
-        for (kind, file_id) in &peak_gaps {
+            .map_err(|e| JobError::ExecutionFailed(format!("DB error (loudness gaps): {e}")))?;
+        let mut loudness_gaps_enqueued = 0u32;
+        for (kind, file_id) in &loudness_gaps {
             nats_jobs::check_cancelled(&cancel)?;
             if movie_ids.contains(file_id)
                 || episode_ids.contains(file_id)
@@ -220,9 +220,9 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
                 continue;
             }
             if let BackfillEnqueue::Enqueued =
-                enqueue_peak_fill(&self.pool, &self.publisher, *kind, *file_id).await
+                enqueue_loudness_fill(&self.pool, &self.publisher, *kind, *file_id).await
             {
-                peak_gaps_enqueued += 1;
+                loudness_gaps_enqueued += 1;
             }
         }
 
@@ -242,8 +242,8 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
             audiobook_skipped,
             gaps_found = gaps.len(),
             gaps_enqueued,
-            peak_gaps_found = peak_gaps.len(),
-            peak_gaps_enqueued,
+            loudness_gaps_found = loudness_gaps.len(),
+            loudness_gaps_enqueued,
             pipeline_version = PIPELINE_VERSION,
             all_video = payload.all_video,
             media_type = payload.media_type.map(|m| m.as_str()).unwrap_or("all"),
@@ -262,8 +262,8 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
             "audiobook_skipped": audiobook_skipped,
             "gaps_found": gaps.len(),
             "gaps_enqueued": gaps_enqueued,
-            "peak_gaps_found": peak_gaps.len(),
-            "peak_gaps_enqueued": peak_gaps_enqueued,
+            "loudness_gaps_found": loudness_gaps.len(),
+            "loudness_gaps_enqueued": loudness_gaps_enqueued,
             "pipeline_version": PIPELINE_VERSION,
             "all_video": payload.all_video,
             "media_type": payload.media_type.map(|m| m.as_str()),
@@ -271,30 +271,30 @@ impl JobHandler for MediaAnalyzeBackfillHandler {
     }
 }
 
-async fn enqueue_peak_fill(
+async fn enqueue_loudness_fill(
     pool: &PgPool,
     publisher: &Publisher,
     kind: FileKind,
     file_id: Uuid,
 ) -> BackfillEnqueue {
     let fid = file_id.to_string();
-    if let Ok(true) = crate::jobs::has_active_job(pool, PEAK_JOB, "file_id", &fid).await {
+    if let Ok(true) = crate::jobs::has_active_job(pool, LOUDNESS_JOB, "file_id", &fid).await {
         return BackfillEnqueue::Skipped;
     }
-    if crate::jobs::recent_failure_count(pool, PEAK_JOB, "file_id", &fid, 24)
+    if crate::jobs::recent_failure_count(pool, LOUDNESS_JOB, "file_id", &fid, 24)
         .await
         .unwrap_or(0)
         >= GAP_FAILURES_PER_DAY
     {
         return BackfillEnqueue::Skipped;
     }
-    let payload = DownmixPeakFillPayload { kind, file_id };
+    let payload = TrackLoudnessFillPayload { kind, file_id };
     match crate::jobs::enqueue_routine(
         pool,
         publisher,
-        PEAK_JOB,
+        LOUDNESS_JOB,
         serde_json::to_value(&payload).unwrap_or_default(),
-        crate::jobs::JobContext::new("Backfill — downmix peak"),
+        crate::jobs::JobContext::new("Backfill — loudness"),
     )
     .await
     {

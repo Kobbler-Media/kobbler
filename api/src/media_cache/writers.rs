@@ -34,12 +34,11 @@ pub struct BlackGap {
     pub duration_secs: f64,
 }
 
-/// Loudness sidecar shape (`loudness.json`).
+/// Loudness sidecar shape (`loudness.json`). Sidecars from before every audio stream was
+/// measured have no `tracks` and fail to parse, which reads as never measured.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Loudness {
-    pub integrated_lufs: Option<f64>,
-    #[serde(default)]
-    pub downmix_peak_db: Option<f64>,
+    pub tracks: Vec<crate::streaming::loudness::TrackLoudness>,
 }
 
 /// One artefact's coverage info as it appears in `manifest.json`.

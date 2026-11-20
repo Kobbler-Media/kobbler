@@ -27,7 +27,7 @@ use uuid::Uuid;
 
 use super::writers::{Manifest, write_atomic, write_manifest_at};
 use super::{Branch, sidecar_filename};
-use crate::streaming::loudness::PlaybackLoudness;
+use crate::streaming::loudness::TrackLoudness;
 
 /// Source-of-truth-keyed namespace for a persisted artefact set. Each variant
 /// names the DB table whose `id` keys the directory; see module docs for the
@@ -61,14 +61,9 @@ impl MediaKind {
     }
 }
 
-/// The measured loudness of an analysed file.
-pub fn loudness(storage_root: &str, kind: &MediaKind) -> PlaybackLoudness {
-    super::readers::read_loudness_at(&episode_cache_dir(storage_root, kind))
-        .map(|l| PlaybackLoudness {
-            lufs: l.integrated_lufs,
-            downmix_peak_db: l.downmix_peak_db,
-        })
-        .unwrap_or_default()
+/// Each audio stream's measured loudness, once an analysis has measured them.
+pub fn loudness(storage_root: &str, kind: &MediaKind) -> Option<Vec<TrackLoudness>> {
+    super::readers::read_loudness_at(&episode_cache_dir(storage_root, kind)).map(|l| l.tracks)
 }
 
 pub fn episode_cache_dir(storage_root: &str, kind: &MediaKind) -> PathBuf {

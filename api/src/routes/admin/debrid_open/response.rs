@@ -40,7 +40,6 @@ pub(crate) fn live_response(
         subtitles: vec![],
         audio_tracks: vec![],
         thumbnails_url: None,
-        loudness: Default::default(),
         chapters: vec![],
         skip_segments: vec![],
         start_time: None,
@@ -60,8 +59,11 @@ pub(crate) fn live_response(
     response.direct_url = direct_play.then(|| format!("/api/v1/admin/stream/{session_id}/play"));
     response.duration_seconds = session.duration_seconds;
     if probed {
-        response.audio_tracks =
-            build_audio_responses(&session.audio_metas, session.decision.audio_stream_index);
+        response.audio_tracks = build_audio_responses(
+            &session.audio_metas,
+            session.decision.audio_stream_index,
+            &session.audio_loudness,
+        );
         response.selected_audio_index = Some(session.decision.audio_stream_index);
         response.preferred_audio_stream_index = session.preferred_audio_index;
         response.video_width = (width > 0).then_some(width);

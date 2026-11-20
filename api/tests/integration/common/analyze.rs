@@ -1,7 +1,7 @@
 use super::TestServer;
 use api::jobs::MediaRootIoGate;
 use api::jobs::handlers::{
-    DownmixPeakFillHandler, MediaAnalyzeBackfillHandler, MediaAnalyzeHandler,
+    MediaAnalyzeBackfillHandler, MediaAnalyzeHandler, TrackLoudnessFillHandler,
 };
 use api::repositories::{movie_files, tv_episode_files};
 use serde_json::{Value, json};
@@ -14,6 +14,14 @@ const MKV: &[u8] = include_bytes!("../../fixtures/playback/interlaced.mkv");
 
 /// A movie whose file is the 4 s interlaced fixture, at `cache_version`. Returns its file id.
 pub async fn seed_analyzable_movie(server: &TestServer, cache_version: i32) -> Uuid {
+    seed_analyzable_movie_from(server, cache_version, MKV).await
+}
+
+pub async fn seed_analyzable_movie_from(
+    server: &TestServer,
+    cache_version: i32,
+    media: &[u8],
+) -> Uuid {
     let movie = server
         .admin_client()
         .post_json(
@@ -27,7 +35,7 @@ pub async fn seed_analyzable_movie(server: &TestServer, cache_version: i32) -> U
         .parse()
         .unwrap();
     let path = Path::new(&server.storage_root()).join(format!("{movie_id}.mkv"));
-    std::fs::write(&path, MKV).unwrap();
+    std::fs::write(&path, media).unwrap();
     let file_id = movie_files::create(
         &server.pool,
         movie_files::MovieFileInput {
@@ -52,6 +60,14 @@ pub async fn seed_analyzable_movie(server: &TestServer, cache_version: i32) -> U
 
 /// An episode whose file is the same fixture, at `cache_version`. Returns its file id.
 pub async fn seed_analyzable_episode(server: &TestServer, cache_version: i32) -> Uuid {
+    seed_analyzable_episode_from(server, cache_version, MKV).await
+}
+
+pub async fn seed_analyzable_episode_from(
+    server: &TestServer,
+    cache_version: i32,
+    media: &[u8],
+) -> Uuid {
     let pool = &server.pool;
     let (show_id, season_id, episode_id) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
     sqlx::query("INSERT INTO tv_shows (id, title) VALUES ($1, 'Scope Show')")
@@ -78,12 +94,12 @@ pub async fn seed_analyzable_episode(server: &TestServer, cache_version: i32) ->
     .await
     .unwrap();
     let path = Path::new(&server.storage_root()).join(format!("{episode_id}.mkv"));
-    std::fs::write(&path, MKV).unwrap();
+    std::fs::write(&path, media).unwrap();
     let file_id = tv_episode_files::create(
         pool,
         tv_episode_files::EpisodeFileInput {
             file_path: path.to_string_lossy().into_owned(),
-            file_size: Some(MKV.len() as i64),
+            file_size: Some(media.len() as i64),
             file_fingerprint: None,
             format: "mkv".to_string(),
             quality: None,
@@ -137,8 +153,8 @@ pub fn analyzer(server: &TestServer) -> MediaAnalyzeHandler {
     )
 }
 
-pub fn peak_filler(server: &TestServer) -> DownmixPeakFillHandler {
-    DownmixPeakFillHandler::new(
+pub fn loudness_filler(server: &TestServer) -> TrackLoudnessFillHandler {
+    TrackLoudnessFillHandler::new(
         server.pool.clone(),
         server.storage_root(),
         MediaRootIoGate::new(server.pool.clone()),

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT audio_loudness AS \"audio_loudness: Json<Vec<TrackLoudness>>\"\n               FROM movie_files WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "audio_loudness: Json<Vec<TrackLoudness>>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "movie_files",
+            "name": "audio_loudness"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "ef80374500681bf6ef56bc5280e757c769bba090e101f68ef5037a933675afb5"
+}

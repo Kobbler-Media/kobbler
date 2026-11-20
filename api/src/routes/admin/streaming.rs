@@ -36,7 +36,7 @@ use crate::streaming::decision::{
     SubtitleTrackMeta, ViewerPrefs,
 };
 use crate::streaming::feed::FeedStatus;
-use crate::streaming::loudness::PlaybackLoudness;
+use crate::streaming::loudness::{PlaybackLoudness, TrackLoudness};
 use crate::streaming::persist::Progress;
 use crate::streaming::presumed_audio;
 use crate::streaming::segment_cache::SegmentCache;
@@ -152,8 +152,6 @@ pub struct SessionResponse {
     pub audio_tracks: Vec<AudioTrackResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thumbnails_url: Option<String>,
-    #[serde(flatten)]
-    pub loudness: PlaybackLoudness,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub chapters: Vec<ChapterResponse>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -284,6 +282,8 @@ pub struct AudioTrackResponse {
     pub language_name: Option<&'static str>,
     pub title: Option<String>,
     pub is_default: bool,
+    #[serde(flatten)]
+    pub loudness: PlaybackLoudness,
 }
 
 #[derive(Debug, Deserialize)]
@@ -730,18 +730,20 @@ pub(crate) async fn open_file_session(
         });
     }
 
+    let audio_loudness =
+        match crate::repositories::file_loudness::FileKind::of_session(req.media_type) {
+            Some(kind) => crate::repositories::file_loudness::tracks(&state.pool, kind, file_id)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+
     // Build audio track responses
     let audio_responses: Vec<AudioTrackResponse> = audio_metas
         .iter()
-        .map(|a| AudioTrackResponse {
-            stream_index: a.stream_index,
-            codec: a.codec.clone(),
-            channels: a.channels,
-            language_name: crate::streaming::language::display_name(a.language.as_deref()),
-            language: a.language.clone(),
-            title: a.title.clone(),
-            is_default: a.is_default,
-        })
+        .map(|a| audio_track_response(a, a.is_default, &audio_loudness))
         .collect();
 
     // Load video chapters
@@ -847,12 +849,6 @@ pub(crate) async fn open_file_session(
             }
         }
     };
-    let loudness = match crate::repositories::file_loudness::FileKind::of_session(req.media_type) {
-        Some(kind) => crate::repositories::file_loudness::get(&state.pool, kind, file_id)
-            .await
-            .unwrap_or_default(),
-        None => Default::default(),
-    };
 
     let picture = crate::repositories::file_pictures::get(&state.pool, req.media_type, file_id)
         .await
@@ -882,7 +878,6 @@ pub(crate) async fn open_file_session(
         } else {
             None
         },
-        loudness,
         chapters: chapter_responses,
         skip_segments: skip_segment_responses,
         start_time: reported_rebase(decision.method, resume_start),
@@ -976,6 +971,7 @@ pub(crate) async fn open_file_session(
         thumbnail_dir: None,
         debrid_cache_key: None,
         audio_metas: audio_metas.clone(),
+        audio_loudness,
         preferred_audio_index: None,
         force_video_transcode: restore.as_ref().is_some_and(|p| p.force_video_transcode),
         corrupt_ranges,
@@ -3102,7 +3098,11 @@ pub async fn switch_audio(
         && !debrid_direct_play
     {
         let base_url = format!("/api/v1/admin/playback/sessions/{session_id}");
-        let audio_responses = build_audio_responses(&session.audio_metas, audio_stream_index);
+        let audio_responses = build_audio_responses(
+            &session.audio_metas,
+            audio_stream_index,
+            &session.audio_loudness,
+        );
         let method = session.decision.method;
         let duration = session.duration_seconds;
         let (sw, sh) = session.source_resolution;
@@ -3124,7 +3124,6 @@ pub async fn switch_audio(
             subtitles: vec![],
             audio_tracks: audio_responses,
             thumbnails_url: None,
-            loudness: PlaybackLoudness::default(),
             chapters: vec![],
             skip_segments: vec![],
             start_time: None,
@@ -3258,7 +3257,11 @@ pub async fn switch_audio(
     }
 
     let base_url = format!("/api/v1/admin/playback/sessions/{session_id}");
-    let audio_responses = build_audio_responses(&session.audio_metas, audio_stream_index);
+    let audio_responses = build_audio_responses(
+        &session.audio_metas,
+        audio_stream_index,
+        &session.audio_loudness,
+    );
 
     let method = session.decision.method;
     let (sw, sh) = session.source_resolution;
@@ -3305,7 +3308,6 @@ pub async fn switch_audio(
             .collect(),
         audio_tracks: audio_responses,
         thumbnails_url: None,
-        loudness: PlaybackLoudness::default(),
         chapters: vec![],
         skip_segments: vec![],
         start_time,
@@ -3461,19 +3463,29 @@ pub async fn download_subtitle_to_session(
 pub fn build_audio_responses(
     audio_metas: &[AudioTrackMeta],
     active_stream_index: i32,
+    loudness: &[TrackLoudness],
 ) -> Vec<AudioTrackResponse> {
     audio_metas
         .iter()
-        .map(|a| AudioTrackResponse {
-            stream_index: a.stream_index,
-            codec: a.codec.clone(),
-            channels: a.channels,
-            language_name: crate::streaming::language::display_name(a.language.as_deref()),
-            language: a.language.clone(),
-            title: a.title.clone(),
-            is_default: a.stream_index == active_stream_index,
-        })
+        .map(|a| audio_track_response(a, a.stream_index == active_stream_index, loudness))
         .collect()
+}
+
+pub fn audio_track_response(
+    a: &AudioTrackMeta,
+    is_default: bool,
+    loudness: &[TrackLoudness],
+) -> AudioTrackResponse {
+    AudioTrackResponse {
+        stream_index: a.stream_index,
+        codec: a.codec.clone(),
+        channels: a.channels,
+        language_name: crate::streaming::language::display_name(a.language.as_deref()),
+        language: a.language.clone(),
+        title: a.title.clone(),
+        is_default,
+        loudness: crate::streaming::loudness::of_track(loudness, a.stream_index),
+    }
 }
 
 /// Start FFmpeg with the session's transcode settings.

@@ -864,16 +864,12 @@ fn persist_sidecars(
 
     // Loudness (optional; detection doesn't use it but write it for parity).
     let loudness = Loudness {
-        integrated_lufs: result.loudness,
-        downmix_peak_db: result.downmix_peak_db,
+        tracks: result.track_loudness.into_iter().map(Into::into).collect(),
     };
     if let Ok(bytes) = serde_json::to_vec(&loudness) {
         let _ = write_sidecar_at(cache_dir, Branch::Loudness, &bytes);
         let mut params = serde_json::Map::new();
-        params.insert(
-            "integrated_lufs".into(),
-            serde_json::json!(loudness.integrated_lufs),
-        );
+        params.insert("tracks".into(), serde_json::json!(loudness.tracks));
         manifest.artefacts.set(
             Branch::Loudness,
             ArtefactInfo {

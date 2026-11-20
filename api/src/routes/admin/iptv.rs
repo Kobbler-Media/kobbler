@@ -2611,15 +2611,7 @@ pub async fn create_iptv_session(
     let audio_tracks = result
         .audio_tracks
         .iter()
-        .map(|a| crate::routes::admin::streaming::AudioTrackResponse {
-            stream_index: a.stream_index,
-            codec: a.codec.clone(),
-            channels: a.channels,
-            language_name: crate::streaming::language::display_name(a.language.as_deref()),
-            language: a.language.clone(),
-            title: a.title.clone(),
-            is_default: a.is_default,
-        })
+        .map(|a| crate::routes::admin::streaming::audio_track_response(a, a.is_default, &[]))
         .collect();
 
     Ok(Json(IptvSessionResponse {

@@ -396,8 +396,17 @@ impl JobHandler for DebridProcessHandler {
             }
         }
 
-        let loudness = crate::media_cache::episode_cache::loudness(&self.storage_root, &kind);
-        persist_loudness(&self.pool, &file, loudness).await?;
+        if let Some(tracks) = crate::media_cache::episode_cache::loudness(&self.storage_root, &kind)
+        {
+            crate::repositories::file_loudness::record_tracks(
+                &self.pool,
+                crate::repositories::file_loudness::FileKind::Debrid,
+                file.id,
+                &tracks,
+            )
+            .await
+            .map_err(|e| JobError::ExecutionFailed(format!("Failed to store loudness: {e}")))?;
+        }
 
         if let Err(e) = self.detect(&file).await {
             warn!(error = %e, file_id = %file.id, "debrid skip detect failed");
@@ -527,29 +536,6 @@ fn detected_to_skip_segment(s: &DetectedSegment) -> ChapterSkipSegment {
         start_seconds: s.start_seconds,
         end_seconds: s.end_seconds,
     }
-}
-
-/// What a library file's row would carry, onto every session on the download.
-async fn persist_loudness(
-    pool: &PgPool,
-    file: &DebridFile,
-    loudness: crate::streaming::loudness::PlaybackLoudness,
-) -> JobResult<()> {
-    sqlx::query!(
-        r#"
-        UPDATE debrid_stream_sessions
-        SET lufs = COALESCE($2, lufs), downmix_peak_db = COALESCE($3, downmix_peak_db),
-            updated_at = NOW()
-        WHERE cache_path = $1
-        "#,
-        file.cache_path,
-        loudness.lufs,
-        loudness.downmix_peak_db,
-    )
-    .execute(pool)
-    .await
-    .map_err(|e| JobError::ExecutionFailed(format!("Failed to store loudness: {e}")))?;
-    Ok(())
 }
 
 /// Detection wins over chapter titles of the same type: titles can lie.

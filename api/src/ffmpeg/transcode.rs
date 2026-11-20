@@ -827,12 +827,19 @@ pub async fn extract_all_subtitles(
 // LUFS loudness measurement
 // =============================================================================
 
-pub async fn measure_loudness(input: &Path) -> Result<kob_ffmpeg::audio::Loudness, TranscodeError> {
+pub async fn measure_loudness(
+    input: &Path,
+) -> Result<Vec<crate::streaming::loudness::TrackLoudness>, TranscodeError> {
     let path = input.to_owned();
-    tokio::task::spawn_blocking(move || {
-        kob_ffmpeg::audio::measure_loudness(&path, None)
-            .map_err(|e| TranscodeError::StartFailed(format!("Loudness measurement failed: {e}")))
-    })
+    tokio::task::spawn_blocking(
+        move || match kob_ffmpeg::audio::measure_loudness(&path, None) {
+            Ok(tracks) => Ok(tracks.into_iter().map(Into::into).collect()),
+            Err(e) if e.code() == kob_ffmpeg::ffi::AVERROR_STREAM_NOT_FOUND => Ok(Vec::new()),
+            Err(e) => Err(TranscodeError::StartFailed(format!(
+                "Loudness measurement failed: {e}"
+            ))),
+        },
+    )
     .await
     .map_err(|e| TranscodeError::StartFailed(format!("task join error: {e}")))?
 }

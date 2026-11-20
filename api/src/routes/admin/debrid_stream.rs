@@ -28,7 +28,7 @@ use crate::routes::admin::stream_search_request::{self, SearchTarget};
 use crate::routes::admin::{debrid_open, stream_prewarm};
 use crate::routes::helpers::build_kobload_client;
 use crate::routes::{AuthUser, PlaybackAuth};
-use crate::streaming::loudness::PlaybackLoudness;
+use crate::streaming::loudness::TrackLoudness;
 
 // =============================================================================
 // Request/Response Types
@@ -91,8 +91,7 @@ struct DebridStatusRow {
     subtitle_tracks: Option<serde_json::Value>,
     picture: Option<serde_json::Value>,
     chapters: Option<serde_json::Value>,
-    lufs: Option<f64>,
-    downmix_peak_db: Option<f64>,
+    audio_loudness: Option<serde_json::Value>,
     cache_path: Option<String>,
     filesize: i64,
 }
@@ -482,7 +481,7 @@ pub async fn stream_status(
         let mut last_subtitles: Option<serde_json::Value> = None;
         let mut last_chapters: Option<serde_json::Value> = None;
         let mut last_picture: Option<serde_json::Value> = None;
-        let mut last_loudness = PlaybackLoudness::default();
+        let mut last_loudness: Option<serde_json::Value> = None;
         let mut sent_thumbnails = false;
         let mut sent_download_complete = false;
         // The download and the analysis after it run as long as the episode is big; the
@@ -508,8 +507,8 @@ pub async fn stream_status(
             let row = sqlx::query_as!(
                 DebridStatusRow,
                 r#"
-                SELECT s.probe_data, f.skip_segments, s.subtitle_tracks, f.chapters, s.lufs,
-                       s.downmix_peak_db, s.cache_path, s.filesize, s.picture
+                SELECT s.probe_data, f.skip_segments, s.subtitle_tracks, f.chapters,
+                       s.audio_loudness, s.cache_path, s.filesize, s.picture
                 FROM debrid_stream_sessions s
                 LEFT JOIN debrid_files f ON f.cache_path = s.cache_path
                 WHERE s.id = $1
@@ -528,6 +527,11 @@ pub async fn stream_status(
             if !sent_probe
                 && let Some(ref probe_data) = row.probe_data
             {
+                let loudness: Vec<TrackLoudness> = row
+                    .audio_loudness
+                    .clone()
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default();
                 let mut event = json!({"type": "probe_complete"});
                 if let Some(obj) = probe_data.as_object() {
                     if let Some(duration) = obj.get("duration") {
@@ -556,6 +560,13 @@ pub async fn stream_status(
                                         "is_default".to_string(),
                                         json!(selected_idx.is_some() && idx == selected_idx),
                                     );
+                                    if let Some(measured) = idx.and_then(|i| {
+                                        loudness.iter().find(|t| i64::from(t.stream_index) == i)
+                                    }) && let Ok(serde_json::Value::Object(levels)) =
+                                        serde_json::to_value(measured.loudness)
+                                    {
+                                        obj.extend(levels);
+                                    }
                                 }
                                 track
                             })
@@ -609,18 +620,15 @@ pub async fn stream_status(
             }
 
             // Measured by the analysis that runs once the download completes.
-            let loudness = PlaybackLoudness { lufs: row.lufs, downmix_peak_db: row.downmix_peak_db };
-            if loudness.lufs.is_some() && loudness != last_loudness {
-                let event = json!({
-                    "type": "loudness",
-                    "lufs": loudness.lufs,
-                    "downmix_peak_db": loudness.downmix_peak_db,
-                });
+            if let Some(ref tracks) = row.audio_loudness
+                && last_loudness.as_ref() != Some(tracks)
+            {
+                let event = json!({ "type": "loudness", "tracks": tracks });
                 yield Ok(
                     axum::response::sse::Event::default()
                         .data(serde_json::to_string(&event).unwrap_or_default()),
                 );
-                last_loudness = loudness;
+                last_loudness = Some(tracks.clone());
             }
 
             if let Some(ref skip_data) = row.skip_segments

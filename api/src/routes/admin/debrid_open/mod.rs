@@ -35,7 +35,7 @@ use crate::repositories::debrid_files;
 use crate::repositories::debrid_stream_sessions;
 use crate::routes::admin::debrid_stream::StreamResolveBody;
 use crate::routes::admin::streaming::{ChapterResponse, SessionResponse, SkipSegmentResponse};
-use crate::streaming::loudness::PlaybackLoudness;
+use crate::streaming::loudness::TrackLoudness;
 use crate::streaming::progressive::DownloadTarget;
 use crate::video_metadata::original_language::Title;
 
@@ -88,7 +88,7 @@ pub(crate) struct Committed {
     pub media_id: Uuid,
     pub media_type: String,
     pub skip_segments: Vec<SkipSegmentResponse>,
-    pub loudness: PlaybackLoudness,
+    pub audio_loudness: Vec<TrackLoudness>,
     pub picture: Option<PictureArea>,
 }
 
@@ -98,16 +98,16 @@ impl SessionRow {
         pool: &sqlx::PgPool,
         media_type: &str,
         media_id: Uuid,
-        loudness: PlaybackLoudness,
+        audio_loudness: Option<&[TrackLoudness]>,
         picture: Option<&serde_json::Value>,
     ) -> Result<(), sqlx::Error> {
         sqlx::query!(
             r#"INSERT INTO debrid_stream_sessions
                 (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
                  debrid_provider_id, quality, filename, filesize, file_id, cache_path,
-                 debrid_url, debrid_url_expires_at, lufs, downmix_peak_db, picture)
+                 debrid_url, debrid_url_expires_at, audio_loudness, picture)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17, $18)"#,
+                    $17)"#,
             self.session_id,
             self.user_id,
             media_type,
@@ -123,8 +123,7 @@ impl SessionRow {
             self.cache_path,
             self.debrid_url,
             self.debrid_url_expires_at,
-            loudness.lufs,
-            loudness.downmix_peak_db,
+            audio_loudness.map(sqlx::types::Json) as _,
             picture,
         )
         .execute(pool)
@@ -167,16 +166,13 @@ impl SessionRow {
                 }),
             None => Vec::new(),
         };
-        let loudness = PlaybackLoudness {
-            lufs: analysis.lufs,
-            downmix_peak_db: analysis.downmix_peak_db,
-        };
+        let audio_loudness = analysis.audio_loudness.map(|sqlx::types::Json(t)| t);
         if let Err(e) = self
             .insert(
                 &state.pool,
                 &media_type,
                 media_id,
-                loudness,
+                audio_loudness.as_deref(),
                 analysis.picture.as_ref(),
             )
             .await
@@ -196,7 +192,7 @@ impl SessionRow {
         Ok(Committed {
             media_id,
             media_type,
-            loudness,
+            audio_loudness: audio_loudness.unwrap_or_default(),
             picture: analysis.picture.and_then(picture::shown),
             skip_segments: skip_segments
                 .into_iter()

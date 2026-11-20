@@ -8,7 +8,7 @@
 //!     chromaprint.bin        -- raw u32 fingerprint, full file
 //!     silence.json           -- [{start_s, end_s, duration_s}]
 //!     black_frames.json      -- [{start_s, end_s, duration_s}]
-//!     loudness.json          -- {integrated_lufs}
+//!     loudness.json          -- {tracks: [{stream_index, lufs, downmix_peak_db}]}
 //!     audio_peaks.bin        -- version:1, pps:1, (min_i8, max_i8) pairs
 //!     embeddings.bin         -- fp16 1152-dim per JPEG, L2-normalised
 //!     source.tmp             -- ephemeral: deleted after analyze + NAS copy confirmed

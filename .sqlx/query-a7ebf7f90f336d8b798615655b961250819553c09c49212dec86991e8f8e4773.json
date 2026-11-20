@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT s.audio_loudness AS \"audio_loudness: Json<Vec<TrackLoudness>>\"\n               FROM debrid_files f JOIN debrid_stream_sessions s ON s.cache_path = f.cache_path\n               WHERE f.id = $1\n               ORDER BY s.audio_loudness IS NULL, s.updated_at DESC\n               LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "audio_loudness: Json<Vec<TrackLoudness>>",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "audio_loudness"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "a7ebf7f90f336d8b798615655b961250819553c09c49212dec86991e8f8e4773"
+}

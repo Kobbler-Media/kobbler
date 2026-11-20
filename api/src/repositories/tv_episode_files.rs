@@ -316,21 +316,13 @@ where
                 THEN NULL
                 ELSE tv_episode_files.keyframes
             END,
-            lufs = CASE
+            audio_loudness = CASE
                 WHEN (EXCLUDED.file_fingerprint IS NOT NULL
                       AND EXCLUDED.file_fingerprint IS DISTINCT FROM tv_episode_files.file_fingerprint)
                      OR (EXCLUDED.file_size IS NOT NULL
                          AND EXCLUDED.file_size IS DISTINCT FROM tv_episode_files.file_size)
                 THEN NULL
-                ELSE tv_episode_files.lufs
-            END,
-            downmix_peak_db = CASE
-                WHEN (EXCLUDED.file_fingerprint IS NOT NULL
-                      AND EXCLUDED.file_fingerprint IS DISTINCT FROM tv_episode_files.file_fingerprint)
-                     OR (EXCLUDED.file_size IS NOT NULL
-                         AND EXCLUDED.file_size IS DISTINCT FROM tv_episode_files.file_size)
-                THEN NULL
-                ELSE tv_episode_files.downmix_peak_db
+                ELSE tv_episode_files.audio_loudness
             END,
             corrupt_ranges = CASE
                 WHEN (EXCLUDED.file_fingerprint IS NOT NULL

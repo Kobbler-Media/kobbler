@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE debrid_stream_sessions SET audio_loudness = $2, updated_at = NOW()\n                 WHERE cache_path = (SELECT cache_path FROM debrid_files WHERE id = $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fcfa14f5d27b4637034177d0c132a96d267374f1318d5be2f5b208b58821c3be"
+}

@@ -199,21 +199,13 @@ where
                 THEN NULL
                 ELSE movie_files.keyframes
             END,
-            lufs = CASE
+            audio_loudness = CASE
                 WHEN (EXCLUDED.file_fingerprint IS NOT NULL
                       AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)
                      OR (EXCLUDED.file_size IS NOT NULL
                          AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size)
                 THEN NULL
-                ELSE movie_files.lufs
-            END,
-            downmix_peak_db = CASE
-                WHEN (EXCLUDED.file_fingerprint IS NOT NULL
-                      AND EXCLUDED.file_fingerprint IS DISTINCT FROM movie_files.file_fingerprint)
-                     OR (EXCLUDED.file_size IS NOT NULL
-                         AND EXCLUDED.file_size IS DISTINCT FROM movie_files.file_size)
-                THEN NULL
-                ELSE movie_files.downmix_peak_db
+                ELSE movie_files.audio_loudness
             END,
             corrupt_ranges = CASE
                 WHEN (EXCLUDED.file_fingerprint IS NOT NULL

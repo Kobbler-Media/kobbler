@@ -186,6 +186,37 @@ async fn orphaned_cache_entries_are_still_evicted_by_ttl_lru_and_size() {
 }
 
 const PEAK_DB: f64 = -4.5;
+const ITA: i64 = 1;
+const ENG: i64 = 2;
+
+/// The session `resp` opened starts from the levels `record_analysis` gave its release, or
+/// none: the status stream serves them from its row, and any audio track the response
+/// already lists carries its own.
+async fn assert_track_levels(rig: &Rig, resp: &Value, lufs: Option<f64>) {
+    assert!(resp.get("lufs").is_none(), "{resp}");
+    assert!(resp.get("downmix_peak_db").is_none(), "{resp}");
+    let expected = lufs.map(|l| {
+        json!([
+            { "stream_index": ITA, "lufs": l, "downmix_peak_db": PEAK_DB },
+            { "stream_index": ENG, "lufs": l + 1.0, "downmix_peak_db": PEAK_DB + 1.0 },
+        ])
+    });
+    let stored: Option<Value> =
+        sqlx::query_scalar("SELECT audio_loudness FROM debrid_stream_sessions WHERE id = $1")
+            .bind(session_id_of(resp))
+            .fetch_one(&rig.server.pool)
+            .await
+            .unwrap();
+    assert_eq!(stored, expected, "{resp}");
+    for track in resp["audio_tracks"].as_array().into_iter().flatten() {
+        let offset = if track["stream_index"] == ENG {
+            1.0
+        } else {
+            0.0
+        };
+        assert_eq!(track["lufs"], json!(lufs.map(|l| l + offset)), "{resp}");
+    }
+}
 
 /// What analysis of the session's download left: its intro/credits on the download, its
 /// loudness on the session.
@@ -200,10 +231,12 @@ async fn record_analysis(rig: &Rig, session_id: Uuid, segments: &Value, lufs: f6
     .execute(&rig.server.pool)
     .await
     .unwrap();
-    sqlx::query("UPDATE debrid_stream_sessions SET lufs = $2, downmix_peak_db = $3 WHERE id = $1")
+    sqlx::query("UPDATE debrid_stream_sessions SET audio_loudness = $2 WHERE id = $1")
         .bind(session_id)
-        .bind(lufs)
-        .bind(PEAK_DB)
+        .bind(json!([
+            { "stream_index": ITA, "lufs": lufs, "downmix_peak_db": PEAK_DB },
+            { "stream_index": ENG, "lufs": lufs + 1.0, "downmix_peak_db": PEAK_DB + 1.0 },
+        ]))
         .execute(&rig.server.pool)
         .await
         .unwrap();
@@ -250,11 +283,9 @@ async fn a_session_opens_with_what_analysis_found_in_its_own_release_only() {
         vec![("intro".to_string(), 10.0), ("credits".to_string(), 2700.0)],
         "{replay}"
     );
-    assert_eq!(replay["lufs"], json!(-23.5), "{replay}");
-    assert_eq!(replay["downmix_peak_db"], json!(PEAK_DB), "{replay}");
+    assert_track_levels(&rig, &replay, Some(-23.5)).await;
     assert_eq!(served_segments(&other), vec![], "{other}");
-    assert_eq!(other["lufs"], Value::Null, "{other}");
-    assert_eq!(other["downmix_peak_db"], Value::Null, "{other}");
+    assert_track_levels(&rig, &other, None).await;
     for (name, resp, expected) in [
         ("replay", &replay, Some(&segments)),
         ("other release", &other, None),
@@ -568,8 +599,7 @@ async fn a_debrid_session_carries_the_loudness_and_chapters_of_its_file() {
     record_analysis(&rig, session, &json!([]), -23.5).await;
     end_playback(&rig.server, session).await;
     let replay = rig.resolve_with(&body).await;
-    assert_eq!(replay["lufs"], json!(-23.5), "{replay}");
-    assert_eq!(replay["downmix_peak_db"], json!(PEAK_DB), "{replay}");
+    assert_track_levels(&rig, &replay, Some(-23.5)).await;
     assert_eq!(
         chapter_titles(&replay["chapters"]),
         ["Opening", "Episode"],

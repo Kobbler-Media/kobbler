@@ -521,46 +521,49 @@ fn write_outcome(
     // Loudness — content-bound. Audiobook callers (target=None) get this
     // written into per-file media_cache which keeps the DB lufs-column
     // update at media_analyze.rs working without a separate code path.
+    // A failed meter leaves no sidecar: an empty track list would read as a silent file.
+    let loudness_failed = per_branch_errors
+        .iter()
+        .any(|(id, _)| matches!(id, BranchId::Loudness));
     let loudness = Loudness {
-        integrated_lufs: result.loudness,
-        downmix_peak_db: result.downmix_peak_db,
+        tracks: std::mem::take(&mut result.track_loudness)
+            .into_iter()
+            .map(Into::into)
+            .collect(),
     };
-    match serde_json::to_vec(&loudness) {
-        Ok(bytes) => match write_sidecar_at(content_dir, Branch::Loudness, &bytes) {
-            Ok(()) => {
-                let mut params = Map::new();
-                params.insert("integrated_lufs".into(), json!(loudness.integrated_lufs));
-                params.insert("downmix_peak_db".into(), json!(loudness.downmix_peak_db));
-                content_manifest.artefacts.set(
-                    Branch::Loudness,
-                    ArtefactInfo {
-                        present: true,
-                        params,
-                    },
-                );
-                branch_results.insert(
-                    "loudness".into(),
-                    json!({
-                        "ok": true,
-                        "integrated_lufs": loudness.integrated_lufs,
-                        "downmix_peak_db": loudness.downmix_peak_db,
-                    }),
-                );
-            }
+    if !loudness_failed {
+        match serde_json::to_vec(&loudness) {
+            Ok(bytes) => match write_sidecar_at(content_dir, Branch::Loudness, &bytes) {
+                Ok(()) => {
+                    let mut params = Map::new();
+                    params.insert("tracks".into(), json!(loudness.tracks));
+                    content_manifest.artefacts.set(
+                        Branch::Loudness,
+                        ArtefactInfo {
+                            present: true,
+                            params,
+                        },
+                    );
+                    branch_results.insert(
+                        "loudness".into(),
+                        json!({"ok": true, "tracks": loudness.tracks}),
+                    );
+                }
+                Err(e) => {
+                    warn!(error = %e, "loudness write failed");
+                    branch_results.insert(
+                        "loudness".into(),
+                        json!({"ok": false, "error": e.to_string()}),
+                    );
+                }
+            },
             Err(e) => {
-                warn!(error = %e, "loudness write failed");
+                warn!(error = %e, "loudness serialize failed");
                 branch_results.insert(
                     "loudness".into(),
                     json!({"ok": false, "error": e.to_string()}),
                 );
             }
-        },
-        Err(e) => {
-            warn!(error = %e, "loudness serialize failed");
-            branch_results.insert(
-                "loudness".into(),
-                json!({"ok": false, "error": e.to_string()}),
-            );
         }
     }
 

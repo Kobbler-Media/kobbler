@@ -219,6 +219,10 @@ pub(super) async fn open(
             thumbnail_dir: None,
             debrid_cache_key: release_key.clone(),
             audio_metas: vec![],
+            audio_loudness: media
+                .as_ref()
+                .map(|c| c.audio_loudness.clone())
+                .unwrap_or_default(),
             preferred_audio_index: None,
             force_video_transcode: false,
             corrupt_ranges,
@@ -266,7 +270,6 @@ pub(super) async fn open(
             .as_ref()
             .map(|c| c.skip_segments.clone())
             .unwrap_or_default(),
-        loudness: media.as_ref().map(|c| c.loudness).unwrap_or_default(),
         picture: media.as_ref().and_then(|c| c.picture),
         media_type: media.map(|c| c.media_type),
         file_id: None,

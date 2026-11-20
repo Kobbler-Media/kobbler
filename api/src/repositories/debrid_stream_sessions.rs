@@ -1,4 +1,6 @@
 use super::Result;
+use crate::streaming::loudness::TrackLoudness;
+use sqlx::types::Json;
 use sqlx::{Executor, Postgres};
 use uuid::Uuid;
 
@@ -218,8 +220,7 @@ where
 
 #[derive(Debug, Clone, Default)]
 pub struct ReleaseAnalysis {
-    pub lufs: Option<f64>,
-    pub downmix_peak_db: Option<f64>,
+    pub audio_loudness: Option<Json<Vec<TrackLoudness>>>,
     pub picture: Option<serde_json::Value>,
 }
 
@@ -239,11 +240,11 @@ where
     let row = sqlx::query_as!(
         ReleaseAnalysis,
         r#"
-        SELECT lufs, downmix_peak_db, picture
+        SELECT audio_loudness AS "audio_loudness: Json<Vec<TrackLoudness>>", picture
         FROM debrid_stream_sessions
         WHERE media_type = $1 AND media_id = $2
           AND ((info_hash = $3 AND file_id IS NOT DISTINCT FROM $4) OR cache_path = $5)
-          AND (lufs IS NOT NULL OR picture IS NOT NULL)
+          AND (audio_loudness IS NOT NULL OR picture IS NOT NULL)
         ORDER BY updated_at DESC
         LIMIT 1
         "#,
