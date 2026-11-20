@@ -46,7 +46,10 @@ async fn rig() -> Rig {
                     { "title": "Mistborn: The Final Empire", "subtitle": null },
                     { "title": "The Final Empire", "subtitle": "Tenth Anniversary Edition" },
                 ],
-                "contributions": [{ "author_id": 42 }],
+                "contributions": [
+                    { "author_id": 42, "contribution": null },
+                    { "author_id": 7, "contribution": "Illustrator" },
+                ],
             }}})),
         )
         .mount(&hardcover)
@@ -60,6 +63,7 @@ async fn rig() -> Rig {
                 { "title": "The Well of Ascension" },
                 { "title": "The Hero of Ages" },
                 { "title": "Elantris" },
+                { "title": "The Final Empire: Collector's Edition" },
             ]}})),
         )
         .mount(&hardcover)
@@ -132,10 +136,13 @@ fn assert_other_titles(entry: &str, want: &Value) {
             "{entry}: {title} not in {titles:?}"
         );
     }
-    assert!(
-        !titles.contains(&"The Final Empire"),
-        "{entry}: the book itself in {titles:?}"
-    );
+    for own in ["The Final Empire", "The Final Empire: Collector's Edition"] {
+        assert!(
+            !titles.contains(&own),
+            "{entry}: the book itself in {titles:?}"
+        );
+    }
+    assert_eq!(want["language"], "english", "{entry}: household language");
 }
 
 #[tokio::test]
@@ -226,6 +233,6 @@ async fn book_wants_carry_edition_and_series_titles() {
     assert_eq!(
         rig.hardcover_calls().await,
         2,
-        "Hardcover is asked once for the book and once for its author"
+        "Hardcover is asked once for the book and once for its author, not its illustrator"
     );
 }

@@ -1033,7 +1033,7 @@ query BookTitles($id: Int!) {
     title
     subtitle
     editions(limit: 100) { title subtitle }
-    contributions(limit: 1) { author_id }
+    contributions { author_id contribution }
   }
 }
 "#;
@@ -1441,8 +1441,9 @@ pub struct BookTitles {
     pub subtitle: Option<String>,
     #[serde(default)]
     pub editions: Vec<EditionTitle>,
+    /// Its authors, not its translators, narrators or illustrators.
     #[serde(default)]
-    pub author_id: Option<i64>,
+    pub author_ids: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1455,9 +1456,18 @@ pub struct EditionTitle {
 fn parse_book_titles(body: serde_json::Value) -> Option<BookTitles> {
     let book = body.get("data")?.get("books_by_pk")?;
     let mut titles: BookTitles = serde_json::from_value(book.clone()).ok()?;
-    titles.author_id = book
-        .pointer("/contributions/0/author_id")
-        .and_then(|v| v.as_i64());
+    titles.author_ids = book
+        .get("contributions")
+        .and_then(|c| c.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|c| {
+            c.get("contribution")
+                .and_then(|r| r.as_str())
+                .is_none_or(|r| r.eq_ignore_ascii_case("author"))
+        })
+        .filter_map(|c| c.get("author_id")?.as_i64())
+        .collect();
     let mut seen = std::collections::HashSet::new();
     titles.editions.retain(|e| {
         !e.title.trim().is_empty()

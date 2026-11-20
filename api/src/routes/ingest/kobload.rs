@@ -1225,9 +1225,24 @@ async fn ingest_single_book(
         None
     };
 
+    // A release picked by hand is taken as the user's word for what it is.
+    let hand_picked = wanted_attempts::is_hand_picked(&state.pool, download_id)
+        .await
+        .unwrap_or(false);
     let expected = match book_id {
-        Some(id) => crate::wanted::verify::Expected::for_book(&state.pool, id).await,
-        None => None,
+        Some(id) if !hand_picked => {
+            crate::wanted::verify::Expected::for_book(
+                &state.pool,
+                id,
+                &runtime.preferred_audio_language,
+            )
+            .await
+        }
+        _ => None,
+    };
+    let inspector = crate::wanted::verify::Inspector {
+        stt_url: runtime.effective_stt_url().filter(|u| !u.is_empty()),
+        scratch_dir: PathBuf::from(&state.config.storage_root).join("downloads"),
     };
 
     // Log if we're using parsed metadata as fallback
@@ -1414,7 +1429,7 @@ async fn ingest_single_book(
 
         if let Some(expected) = expected.as_ref()
             && let Some(found) =
-                crate::wanted::verify::inspect(&file_path, expected.author.as_deref()).await
+                crate::wanted::verify::inspect(&file_path, &expected.authors, &inspector).await
             && let crate::wanted::verify::Verdict::WrongBook(reason) =
                 crate::wanted::verify::judge(expected, &found)
         {

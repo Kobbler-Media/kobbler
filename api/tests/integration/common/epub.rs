@@ -13,14 +13,15 @@ pub fn chapter_xhtml(heading: &str, paragraphs: &[&str]) -> String {
 /// A minimal valid EPUB 3 whose spine is `chapters` in order, at
 /// `OEBPS/ch{n}.xhtml` (n from 1).
 pub fn epub_with(chapters: &[String]) -> Vec<u8> {
-    epub_book("Pack Test", Some("Test Author"), None, chapters)
+    epub_book("Pack Test", Some("Test Author"), None, "en", chapters)
 }
 
-/// [`epub_with`], with the title, creator and date the OPF declares.
+/// [`epub_with`], with the title, creator, date and language the OPF declares.
 pub fn epub_book(
     title: &str,
     creator: Option<&str>,
     date: Option<&str>,
+    language: &str,
     chapters: &[String],
 ) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -51,7 +52,7 @@ pub fn epub_book(
     put(
         "OEBPS/content.opf",
         &format!(
-            r#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">pack-test</dc:identifier><dc:title>{title}</dc:title>{creator}{date}<dc:language>en</dc:language></metadata><manifest>{items}</manifest><spine>{spine}</spine></package>"#
+            r#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">pack-test</dc:identifier><dc:title>{title}</dc:title>{creator}{date}<dc:language>{language}</dc:language></metadata><manifest>{items}</manifest><spine>{spine}</spine></package>"#
         ),
     );
     for (i, chapter) in chapters.iter().enumerate() {

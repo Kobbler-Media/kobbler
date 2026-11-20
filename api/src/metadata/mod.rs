@@ -544,7 +544,7 @@ impl ProviderRegistry {
         hardcover_id: &str,
         fetch: bool,
     ) -> Option<hardcover::BookTitles> {
-        let key = format!("book_titles:v2:{hardcover_id}");
+        let key = format!("book_titles:v3:{hardcover_id}");
         if !fetch {
             return crate::source_cache::read::<Option<hardcover::BookTitles>>(
                 &self.pool,

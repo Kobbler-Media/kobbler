@@ -70,6 +70,7 @@ use crate::jobs::handlers::{
     KeyframeBackfillHandler,
     KindleDeliveryHandler,
     KobloadIngestHandler,
+    LibraryVerifyHandler,
     LivetvAdDetectHandler,
     LivetvAffinityHandler,
     LivetvGuideSyncHandler,
@@ -822,6 +823,12 @@ pub async fn start_nats_worker(
         nats_publisher.clone(),
         runtime_config.clone(),
         job_events.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(LibraryVerifyHandler::new(
+        pool.clone(),
+        runtime_config.clone(),
+        job_events.clone(),
+        &storage_root,
     )));
 
     // Session cleanup handler (background directory deletion with retries)

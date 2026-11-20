@@ -378,6 +378,7 @@ const ROUTINE_JOB_TYPES: &[&str] = &[
     "keyframe_backfill",
     "audiobook_transcribe",
     "transcribe_backfill",
+    "library_verify",
     "media_analyze_backfill",
     "chapter_detect",
     "chapter_redetect",

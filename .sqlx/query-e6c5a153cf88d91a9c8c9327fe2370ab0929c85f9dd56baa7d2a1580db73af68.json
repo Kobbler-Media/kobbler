@@ -1,21 +1,10 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT b.id, b.title, b.identifiers, b.want_status, b.want_format, b.narrator,\n               b.pubdate,\n               s.name as \"series_name?\", bs.series_index AS \"series_index?\",\n               (SELECT STRING_AGG(a.name, ', ')\n                FROM book_authors ba\n                JOIN authors a ON a.id = ba.author_id\n                WHERE ba.book_id = b.id) as author\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        WHERE b.id = $1\n          AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n          AND b.want_status IN ('wanted', 'searching', 'downloading', 'watching', 'search_failed')\n        ",
+  "query": "\n        SELECT b.title, b.identifiers, b.images, b.want_format, b.narrator, b.pubdate, b.language,\n               s.name as \"series_name?\", bs.series_index AS \"series_index?\",\n               (SELECT STRING_AGG(a.name, ', ') FROM book_authors ba JOIN authors a ON a.id = ba.author_id WHERE ba.book_id = b.id) as author\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        WHERE b.id = $1\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
-        "type_info": "Uuid",
-        "origin": {
-          "Table": {
-            "table": "books",
-            "name": "id"
-          }
-        }
-      },
-      {
-        "ordinal": 1,
         "name": "title",
         "type_info": "Text",
         "origin": {
@@ -26,7 +15,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 1,
         "name": "identifiers",
         "type_info": "Jsonb",
         "origin": {
@@ -37,18 +26,18 @@
         }
       },
       {
-        "ordinal": 3,
-        "name": "want_status",
-        "type_info": "Text",
+        "ordinal": 2,
+        "name": "images",
+        "type_info": "Jsonb",
         "origin": {
           "Table": {
             "table": "books",
-            "name": "want_status"
+            "name": "images"
           }
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "want_format",
         "type_info": "Text",
         "origin": {
@@ -59,7 +48,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "narrator",
         "type_info": "Text",
         "origin": {
@@ -70,13 +59,24 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "pubdate",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
             "table": "books",
             "name": "pubdate"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "language"
           }
         }
       },
@@ -119,7 +119,7 @@
       false,
       false,
       false,
-      false,
+      true,
       true,
       true,
       true,
@@ -127,5 +127,5 @@
       null
     ]
   },
-  "hash": "163bcbd5cab3bb4b690cfba65af56c0d788b5363b79c2c45743ac466ef7353d1"
+  "hash": "e6c5a153cf88d91a9c8c9327fe2370ab0929c85f9dd56baa7d2a1580db73af68"
 }

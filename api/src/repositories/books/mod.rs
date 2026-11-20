@@ -33,9 +33,9 @@ pub use queries::{
     get_for_metadata_write, get_ids_by_series, get_page_count, get_recommendations, get_summary,
     get_wanted_for_sync, get_wanted_item, get_wanted_metadata, is_wanted_book, list_by_author,
     list_by_genre, list_by_series, list_by_shelf, list_discovered_for_matching,
-    list_fully_unavailable_ids, list_syncable_wanted, list_unavailable, list_wanted,
-    list_with_filters, match_discovered_to_library, match_series_discovered_to_library,
-    titles_by_same_authors,
+    list_fully_unavailable_ids, list_library_files, list_syncable_wanted, list_unavailable,
+    list_wanted, list_with_filters, match_discovered_to_library,
+    match_series_discovered_to_library, titles_by_same_authors,
 };
 
 // Re-export series-related operations from crud

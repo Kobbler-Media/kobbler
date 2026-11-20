@@ -94,13 +94,15 @@ pub async fn book_names(
         None => None,
     };
     let alternates = assemble(book, hardcover.as_ref());
-    let mut others = match hardcover.as_ref().and_then(|hc| hc.author_id) {
-        Some(author_id) => registry
-            .get_author_titles(author_id, lookup == Lookup::Fetch)
-            .await
-            .unwrap_or_default(),
-        None => Vec::new(),
-    };
+    let mut others = Vec::new();
+    for author_id in hardcover.iter().flat_map(|hc| &hc.author_ids) {
+        others.extend(
+            registry
+                .get_author_titles(*author_id, lookup == Lookup::Fetch)
+                .await
+                .unwrap_or_default(),
+        );
+    }
     match crate::repositories::books::titles_by_same_authors(pool, book_id).await {
         Ok(titles) => others.extend(titles),
         Err(e) => tracing::warn!(error = %e, %book_id, "Failed to read the author's other books"),
@@ -129,8 +131,10 @@ fn others_besides(
     let mut kept: Vec<String> = Vec::new();
     for other in others {
         let other = other.trim();
+        // "Dune: Deluxe Edition" is an edition Hardcover lists as a book.
+        let main = other.split_once(':').map_or(other, |(main, _)| main);
         if other.is_empty()
-            || own.iter().any(|o| same(o, other))
+            || own.iter().any(|o| same(o, other) || same(o, main))
             || kept.iter().any(|k| same(k, other))
         {
             continue;
@@ -229,7 +233,7 @@ mod tests {
                     subtitle: Some("Or the Necessity of Violence: An Arcane History".into()),
                 },
             ],
-            author_id: None,
+            author_ids: Vec::new(),
         };
         let names = assemble(&book("Babel", None, None), Some(&hc));
         has(

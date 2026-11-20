@@ -787,6 +787,7 @@ pub struct WantedBookMetadata {
     pub want_format: String,
     pub narrator: Option<String>,
     pub pubdate: Option<time::OffsetDateTime>,
+    pub language: Option<String>,
 }
 
 /// Get wanted book metadata for search/queue operations.
@@ -796,7 +797,7 @@ where
 {
     let row = sqlx::query!(
         r#"
-        SELECT b.title, b.identifiers, b.images, b.want_format, b.narrator, b.pubdate,
+        SELECT b.title, b.identifiers, b.images, b.want_format, b.narrator, b.pubdate, b.language,
                s.name as "series_name?", bs.series_index AS "series_index?",
                (SELECT STRING_AGG(a.name, ', ') FROM book_authors ba JOIN authors a ON a.id = ba.author_id WHERE ba.book_id = b.id) as author
         FROM books b
@@ -821,8 +822,36 @@ where
             want_format: r.want_format,
             narrator: r.narrator,
             pubdate: r.pubdate,
+            language: r.language,
         }
     }))
+}
+
+/// One file per book in the library: its EPUB when it has one, else the
+/// first of its audiobook files.
+pub async fn list_library_files<'e, E>(exec: E) -> Result<Vec<(Uuid, String)>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let rows = sqlx::query!(
+        r#"
+        SELECT book_id AS "book_id!", file_path AS "file_path!" FROM (
+            SELECT DISTINCT ON (book_id) book_id, file_path
+            FROM book_files
+            ORDER BY book_id, (format = 'EPUB') DESC, created_at
+        ) ebooks
+        UNION ALL
+        SELECT book_id AS "book_id!", file_path AS "file_path!" FROM (
+            SELECT DISTINCT ON (af.book_id) af.book_id, af.file_path
+            FROM audiobook_files af
+            WHERE NOT EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = af.book_id)
+            ORDER BY af.book_id, af.file_index
+        ) audiobooks
+        "#,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(rows.into_iter().map(|r| (r.book_id, r.file_path)).collect())
 }
 
 /// Titles of the other books, wanted or owned, that share an author with this one.
@@ -1107,6 +1136,7 @@ pub struct WantedSyncRow {
     pub want_format: String,
     pub narrator: Option<String>,
     pub pubdate: Option<time::OffsetDateTime>,
+    pub language: Option<String>,
 }
 
 /// List all wanted books that should be synced to watch patterns.
@@ -1118,7 +1148,7 @@ where
     let rows = sqlx::query!(
         r#"
         SELECT b.id, b.title, b.identifiers, b.want_status, b.want_format, b.narrator,
-               b.pubdate,
+               b.pubdate, b.language,
                s.name as "series_name?", bs.series_index AS "series_index?",
                (SELECT STRING_AGG(a.name, ', ')
                 FROM book_authors ba
@@ -1148,6 +1178,7 @@ where
             want_format: r.want_format,
             narrator: r.narrator,
             pubdate: r.pubdate,
+            language: r.language,
         })
         .collect())
 }
@@ -1161,7 +1192,7 @@ where
     let row = sqlx::query!(
         r#"
         SELECT b.id, b.title, b.identifiers, b.want_status, b.want_format, b.narrator,
-               b.pubdate,
+               b.pubdate, b.language,
                s.name as "series_name?", bs.series_index AS "series_index?",
                (SELECT STRING_AGG(a.name, ', ')
                 FROM book_authors ba
@@ -1190,6 +1221,7 @@ where
         want_format: r.want_format,
         narrator: r.narrator,
         pubdate: r.pubdate,
+        language: r.language,
     }))
 }
 

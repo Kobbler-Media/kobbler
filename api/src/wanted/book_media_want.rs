@@ -16,6 +16,7 @@ pub struct WantedBook<'a> {
     pub series_name: Option<&'a str>,
     pub series_index: Option<f64>,
     pub pubdate: Option<time::OffsetDateTime>,
+    pub language: Option<&'a str>,
 }
 
 /// What Kobload is told about a wanted book, in either format.
@@ -23,14 +24,27 @@ pub struct BookWant<'a> {
     book: &'a WantedBook<'a>,
     identifiers: BookIdentifiers,
     names: BookNames,
+    language: Option<String>,
 }
 
 fn identifier(json: &Value, key: &str) -> Option<String> {
     json.get(key).and_then(|v| v.as_str()).map(String::from)
 }
 
+/// The book's own language, or the household's when the book names none.
+/// English name, lowercase, as Kobload's language table spells it.
+pub fn want_language(book_language: Option<&str>, household: &str) -> Option<String> {
+    use crate::streaming::language::name_of;
+    book_language
+        .and_then(name_of)
+        .or_else(|| name_of(household))
+        .map(str::to_lowercase)
+}
+
 impl<'a> BookWant<'a> {
-    pub async fn load(pool: &PgPool, book: &'a WantedBook<'a>) -> Self {
+    /// `household_language` is the playback language preference, used when the
+    /// book itself names none.
+    pub async fn load(pool: &PgPool, book: &'a WantedBook<'a>, household_language: &str) -> Self {
         let identifiers = BookIdentifiers {
             isbn10: identifier(book.identifiers, "isbn10"),
             isbn13: identifier(book.identifiers, "isbn13"),
@@ -55,6 +69,7 @@ impl<'a> BookWant<'a> {
             book,
             identifiers,
             names,
+            language: want_language(book.language, household_language),
         }
     }
 
@@ -76,6 +91,7 @@ impl<'a> BookWant<'a> {
         let release_date = book.pubdate.map(|dt| dt.date().to_string());
         let alternate_titles = self.names.alternates.clone();
         let other_titles = self.names.others.clone();
+        let language = self.language.clone();
         if audiobook {
             MediaWant::Audiobook {
                 title,
@@ -89,6 +105,7 @@ impl<'a> BookWant<'a> {
                 release_date,
                 alternate_titles,
                 other_titles,
+                language,
             }
         } else {
             MediaWant::Book {
@@ -102,6 +119,7 @@ impl<'a> BookWant<'a> {
                 release_date,
                 alternate_titles,
                 other_titles,
+                language,
             }
         }
     }

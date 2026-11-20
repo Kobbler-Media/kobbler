@@ -123,8 +123,14 @@ impl JobHandler for BookWantHandler {
             series_name: book_data.series_name.as_deref(),
             series_index: book_data.series_index,
             pubdate: book_data.pubdate,
+            language: book_data.language.as_deref(),
         };
-        let book_want = crate::wanted::book_media_want::BookWant::load(&self.pool, &book).await;
+        let book_want = crate::wanted::book_media_want::BookWant::load(
+            &self.pool,
+            &book,
+            &runtime.preferred_audio_language,
+        )
+        .await;
         let sources = match book_data.want_format.as_str() {
             "ebook" | "audiobook" | "both" => {
                 crate::wanted::book_source::want_sources(payload.book_id, &book_data.want_format)

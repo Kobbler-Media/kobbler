@@ -39,6 +39,11 @@ pub fn display_name(tag: Option<&str>) -> Option<&'static str> {
     from_code(tag?).map(|l| l.to_name())
 }
 
+/// The English name of a code in any form or of a name ("eng", "da", "English").
+pub fn name_of(tag_or_name: &str) -> Option<&'static str> {
+    parse(tag_or_name).map(|l| l.to_name())
+}
+
 /// Whether two tags or preferences, each a code in any form or an English name, are the
 /// same language. Norwegian is one language whichever written standard a track names.
 pub fn same_language(a: &str, b: &str) -> bool {

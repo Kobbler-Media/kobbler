@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n            SELECT 1 FROM wanted_attempts\n            WHERE external_id = $1 AND source NOT IN ('want', 'watch')\n        ) AS \"picked!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "picked!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "488405b61eda0c12fc66bd614e28b9488465200c237c686cf73fbcbd009d1640"
+}

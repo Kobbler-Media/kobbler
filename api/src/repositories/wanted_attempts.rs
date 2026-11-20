@@ -52,6 +52,24 @@ where
     Ok(id)
 }
 
+/// Whether someone chose this download by hand: a release queued from the
+/// search UI. Searches and watches record themselves as "want" and "watch".
+pub async fn is_hand_picked<'e, E>(exec: E, download_id: Uuid) -> Result<bool>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let picked = sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+            SELECT 1 FROM wanted_attempts
+            WHERE external_id = $1 AND source NOT IN ('want', 'watch')
+        ) AS "picked!""#,
+        download_id.to_string(),
+    )
+    .fetch_one(exec)
+    .await?;
+    Ok(picked)
+}
+
 /// Check if an idempotency key has already been processed.
 /// Returns the attempt ID if found.
 pub async fn check_idempotency_key<'e, E>(exec: E, idempotency_key: Uuid) -> Result<Option<Uuid>>

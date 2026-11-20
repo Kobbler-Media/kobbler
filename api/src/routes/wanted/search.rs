@@ -54,10 +54,13 @@ pub async fn search_releases(
         series_name: metadata.series_name.as_deref(),
         series_index: metadata.series_index,
         pubdate: metadata.pubdate,
+        language: metadata.language.as_deref(),
     };
-    let media_want = crate::wanted::book_media_want::BookWant::load(&state.pool, &book)
-        .await
-        .media_want(metadata.want_format == "audiobook");
+    let household_language = state.runtime_config.get().await.preferred_audio_language;
+    let media_want =
+        crate::wanted::book_media_want::BookWant::load(&state.pool, &book, &household_language)
+            .await
+            .media_want(metadata.want_format == "audiobook");
 
     // "any" drops the category filter entirely, for hunting releases that were
     // filed under Other/Misc rather than Books.

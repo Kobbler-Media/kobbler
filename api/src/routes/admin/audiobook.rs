@@ -1057,6 +1057,37 @@ pub async fn bulk_transcribe(State(state): State<AppState>, _auth: AuthUser) -> 
     }
 }
 
+/// Check every book file in the library against its book, as an import from
+/// Kobload is checked. The job's result lists the files that disagree.
+/// POST /api/v1/admin/books/verify-library
+pub async fn verify_library(State(state): State<AppState>, auth: AuthUser) -> impl IntoResponse {
+    if let Err(e) = auth.require_admin() {
+        return e.into_response();
+    }
+    if let Ok(Some(job)) = job_status::latest_active_of_type(&state.pool, "library_verify").await {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"error": "Already running", "job_id": job.id})),
+        )
+            .into_response();
+    }
+    match jobs::enqueue(
+        &state.pool,
+        state.nats.publisher(),
+        "library_verify",
+        json!({}),
+        JobContext::new("Check library files against their books"),
+    )
+    .await
+    {
+        Ok(job_id) => (StatusCode::ACCEPTED, Json(json!({"job_id": job_id}))).into_response(),
+        Err(e) => {
+            error!(error = %e, "Failed to enqueue library verification");
+            (StatusCode::INTERNAL_SERVER_ERROR, "failed to enqueue").into_response()
+        }
+    }
+}
+
 /// Audio still to transcribe under the current STT config, and the
 /// re-transcription run working through it, if any.
 /// GET /api/v1/admin/books/transcript-backlog

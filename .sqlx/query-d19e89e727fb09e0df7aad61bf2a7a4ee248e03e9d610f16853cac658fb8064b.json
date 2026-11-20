@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT b.id, b.title, b.identifiers, b.want_status, b.want_format, b.narrator,\n               b.pubdate,\n               s.name as \"series_name?\", bs.series_index AS \"series_index?\",\n               (SELECT STRING_AGG(a.name, ', ')\n                FROM book_authors ba\n                JOIN authors a ON a.id = ba.author_id\n                WHERE ba.book_id = b.id) as author\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        WHERE NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n          AND b.want_status IN ('wanted', 'searching', 'downloading', 'watching', 'search_failed')\n        ORDER BY b.created_at DESC\n        ",
+  "query": "\n        SELECT b.id, b.title, b.identifiers, b.want_status, b.want_format, b.narrator,\n               b.pubdate, b.language,\n               s.name as \"series_name?\", bs.series_index AS \"series_index?\",\n               (SELECT STRING_AGG(a.name, ', ')\n                FROM book_authors ba\n                JOIN authors a ON a.id = ba.author_id\n                WHERE ba.book_id = b.id) as author\n        FROM books b\n        LEFT JOIN book_series bs ON bs.book_id = b.id AND bs.is_primary = TRUE\n        LEFT JOIN series s ON s.id = bs.series_id\n        WHERE b.id = $1\n          AND NOT (EXISTS (SELECT 1 FROM book_files bf WHERE bf.book_id = b.id) OR EXISTS (SELECT 1 FROM audiobook_files af WHERE af.book_id = b.id))\n          AND b.want_status IN ('wanted', 'searching', 'downloading', 'watching', 'search_failed')\n        ",
   "describe": {
     "columns": [
       {
@@ -82,6 +82,17 @@
       },
       {
         "ordinal": 7,
+        "name": "language",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "language"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "series_name?",
         "type_info": "Text",
         "origin": {
@@ -92,7 +103,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "series_index?",
         "type_info": "Float8",
         "origin": {
@@ -103,14 +114,16 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "author",
         "type_info": "Text",
         "origin": "Expression"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Uuid"
+      ]
     },
     "nullable": [
       false,
@@ -120,10 +133,11 @@
       false,
       true,
       true,
-      false,
+      true,
+      true,
       true,
       null
     ]
   },
-  "hash": "b8a6765fdefe89687eea5c16c0eaa8e7df9b7df1d7bb337686b292d9e152afb0"
+  "hash": "d19e89e727fb09e0df7aad61bf2a7a4ee248e03e9d610f16853cac658fb8064b"
 }

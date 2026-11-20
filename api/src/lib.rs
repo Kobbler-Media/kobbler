@@ -603,6 +603,10 @@ pub fn create_router(state: AppState) -> Router {
             get(audiobook_routes::transcript_backlog),
         )
         .route(
+            "/api/v1/admin/books/verify-library",
+            post(audiobook_routes::verify_library),
+        )
+        .route(
             "/api/v1/admin/books/bulk-chapter-detect",
             post(audiobook_routes::bulk_chapter_detect),
         )
