@@ -302,7 +302,7 @@ async fn only_the_wanted_book_is_filed() {
             false,
         ),
         (
-            "dated before publication",
+            "his book, dated before the library's edition",
             epub(&File::Epub {
                 title: "Michael",
                 creator: Some("Bob Mortimer"),
@@ -310,7 +310,7 @@ async fn only_the_wanted_book_is_filed() {
                 language: "en",
                 text: "It was a dark night.",
             }),
-            false,
+            true,
         ),
         (
             "his book, in Danish",
@@ -344,6 +344,26 @@ async fn only_the_wanted_book_is_filed() {
             );
         }
     }
+}
+
+/// Library metadata often names a translation's language; a file in the
+/// household's own language is still the book.
+#[tokio::test]
+async fn a_file_in_the_household_language_is_filed_whatever_the_book_says() {
+    let rig = rig(false).await;
+    sqlx::query("UPDATE books SET language = 'de' WHERE id = $1")
+        .bind(rig.book_id)
+        .execute(&rig.server.pool)
+        .await
+        .unwrap();
+    assert!(
+        rig.deliver(&Delivery {
+            file: &THE_BOOK,
+            hand_picked: false,
+            narration: None,
+        })
+        .await
+    );
 }
 
 #[tokio::test]

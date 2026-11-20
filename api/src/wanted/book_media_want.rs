@@ -35,15 +35,16 @@ fn identifier(json: &Value, key: &str) -> Option<String> {
 /// English name, lowercase, as Kobload's language table spells it.
 pub fn want_language(book_language: Option<&str>, household: &str) -> Option<String> {
     use crate::streaming::language::name_of;
-    book_language
-        .and_then(name_of)
-        .or_else(|| name_of(household))
+    // Library metadata often names a translation's language, so the household
+    // decides.
+    name_of(household)
+        .or_else(|| book_language.and_then(name_of))
         .map(str::to_lowercase)
 }
 
 impl<'a> BookWant<'a> {
-    /// `household_language` is the playback language preference, used when the
-    /// book itself names none.
+    /// `household_language` is the playback language preference; it outranks
+    /// the language the book's metadata names.
     pub async fn load(pool: &PgPool, book: &'a WantedBook<'a>, household_language: &str) -> Self {
         let identifiers = BookIdentifiers {
             isbn10: identifier(book.identifiers, "isbn10"),

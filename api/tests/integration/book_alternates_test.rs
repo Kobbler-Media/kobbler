@@ -182,6 +182,12 @@ async fn book_wants_carry_edition_and_series_titles() {
         .unwrap()
         .parse()
         .unwrap();
+    // Library metadata often names a translation's language.
+    sqlx::query("UPDATE books SET language = 'de' WHERE id = $1")
+        .bind(book)
+        .execute(&rig.server.pool)
+        .await
+        .unwrap();
     let handler = BookWantHandler::new(
         rig.server.pool.clone(),
         rig.server.runtime_config.clone(),

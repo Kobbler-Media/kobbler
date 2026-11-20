@@ -54,18 +54,29 @@ pub fn judge(expected: &Expected, found: &Found) -> Verdict {
         return Verdict::WrongBook(format!("the file is {other}, not {}", expected.title));
     }
 
+    // Some files put their title, or part of it, where the author belongs.
+    let title_words: Vec<String> = std::iter::once(expected.title.as_str())
+        .chain(found.title.as_deref())
+        .flat_map(name_tokens)
+        .collect();
+    let found_authors: Vec<&String> = found
+        .authors
+        .iter()
+        .filter(|a| !name_tokens(a).iter().all(|t| title_words.contains(t)))
+        .collect();
+
     let mut author_confirmed = false;
     if !expected.authors.is_empty() {
         let wanted = expected.authors.join(", ");
-        if !found.authors.is_empty() {
-            let any_match = found
-                .authors
+        if !found_authors.is_empty() {
+            let any_match = found_authors
                 .iter()
                 .any(|f| expected.authors.iter().any(|w| same_author(w, f)));
             if !any_match {
+                let found_authors: Vec<&str> = found_authors.iter().map(|a| a.as_str()).collect();
                 return Verdict::WrongBook(format!(
                     "the file is by {}, not {wanted}",
-                    found.authors.join(", ")
+                    found_authors.join(", ")
                 ));
             }
             author_confirmed = true;
@@ -83,7 +94,10 @@ pub fn judge(expected: &Expected, found: &Found) -> Verdict {
         return Verdict::WrongBook(format!("the file is in {name}, not {wanted}"));
     }
 
-    if let (Some(found_year), Some(year)) = (found.year, expected.year)
+    // The library's date is often a reprint's, so an earlier file is only
+    // suspect when nothing else says whose it is.
+    if !author_confirmed
+        && let (Some(found_year), Some(year)) = (found.year, expected.year)
         && found_year < year - 1
     {
         return Verdict::WrongBook(format!(
@@ -164,9 +178,24 @@ mod tests {
                 false,
             ),
             (
-                "dated before publication",
+                "his, dated before the library's edition",
                 found(Some("Michael"), &["Bob Mortimer"], Some(2001)),
+                true,
+            ),
+            (
+                "nobody named, dated before publication",
+                found(Some("Michael"), &[], Some(2001)),
                 false,
+            ),
+            (
+                "the title as its author",
+                found(Some("Michael"), &["Michael"], None),
+                true,
+            ),
+            (
+                "part of the title as its author",
+                found(Some("Michael: The Graphic Novel"), &["Graphic Novel"], None),
+                true,
             ),
             (
                 "a later reprint",
