@@ -1870,6 +1870,7 @@ export type PlaybackSubtitleTrack = {
   language_name: string | null;
   title: string | null;
   url: string | null;
+  srt_url?: string;
   format: 'vtt' | 'ass' | 'burn_in';
   is_default: boolean;
   is_forced: boolean;
@@ -1900,6 +1901,7 @@ export type PlaybackSessionResponse = {
   method: PlaybackMethod;
   playlist_url: string | null;
   direct_url: string | null;
+  progressive_url?: string | null;
   duration_seconds: number;
   subtitles: PlaybackSubtitleTrack[];
   audio_tracks: PlaybackAudioTrack[];

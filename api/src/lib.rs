@@ -2411,6 +2411,10 @@ fn playback_session_routes(state: &AppState) -> Router<AppState> {
             get(streaming_routes::direct_play),
         )
         .route(
+            "/api/v1/admin/playback/sessions/{id}/stream.ts",
+            get(routes::admin::progressive_stream::stream_ts),
+        )
+        .route(
             "/api/v1/admin/playback/sessions/{id}/subtitles",
             post(streaming_routes::download_subtitle_to_session),
         )

@@ -258,6 +258,7 @@ pub(super) async fn open(
         playlist_url: (!direct_play)
             .then(|| format!("/api/v1/admin/playback/sessions/{session_id}/master.m3u8")),
         direct_url: direct_play.then(|| format!("/api/v1/admin/stream/{session_id}/play")),
+        progressive_url: None,
         duration_seconds: estimated_duration,
         subtitles: vec![],
         audio_tracks: vec![],

@@ -30,6 +30,7 @@ use crate::repositories::{
     subtitle_tracks, tv_episode_files, video_chapters,
 };
 use crate::routes::{AuthUser, PlaybackAuth};
+use crate::streaming::activity;
 use crate::streaming::byte_range::{ByteRange, file_stream, parse_byte_range};
 use crate::streaming::decision::{
     self, AAC_ENCODER, AudioTrackMeta, ClientCapabilities, FileMeta, PlaybackMethod,
@@ -55,7 +56,7 @@ use crate::video_metadata::original_language::Title;
 /// How long the segment handler will wait for a single requested segment to
 /// appear on disk before declaring the session stalled. Matches HLS live-edge
 /// tolerances and gives ffmpeg a realistic catch-up window.
-const STALL_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(30);
+pub(crate) const STALL_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// How long after `TranscodeProcess::started_at` the playlist handler waits
 /// before declaring an empty playlist a startup stall. Long enough for slow
@@ -73,7 +74,7 @@ const STARTUP_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(30
 ///
 /// 500 (not 503) is deliberate: 503 means "retry me", which is the opposite
 /// of the signal we want for terminal errors.
-fn error_response(code: &'static str, message: &str) -> Response<Body> {
+pub(crate) fn error_response(code: &'static str, message: &str) -> Response<Body> {
     let body = json!({ "error": code, "message": message }).to_string();
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -88,7 +89,7 @@ fn error_response(code: &'static str, message: &str) -> Response<Body> {
 /// Debrid session probe is still running: return 503 + Retry-After so hls.js
 /// retries instead of failing fatally (it treats 4xx on manifest load as
 /// terminal, skipping the retry budget).
-fn session_pending_response() -> Response<Body> {
+pub(crate) fn session_pending_response() -> Response<Body> {
     Response::builder()
         .status(StatusCode::SERVICE_UNAVAILABLE)
         .header(header::RETRY_AFTER, "2")
@@ -139,6 +140,18 @@ pub struct CreateSessionRequest {
     /// subtitle selection entirely (no burn-in, no track exposed as selected).
     /// When None, treated as true.
     pub subtitles_enabled: Option<bool>,
+    #[serde(default)]
+    pub delivery: Delivery,
+}
+
+/// How a transcoded session reaches the player. Direct play is unaffected.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Delivery {
+    #[default]
+    Hls,
+    /// One MPEG-TS response as well, for renderers (DLNA) that play no HLS.
+    Progressive,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -147,6 +160,7 @@ pub struct SessionResponse {
     pub method: PlaybackMethod,
     pub playlist_url: Option<String>,
     pub direct_url: Option<String>,
+    pub progressive_url: Option<String>,
     pub duration_seconds: f64,
     pub subtitles: Vec<SubtitleTrackResponse>,
     pub audio_tracks: Vec<AudioTrackResponse>,
@@ -266,6 +280,8 @@ pub struct SubtitleTrackResponse {
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub srt_url: Option<String>,
     pub format: String,
     pub is_default: bool,
     pub is_forced: bool,
@@ -687,26 +703,7 @@ pub(crate) async fn open_file_session(
     // Build subtitle responses: text subs (extractable) + bitmap subs (burn-in)
     let mut subtitle_responses: Vec<SubtitleTrackResponse> = subtitle_files
         .iter()
-        .map(|sf| {
-            let (format, ext) = match sf.codec.as_str() {
-                "ass" | "ssa" => ("ass", "ass"),
-                _ => ("vtt", "vtt"),
-            };
-            SubtitleTrackResponse {
-                track_id: sf.track_id.to_string(),
-                stream_index: sf.stream_index,
-                codec: sf.codec.clone(),
-                language_name: crate::streaming::language::display_name(sf.language.as_deref()),
-                language: sf.language.clone(),
-                title: sf.title.clone(),
-                url: Some(format!("{base_url}/subtitles/{}.{ext}", sf.track_id)),
-                format: format.to_string(),
-                is_default: Some(sf.stream_index) == selected_subtitle_index,
-                is_forced: sf.is_forced,
-                is_hearing_impaired: sf.is_hearing_impaired,
-                requires_transcode: false,
-            }
-        })
+        .map(|sf| text_subtitle_response(sf, &base_url, selected_subtitle_index))
         .collect();
 
     // Add bitmap subtitle tracks (PGS/DVDSub) — burned into video, no URL
@@ -722,6 +719,7 @@ pub(crate) async fn open_file_session(
             language: sub.language.clone(),
             title: sub.title.clone(),
             url: None,
+            srt_url: None,
             format: "burn_in".to_string(),
             is_default: Some(sub.stream_index) == selected_subtitle_index,
             is_forced: sub.is_forced,
@@ -868,6 +866,9 @@ pub(crate) async fn open_file_session(
         } else {
             None
         },
+        progressive_url: (decision.method != PlaybackMethod::DirectPlay
+            && req.delivery == Delivery::Progressive)
+            .then(|| format!("{base_url}/stream.ts")),
         duration_seconds: duration,
         subtitles: subtitle_responses,
         audio_tracks: audio_responses,
@@ -1425,13 +1426,13 @@ pub async fn heartbeat(
 
 /// A session lifted out of the map is mid-restart: wait for it to come back rather
 /// than answer for a session that is about to exist again.
-async fn wait_out_restart(state: &AppState, session_id: Uuid) {
+pub(crate) async fn wait_out_restart(state: &AppState, session_id: Uuid) {
     if !state.playback_sessions.contains_key(&session_id) {
         state.session_gates.wait(session_id).await;
     }
 }
 
-fn session_missing(state: &AppState, session_id: Uuid) -> axum::response::Response {
+pub(crate) fn session_missing(state: &AppState, session_id: Uuid) -> axum::response::Response {
     let status = if state.session_gates.is_held(session_id) {
         StatusCode::SERVICE_UNAVAILABLE
     } else {
@@ -3120,6 +3121,7 @@ pub async fn switch_audio(
             } else {
                 None
             },
+            progressive_url: None,
             duration_seconds: duration,
             subtitles: vec![],
             audio_tracks: audio_responses,
@@ -3281,30 +3283,12 @@ pub async fn switch_audio(
         } else {
             None
         },
+        progressive_url: None,
         duration_seconds: session.duration_seconds,
         subtitles: session
             .subtitle_files
             .iter()
-            .map(|sf| {
-                let (format, ext) = match sf.codec.as_str() {
-                    "ass" | "ssa" => ("ass", "ass"),
-                    _ => ("vtt", "vtt"),
-                };
-                SubtitleTrackResponse {
-                    track_id: sf.track_id.to_string(),
-                    stream_index: sf.stream_index,
-                    codec: sf.codec.clone(),
-                    language_name: crate::streaming::language::display_name(sf.language.as_deref()),
-                    language: sf.language.clone(),
-                    title: sf.title.clone(),
-                    url: Some(format!("{base_url}/subtitles/{}.{ext}", sf.track_id)),
-                    format: format.to_string(),
-                    is_default: Some(sf.stream_index) == switched_subtitle_index,
-                    is_forced: sf.is_forced,
-                    is_hearing_impaired: sf.is_hearing_impaired,
-                    requires_transcode: false,
-                }
-            })
+            .map(|sf| text_subtitle_response(sf, &base_url, switched_subtitle_index))
             .collect(),
         audio_tracks: audio_responses,
         thumbnails_url: None,
@@ -3448,6 +3432,7 @@ pub async fn download_subtitle_to_session(
         language: req.language,
         title: Some("Downloaded subtitle".to_string()),
         url: Some(format!("{base_url}/subtitles/{track_id}.{ext}")),
+        srt_url: Some(format!("{base_url}/subtitles/{track_id}.srt")),
         format: ext.to_string(),
         is_default: false,
         is_forced: req.is_forced,
@@ -3457,6 +3442,32 @@ pub async fn download_subtitle_to_session(
 
     info!(session_id = %session_id, track_id = %track_id, "Subtitle downloaded to session");
     Json(response).into_response()
+}
+
+fn text_subtitle_response(
+    sf: &SubtitleFile,
+    base_url: &str,
+    selected_index: Option<i32>,
+) -> SubtitleTrackResponse {
+    let (format, ext) = match sf.codec.as_str() {
+        "ass" | "ssa" => ("ass", "ass"),
+        _ => ("vtt", "vtt"),
+    };
+    SubtitleTrackResponse {
+        track_id: sf.track_id.to_string(),
+        stream_index: sf.stream_index,
+        codec: sf.codec.clone(),
+        language_name: crate::streaming::language::display_name(sf.language.as_deref()),
+        language: sf.language.clone(),
+        title: sf.title.clone(),
+        url: Some(format!("{base_url}/subtitles/{}.{ext}", sf.track_id)),
+        srt_url: Some(format!("{base_url}/subtitles/{}.srt", sf.track_id)),
+        format: format.to_string(),
+        is_default: Some(sf.stream_index) == selected_index,
+        is_forced: sf.is_forced,
+        is_hearing_impaired: sf.is_hearing_impaired,
+        requires_transcode: false,
+    }
 }
 
 /// Build audio track responses with `is_default` set for the active track.
@@ -3906,28 +3917,27 @@ pub async fn direct_play(
     )
     .await;
 
-    // Parse Range header
-    if let Some(range_header) = headers.get(header::RANGE)
+    let response = if let Some(range_header) = headers.get(header::RANGE)
         && let Ok(range_str) = range_header.to_str()
         && let Some(range) = parse_byte_range(range_str, file_size)
     {
-        return serve_range(file, file_size, content_type, range, patch).await;
-    }
-
-    // No range — serve full file
-    let stream = file_stream(file);
-    let body = match patch {
-        Some(p) => Body::from_stream(patched_stream(stream, 0, p)),
-        None => Body::from_stream(stream),
+        serve_range(file, file_size, content_type, range, patch).await
+    } else {
+        let stream = file_stream(file);
+        let body = match patch {
+            Some(p) => Body::from_stream(patched_stream(stream, 0, p)),
+            None => Body::from_stream(stream),
+        };
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, content_type)
+            .header(header::CONTENT_LENGTH, file_size.to_string())
+            .header(header::ACCEPT_RANGES, "bytes")
+            .body(body)
+            .unwrap()
+            .into_response()
     };
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, content_type)
-        .header(header::CONTENT_LENGTH, file_size.to_string())
-        .header(header::ACCEPT_RANGES, "bytes")
-        .body(body)
-        .unwrap()
-        .into_response()
+    activity::touching_response(response, state.playback_sessions.clone(), session_id)
 }
 
 /// Serve a byte range from a file.
@@ -4067,6 +4077,26 @@ pub async fn serve_subtitle(
     } else {
         sub_file.file_path.clone()
     };
+
+    if track_filename.ends_with(".srt") {
+        return match tokio::fs::read_to_string(&serve_path).await {
+            Ok(content) => Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/x-subrip; charset=utf-8")
+                .header(header::CACHE_CONTROL, "max-age=3600")
+                .body(Body::from(crate::streaming::srt::to_srt(
+                    &content,
+                    &sub_file.codec,
+                    query.offset.unwrap_or(0.0),
+                )))
+                .unwrap()
+                .into_response(),
+            Err(e) => {
+                error!(error = %e, "Failed to read subtitle file");
+                (StatusCode::INTERNAL_SERVER_ERROR, "failed to read subtitle").into_response()
+            }
+        };
+    }
 
     // Determine if we need VTT conversion
     let requested_vtt = track_filename.ends_with(".vtt");

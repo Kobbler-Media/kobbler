@@ -72,7 +72,7 @@ fn push_block(out: &mut String, block: &str) {
     out.push_str(block);
 }
 
-fn parse_vtt_time(t: &str) -> Option<f64> {
+pub(crate) fn parse_vtt_time(t: &str) -> Option<f64> {
     let mut secs = 0.0;
     for part in t.trim().split(':') {
         secs = secs * 60.0 + part.parse::<f64>().ok()?;

@@ -48,6 +48,7 @@ pub mod notifications;
 pub mod offline_exports;
 pub mod people;
 mod pin_login;
+pub mod progressive_stream;
 mod proxy_logs;
 mod reader;
 mod reader_pack;

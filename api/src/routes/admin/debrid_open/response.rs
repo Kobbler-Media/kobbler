@@ -36,6 +36,7 @@ pub(crate) fn live_response(
         method: session.decision.method,
         playlist_url: None,
         direct_url: None,
+        progressive_url: None,
         duration_seconds: 0.0,
         subtitles: vec![],
         audio_tracks: vec![],
