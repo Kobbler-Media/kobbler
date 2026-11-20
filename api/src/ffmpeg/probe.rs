@@ -34,6 +34,32 @@ pub async fn probe(path: &Path) -> Result<ProbeResult, ProbeError> {
         .map_err(|e| ProbeError::IoError(std::io::Error::other(e)))?
 }
 
+/// The level the first video stream's header declares. Read apart from [probe],
+/// whose `VideoStream` does not carry it.
+pub async fn video_level(path: &Path) -> Option<u32> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || {
+        use kob_ffmpeg::format::input::{InputContext, MediaType};
+        let mut ctx = InputContext::open_path(&path).ok()?;
+        ctx.find_stream_info().ok()?;
+        let stream = ctx.stream(ctx.find_best_stream(MediaType::Video)?)?;
+        codec_level(&stream)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+pub fn codec_level(stream: &kob_ffmpeg::format::input::Stream<'_>) -> Option<u32> {
+    let params = stream.codec_parameters();
+    if params.is_null() {
+        return None;
+    }
+    u32::try_from(unsafe { (*params).level })
+        .ok()
+        .filter(|&level| level > 0)
+}
+
 /// Probe keyframe timestamps from the first video stream.
 ///
 pub async fn probe_keyframes(path: &Path) -> Result<Vec<f64>, ProbeError> {

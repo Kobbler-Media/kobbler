@@ -130,6 +130,8 @@ pub struct HybridProbeInfo {
     pub interlaced: bool,
     #[serde(default)]
     pub dynamic_range: crate::streaming::decision::DynamicRange,
+    #[serde(default)]
+    pub video_level: Option<u32>,
     pub audio_tracks: Vec<HybridAudioTrack>,
     #[serde(default)]
     pub chapters: Vec<crate::routes::admin::streaming::ChapterResponse>,
@@ -159,6 +161,7 @@ impl HybridProbeInfo {
         let mut video_height = 1080u32;
         let mut interlaced = false;
         let mut dynamic_range = crate::streaming::decision::DynamicRange::Sdr;
+        let mut video_level = None;
         let mut audio_codec = String::new();
         let mut audio_stream_index = 0i32;
         let mut audio_tracks = Vec::new();
@@ -171,6 +174,7 @@ impl HybridProbeInfo {
             match stream.codec_type() {
                 MediaType::Video if video_codec.is_empty() => {
                     let params = stream.codec_parameters();
+                    video_level = crate::ffmpeg::probe::codec_level(&stream);
                     unsafe {
                         let name = kob_ffmpeg::ffi::avcodec_get_name((*params).codec_id);
                         video_codec = std::ffi::CStr::from_ptr(name)
@@ -230,6 +234,7 @@ impl HybridProbeInfo {
             video_height,
             interlaced,
             dynamic_range,
+            video_level,
             audio_tracks,
             chapters: ctx
                 .chapters()

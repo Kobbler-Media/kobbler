@@ -149,6 +149,7 @@ pub(super) async fn run(ctx: Prepare) {
             video_height: result.probe.video_height,
             interlaced: result.probe.interlaced,
             dynamic_range: result.probe.dynamic_range,
+            video_level: result.probe.video_level,
             audio_tracks: result
                 .probe
                 .audio_tracks
@@ -187,6 +188,7 @@ pub(super) async fn run(ctx: Prepare) {
         video_height,
         interlaced: probe_info.interlaced,
         dynamic_range: probe_info.dynamic_range,
+        video_level: probe_info.video_level,
     };
     let mut audio_metas: Vec<crate::streaming::decision::AudioTrackMeta> = probe_info
         .audio_tracks

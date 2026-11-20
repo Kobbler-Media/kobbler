@@ -30,7 +30,6 @@ use crate::repositories::{
     subtitle_tracks, tv_episode_files, video_chapters,
 };
 use crate::routes::{AuthUser, PlaybackAuth};
-use crate::streaming::activity;
 use crate::streaming::byte_range::{ByteRange, file_stream, parse_byte_range};
 use crate::streaming::decision::{
     self, AAC_ENCODER, AudioTrackMeta, ClientCapabilities, FileMeta, PlaybackMethod,
@@ -46,6 +45,7 @@ use crate::streaming::session::{
 };
 use crate::streaming::subtitle;
 use crate::streaming::variant::{self, QualityVariant, VariantSpec};
+use crate::streaming::{activity, dlna};
 use crate::types::MediaScope;
 use crate::video_metadata::original_language::Title;
 
@@ -522,7 +522,11 @@ pub(crate) async fn open_file_session(
         .unwrap_or(&config.preferred_subtitle_language);
     let preferred_subtitle = req.subtitle_track_index.filter(|_| subtitles_enabled);
 
-    // Run decision engine
+    let video_level = if decision::h264_level_matters(&req.capabilities, &video_codec) {
+        crate::ffmpeg::probe::video_level(&full_path).await
+    } else {
+        None
+    };
     let file_meta = FileMeta {
         container: container.clone(),
         video_codec: video_codec.clone(),
@@ -530,6 +534,7 @@ pub(crate) async fn open_file_session(
         video_height,
         interlaced: interlaced.unwrap_or(false),
         dynamic_range,
+        video_level,
     };
     let preferred_codecs = state.encoder_caps.preferred_codecs();
     let mut decision = decision::decide(
@@ -3917,7 +3922,7 @@ pub async fn direct_play(
     )
     .await;
 
-    let response = if let Some(range_header) = headers.get(header::RANGE)
+    let mut response = if let Some(range_header) = headers.get(header::RANGE)
         && let Ok(range_str) = range_header.to_str()
         && let Some(range) = parse_byte_range(range_str, file_size)
     {
@@ -3937,6 +3942,7 @@ pub async fn direct_play(
             .unwrap()
             .into_response()
     };
+    dlna::add_headers(response.headers_mut(), &headers, dlna::Resource::Original);
     activity::touching_response(response, state.playback_sessions.clone(), session_id)
 }
 

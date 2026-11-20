@@ -457,3 +457,34 @@ pub async fn end_playback(server: &TestServer, session_id: Uuid) {
         .delete(&format!("/api/v1/admin/playback/sessions/{session_id}"))
         .await;
 }
+
+pub async fn wait_for_probe(rig: &Rig, session_id: Uuid) {
+    let server = &rig.server;
+    wait_until_async(
+        Duration::from_secs(10),
+        "probe never finished",
+        || async move {
+            let status: Value = session_status(server, session_id).await.json();
+            status["state"] != "preparing"
+        },
+    )
+    .await;
+}
+
+/// The stored decision's method and whether it deinterlaces.
+pub fn stored_decision(rig: &Rig, session_id: Uuid) -> (String, bool) {
+    let session = rig
+        .server
+        .app_state
+        .playback_sessions
+        .get(&session_id)
+        .expect("session");
+    (
+        serde_json::to_value(session.decision.method)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string(),
+        session.decision.deinterlace,
+    )
+}

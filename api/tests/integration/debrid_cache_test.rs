@@ -28,19 +28,6 @@ async fn delete_session(rig: &Rig, session_id: Uuid) {
         .assert_status(StatusCode::NO_CONTENT);
 }
 
-async fn wait_for_probe(rig: &Rig, session_id: Uuid) {
-    let server = &rig.server;
-    wait_until_async(
-        Duration::from_secs(10),
-        "probe never finished",
-        || async move {
-            let status: Value = session_status(server, session_id).await.json();
-            status["state"] != "preparing"
-        },
-    )
-    .await;
-}
-
 /// A finished download of `info_hash`, whose session has since been deleted.
 async fn orphaned_download(rig: &Rig, info_hash: &str) -> Value {
     let movie = rig.movie().await;

@@ -6,14 +6,18 @@ use super::streaming::{
 };
 use crate::AppState;
 use crate::streaming::decision::PlaybackMethod;
-use crate::streaming::{activity, mpegts};
+use crate::streaming::{activity, dlna, mpegts};
 use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
-pub async fn stream_ts(State(state): State<AppState>, Path(session_id): Path<String>) -> Response {
+pub async fn stream_ts(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
     let Ok(session_id) = Uuid::parse_str(&session_id) else {
         return (StatusCode::BAD_REQUEST, "invalid session_id").into_response();
     };
@@ -40,15 +44,12 @@ pub async fn stream_ts(State(state): State<AppState>, Path(session_id): Path<Str
         sessions,
         session_id,
     );
-    Response::builder()
+    let mut response = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "video/mp2t")
         .header(header::CACHE_CONTROL, "no-store")
-        .header("transferMode.dlna.org", "Streaming")
-        .header(
-            "contentFeatures.dlna.org",
-            "DLNA.ORG_OP=00;DLNA.ORG_CI=1;DLNA.ORG_FLAGS=01700000000000000000000000000000",
-        )
         .body(Body::from_stream(body))
-        .unwrap()
+        .unwrap();
+    dlna::add_headers(response.headers_mut(), &headers, dlna::Resource::Transcoded);
+    response
 }

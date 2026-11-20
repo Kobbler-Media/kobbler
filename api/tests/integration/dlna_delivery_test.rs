@@ -316,3 +316,239 @@ async fn renderer_fetches_count_as_session_activity() {
         assert!(recently_active(&server, id), "{what} did not touch");
     }
 }
+
+const DIRECT_FEATURES: &str =
+    "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
+const TRANSCODED_FEATURES: &str =
+    "DLNA.ORG_OP=00;DLNA.ORG_CI=1;DLNA.ORG_FLAGS=01700000000000000000000000000000";
+
+fn header<'a>(resp: &'a TestResponse, name: &str) -> Option<&'a str> {
+    resp.headers.get(name).map(|v| v.to_str().unwrap())
+}
+
+#[tokio::test]
+async fn direct_answers_a_renderer_with_dlna_headers_on_head_and_get() {
+    use reqwest::Method;
+    let server = TestServer::start_api_only().await;
+    let file_id = seed_minute(&server).await;
+    let direct = open(&server, file_id, json!({ "capabilities": direct_caps() })).await;
+    let url = direct["direct_url"].as_str().unwrap();
+    let size = MINUTE.len().to_string();
+    let asks = ("getcontentFeatures.dlna.org", "1");
+
+    let cases = [
+        (
+            "HEAD",
+            Method::HEAD,
+            vec![asks],
+            StatusCode::OK,
+            size.as_str(),
+            "Streaming",
+        ),
+        (
+            "GET",
+            Method::GET,
+            vec![asks],
+            StatusCode::OK,
+            size.as_str(),
+            "Streaming",
+        ),
+        (
+            "HEAD range",
+            Method::HEAD,
+            vec![asks, ("range", "bytes=100-199")],
+            StatusCode::PARTIAL_CONTENT,
+            "100",
+            "Streaming",
+        ),
+        (
+            "GET range",
+            Method::GET,
+            vec![asks, ("range", "bytes=100-199")],
+            StatusCode::PARTIAL_CONTENT,
+            "100",
+            "Streaming",
+        ),
+        (
+            "GET background",
+            Method::GET,
+            vec![asks, ("transferMode.dlna.org", "Background")],
+            StatusCode::OK,
+            size.as_str(),
+            "Background",
+        ),
+    ];
+    for (what, method, headers, status, length, mode) in cases {
+        let head = method == Method::HEAD;
+        let resp = server.api_client().request(method, url, &headers).await;
+        resp.assert_status(status);
+        assert_eq!(
+            header(&resp, "contentFeatures.dlna.org"),
+            Some(DIRECT_FEATURES),
+            "{what}: {:?}",
+            resp.headers
+        );
+        assert_eq!(header(&resp, "transferMode.dlna.org"), Some(mode), "{what}");
+        assert_eq!(header(&resp, "accept-ranges"), Some("bytes"), "{what}");
+        assert_eq!(header(&resp, "content-length"), Some(length), "{what}");
+        let expected_body = if head { 0 } else { length.parse().unwrap() };
+        assert_eq!(resp.bytes().len(), expected_body, "{what}");
+    }
+
+    let browser = server.api_client().get(url).await;
+    browser.assert_ok();
+    assert_eq!(header(&browser, "contentFeatures.dlna.org"), None);
+}
+
+#[tokio::test]
+async fn stream_ts_never_offers_a_renderer_byte_seek() {
+    let server = TestServer::start_api_only().await;
+    let file_id = seed_minute(&server).await;
+    let session = open(
+        &server,
+        file_id,
+        json!({ "capabilities": hls_caps(), "delivery": "progressive" }),
+    )
+    .await;
+    let resp = server
+        .api_client()
+        .request(
+            reqwest::Method::GET,
+            session["progressive_url"].as_str().unwrap(),
+            &[("getcontentFeatures.dlna.org", "1")],
+        )
+        .await;
+    resp.assert_ok();
+    assert_eq!(
+        header(&resp, "contentFeatures.dlna.org"),
+        Some(TRANSCODED_FEATURES)
+    );
+    assert_eq!(header(&resp, "transferMode.dlna.org"), Some("Streaming"));
+}
+
+/// The minute fixture's H.264 relabelled to `level` without re-encoding.
+fn minute_at_level(dir: &Path, level: &str, ext: &str) -> PathBuf {
+    let (src, out) = (dir.join("src.mkv"), dir.join(format!("film.{ext}")));
+    std::fs::write(&src, MINUTE).unwrap();
+    let status = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-i"])
+        .arg(&src)
+        .args([
+            "-c",
+            "copy",
+            "-bsf:v",
+            &format!("h264_metadata=level={level}"),
+        ])
+        .arg(&out)
+        .status()
+        .expect("ffmpeg");
+    assert!(status.success());
+    out
+}
+
+async fn seed_minute_at_level(server: &TestServer, level: &str, ext: &str) -> Uuid {
+    let dir = PathBuf::from(server.storage_root()).join(Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&dir).unwrap();
+    seed_file(server, &minute_at_level(&dir, level, ext)).await
+}
+
+fn capped_at(mut caps: Value, max_level: Option<u32>) -> Value {
+    if let Some(level) = max_level {
+        caps["max_h264_level"] = json!(level);
+    }
+    caps
+}
+
+#[tokio::test]
+async fn h264_above_the_clients_level_is_transcoded_rather_than_copied() {
+    let server = TestServer::start_api_only().await;
+    let mp4_50 = seed_minute_at_level(&server, "5", "mp4").await;
+    let mkv_50 = seed_minute_at_level(&server, "5", "mkv").await;
+    let mp4_41 = seed_minute_at_level(&server, "4.1", "mp4").await;
+    let mkv_41 = seed_minute_at_level(&server, "4.1", "mkv").await;
+
+    let caps = |audio: &str, max_level: Option<u32>| {
+        capped_at(
+            json!({ "video_codecs": ["h264"], "audio_codecs": [audio], "containers": ["mp4"] }),
+            max_level,
+        )
+    };
+    let cases = [
+        ("5.0 mp4, no cap", mp4_50, caps("aac", None), "direct_play"),
+        (
+            "5.0 mp4, cap 4.1",
+            mp4_50,
+            caps("aac", Some(41)),
+            "video_transcode",
+        ),
+        ("5.0 mkv, no cap", mkv_50, caps("aac", None), "remux"),
+        (
+            "5.0 mkv, cap 4.1",
+            mkv_50,
+            caps("aac", Some(41)),
+            "video_transcode",
+        ),
+        (
+            "5.0 mp4, no aac, cap 4.1",
+            mp4_50,
+            caps("opus", Some(41)),
+            "video_transcode",
+        ),
+        (
+            "4.1 mp4, cap 4.1",
+            mp4_41,
+            caps("aac", Some(41)),
+            "direct_play",
+        ),
+        ("4.1 mkv, cap 4.1", mkv_41, caps("aac", Some(41)), "remux"),
+        (
+            "4.1 mp4, no aac, cap 4.1",
+            mp4_41,
+            caps("opus", Some(41)),
+            "audio_transcode",
+        ),
+        (
+            "5.0 mp4, cap 5.1",
+            mp4_50,
+            caps("aac", Some(51)),
+            "direct_play",
+        ),
+    ];
+    for (what, file_id, capabilities, method) in cases {
+        let session = open(&server, file_id, json!({ "capabilities": capabilities })).await;
+        assert_eq!(session["method"], json!(method), "{what}: {session}");
+    }
+}
+
+#[tokio::test]
+async fn a_debrid_release_above_the_clients_level_is_transcoded_live_and_from_cache() {
+    use crate::common::debrid_rig::{
+        Rig, direct_play_caps, session_id_of, stored_decision, wait_for_probe,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let release = std::fs::read(minute_at_level(dir.path(), "5", "mkv")).unwrap();
+    let rig = Rig::start(
+        crate::common::debrid_upstream::UpstreamPlan::new(release),
+        "film.mkv",
+    )
+    .await;
+
+    for (hash, max_level, method) in [
+        ("levelfree", None, "direct_play"),
+        ("levelcapped", Some(41), "video_transcode"),
+    ] {
+        let movie = rig.movie().await;
+        let body = rig.resolve_body(hash, movie, capped_at(direct_play_caps(), max_level));
+        let live = session_id_of(&rig.resolve_with(&body).await);
+        wait_for_probe(&rig, live).await;
+        assert_eq!(stored_decision(&rig, live).0, method, "{hash} live");
+
+        rig.wait_for_complete(hash).await;
+        rig.server
+            .admin_client()
+            .delete(&format!("/api/v1/admin/stream/{live}"))
+            .await;
+        let cached = rig.resolve_with(&body).await;
+        assert_eq!(cached["method"], method, "{hash} cached: {cached}");
+    }
+}

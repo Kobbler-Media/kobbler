@@ -116,6 +116,8 @@ pub struct FileMeta {
     /// Field-coded (PAFF/MBAFF) source.
     pub interlaced: bool,
     pub dynamic_range: DynamicRange,
+    /// The level the codec's own stream header declares; `None` when unread.
+    pub video_level: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -264,6 +266,9 @@ pub struct ClientCapabilities {
     /// display. `None` when it never said; an empty list is SDR only.
     #[serde(default)]
     pub hdr_formats: Option<Vec<HdrFormat>>,
+    /// Highest H.264 level the client decodes, as level_idc (4.1 is 41).
+    #[serde(default)]
+    pub max_h264_level: Option<u32>,
 }
 
 impl Default for ClientCapabilities {
@@ -276,8 +281,27 @@ impl Default for ClientCapabilities {
             supports_interlaced: None,
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         }
     }
+}
+
+/// Whether [decide] needs the source's H.264 level for this client.
+pub fn h264_level_matters(capabilities: &ClientCapabilities, video_codec: &str) -> bool {
+    capabilities.max_h264_level.is_some() && normalize_codec(video_codec) == "h264"
+}
+
+/// An unread level is taken to fit.
+pub fn exceeds_h264_level(
+    capabilities: &ClientCapabilities,
+    video_codec: &str,
+    level: Option<u32>,
+) -> bool {
+    h264_level_matters(capabilities, video_codec)
+        && capabilities
+            .max_h264_level
+            .zip(level)
+            .is_some_and(|(max, level)| level > max)
 }
 
 /// What this viewer asked for, and what they can read.
@@ -317,9 +341,11 @@ pub fn decide(
         .max_height
         .is_none_or(|max| file.video_height <= max);
     let renders_picture = capabilities.displays(file.dynamic_range);
+    let within_level = !exceeds_h264_level(capabilities, &file.video_codec, file.video_level);
     let video_supported = !deinterlace
         && fits
         && renders_picture
+        && within_level
         && capabilities
             .video_codecs
             .iter()
@@ -809,6 +835,7 @@ mod tests {
             supports_interlaced: None,
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         }
     }
 
@@ -820,6 +847,7 @@ mod tests {
             supports_interlaced: None,
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         }
     }
 
@@ -831,6 +859,7 @@ mod tests {
             supports_interlaced: None,
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         }
     }
 
@@ -847,6 +876,7 @@ mod tests {
             supports_interlaced: Some(true),
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         };
         assert!(is_container_compatible("mpegts", &caps.containers));
         assert!(is_container_compatible("ts", &caps.containers));
@@ -865,6 +895,7 @@ mod tests {
             video_height: 576,
             interlaced: true,
             dynamic_range: DynamicRange::Sdr,
+            video_level: None,
         };
         let audio = [AudioTrackMeta {
             stream_index: 0,
@@ -1072,6 +1103,7 @@ mod tests {
                 video_height: 1080,
                 interlaced: false,
                 dynamic_range: DynamicRange::Sdr,
+                video_level: None,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -1093,6 +1125,7 @@ mod tests {
                 video_height: 1080,
                 interlaced: false,
                 dynamic_range: DynamicRange::Sdr,
+                video_level: None,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -1114,6 +1147,7 @@ mod tests {
                 video_height: 1080,
                 interlaced: false,
                 dynamic_range: DynamicRange::Sdr,
+                video_level: None,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -1135,6 +1169,7 @@ mod tests {
                 video_height: 1080,
                 interlaced: false,
                 dynamic_range: DynamicRange::Sdr,
+                video_level: None,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -1156,6 +1191,7 @@ mod tests {
                 video_height: 1080,
                 interlaced: false,
                 dynamic_range: DynamicRange::Sdr,
+                video_level: None,
             },
             vec![AudioTrackMeta {
                 stream_index: 1,
@@ -1187,6 +1223,35 @@ mod tests {
         assert_eq!(d.method, PlaybackMethod::DirectPlay);
         assert_eq!(d.video_mode, VideoMode::Copy);
         assert_eq!(d.audio_mode, AudioMode::Copy);
+    }
+
+    #[test]
+    fn only_an_h264_level_known_to_exceed_the_cap_forces_a_transcode() {
+        let capped = ClientCapabilities {
+            video_codecs: vec!["h264".to_string(), "hevc".to_string()],
+            max_h264_level: Some(41),
+            ..firefox_caps()
+        };
+        let cases = [
+            ("h264 5.0", "h264", Some(50), PlaybackMethod::VideoTranscode),
+            ("h264 4.1", "h264", Some(41), PlaybackMethod::DirectPlay),
+            ("h264 unread", "h264", None, PlaybackMethod::DirectPlay),
+            ("hevc 5.1", "hevc", Some(153), PlaybackMethod::DirectPlay),
+        ];
+        for (what, codec, level, method) in cases {
+            let (mut file, audio) = mp4_h264_aac();
+            file.video_codec = codec.to_string();
+            file.video_level = level;
+            let d = decide(
+                &file,
+                &audio,
+                &[],
+                &capped,
+                ViewerPrefs::default(),
+                H264_ONLY,
+            );
+            assert_eq!(d.method, method, "{what}");
+        }
     }
 
     #[test]
@@ -1304,6 +1369,7 @@ mod tests {
             video_height: 1080,
             interlaced: false,
             dynamic_range: DynamicRange::Sdr,
+            video_level: None,
         };
         let audio = vec![
             AudioTrackMeta {
@@ -1350,6 +1416,7 @@ mod tests {
             video_height: 1080,
             interlaced: false,
             dynamic_range: DynamicRange::Sdr,
+            video_level: None,
         };
         let audio = vec![
             AudioTrackMeta {
@@ -1766,6 +1833,7 @@ mod tests {
             video_height: 1080,
             interlaced: false,
             dynamic_range: DynamicRange::Sdr,
+            video_level: None,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1808,6 +1876,7 @@ mod tests {
             video_height: 1080,
             interlaced: false,
             dynamic_range: DynamicRange::Sdr,
+            video_level: None,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1920,6 +1989,7 @@ mod tests {
             video_height: 1080,
             interlaced: false,
             dynamic_range: DynamicRange::Sdr,
+            video_level: None,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1936,6 +2006,7 @@ mod tests {
             supports_interlaced: None,
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         };
         let d = decide(
             &file,
@@ -1962,6 +2033,7 @@ mod tests {
             video_height: 480,
             interlaced: false,
             dynamic_range: DynamicRange::Sdr,
+            video_level: None,
         };
         let audio = vec![AudioTrackMeta {
             stream_index: 1,
@@ -1978,6 +2050,7 @@ mod tests {
             supports_interlaced: None,
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         };
         let d = decide(
             &file,
@@ -2005,6 +2078,7 @@ mod tests {
             video_height: 1080,
             interlaced: false,
             dynamic_range: DynamicRange::Sdr,
+            video_level: None,
         };
         let audio = vec![
             AudioTrackMeta {
@@ -2031,6 +2105,7 @@ mod tests {
             supports_interlaced: None,
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         };
         let d = decide(
             &file,

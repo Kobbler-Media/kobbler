@@ -328,6 +328,7 @@ fn decide_mode(facts: &StreamFacts, capabilities: &ClientCapabilities) -> Mode {
         video_height: facts.height,
         interlaced: facts.interlaced,
         dynamic_range: decision::DynamicRange::Sdr,
+        video_level: None,
     };
     let audio = [AudioTrackMeta {
         stream_index: 0,
@@ -1648,6 +1649,7 @@ mod tests {
             supports_interlaced: None,
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         }
     }
 
@@ -1729,6 +1731,7 @@ mod tests {
             supports_interlaced: None,
             max_height: None,
             hdr_formats: None,
+            max_h264_level: None,
         };
         assert_eq!(
             decide_mode(&tuner_facts("h264", "aac", true), &browser),

@@ -206,6 +206,7 @@ pub async fn create_live_session(
             video_height: 1080,
             interlaced,
             dynamic_range,
+            video_level: None,
         };
 
         let preferred_codecs = state.encoder_caps.preferred_codecs();

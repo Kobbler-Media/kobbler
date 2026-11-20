@@ -176,6 +176,7 @@ fn stremio_capabilities() -> crate::streaming::decision::ClientCapabilities {
         supports_interlaced: Some(true),
         max_height: None,
         hdr_formats: None,
+        max_h264_level: None,
     }
 }
 

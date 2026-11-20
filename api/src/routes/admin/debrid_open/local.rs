@@ -124,8 +124,16 @@ pub(super) async fn open(
         .unwrap_or_default();
     let caps = body.capabilities.clone().unwrap_or_default();
     let displays = caps.displays(dynamic_range);
+    let video_level = if crate::streaming::decision::h264_level_matters(&caps, &video_codec) {
+        crate::ffmpeg::probe::video_level(&file_path).await
+    } else {
+        None
+    };
+    let over_level =
+        crate::streaming::decision::exceeds_h264_level(&caps, &video_codec, video_level);
     let direct_play = !deinterlace
         && displays
+        && !over_level
         && body.capabilities.as_ref().is_some_and(|caps| {
             crate::streaming::decision::is_container_compatible(&container, &caps.containers)
         });
@@ -147,7 +155,7 @@ pub(super) async fn open(
     } else {
         info!(session_id = %session_id, file = %filename, "Playing from local cache (no debrid)");
         let needs_transcode =
-            deinterlace || !displays || video_codec == "hevc" || video_codec == "av1";
+            deinterlace || !displays || over_level || video_codec == "hevc" || video_codec == "av1";
         let audio_mode = if audio_track.is_some_and(|a| a.codec == "aac") {
             AudioMode::Copy
         } else {

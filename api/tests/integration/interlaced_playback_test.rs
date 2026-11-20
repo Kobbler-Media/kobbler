@@ -370,36 +370,6 @@ async fn a_recording_is_deinterlaced_for_a_client_that_cannot_show_fields() {
 // Debrid
 // =============================================================================
 
-async fn wait_for_probe(rig: &Rig, session_id: Uuid) {
-    let server = &rig.server;
-    wait_until_async(
-        Duration::from_secs(10),
-        "probe never finished",
-        || async move {
-            let status: Value = session_status(server, session_id).await.json();
-            status["state"] != "preparing"
-        },
-    )
-    .await;
-}
-
-fn stored_decision(rig: &Rig, session_id: Uuid) -> (String, bool) {
-    let session = rig
-        .server
-        .app_state
-        .playback_sessions
-        .get(&session_id)
-        .expect("session");
-    (
-        serde_json::to_value(session.decision.method)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string(),
-        session.decision.deinterlace,
-    )
-}
-
 /// Opens [hash] for a client that cannot show fields, over the live download and then from
 /// the finished cache, and returns the first segment each served.
 async fn debrid_transcodes(rig: &Rig, hash: &str) -> [Vec<u8>; 2] {

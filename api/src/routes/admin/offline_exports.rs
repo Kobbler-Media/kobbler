@@ -110,6 +110,7 @@ pub async fn create_export(
             video_height: meta.video_height,
             interlaced: meta.interlaced.unwrap_or(false),
             dynamic_range: meta.dynamic_range,
+            video_level: None,
         },
         &meta.audio_metas,
         &[],

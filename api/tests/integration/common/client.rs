@@ -43,6 +43,23 @@ impl TestClient {
         TestResponse::from_reqwest(resp).await
     }
 
+    pub async fn request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        headers: &[(&str, &str)],
+    ) -> TestResponse {
+        let mut req = self.client.request(method, self.url(path));
+        for (name, value) in headers {
+            req = req.header(*name, *value);
+        }
+        if let Some(ref token) = self.auth_token {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        }
+        let resp = req.send().await.expect("request failed");
+        TestResponse::from_reqwest(resp).await
+    }
+
     /// Make a POST request without body.
     pub async fn post(&self, path: &str) -> TestResponse {
         let mut req = self.client.post(self.url(path));

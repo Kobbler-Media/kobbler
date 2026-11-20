@@ -8,6 +8,7 @@ pub mod byte_range;
 pub mod cache_download;
 pub mod debrid_session;
 pub mod decision;
+pub mod dlna;
 pub mod download_meter;
 pub mod feed;
 pub mod language;
