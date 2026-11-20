@@ -485,6 +485,7 @@ pub(super) async fn run(ctx: Prepare) {
                 prior_runs: Vec::new(),
                 deinterlace: decision.deinterlace,
                 tone_map_hdr: decision.tone_map_hdr,
+                h264_level: decision.h264_level,
             };
 
             match crate::ffmpeg::transcode::TranscodeProcess::start(args).await {

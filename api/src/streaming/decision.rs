@@ -104,6 +104,9 @@ pub struct PlaybackDecision {
     /// source's HDR.
     #[serde(default)]
     pub tone_map_hdr: bool,
+    /// The client's H.264 level cap, which a video transcode is held to.
+    #[serde(default)]
+    pub h264_level: Option<u32>,
 }
 
 /// Metadata about a file needed for the decision.
@@ -393,6 +396,7 @@ pub fn decide(
             subtitle_handling,
             deinterlace,
             tone_map_hdr: false,
+            h264_level: None,
         }
     } else if video_supported && audio_supported {
         // Codecs fine, container needs remux (MKV → fMP4)
@@ -404,6 +408,7 @@ pub fn decide(
             subtitle_handling,
             deinterlace,
             tone_map_hdr: false,
+            h264_level: None,
         }
     } else if video_supported {
         // Video fine, audio needs transcode
@@ -419,6 +424,7 @@ pub fn decide(
             subtitle_handling,
             deinterlace,
             tone_map_hdr: false,
+            h264_level: None,
         }
     } else {
         // Video needs transcode (and possibly audio too)
@@ -439,6 +445,7 @@ pub fn decide(
             subtitle_handling,
             deinterlace,
             tone_map_hdr: false,
+            h264_level: None,
         }
     };
 
@@ -458,6 +465,7 @@ pub fn decide(
 
     decision.tone_map_hdr = matches!(decision.video_mode, VideoMode::Transcode { .. })
         && !capabilities.displays_transcode_of(file.dynamic_range);
+    decision.h264_level = capabilities.max_h264_level;
     decision
 }
 

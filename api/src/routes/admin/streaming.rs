@@ -682,6 +682,7 @@ pub(crate) async fn open_file_session(
             prior_runs: Vec::new(),
             deinterlace: decision.deinterlace,
             tone_map_hdr: decision.tone_map_hdr,
+            h264_level: decision.h264_level,
         };
 
         // Ensure segment dir exists for subtitle extraction before response
@@ -3723,6 +3724,7 @@ async fn start_ffmpeg_for_session(
         prior_runs,
         deinterlace: session.decision.deinterlace,
         tone_map_hdr: session.decision.tone_map_hdr,
+        h264_level: session.decision.h264_level,
     };
 
     transcode::TranscodeProcess::start(args).await

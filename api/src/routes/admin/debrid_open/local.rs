@@ -149,6 +149,7 @@ pub(super) async fn open(
                 subtitle_handling: SubtitleHandling::None,
                 deinterlace: false,
                 tone_map_hdr: false,
+                h264_level: caps.max_h264_level,
             },
             None,
         )
@@ -185,6 +186,7 @@ pub(super) async fn open(
             subtitle_handling: SubtitleHandling::None,
             deinterlace,
             tone_map_hdr: needs_transcode && !caps.displays_transcode_of(dynamic_range),
+            h264_level: caps.max_h264_level,
         };
         let process = start_transcode(
             state,
@@ -430,6 +432,7 @@ async fn start_transcode(
             prior_runs: Vec::new(),
             deinterlace: decision.deinterlace,
             tone_map_hdr: decision.tone_map_hdr,
+            h264_level: decision.h264_level,
         };
         match crate::ffmpeg::transcode::TranscodeProcess::start(args).await {
             Ok(mut process) => match process.survived_launch().await {

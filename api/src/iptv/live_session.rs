@@ -613,6 +613,9 @@ async fn start_live_transcode(
             config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
         }
         config = config.tone_map_hdr(decision.tone_map_hdr);
+        if let Some(level) = decision.h264_level {
+            config = config.h264_level(level);
+        }
     }
     if let Some(enc) = audio_encoder {
         config = config.audio_encoder(&enc);

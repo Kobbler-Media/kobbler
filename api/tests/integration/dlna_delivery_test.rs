@@ -520,10 +520,93 @@ async fn h264_above_the_clients_level_is_transcoded_rather_than_copied() {
     }
 }
 
+/// Two seconds of 1080p60 H.264, which libx264 left to itself encodes at 4.2.
+fn seed_1080p60(dir: &Path) -> PathBuf {
+    let out = dir.join("film.mp4");
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=s=1920x1080:r=60:d=2",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=d=2",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-c:a",
+            "aac",
+        ])
+        .arg(&out)
+        .status()
+        .expect("ffmpeg");
+    assert!(status.success());
+    out
+}
+
+fn h264_level(bytes: &[u8]) -> u32 {
+    let file = tempfile::NamedTempFile::with_suffix(".ts").unwrap();
+    std::fs::write(file.path(), bytes).unwrap();
+    let out = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=level",
+            "-of",
+            "csv=p=0",
+        ])
+        .arg(file.path())
+        .output()
+        .expect("ffprobe");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    stdout
+        .lines()
+        .next()
+        .and_then(|level| level.parse().ok())
+        .unwrap_or_else(|| panic!("ffprobe level {stdout:?}"))
+}
+
+#[tokio::test]
+async fn a_transcode_for_a_capped_client_declares_no_more_than_its_level() {
+    let server = TestServer::start_api_only().await;
+    let dir = PathBuf::from(server.storage_root()).join(Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&dir).unwrap();
+    let file_id = seed_file(&server, &seed_1080p60(&dir)).await;
+
+    for (max_level, expected) in [(None, 42), (Some(41), 41)] {
+        let session = open(
+            &server,
+            file_id,
+            json!({
+                "capabilities": capped_at(hls_caps(), max_level),
+                "delivery": "progressive",
+                "force_transcode": true,
+            }),
+        )
+        .await;
+        assert_eq!(session["method"], json!("video_transcode"), "{session}");
+        let resp = server
+            .api_client()
+            .get(session["progressive_url"].as_str().unwrap())
+            .await;
+        resp.assert_ok();
+        assert_eq!(h264_level(resp.bytes()), expected, "cap {max_level:?}");
+    }
+}
+
 #[tokio::test]
 async fn a_debrid_release_above_the_clients_level_is_transcoded_live_and_from_cache() {
     use crate::common::debrid_rig::{
-        Rig, direct_play_caps, session_id_of, stored_decision, wait_for_probe,
+        Rig, direct_play_caps, session_id_of, stored_decision, stored_h264_level, wait_for_probe,
     };
     let dir = tempfile::tempdir().unwrap();
     let release = std::fs::read(minute_at_level(dir.path(), "5", "mkv")).unwrap();
@@ -542,6 +625,7 @@ async fn a_debrid_release_above_the_clients_level_is_transcoded_live_and_from_ca
         let live = session_id_of(&rig.resolve_with(&body).await);
         wait_for_probe(&rig, live).await;
         assert_eq!(stored_decision(&rig, live).0, method, "{hash} live");
+        assert_eq!(stored_h264_level(&rig, live), max_level, "{hash} live");
 
         rig.wait_for_complete(hash).await;
         rig.server
@@ -550,5 +634,10 @@ async fn a_debrid_release_above_the_clients_level_is_transcoded_live_and_from_ca
             .await;
         let cached = rig.resolve_with(&body).await;
         assert_eq!(cached["method"], method, "{hash} cached: {cached}");
+        assert_eq!(
+            stored_h264_level(&rig, session_id_of(&cached)),
+            max_level,
+            "{hash} cached"
+        );
     }
 }

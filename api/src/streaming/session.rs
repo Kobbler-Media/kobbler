@@ -203,6 +203,7 @@ impl PlaybackSession {
                 subtitle_handling: crate::streaming::decision::SubtitleHandling::None,
                 deinterlace: false,
                 tone_map_hdr: false,
+                h264_level: None,
             },
             transcode: None,
             segment_cache: SegmentCache::new(PathBuf::new(), 6, 0.0),

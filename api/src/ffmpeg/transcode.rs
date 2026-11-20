@@ -73,6 +73,7 @@ pub struct TranscodeArgs {
     pub prior_runs: Vec<kob_ffmpeg::session::PriorRun>,
     pub deinterlace: bool,
     pub tone_map_hdr: bool,
+    pub h264_level: Option<u32>,
 }
 
 /// Health state for a live IPTV stream, shared between the feeder task and playlist handler.
@@ -313,6 +314,9 @@ fn build_config_for_args(args: &TranscodeArgs) -> kob_ffmpeg::session::SessionCo
             config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
         }
         config = config.tone_map_hdr(args.tone_map_hdr);
+        if let Some(level) = args.h264_level {
+            config = config.h264_level(level);
+        }
     }
     if let AudioMode::Transcode {
         target_codec,
@@ -375,6 +379,9 @@ fn build_config_for_hybrid(
             config = config.deinterlace(kob_ffmpeg::filter::graph::Deinterlace::Auto);
         }
         config = config.tone_map_hdr(decision.tone_map_hdr);
+        if let Some(level) = decision.h264_level {
+            config = config.h264_level(level);
+        }
     }
     if let Some((ref codec, bitrate)) = audio_config {
         config = config
@@ -1028,6 +1035,7 @@ mod tests {
             prior_runs: Vec::new(),
             deinterlace: false,
             tone_map_hdr: false,
+            h264_level: None,
         }
     }
 
@@ -1040,6 +1048,7 @@ mod tests {
             subtitle_handling: SubtitleHandling::None,
             deinterlace: false,
             tone_map_hdr: false,
+            h264_level: None,
         }
     }
 
@@ -1067,6 +1076,35 @@ mod tests {
             None,
         );
         assert_eq!(hybrid.deinterlace, Deinterlace::Auto);
+    }
+
+    #[test]
+    fn the_clients_h264_level_reaches_both_transcode_configs() {
+        let mut args = dummy_args(0);
+        args.h264_level = Some(41);
+        assert_eq!(build_config_for_args(&args).h264_level, None);
+        args.video_mode = VideoMode::Transcode;
+        assert_eq!(build_config_for_args(&args).h264_level, Some(41));
+
+        let mut decision = dummy_decision(0);
+        decision.h264_level = Some(41);
+        let hybrid = |decision: &PlaybackDecision| {
+            build_config_for_hybrid(
+                decision,
+                Path::new("/tmp/out"),
+                1.0,
+                6,
+                "libx264",
+                None,
+                None,
+            )
+            .h264_level
+        };
+        assert_eq!(hybrid(&decision), None);
+        decision.video_mode = DecisionVideoMode::Transcode {
+            target_codec: "h264".into(),
+        };
+        assert_eq!(hybrid(&decision), Some(41));
     }
 
     #[test]

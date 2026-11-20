@@ -488,3 +488,13 @@ pub fn stored_decision(rig: &Rig, session_id: Uuid) -> (String, bool) {
         session.decision.deinterlace,
     )
 }
+
+pub fn stored_h264_level(rig: &Rig, session_id: Uuid) -> Option<u32> {
+    rig.server
+        .app_state
+        .playback_sessions
+        .get(&session_id)
+        .expect("session")
+        .decision
+        .h264_level
+}
