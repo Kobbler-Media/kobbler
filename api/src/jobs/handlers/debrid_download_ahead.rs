@@ -11,7 +11,7 @@ use crate::AppState;
 use crate::download_ahead::DOWNLOAD_AHEAD_JOB;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
-use crate::repositories::debrid_cache_files::CacheRelease;
+use crate::repositories::debrid_cache_files::{self as cache_files, CacheRelease};
 use crate::routes::admin::debrid_open::{SessionRow, VIDEO_CONTAINERS, release_key};
 use crate::routes::admin::{stream_local, stream_prewarm};
 use crate::routes::helpers::build_kobload_client;
@@ -23,6 +23,8 @@ use crate::streaming::progressive::DownloadTarget;
 struct Payload {
     user_id: Uuid,
     episode_id: Uuid,
+    #[serde(default)]
+    hold_days: Option<i64>,
 }
 
 pub struct DebridDownloadAheadHandler {
@@ -54,6 +56,7 @@ impl JobHandler for DebridDownloadAheadHandler {
         let Payload {
             user_id,
             episode_id,
+            hold_days,
         } = serde_json::from_value(payload)?;
         let state = &self.state;
         if stream_local::local_option(state, "episode", episode_id)
@@ -144,6 +147,11 @@ impl JobHandler for DebridDownloadAheadHandler {
         drop(claim);
         match result {
             Ok(()) => {
+                if let Some(days) = hold_days {
+                    let until = time::OffsetDateTime::now_utc() + time::Duration::days(days);
+                    cache_files::hold_until(&state.pool, &cache_path.to_string_lossy(), until)
+                        .await?;
+                }
                 info!(%episode_id, %session_id, "downloaded the next episode ahead");
                 Ok(json!({ "episode_id": episode_id, "session_id": session_id }))
             }

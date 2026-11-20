@@ -254,7 +254,13 @@ pub(crate) async fn complete_cache_entry(
         .await
         .ok()?
         .len();
-    (cached.file_size > 0 && on_disk >= cached.file_size as u64).then_some(cached)
+    if cached.file_size <= 0 || on_disk < cached.file_size as u64 {
+        return None;
+    }
+    if let Err(e) = cache_files::mark_complete(&state.pool, &cached.file_path).await {
+        tracing::warn!(error = %e, path = %cached.file_path, "Failed to mark cache file complete");
+    }
+    Some(cached)
 }
 
 fn register(state: &AppState, body: &StreamResolveBody, session_id: Uuid) {

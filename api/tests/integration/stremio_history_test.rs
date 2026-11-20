@@ -39,7 +39,7 @@ async fn seed_catalogue(mock: &MockServer) {
         "Caught Up Show",
         "Returning Series",
         "TV-G",
-        &[(1, &episodes(3, 400)), (2, &episodes(1, 5))],
+        &[(1, &episodes(3, 400)), (2, &episodes(1, 20))],
     )
     .await;
     mount_show(

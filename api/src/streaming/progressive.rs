@@ -189,6 +189,9 @@ impl ProgressiveDownloadManager {
             Ok(()) => {
                 info!(session_id = %session_id, "Progressive download complete");
                 meter.finished(true);
+                if let Err(e) = cache_files::mark_complete(&self.pool, &cache_path_str).await {
+                    warn!(session_id = %session_id, error = %e, "Failed to mark cache file complete");
+                }
                 // Trigger processing pipeline
                 self.trigger_processing(session_id, &cache_path).await;
                 Ok(())

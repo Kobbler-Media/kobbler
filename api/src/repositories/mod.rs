@@ -39,6 +39,7 @@ pub mod dashboard;
 pub mod debrid_cache_files;
 pub mod debrid_files;
 pub mod debrid_keeps;
+pub mod debrid_new_episodes;
 pub mod debrid_stream_sessions;
 pub mod deferred_ingests;
 pub mod device_sync_state;

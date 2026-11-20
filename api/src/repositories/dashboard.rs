@@ -140,9 +140,13 @@ where
 ///
 /// Availability rules for the `up_next` CTE branch:
 ///   - Wanted episodes require a real file (kobload will set one once grabbed).
-///   - Debrid-only episodes (`want_status = 'none'`) appear 24h after their
-///     stored DATE to absorb release/indexing lag. We don't have per-show
-///     `airs_time` metadata yet, so the fuzz is a flat 1 day.
+///   - A debrid-only episode (`want_status = 'none'`) that aired on or after the
+///     viewer's last watch of the show, within `NEW_EPISODE_WAIT_DAYS`, waits until a
+///     release of it is downloaded (`debrid_new_episode_watch` fetches it): release
+///     day rarely has one yet.
+///   - Other debrid-only episodes appear 24h after their stored DATE, so a binge
+///     doesn't hinge on a download ahead surviving eviction, and an episode the watch
+///     gave up on isn't hidden for good.
 ///
 /// A sport league is followed live, so `sport_next` replaces `up_next` for it: the
 /// newest available event, and only while every watched event is older.
@@ -163,7 +167,9 @@ where
                 ts.show_id,
                 ts.season_sort_order AS last_season_sort,
                 te.episode_sort_order AS last_episode_sort,
-                ts.id AS last_season_id
+                ts.id AS last_season_id,
+                MAX(COALESCE(ws.watched_at, ws.updated_at)) OVER (PARTITION BY ts.show_id)
+                    AS last_watched_at
             FROM tv_watch_states ws
             JOIN tv_episodes te ON te.id = ws.episode_id
             JOIN tv_seasons ts ON ts.id = te.season_id AND NOT ts.is_special
@@ -261,7 +267,12 @@ where
                   )
                   OR (te.want_status = 'none'
                       AND te.air_date IS NOT NULL
-                      AND (te.air_date::timestamp + INTERVAL '1 day') <= NOW())
+                      AND CASE
+                          WHEN te.air_date >= lw.last_watched_at::date
+                               AND te.air_date >= CURRENT_DATE - $3::int
+                              THEN te.air_date <= CURRENT_DATE AND debrid_episode_on_disk(te.id)
+                          ELSE (te.air_date::timestamp + INTERVAL '1 day') <= NOW()
+                      END)
               )
               AND NOT EXISTS (
                   SELECT 1 FROM tv_watch_states ws2
@@ -363,6 +374,7 @@ where
         "#,
         user_id,
         kids_only,
+        crate::download_ahead::NEW_EPISODE_WAIT_DAYS,
     )
     .fetch_all(exec)
     .await

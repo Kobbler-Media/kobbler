@@ -18,6 +18,11 @@ pub const DOWNLOAD_AHEAD_JOB: &str = "debrid_download_ahead";
 /// How long a queued download ahead of an episode stands before another may be queued.
 const REQUEUE_AFTER_HOURS: f64 = 12.0;
 
+/// How long after a debrid episode airs Up Next holds it back for a download, and the
+/// new-episode watch keeps looking for one: releases trickle in over the first day or
+/// two, and past a week nothing usable is coming.
+pub const NEW_EPISODE_WAIT_DAYS: i32 = 7;
+
 #[derive(Clone)]
 struct InFlight {
     cancel: CancellationToken,
@@ -133,23 +138,27 @@ pub async fn consider(state: &AppState, user_id: Uuid, episode_id: Uuid) {
     .fetch_one(pool)
     .await
     .unwrap_or(false);
-    if !wanted {
-        return;
+    if wanted {
+        queue(state, user_id, next, None).await;
     }
+}
+
+/// `hold_days` keeps the download from expiring out of the cache before then.
+pub async fn queue(state: &AppState, user_id: Uuid, episode_id: Uuid, hold_days: Option<i64>) {
     if let Err(e) = crate::jobs::enqueue(
-        pool,
+        &state.pool,
         state.nats.publisher(),
         DOWNLOAD_AHEAD_JOB,
-        serde_json::json!({ "user_id": user_id, "episode_id": next }),
+        serde_json::json!({ "user_id": user_id, "episode_id": episode_id, "hold_days": hold_days }),
         crate::jobs::JobContext::for_entity(
             "tv_episode",
-            next,
+            episode_id,
             "Downloading the next episode ahead",
         ),
     )
     .await
     {
-        warn!(error = %e, %next, "failed to queue download ahead");
+        warn!(error = %e, %episode_id, "failed to queue download ahead");
     }
 }
 

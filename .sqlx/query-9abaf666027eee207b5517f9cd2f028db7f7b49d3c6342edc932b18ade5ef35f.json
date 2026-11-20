@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE debrid_cache_files SET expires_at = GREATEST(expires_at, $2) WHERE file_path = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9abaf666027eee207b5517f9cd2f028db7f7b49d3c6342edc932b18ade5ef35f"
+}

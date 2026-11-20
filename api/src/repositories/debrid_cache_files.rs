@@ -39,7 +39,8 @@ where
             debrid_provider_id = COALESCE(EXCLUDED.debrid_provider_id, debrid_cache_files.debrid_provider_id),
             info_hash = COALESCE(EXCLUDED.info_hash, debrid_cache_files.info_hash),
             file_id = COALESCE(EXCLUDED.file_id, debrid_cache_files.file_id),
-            filename = EXCLUDED.filename
+            filename = EXCLUDED.filename,
+            completed_at = NULL
         "#,
         file_path,
         file_size,
@@ -91,6 +92,34 @@ where
     sqlx::query!(
         "UPDATE debrid_cache_files SET last_accessed_at = NOW() WHERE file_path = $1",
         file_path,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+pub async fn mark_complete<'e, E>(exec: E, file_path: &str) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query!(
+        "UPDATE debrid_cache_files SET completed_at = NOW()
+         WHERE file_path = $1 AND completed_at IS NULL",
+        file_path,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+pub async fn hold_until<'e, E>(exec: E, file_path: &str, until: OffsetDateTime) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query!(
+        "UPDATE debrid_cache_files SET expires_at = GREATEST(expires_at, $2) WHERE file_path = $1",
+        file_path,
+        until,
     )
     .execute(exec)
     .await?;

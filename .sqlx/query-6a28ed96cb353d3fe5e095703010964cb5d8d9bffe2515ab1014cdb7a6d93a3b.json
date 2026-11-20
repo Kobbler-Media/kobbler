@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE debrid_cache_files SET completed_at = NOW()\n         WHERE file_path = $1 AND completed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6a28ed96cb353d3fe5e095703010964cb5d8d9bffe2515ab1014cdb7a6d93a3b"
+}

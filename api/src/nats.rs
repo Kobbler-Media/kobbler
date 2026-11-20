@@ -43,6 +43,7 @@ use crate::jobs::handlers::{
     DebridCacheCleanupHandler,
     DebridDownloadAheadHandler,
     DebridKeepHandler,
+    DebridNewEpisodeWatchHandler,
     DebridPrewarmHandler,
     DebridProcessHandler,
     DiscoverSyncHandler,
@@ -308,6 +309,9 @@ pub async fn start_nats_worker(
         app_state.clone(),
     )));
     worker.register_handler(HandlerAdapter::new(DebridDownloadAheadHandler::new(
+        app_state.clone(),
+    )));
+    worker.register_handler(HandlerAdapter::new(DebridNewEpisodeWatchHandler::new(
         app_state.clone(),
     )));
 
@@ -1105,6 +1109,14 @@ pub async fn start_scheduler(nats: NatsClient, shutdown_rx: watch::Receiver<bool
         "kobbler",
         "debrid_cache_cleanup",
         std::time::Duration::from_secs(900), // every 15 minutes
+    ));
+
+    // New debrid episodes for caught-up viewers, downloaded once a cached release turns up
+    scheduler.register(ScheduledJob::new(
+        "debrid-new-episode-watch",
+        "kobbler",
+        "debrid_new_episode_watch",
+        std::time::Duration::from_secs(1800),
     ));
 
     // Media integrity check — re-examines files already in the library for the
