@@ -38,9 +38,6 @@ pub async fn search_releases(
         }
     };
 
-    let title = metadata.title;
-    let author = metadata.author;
-
     let override_query = query
         .q
         .as_deref()
@@ -48,70 +45,19 @@ pub async fn search_releases(
         .filter(|value| !value.is_empty())
         .map(str::to_string);
 
-    let isbn10 = metadata
-        .identifiers
-        .get("isbn10")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-    let isbn13 = metadata
-        .identifiers
-        .get("isbn13")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-    let identifiers = nats_jobs::BookIdentifiers {
-        isbn10: isbn10.clone(),
-        isbn13: isbn13.clone(),
-        hardcover_id: None,
-        goodreads_id: None,
-        openlibrary_id: None,
+    let book = crate::wanted::book_media_want::WantedBook {
+        id,
+        title: &metadata.title,
+        author: metadata.author.as_deref(),
+        narrator: metadata.narrator.as_deref(),
+        identifiers: &metadata.identifiers,
+        series_name: metadata.series_name.as_deref(),
+        series_index: metadata.series_index,
+        pubdate: metadata.pubdate,
     };
-    let isbn = isbn13.clone().or(isbn10.clone());
-    let alternate_titles = crate::wanted::book_titles::book_alternate_titles(
-        &crate::metadata::ProviderRegistry::new(state.pool.clone()),
-        &crate::wanted::book_titles::BookRef {
-            title: &title,
-            series: metadata.series_name.as_deref(),
-            position: metadata.series_index,
-            hardcover_id: metadata
-                .identifiers
-                .get("hardcover")
-                .and_then(|v| v.as_str()),
-        },
-        crate::wanted::book_titles::Lookup::Fetch,
-    )
-    .await;
-    let media_want = if metadata.want_format == "audiobook" {
-        nats_jobs::MediaWant::Audiobook {
-            title: title.clone(),
-            author: author.clone(),
-            narrator: metadata.narrator,
-            isbn: isbn.clone(),
-            format_preferences: crate::routes::ingest::AUDIOBOOK_EXTENSIONS
-                .iter()
-                .map(|s| (*s).to_string())
-                .collect(),
-            identifiers: Some(identifiers),
-            series: metadata.series_name,
-            series_position: metadata.series_index.map(|idx| idx.to_string()),
-            release_date: metadata.pubdate.map(|dt| dt.date().to_string()),
-            alternate_titles: alternate_titles.clone(),
-        }
-    } else {
-        nats_jobs::MediaWant::Book {
-            title: title.clone(),
-            author: author.clone(),
-            isbn: isbn.clone(),
-            format_preferences: crate::routes::ingest::EBOOK_EXTENSIONS
-                .iter()
-                .map(|s| (*s).to_string())
-                .collect(),
-            identifiers: Some(identifiers),
-            series: metadata.series_name,
-            series_position: metadata.series_index.map(|idx| idx.to_string()),
-            release_date: metadata.pubdate.map(|dt| dt.date().to_string()),
-            alternate_titles: alternate_titles.clone(),
-        }
-    };
+    let media_want = crate::wanted::book_media_want::BookWant::load(&state.pool, &book)
+        .await
+        .media_want(metadata.want_format == "audiobook");
 
     // "any" drops the category filter entirely, for hunting releases that were
     // filed under Other/Misc rather than Books.

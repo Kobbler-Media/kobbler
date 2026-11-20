@@ -91,6 +91,7 @@ mod hardcover_sync_test;
 mod hardcover_titles_sync_test;
 mod hdr_playback_test;
 mod images_test;
+mod import_verification_test;
 mod ingest_approval_test;
 mod ingest_test;
 mod interlaced_playback_test;

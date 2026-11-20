@@ -108,96 +108,33 @@ impl JobHandler for BookWantHandler {
             }));
         };
 
-        let identifiers = nats_jobs::BookIdentifiers {
-            isbn10: book_data
-                .identifiers
-                .get("isbn10")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            isbn13: book_data
-                .identifiers
-                .get("isbn13")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            hardcover_id: book_data
-                .identifiers
-                .get("hardcover")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            goodreads_id: book_data
-                .identifiers
-                .get("goodreads")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            openlibrary_id: book_data
-                .identifiers
-                .get("openlibrary")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-        };
-
         // Read rejected releases to pass as exclusions
         let rejected = books::get_rejected_releases(&self.pool, payload.book_id)
             .await
             .unwrap_or(json!([]));
         let excluded_releases = build_excluded_releases(&rejected);
 
-        let alternate_titles = crate::wanted::book_titles::book_alternate_titles(
-            &crate::metadata::ProviderRegistry::new(self.pool.clone()),
-            &crate::wanted::book_titles::BookRef {
-                title: &book_data.title,
-                series: book_data.series_name.as_deref(),
-                position: book_data.series_index,
-                hardcover_id: identifiers.hardcover_id.as_deref(),
-            },
-            crate::wanted::book_titles::Lookup::Fetch,
-        )
-        .await;
-
-        // Determine which media wants to send based on want_format
-        let isbn = identifiers.isbn13.clone().or(identifiers.isbn10.clone());
+        let book = crate::wanted::book_media_want::WantedBook {
+            id: payload.book_id,
+            title: &book_data.title,
+            author: book_data.author.as_deref(),
+            narrator: book_data.narrator.as_deref(),
+            identifiers: &book_data.identifiers,
+            series_name: book_data.series_name.as_deref(),
+            series_index: book_data.series_index,
+            pubdate: book_data.pubdate,
+        };
+        let book_want = crate::wanted::book_media_want::BookWant::load(&self.pool, &book).await;
         let sources = match book_data.want_format.as_str() {
             "ebook" | "audiobook" | "both" => {
                 crate::wanted::book_source::want_sources(payload.book_id, &book_data.want_format)
             }
             _ => Vec::new(),
         };
-        let mut media_wants: Vec<(String, nats_jobs::MediaWant)> = Vec::new();
-        for (format, source_id) in sources {
-            let media_want = if format == "audiobook" {
-                nats_jobs::MediaWant::Audiobook {
-                    title: book_data.title.clone(),
-                    author: book_data.author.clone(),
-                    narrator: book_data.narrator.clone(),
-                    isbn: isbn.clone(),
-                    format_preferences: crate::routes::ingest::AUDIOBOOK_EXTENSIONS
-                        .iter()
-                        .map(|s| (*s).to_string())
-                        .collect(),
-                    identifiers: Some(identifiers.clone()),
-                    series: book_data.series_name.clone(),
-                    series_position: book_data.series_index.map(|idx| idx.to_string()),
-                    release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
-                    alternate_titles: alternate_titles.clone(),
-                }
-            } else {
-                nats_jobs::MediaWant::Book {
-                    title: book_data.title.clone(),
-                    author: book_data.author.clone(),
-                    isbn: isbn.clone(),
-                    format_preferences: crate::routes::ingest::EBOOK_EXTENSIONS
-                        .iter()
-                        .map(|s| (*s).to_string())
-                        .collect(),
-                    identifiers: Some(identifiers.clone()),
-                    series: book_data.series_name.clone(),
-                    series_position: book_data.series_index.map(|idx| idx.to_string()),
-                    release_date: book_data.pubdate.map(|dt| dt.date().to_string()),
-                    alternate_titles: alternate_titles.clone(),
-                }
-            };
-            media_wants.push((source_id, media_want));
-        }
+        let media_wants: Vec<(String, nats_jobs::MediaWant)> = sources
+            .into_iter()
+            .map(|(format, source_id)| (source_id, book_want.media_want(format == "audiobook")))
+            .collect();
 
         // Enqueue a want_request for each media want
         let mut enqueued = 0;

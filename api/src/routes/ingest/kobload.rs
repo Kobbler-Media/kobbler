@@ -43,6 +43,8 @@ enum FailureKind {
     Upstream,
     /// Local failure: disk create/write/rename/stat, DB insert, etc.
     Local,
+    /// The file's own metadata or text says it is a different book.
+    WrongBook,
 }
 
 /// Record the *first* failure seen in a per-file loop. Don't overwrite —
@@ -99,6 +101,10 @@ fn failure_response_parts(last_failure: Option<&(FailureKind, String)>) -> (Stat
         Some((FailureKind::Local, reason)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("no files ingested (local): {reason}"),
+        ),
+        Some((FailureKind::WrongBook, reason)) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("not the wanted book: {reason}"),
         ),
         None => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1219,6 +1225,11 @@ async fn ingest_single_book(
         None
     };
 
+    let expected = match book_id {
+        Some(id) => crate::wanted::verify::Expected::for_book(&state.pool, id).await,
+        None => None,
+    };
+
     // Log if we're using parsed metadata as fallback
     if wanted_metadata.is_none() && parsed_book.is_some() {
         tracing::info!(
@@ -1397,6 +1408,23 @@ async fn ingest_single_book(
                 FailureKind::Local,
                 format!("finalize file: {err}"),
             );
+            let _ = fs::remove_file(&file_path).await;
+            continue;
+        }
+
+        if let Some(expected) = expected.as_ref()
+            && let Some(found) =
+                crate::wanted::verify::inspect(&file_path, expected.author.as_deref()).await
+            && let crate::wanted::verify::Verdict::WrongBook(reason) =
+                crate::wanted::verify::judge(expected, &found)
+        {
+            tracing::warn!(
+                download_id = %download_id,
+                path = %ebook.path,
+                %reason,
+                "Downloaded file is not the wanted book"
+            );
+            note_failure(&mut last_failure, FailureKind::WrongBook, reason);
             let _ = fs::remove_file(&file_path).await;
             continue;
         }
@@ -1660,7 +1688,7 @@ async fn ingest_single_book(
                             &nats_publisher,
                             &runtime_config,
                             extra_id,
-                            IngestOptions::auto(file_mode),
+                            IngestOptions::auto(file_mode).quiet(),
                         )
                         .await
                         {
@@ -1788,9 +1816,7 @@ async fn ingest_single_book(
                 "completed",
             )
             .await;
-            // Clean up watch pattern and broadcast acquisition event
-            crate::wanted::on_book_acquired(&state.runtime_config, &state.library_events, book_id)
-                .await;
+            crate::wanted::confirm_book_wants(&state.runtime_config, book_id).await;
 
             // Record activity
             crate::routes::library::helpers::record_activity_for_entity(
@@ -1814,6 +1840,20 @@ async fn ingest_single_book(
 
     if ingested_count == 0 {
         let (status, body) = failure_response_parts(last_failure.as_ref());
+        if let (Some(book_id), Some((FailureKind::WrongBook, reason))) =
+            (book_id, last_failure.as_ref())
+        {
+            crate::wanted::verify::reject_release(
+                &state.pool,
+                state.nats.publisher(),
+                book_id,
+                release_info
+                    .map(|r| r.title.as_str())
+                    .or_else(|| meta_resolved.release_title()),
+                reason,
+            )
+            .await;
+        }
         // Mark attempt as failed since no files could be downloaded
         if let Some(book_id) = book_id {
             let _ = wanted_attempts::update_status(

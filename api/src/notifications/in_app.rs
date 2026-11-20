@@ -4,9 +4,12 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use super::NotificationTrigger;
+
 use crate::repositories::user_notifications::{self, CreateUserNotification};
 
 pub struct InAppNotification {
+    pub trigger: NotificationTrigger,
     pub title: String,
     pub message: String,
     pub entity_type: Option<String>,
@@ -15,6 +18,9 @@ pub struct InAppNotification {
 }
 
 pub async fn notify_household(pool: &PgPool, notification: &InAppNotification) -> sqlx::Result<()> {
+    if notification.trigger != NotificationTrigger::OnImport {
+        return Ok(());
+    }
     let users = sqlx::query_as::<_, (Uuid, bool)>("SELECT id, is_kids FROM users")
         .fetch_all(pool)
         .await?;

@@ -88,6 +88,7 @@ kob-ffmpeg = { path = "../../koblibs/kob-ffmpeg" }
 kob-audio-norm = { path = "../../koblibs/kob-audio-norm" }
 kob-gpu-gate = { path = "../../koblibs/kob-gpu-gate" }
 kob-ebook = { path = "../../koblibs/kob-ebook" }
+kob-normalize = { path = "../../koblibs/kob-normalize" }
 koblem-client = { path = "../../koblibs/koblem-client" }
 async-nats = "0.51.0"
 

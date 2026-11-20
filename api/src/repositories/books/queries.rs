@@ -825,6 +825,26 @@ where
     }))
 }
 
+/// Titles of the other books, wanted or owned, that share an author with this one.
+pub async fn titles_by_same_authors<'e, E>(exec: E, id: Uuid) -> Result<Vec<String>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let titles = sqlx::query_scalar!(
+        r#"
+        SELECT DISTINCT other.title
+        FROM book_authors mine
+        JOIN book_authors theirs ON theirs.author_id = mine.author_id AND theirs.book_id <> mine.book_id
+        JOIN books other ON other.id = theirs.book_id
+        WHERE mine.book_id = $1
+        "#,
+        id,
+    )
+    .fetch_all(exec)
+    .await?;
+    Ok(titles)
+}
+
 /// Wanted item for list view.
 #[derive(Debug)]
 pub struct WantedItemRow {

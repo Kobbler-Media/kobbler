@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT other.title\n        FROM book_authors mine\n        JOIN book_authors theirs ON theirs.author_id = mine.author_id AND theirs.book_id <> mine.book_id\n        JOIN books other ON other.id = theirs.book_id\n        WHERE mine.book_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "books",
+            "name": "title"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "4830d98e8e66910b1afc29c1999f9e161fd0d4c80be89cb3cd3e4e47966cbd64"
+}

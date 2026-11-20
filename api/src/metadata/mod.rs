@@ -544,7 +544,7 @@ impl ProviderRegistry {
         hardcover_id: &str,
         fetch: bool,
     ) -> Option<hardcover::BookTitles> {
-        let key = format!("book_titles:{hardcover_id}");
+        let key = format!("book_titles:v2:{hardcover_id}");
         if !fetch {
             return crate::source_cache::read::<Option<hardcover::BookTitles>>(
                 &self.pool,
@@ -554,16 +554,7 @@ impl ProviderRegistry {
             .await
             .flatten();
         }
-        let stored = self
-            .get_enabled_providers()
-            .await
-            .into_iter()
-            .find(|p| p.provider_type == hardcover::INFO.id)?;
-        let provider =
-            hardcover::HardcoverProvider::from_config(self.http_client.clone(), &stored.config);
-        if !provider.has_api_key() {
-            return None;
-        }
+        let provider = self.hardcover_with_key().await?;
         crate::source_cache::lookup(
             &self.pool,
             hardcover::INFO.id,
@@ -576,6 +567,38 @@ impl ProviderRegistry {
         )
         .await
         .flatten()
+    }
+
+    async fn hardcover_with_key(&self) -> Option<hardcover::HardcoverProvider> {
+        let stored = self
+            .get_enabled_providers()
+            .await
+            .into_iter()
+            .find(|p| p.provider_type == hardcover::INFO.id)?;
+        let provider =
+            hardcover::HardcoverProvider::from_config(self.http_client.clone(), &stored.config);
+        provider.has_api_key().then_some(provider)
+    }
+
+    /// Titles of every book by a Hardcover author, cached for a week. With
+    /// `fetch` false only the cache is read.
+    pub async fn get_author_titles(&self, author_id: i64, fetch: bool) -> Option<Vec<String>> {
+        let key = format!("author_titles:{author_id}");
+        if !fetch {
+            return crate::source_cache::read(&self.pool, hardcover::INFO.id, &key).await;
+        }
+        let provider = self.hardcover_with_key().await?;
+        crate::source_cache::lookup(
+            &self.pool,
+            hardcover::INFO.id,
+            &key,
+            time::Duration::days(7),
+            || async {
+                self.cooldown.wait_if_needed(hardcover::INFO.id).await;
+                provider.author_titles(author_id).await
+            },
+        )
+        .await
     }
 
     /// Get list of enabled providers from database

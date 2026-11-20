@@ -13,6 +13,16 @@ pub fn chapter_xhtml(heading: &str, paragraphs: &[&str]) -> String {
 /// A minimal valid EPUB 3 whose spine is `chapters` in order, at
 /// `OEBPS/ch{n}.xhtml` (n from 1).
 pub fn epub_with(chapters: &[String]) -> Vec<u8> {
+    epub_book("Pack Test", Some("Test Author"), None, chapters)
+}
+
+/// [`epub_with`], with the title, creator and date the OPF declares.
+pub fn epub_book(
+    title: &str,
+    creator: Option<&str>,
+    date: Option<&str>,
+    chapters: &[String],
+) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default();
     let mut put = |name: &str, body: &str| {
@@ -29,13 +39,19 @@ pub fn epub_with(chapters: &[String]) -> Vec<u8> {
             format!(r#"<item id="ch{n}" href="ch{n}.xhtml" media-type="application/xhtml+xml"/>"#)
         })
         .collect();
+    let creator = creator
+        .map(|c| format!("<dc:creator>{c}</dc:creator>"))
+        .unwrap_or_default();
+    let date = date
+        .map(|d| format!("<dc:date>{d}</dc:date>"))
+        .unwrap_or_default();
     let spine: String = (1..=chapters.len())
         .map(|n| format!(r#"<itemref idref="ch{n}"/>"#))
         .collect();
     put(
         "OEBPS/content.opf",
         &format!(
-            r#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">pack-test</dc:identifier><dc:title>Pack Test</dc:title><dc:creator>Test Author</dc:creator><dc:language>en</dc:language></metadata><manifest>{items}</manifest><spine>{spine}</spine></package>"#
+            r#"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">pack-test</dc:identifier><dc:title>{title}</dc:title>{creator}{date}<dc:language>en</dc:language></metadata><manifest>{items}</manifest><spine>{spine}</spine></package>"#
         ),
     );
     for (i, chapter) in chapters.iter().enumerate() {

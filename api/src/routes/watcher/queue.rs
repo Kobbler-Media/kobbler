@@ -443,6 +443,7 @@ pub async fn approve_ingest_item(
             Some(device_ids) => IngestEntitlements::Devices(device_ids),
             None => IngestEntitlements::AutoSync,
         },
+        announce: true,
     };
     let book_id = match process_queue_item(
         &state.pool,

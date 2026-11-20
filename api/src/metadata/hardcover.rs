@@ -1033,6 +1033,19 @@ query BookTitles($id: Int!) {
     title
     subtitle
     editions(limit: 100) { title subtitle }
+    contributions(limit: 1) { author_id }
+  }
+}
+"#;
+
+const AUTHOR_TITLES_QUERY: &str = r#"
+query AuthorTitles($id: Int!) {
+  books(
+    where: { contributions: { author_id: { _eq: $id } } }
+    order_by: { users_count: desc }
+    limit: 200
+  ) {
+    title
   }
 }
 "#;
@@ -1428,6 +1441,8 @@ pub struct BookTitles {
     pub subtitle: Option<String>,
     #[serde(default)]
     pub editions: Vec<EditionTitle>,
+    #[serde(default)]
+    pub author_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1440,6 +1455,9 @@ pub struct EditionTitle {
 fn parse_book_titles(body: serde_json::Value) -> Option<BookTitles> {
     let book = body.get("data")?.get("books_by_pk")?;
     let mut titles: BookTitles = serde_json::from_value(book.clone()).ok()?;
+    titles.author_id = book
+        .pointer("/contributions/0/author_id")
+        .and_then(|v| v.as_i64());
     let mut seen = std::collections::HashSet::new();
     titles.editions.retain(|e| {
         !e.title.trim().is_empty()
@@ -1451,34 +1469,63 @@ fn parse_book_titles(body: serde_json::Value) -> Option<BookTitles> {
     Some(titles)
 }
 
+fn parse_author_titles(body: serde_json::Value) -> Vec<String> {
+    body.pointer("/data/books")
+        .and_then(|b| b.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|b| b.get("title")?.as_str())
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(String::from)
+        .collect()
+}
+
 impl HardcoverProvider {
-    /// `Ok(None)` when Hardcover has no such book, which is an answer.
-    pub async fn book_titles(&self, book_id: &str) -> Result<Option<BookTitles>, ProviderError> {
+    async fn titles_query(
+        &self,
+        query: &str,
+        id: i64,
+        what: &str,
+    ) -> Result<serde_json::Value, ProviderError> {
         let api_key = self.require_api_key()?;
-        let Ok(id) = book_id.trim().parse::<i64>() else {
-            return Ok(None);
-        };
         let response = self
             .client
             .post(format!("{}/v1/graphql", self.base_url))
             .header("Authorization", format!("Bearer {api_key}"))
             .timeout(crate::source_cache::LOOKUP_TIMEOUT)
-            .json(&serde_json::json!({ "query": BOOK_TITLES_QUERY, "variables": { "id": id } }))
+            .json(&serde_json::json!({ "query": query, "variables": { "id": id } }))
             .send()
             .await?;
         if !response.status().is_success() {
-            return Err(ProviderError::from_http_status(
-                response.status(),
-                "Hardcover book titles",
-            ));
+            return Err(ProviderError::from_http_status(response.status(), what));
         }
         let body: serde_json::Value = response.json().await?;
         if let Some(errors) = body.get("errors") {
             return Err(ProviderError::Other(format!(
-                "Hardcover book titles query failed: {errors}"
+                "{what} query failed: {errors}"
             )));
         }
+        Ok(body)
+    }
+
+    /// `Ok(None)` when Hardcover has no such book, which is an answer.
+    pub async fn book_titles(&self, book_id: &str) -> Result<Option<BookTitles>, ProviderError> {
+        let Ok(id) = book_id.trim().parse::<i64>() else {
+            return Ok(None);
+        };
+        let body = self
+            .titles_query(BOOK_TITLES_QUERY, id, "Hardcover book titles")
+            .await?;
         Ok(parse_book_titles(body))
+    }
+
+    /// Every book the author contributed to, most read first.
+    pub async fn author_titles(&self, author_id: i64) -> Result<Vec<String>, ProviderError> {
+        let body = self
+            .titles_query(AUTHOR_TITLES_QUERY, author_id, "Hardcover author titles")
+            .await?;
+        Ok(parse_author_titles(body))
     }
 }
 

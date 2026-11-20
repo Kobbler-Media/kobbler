@@ -7,6 +7,7 @@
 //! 4. Verify the wanted item progresses correctly
 
 use crate::common::*;
+use api::events::LibraryEvent;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -812,4 +813,75 @@ async fn test_status_progression_through_ingesting() {
         attempts[0].status, "completed",
         "Status should be 'completed' after successful ingest"
     );
+}
+
+/// Kobload delivering a wanted book announces "acquired" once — one "Import
+/// Complete" per profile — however many formats the download carried.
+#[tokio::test]
+async fn test_kobload_delivery_announces_acquisition_once() {
+    for paths in [
+        &["Mistborn.kepub"][..],
+        &["Mistborn.kepub", "sub/Mistborn.kepub"][..],
+    ] {
+        let (server, mock_server, wanted_id) = setup_wanted_with_kobload().await;
+        let download_id = queue_download(&server, &mock_server, &wanted_id).await;
+        Mock::given(method("GET"))
+            .and(path_regex(format!(
+                r"/api/v1/downloads/{download_id}/files/.*"
+            )))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(b"PK\x03\x04fake kepub".to_vec())
+                    .insert_header("Content-Type", "application/epub+zip"),
+            )
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path_regex(
+                r"^/api/v1/(downloads/.*/imported|want/.*/confirm)$",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": "deleted"})))
+            .mount(&mock_server)
+            .await;
+
+        let book_id = Uuid::parse_str(&wanted_id).unwrap();
+        let mut events = server.library_events.subscribe();
+        let files: Vec<Value> = paths
+            .iter()
+            .map(|p| json!({"path": p, "size": 1_048_576, "extension": "kepub", "mime_type": "application/epub+zip"}))
+            .collect();
+        TestClient::new(&server.api_url)
+            .post_json(
+                &format!("/api/v1/ingest/{}", server.ingest_token),
+                &json!({
+                    "download_id": download_id,
+                    "status": "completed",
+                    "metadata": { "book_id": wanted_id },
+                    "files": files,
+                }),
+            )
+            .await
+            .assert_success();
+        server.process_pending_ingest_jobs().await;
+
+        let mut announced = 0;
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        while let Ok(Ok(event)) = tokio::time::timeout_at(deadline, events.recv()).await {
+            if let LibraryEvent::WantedStatusUpdated {
+                wanted_id,
+                status,
+                announce: true,
+                ..
+            } = event
+                && wanted_id == book_id
+                && status == "acquired"
+            {
+                announced += 1;
+            }
+        }
+        assert_eq!(
+            announced, 1,
+            "{paths:?}: acquisition announced {announced} times"
+        );
+    }
 }

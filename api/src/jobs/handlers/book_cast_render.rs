@@ -33,7 +33,7 @@ use crate::repositories::user_voice_presets::{self, UserVoicePreset};
 use crate::repositories::{audiobook_files, ebook_segments, ingest_queue};
 use crate::tts::timeline::{Passage, Plan, Route};
 use crate::tts::{self, TtsBackend};
-use crate::watcher::{FileMode, IngestEntitlements, IngestOptions};
+use crate::watcher::{FileMode, IngestOptions};
 
 #[derive(Debug, Deserialize)]
 struct Payload {
@@ -291,10 +291,7 @@ impl BookCastRenderHandler {
             self.state.nats.publisher(),
             &self.state.runtime_config,
             book_id,
-            IngestOptions {
-                file_mode: FileMode::Copy,
-                entitlements: IngestEntitlements::AutoSync,
-            },
+            IngestOptions::auto(FileMode::Copy),
         )
         .await
         .map_err(|e| JobError::ExecutionFailed(format!("importing the audiobook failed: {e}")))?;

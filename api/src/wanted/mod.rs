@@ -6,8 +6,10 @@
 
 pub mod acquisition;
 pub mod alternate_titles;
+pub mod book_media_want;
 pub mod book_source;
 pub mod book_titles;
+pub mod verify;
 
 pub use acquisition::*;
 

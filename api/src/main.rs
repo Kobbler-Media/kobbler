@@ -653,6 +653,7 @@ async fn run(tracker: Arc<PollTracker>) {
                     if let Err(e) = api::notifications::in_app::notify_household(
                         &pool_clone,
                         &api::notifications::in_app::InAppNotification {
+                            trigger: translated.trigger,
                             title: translated.title.clone(),
                             message: message.clone(),
                             entity_type: entity_type.clone(),

@@ -1,4 +1,5 @@
 use crate::common::*;
+use api::notifications::NotificationTrigger;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -689,6 +690,7 @@ async fn kids_inbox_only_hears_about_titles_it_can_open() {
         api::notifications::in_app::notify_household(
             &server.pool,
             &api::notifications::in_app::InAppNotification {
+                trigger: NotificationTrigger::OnImport,
                 title: "Movie available".into(),
                 message: format!("{title} is now available"),
                 entity_type: Some("movie".into()),
@@ -717,6 +719,34 @@ async fn kids_inbox_only_hears_about_titles_it_can_open() {
         inbox(&adult.get("/api/v1/admin/notifications/inbox").await).len(),
         2
     );
+}
+
+/// The inbox is for what arrives: a grab or a failed search is operational news.
+#[tokio::test]
+async fn household_inbox_skips_grabs_and_failures() {
+    let server = TestServer::start_api_only().await;
+    let toy = seed_movie(&server, "Toybox", Some("G"), &[], None).await;
+    for trigger in [NotificationTrigger::OnGrab, NotificationTrigger::OnFailed] {
+        api::notifications::in_app::notify_household(
+            &server.pool,
+            &api::notifications::in_app::InAppNotification {
+                trigger,
+                title: "Download Started".into(),
+                message: "Toybox grabbed".into(),
+                entity_type: Some("movie".into()),
+                entity_id: Some(toy),
+                entity_url: None,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let resp = server
+        .admin_client()
+        .get("/api/v1/admin/notifications/inbox")
+        .await;
+    resp.assert_ok();
+    assert_eq!(resp.json::<Value>()["notifications"], serde_json::json!([]));
 }
 
 #[tokio::test]

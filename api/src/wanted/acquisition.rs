@@ -196,6 +196,18 @@ pub async fn on_book_acquired(
     library_events: &broadcast::Sender<LibraryEvent>,
     book_id: Uuid,
 ) {
+    confirm_book_wants(runtime_config, book_id).await;
+    let _ = library_events.send(LibraryEvent::WantedStatusUpdated {
+        wanted_id: book_id,
+        status: "acquired".to_string(),
+        announce: true,
+        upgraded: false,
+    });
+}
+
+/// Stops Kobload searching for a book whose download has arrived, without
+/// announcing it: the ingest that puts the file in the library does that.
+pub async fn confirm_book_wants(runtime_config: &RuntimeConfigManager, book_id: Uuid) {
     let config = runtime_config.get().await;
     if let Some(client) = try_build_kobload_client(&config) {
         for source_id in super::book_source::all_source_ids(book_id) {
@@ -209,10 +221,4 @@ pub async fn on_book_acquired(
             }
         }
     }
-    let _ = library_events.send(LibraryEvent::WantedStatusUpdated {
-        wanted_id: book_id,
-        status: "acquired".to_string(),
-        announce: true,
-        upgraded: false,
-    });
 }

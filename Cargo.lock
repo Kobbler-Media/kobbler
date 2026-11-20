@@ -120,6 +120,7 @@ dependencies = [
  "kob-ebook",
  "kob-ffmpeg",
  "kob-gpu-gate",
+ "kob-normalize",
  "koblem-client",
  "kobo-proxy",
  "libc",
@@ -2386,6 +2387,13 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "kob-normalize"
+version = "0.1.0"
+dependencies = [
+ "unicode-normalization",
 ]
 
 [[package]]

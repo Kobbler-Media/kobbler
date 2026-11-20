@@ -28,6 +28,8 @@ pub enum IngestEntitlements {
 pub struct IngestOptions {
     pub file_mode: FileMode,
     pub entitlements: IngestEntitlements,
+    /// False for another format of a book whose first file already announced it.
+    pub announce: bool,
 }
 
 impl IngestOptions {
@@ -35,6 +37,14 @@ impl IngestOptions {
         Self {
             file_mode,
             entitlements: IngestEntitlements::AutoSync,
+            announce: true,
+        }
+    }
+
+    pub fn quiet(self) -> Self {
+        Self {
+            announce: false,
+            ..self
         }
     }
 }
@@ -110,7 +120,11 @@ pub async fn process_queue_item(
     ingest.entitle(kind, &options.entitlements).await;
     let _ = ingest_queue::approve(pool, queue_id, book_id).await;
     let _ = library_events.send(LibraryEvent::library_updated(Some(book_id)));
-    crate::wanted::on_book_acquired(runtime_config, library_events, book_id).await;
+    if options.announce {
+        crate::wanted::on_book_acquired(runtime_config, library_events, book_id).await;
+    } else {
+        crate::wanted::confirm_book_wants(runtime_config, book_id).await;
+    }
     ingest.enqueue_followups(kind).await;
 
     info!(

@@ -1,13 +1,15 @@
 //! Every way a book is wanted or searched for sends the names it is published
 //! under: Hardcover's edition titles (fetched once, through the cache), the
 //! series name with its position, and the title without its series prefix.
+//! It also sends the author's other books, from Hardcover and the library, so
+//! Kobload can tell "Dune Messiah" from "Dune".
 
 use crate::common::*;
 use api::jobs::handlers::BookWantHandler;
 use api::jobs::worker::JobHandler;
 use serde_json::{Value, json};
 use uuid::Uuid;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{body_string_contains, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const EXPECTED: &[&str] = &[
@@ -35,6 +37,7 @@ async fn rig() -> Rig {
     let hardcover = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/graphql"))
+        .and(body_string_contains("BookTitles"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(json!({ "data": { "books_by_pk": {
                 "title": "The Final Empire",
@@ -43,7 +46,21 @@ async fn rig() -> Rig {
                     { "title": "Mistborn: The Final Empire", "subtitle": null },
                     { "title": "The Final Empire", "subtitle": "Tenth Anniversary Edition" },
                 ],
+                "contributions": [{ "author_id": 42 }],
             }}})),
+        )
+        .mount(&hardcover)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/graphql"))
+        .and(body_string_contains("AuthorTitles"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({ "data": { "books": [
+                { "title": "The Final Empire" },
+                { "title": "The Well of Ascension" },
+                { "title": "The Hero of Ages" },
+                { "title": "Elantris" },
+            ]}})),
         )
         .mount(&hardcover)
         .await;
@@ -97,9 +114,44 @@ fn assert_alternates(entry: &str, want: &Value) {
     }
 }
 
+fn assert_other_titles(entry: &str, want: &Value) {
+    let titles: Vec<&str> = want["other_titles"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{entry}: no other_titles in {want}"))
+        .iter()
+        .map(|t| t.as_str().unwrap())
+        .collect();
+    for title in [
+        "The Well of Ascension",
+        "The Hero of Ages",
+        "Elantris",
+        "Warbreaker",
+    ] {
+        assert!(
+            titles.contains(&title),
+            "{entry}: {title} not in {titles:?}"
+        );
+    }
+    assert!(
+        !titles.contains(&"The Final Empire"),
+        "{entry}: the book itself in {titles:?}"
+    );
+}
+
 #[tokio::test]
 async fn book_wants_carry_edition_and_series_titles() {
     let rig = rig().await;
+    rig.server
+        .admin_client()
+        .post_json(
+            "/api/v1/library/books",
+            &json!({
+                "title": "Warbreaker",
+                "authors": [{ "name": "Brandon Sanderson" }],
+            }),
+        )
+        .await
+        .assert_success();
 
     let created = rig
         .server
@@ -169,10 +221,11 @@ async fn book_wants_carry_edition_and_series_titles() {
         ("create wanted", create_wanted),
     ] {
         assert_alternates(entry, &want);
+        assert_other_titles(entry, &want);
     }
     assert_eq!(
         rig.hardcover_calls().await,
-        1,
-        "Hardcover is asked once per book"
+        2,
+        "Hardcover is asked once for the book and once for its author"
     );
 }

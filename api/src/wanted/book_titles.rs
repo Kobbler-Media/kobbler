@@ -1,3 +1,6 @@
+use sqlx::PgPool;
+use uuid::Uuid;
+
 use super::alternate_titles::{Article, titles_besides};
 use crate::metadata::ProviderRegistry;
 use crate::metadata::hardcover::BookTitles;
@@ -71,16 +74,70 @@ pub fn assemble(book: &BookRef<'_>, hardcover: Option<&BookTitles>) -> Option<Ve
     titles_besides(book.title, names, Article::DropOnly)
 }
 
-pub async fn book_alternate_titles(
+pub struct BookNames {
+    pub alternates: Option<Vec<String>>,
+    pub others: Option<Vec<String>>,
+}
+
+/// The names a book is released under, and the titles of its author's other
+/// books (Hardcover's list for the author, plus the library's) with none of
+/// those names among them.
+pub async fn book_names(
     registry: &ProviderRegistry,
+    pool: &PgPool,
+    book_id: Uuid,
     book: &BookRef<'_>,
     lookup: Lookup,
-) -> Option<Vec<String>> {
+) -> BookNames {
     let hardcover = match book.hardcover_id {
         Some(id) => registry.get_book_titles(id, lookup == Lookup::Fetch).await,
         None => None,
     };
-    assemble(book, hardcover.as_ref())
+    let alternates = assemble(book, hardcover.as_ref());
+    let mut others = match hardcover.as_ref().and_then(|hc| hc.author_id) {
+        Some(author_id) => registry
+            .get_author_titles(author_id, lookup == Lookup::Fetch)
+            .await
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    match crate::repositories::books::titles_by_same_authors(pool, book_id).await {
+        Ok(titles) => others.extend(titles),
+        Err(e) => tracing::warn!(error = %e, %book_id, "Failed to read the author's other books"),
+    }
+    BookNames {
+        others: others_besides(book.title, &alternates, hardcover.as_ref(), others),
+        alternates,
+    }
+}
+
+fn others_besides(
+    title: &str,
+    alternates: &Option<Vec<String>>,
+    hardcover: Option<&BookTitles>,
+    others: Vec<String>,
+) -> Option<Vec<String>> {
+    let own: Vec<&str> = std::iter::once(title)
+        .chain(alternates.iter().flatten().map(String::as_str))
+        .chain(hardcover.map(|hc| hc.title.as_str()))
+        .chain(
+            hardcover
+                .into_iter()
+                .flat_map(|hc| hc.editions.iter().map(|e| e.title.as_str())),
+        )
+        .collect();
+    let mut kept: Vec<String> = Vec::new();
+    for other in others {
+        let other = other.trim();
+        if other.is_empty()
+            || own.iter().any(|o| same(o, other))
+            || kept.iter().any(|k| same(k, other))
+        {
+            continue;
+        }
+        kept.push(other.to_string());
+    }
+    (!kept.is_empty()).then_some(kept)
 }
 
 #[cfg(test)]
@@ -172,6 +229,7 @@ mod tests {
                     subtitle: Some("Or the Necessity of Violence: An Arcane History".into()),
                 },
             ],
+            author_id: None,
         };
         let names = assemble(&book("Babel", None, None), Some(&hc));
         has(

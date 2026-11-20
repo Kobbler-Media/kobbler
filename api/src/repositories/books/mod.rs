@@ -35,6 +35,7 @@ pub use queries::{
     list_by_genre, list_by_series, list_by_shelf, list_discovered_for_matching,
     list_fully_unavailable_ids, list_syncable_wanted, list_unavailable, list_wanted,
     list_with_filters, match_discovered_to_library, match_series_discovered_to_library,
+    titles_by_same_authors,
 };
 
 // Re-export series-related operations from crud
