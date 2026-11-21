@@ -32,8 +32,8 @@ use crate::repositories::{
 use crate::routes::{AuthUser, PlaybackAuth};
 use crate::streaming::byte_range::{ByteRange, file_stream, parse_byte_range};
 use crate::streaming::decision::{
-    self, AAC_ENCODER, AudioTrackMeta, ClientCapabilities, FileMeta, PlaybackMethod,
-    SubtitleTrackMeta, ViewerPrefs,
+    self, AudioTrackMeta, ClientCapabilities, FileMeta, PlaybackMethod, SubtitleTrackMeta,
+    ViewerPrefs,
 };
 use crate::streaming::feed::FeedStatus;
 use crate::streaming::loudness::{PlaybackLoudness, TrackLoudness};
@@ -152,6 +152,15 @@ pub enum Delivery {
     Hls,
     /// One MPEG-TS response as well, for renderers (DLNA) that play no HLS.
     Progressive,
+}
+
+pub(crate) fn progressive_url(
+    session_id: Uuid,
+    method: PlaybackMethod,
+    delivery: Delivery,
+) -> Option<String> {
+    (method != PlaybackMethod::DirectPlay && delivery == Delivery::Progressive)
+        .then(|| format!("/api/v1/admin/playback/sessions/{session_id}/stream.ts"))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -872,9 +881,7 @@ pub(crate) async fn open_file_session(
         } else {
             None
         },
-        progressive_url: (decision.method != PlaybackMethod::DirectPlay
-            && req.delivery == Delivery::Progressive)
-            .then(|| format!("{base_url}/stream.ts")),
+        progressive_url: progressive_url(session_id, decision.method, req.delivery),
         duration_seconds: duration,
         subtitles: subtitle_responses,
         audio_tracks: audio_responses,
@@ -3164,7 +3171,7 @@ pub async fn switch_audio(
         decision::AudioMode::Copy
     } else {
         decision::AudioMode::Transcode {
-            target_codec: AAC_ENCODER.to_string(),
+            target_codec: crate::streaming::decision::aac_encoder().to_string(),
             bitrate_kbps: decision::suggest_audio_bitrate(Some(&new_track)),
         }
     };

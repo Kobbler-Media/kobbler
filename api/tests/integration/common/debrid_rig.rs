@@ -167,6 +167,19 @@ impl Rig {
         )
     }
 
+    /// Download the release to the local cache and end the session that fetched it, so
+    /// the next resolve of `info_hash` plays it from disk.
+    pub async fn put_on_disk(&self, info_hash: &str, movie: Uuid) {
+        let first = session_id_of(
+            &self
+                .resolve_with(&self.resolve_body(info_hash, movie, direct_play_caps()))
+                .await,
+        );
+        self.wait_for_complete(info_hash).await;
+        wait_for_probe(self, first).await;
+        end_playback(&self.server, first).await;
+    }
+
     pub fn cache_file(&self, info_hash: &str) -> PathBuf {
         self.cache_dir.path().join(info_hash).join(&self.filename)
     }

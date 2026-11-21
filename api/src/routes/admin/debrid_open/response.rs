@@ -1,7 +1,9 @@
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::routes::admin::streaming::{SessionResponse, build_audio_responses};
+use crate::routes::admin::streaming::{
+    Delivery, SessionResponse, build_audio_responses, progressive_url,
+};
 use crate::streaming::decision::PlaybackMethod;
 
 /// The resolve response for a live session as it stands now, starting from `base` (what
@@ -12,6 +14,7 @@ pub(crate) fn live_response(
     state: &AppState,
     session_id: Uuid,
     base: Option<&SessionResponse>,
+    delivery: Delivery,
 ) -> Option<SessionResponse> {
     let mut session = state.playback_sessions.get_mut(&session_id)?;
     if session.error.is_some() {
@@ -58,6 +61,7 @@ pub(crate) fn live_response(
     response.playlist_url =
         (!direct_play).then(|| format!("/api/v1/admin/playback/sessions/{session_id}/master.m3u8"));
     response.direct_url = direct_play.then(|| format!("/api/v1/admin/stream/{session_id}/play"));
+    response.progressive_url = progressive_url(session_id, session.decision.method, delivery);
     response.duration_seconds = session.duration_seconds;
     if probed {
         response.audio_tracks = build_audio_responses(

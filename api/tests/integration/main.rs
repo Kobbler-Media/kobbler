@@ -66,6 +66,8 @@ mod debrid_analysis_test;
 mod debrid_audio_test;
 mod debrid_cache_test;
 mod debrid_dead_source_test;
+mod debrid_dlna_delivery_test;
+mod debrid_local_decision_test;
 mod debrid_outcomes_test;
 mod debrid_play_test;
 mod debrid_stream_test;

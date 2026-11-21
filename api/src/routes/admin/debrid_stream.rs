@@ -25,6 +25,7 @@ use crate::repositories::debrid_cache_files as cache_files;
 use crate::repositories::debrid_stream_sessions;
 use crate::routes::admin::debrid_errors::StreamFailure;
 use crate::routes::admin::stream_search_request::{self, SearchTarget};
+use crate::routes::admin::streaming::Delivery;
 use crate::routes::admin::{debrid_open, stream_prewarm};
 use crate::routes::helpers::build_kobload_client;
 use crate::routes::{AuthUser, PlaybackAuth};
@@ -213,7 +214,7 @@ pub async fn stream_resolve(
     // same release share one session.
     let _resolve_guard = match key {
         Some(ref key) => {
-            if let Some(resp) = dedup_hit(&state, key).await {
+            if let Some(resp) = dedup_hit(&state, key, body.delivery).await {
                 return resp;
             }
             let guard = state
@@ -223,7 +224,7 @@ pub async fn stream_resolve(
                 .clone()
                 .lock_owned()
                 .await;
-            if let Some(resp) = dedup_hit(&state, key).await {
+            if let Some(resp) = dedup_hit(&state, key, body.delivery).await {
                 return resp;
             }
             Some(guard)
@@ -237,12 +238,16 @@ pub async fn stream_resolve(
     }
 }
 
-async fn dedup_hit(state: &AppState, key: &str) -> Option<axum::response::Response> {
+async fn dedup_hit(
+    state: &AppState,
+    key: &str,
+    delivery: Delivery,
+) -> Option<axum::response::Response> {
     let existing_id = state.debrid_session_index.get(key).map(|e| *e)?;
     if let Some(mut session) = state.playback_sessions.get_mut(&existing_id) {
         session.touch();
     }
-    match debrid_open::live_response(state, existing_id, None) {
+    match debrid_open::live_response(state, existing_id, None, delivery) {
         Some(mut resp) => {
             info!(session_id = %existing_id, cache_key = %key, "debrid session dedup hit");
             resp.picture = debrid_stream_sessions::picture(&state.pool, existing_id)
@@ -371,6 +376,8 @@ pub struct StreamResolveBody {
     /// See `CreateSessionRequest::preferred_audio_title`.
     #[serde(default)]
     pub preferred_audio_title: Option<String>,
+    #[serde(default)]
+    pub delivery: Delivery,
 }
 
 #[derive(Debug, Deserialize)]

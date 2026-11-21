@@ -506,6 +506,7 @@ async fn try_resolve_option(
         auto_create: None,
         preferred_audio_language: None,
         preferred_audio_title: None,
+        delivery: crate::routes::admin::streaming::Delivery::Hls,
     };
 
     let resolve_resp =

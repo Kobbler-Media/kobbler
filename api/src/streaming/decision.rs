@@ -413,7 +413,7 @@ pub fn decide(
     } else if video_supported {
         // Video fine, audio needs transcode
         let audio_mode = AudioMode::Transcode {
-            target_codec: AAC_ENCODER.to_string(),
+            target_codec: aac_encoder().to_string(),
             bitrate_kbps: suggest_audio_bitrate(audio.as_ref()),
         };
         PlaybackDecision {
@@ -432,7 +432,7 @@ pub fn decide(
             AudioMode::Copy
         } else {
             AudioMode::Transcode {
-                target_codec: AAC_ENCODER.to_string(),
+                target_codec: aac_encoder().to_string(),
                 bitrate_kbps: suggest_audio_bitrate(audio.as_ref()),
             }
         };
@@ -457,7 +457,7 @@ pub fn decide(
         decision.video_mode = VideoMode::Transcode { target_codec };
         if matches!(decision.audio_mode, AudioMode::Copy) && !audio_supported {
             decision.audio_mode = AudioMode::Transcode {
-                target_codec: AAC_ENCODER.to_string(),
+                target_codec: aac_encoder().to_string(),
                 bitrate_kbps: suggest_audio_bitrate(audio.as_ref()),
             };
         }

@@ -12,11 +12,12 @@ use crate::AppState;
 use crate::debrid_outcomes::StreamRelease;
 use crate::repositories::debrid_cache_files::{self as cache_files, CachedFile};
 use crate::routes::admin::debrid_stream::StreamResolveBody;
-use crate::routes::admin::streaming::{ChapterResponse, SessionResponse, build_audio_responses};
+use crate::routes::admin::streaming::{
+    ChapterResponse, SessionResponse, build_audio_responses, progressive_url,
+};
 use crate::runtime_config::RuntimeConfig;
 use crate::streaming::decision::{
-    AAC_ENCODER, AudioMode, AudioTrackMeta, PlaybackDecision, PlaybackMethod, SubtitleHandling,
-    VideoMode,
+    AudioMode, AudioTrackMeta, FileMeta, PlaybackDecision, PlaybackMethod, VideoMode, ViewerPrefs,
 };
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::feed::StreamFeed;
@@ -110,98 +111,58 @@ pub(super) async fn open(
         body.preferred_audio_title.as_deref(),
         audio_language(body, runtime),
     );
-    let audio_index =
-        preferred.unwrap_or_else(|| probe.audio_streams.first().map(|a| a.index).unwrap_or(0));
-    let audio_track = audio_metas.iter().find(|a| a.stream_index == audio_index);
-
-    let deinterlace = video.is_some_and(|v| v.is_interlaced)
-        && body
-            .capabilities
-            .as_ref()
-            .is_some_and(|caps| caps.supports_interlaced == Some(false));
-    let dynamic_range = video
-        .map(crate::streaming::decision::probed_dynamic_range)
-        .unwrap_or_default();
     let caps = body.capabilities.clone().unwrap_or_default();
-    let displays = caps.displays(dynamic_range);
     let video_level = if crate::streaming::decision::h264_level_matters(&caps, &video_codec) {
         crate::ffmpeg::probe::video_level(&file_path).await
     } else {
         None
     };
-    let over_level =
-        crate::streaming::decision::exceeds_h264_level(&caps, &video_codec, video_level);
-    let direct_play = !deinterlace
-        && displays
-        && !over_level
-        && body.capabilities.as_ref().is_some_and(|caps| {
-            crate::streaming::decision::is_container_compatible(&container, &caps.containers)
-        });
-    let segment_dir = super::segment_dir(state, runtime, session_id);
-    let (decision, transcode) = if direct_play {
-        info!(session_id = %session_id, file = %filename, "Direct play from local cache (no debrid, no transcode)");
-        (
-            PlaybackDecision {
-                method: PlaybackMethod::DirectPlay,
-                video_mode: VideoMode::Copy,
-                audio_mode: AudioMode::Copy,
-                audio_stream_index: audio_index,
-                subtitle_handling: SubtitleHandling::None,
-                deinterlace: false,
-                tone_map_hdr: false,
-                h264_level: caps.max_h264_level,
-            },
-            None,
-        )
-    } else {
-        info!(session_id = %session_id, file = %filename, "Playing from local cache (no debrid)");
-        let needs_transcode =
-            deinterlace || !displays || over_level || video_codec == "hevc" || video_codec == "av1";
-        let audio_mode = if audio_track.is_some_and(|a| a.codec == "aac") {
-            AudioMode::Copy
-        } else {
-            AudioMode::Transcode {
-                target_codec: AAC_ENCODER.to_string(),
-                bitrate_kbps: crate::streaming::decision::suggest_audio_bitrate(audio_track),
-            }
-        };
-        let method = if needs_transcode {
-            PlaybackMethod::VideoTranscode
-        } else if matches!(audio_mode, AudioMode::Transcode { .. }) {
-            PlaybackMethod::AudioTranscode
-        } else {
-            PlaybackMethod::Remux
-        };
-        let decision = PlaybackDecision {
-            method,
-            video_mode: if needs_transcode {
-                VideoMode::Transcode {
-                    target_codec: "h264".to_string(),
-                }
-            } else {
-                VideoMode::Copy
-            },
-            audio_mode,
-            audio_stream_index: audio_index,
-            subtitle_handling: SubtitleHandling::None,
-            deinterlace,
-            tone_map_hdr: needs_transcode && !caps.displays_transcode_of(dynamic_range),
-            h264_level: caps.max_h264_level,
-        };
-        let process = start_transcode(
-            state,
-            session_id,
-            &file_path,
-            &segment_dir,
-            &decision,
-            &video_codec,
-            duration,
-            body.start_time,
-        )
-        .await?;
-        (decision, Some(process))
+    let file_meta = FileMeta {
+        container: container.clone(),
+        video_codec: video_codec.clone(),
+        video_width: width,
+        video_height: height,
+        interlaced: video.is_some_and(|v| v.is_interlaced),
+        dynamic_range: video
+            .map(crate::streaming::decision::probed_dynamic_range)
+            .unwrap_or_default(),
+        video_level,
     };
+    let decision = crate::streaming::decision::decide(
+        &file_meta,
+        &audio_metas,
+        &[],
+        &caps,
+        ViewerPrefs {
+            preferred_audio_index: preferred,
+            preferred_subtitle_index: None,
+            understood_language: audio_language(body, runtime),
+            subtitle_language: "",
+        },
+        &state.encoder_caps.preferred_codecs(),
+    );
+    let audio_index = decision.audio_stream_index;
     let method = decision.method;
+    let direct_play = method == PlaybackMethod::DirectPlay;
+    info!(session_id = %session_id, file = %filename, method = ?decision.method, "Playing from local cache (no debrid)");
+    let segment_dir = super::segment_dir(state, runtime, session_id);
+    let transcode = if direct_play {
+        None
+    } else {
+        Some(
+            start_transcode(
+                state,
+                session_id,
+                &file_path,
+                &segment_dir,
+                &decision,
+                &video_codec,
+                duration,
+                body.start_time,
+            )
+            .await?,
+        )
+    };
     let media = match mode {
         OpenMode::Play => Some(row.commit(state, body).await?),
         OpenMode::Warm(_) => None,
@@ -308,7 +269,7 @@ pub(super) async fn open(
         method,
         playlist_url: (!direct_play).then(|| format!("{base_url}/master.m3u8")),
         direct_url: direct_play.then(|| format!("/api/v1/admin/stream/{session_id}/play")),
-        progressive_url: None,
+        progressive_url: progressive_url(session_id, method, body.delivery),
         duration_seconds: duration,
         subtitles: vec![],
         audio_tracks,
@@ -359,8 +320,12 @@ async fn start_transcode(
     start_time: Option<f64>,
 ) -> Result<crate::ffmpeg::transcode::TranscodeProcess, axum::response::Response> {
     let needs_transcode = matches!(decision.video_mode, VideoMode::Transcode { .. });
-    let primary = if needs_transcode {
-        state.encoder_caps.h264.clone()
+    let primary = if let VideoMode::Transcode { target_codec } = &decision.video_mode {
+        state
+            .encoder_caps
+            .encoder_for(target_codec)
+            .unwrap_or(&state.encoder_caps.h264)
+            .to_string()
     } else {
         state
             .encoder_caps

@@ -24,6 +24,7 @@ use crate::routes::admin::debrid_open::{self, OpenMode, WarmGate, live_response,
 use crate::routes::admin::debrid_stream::{AutoCreateMedia, StreamResolveBody, kids_may_resolve};
 use crate::routes::admin::stream_local;
 use crate::routes::admin::stream_search_request::{self, SearchTarget};
+use crate::routes::admin::streaming::{Delivery, progressive_url};
 use crate::routes::helpers::build_kobload_client;
 use crate::streaming::cache_download;
 use crate::streaming::decision::ClientCapabilities;
@@ -50,6 +51,8 @@ pub struct PrewarmBody {
     pub preferred_audio_language: Option<String>,
     #[serde(default)]
     pub preferred_audio_title: Option<String>,
+    #[serde(default)]
+    pub delivery: Delivery,
 }
 
 /// What to search for, the key a repeat call for the same title finds it under, and the
@@ -142,6 +145,7 @@ impl PrewarmBody {
             auto_create,
             preferred_audio_language: self.preferred_audio_language,
             preferred_audio_title: self.preferred_audio_title,
+            delivery: self.delivery,
         };
         Ok(Title {
             target,
@@ -291,6 +295,7 @@ pub(crate) async fn pick_episode(
         estimated_duration: None,
         preferred_audio_language: None,
         preferred_audio_title: None,
+        delivery: Delivery::Hls,
     }
     .title()
     .ok()?;
@@ -401,15 +406,18 @@ pub async fn claim(
         end(&state, id, Phase::Expired).await;
         return (StatusCode::GONE, "prewarm expired").into_response();
     }
-    claim_prewarm(&state, prewarm).await
+    let delivery = prewarm.body.delivery;
+    claim_prewarm(&state, prewarm, delivery).await
 }
 
-async fn claim_prewarm(state: &AppState, prewarm: Prewarm) -> Response {
+async fn claim_prewarm(state: &AppState, prewarm: Prewarm, delivery: Delivery) -> Response {
     if let Some(resp) = gone(&prewarm.phase) {
         return resp;
     }
     if let Phase::Claimed(response) = &prewarm.phase {
-        return Json(response.as_ref().clone()).into_response();
+        let mut response = response.as_ref().clone();
+        response.progressive_url = progressive_url(prewarm.session_id, response.method, delivery);
+        return Json(response).into_response();
     }
     let failed = match state.playback_sessions.get(&prewarm.session_id) {
         None => {
@@ -467,7 +475,8 @@ async fn claim_prewarm(state: &AppState, prewarm: Prewarm) -> Response {
     base.media_type = Some(committed.media_type);
     base.skip_segments = committed.skip_segments;
     base.picture = committed.picture;
-    let response = live_response(state, session_id, Some(&base)).unwrap_or(base);
+    let mut response = live_response(state, session_id, Some(&base), delivery).unwrap_or(base);
+    response.progressive_url = progressive_url(session_id, response.method, delivery);
     state
         .stream_prewarms
         .finish(prewarm.id, Phase::Claimed(Box::new(response.clone())));
@@ -512,7 +521,7 @@ pub async fn claim_for_resolve(
         end(state, prewarm.id, Phase::Released).await;
         return None;
     }
-    Some(claim_prewarm(state, prewarm).await)
+    Some(claim_prewarm(state, prewarm, body.delivery).await)
 }
 
 /// POST /api/v1/admin/stream/prewarm/{id}/touch

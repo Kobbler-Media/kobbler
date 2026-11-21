@@ -15,11 +15,11 @@ use crate::debrid_outcomes::{self, StreamRelease};
 use crate::repositories::debrid_cache_files::CacheRelease;
 use crate::routes::admin::debrid_errors::StreamFailure;
 use crate::routes::admin::debrid_stream::StreamResolveBody;
-use crate::routes::admin::streaming::SessionResponse;
+use crate::routes::admin::streaming::{SessionResponse, progressive_url};
 use crate::routes::helpers::build_kobload_client;
 use crate::runtime_config::RuntimeConfig;
 use crate::streaming::cache_download;
-use crate::streaming::decision::{AAC_ENCODER, PlaybackMethod};
+use crate::streaming::decision::PlaybackMethod;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::feed::StreamFeed;
 use crate::streaming::progressive::DownloadTarget;
@@ -188,7 +188,7 @@ pub(super) async fn open(
                 method: initial_method,
                 video_mode: crate::streaming::decision::VideoMode::Copy,
                 audio_mode: crate::streaming::decision::AudioMode::Transcode {
-                    target_codec: AAC_ENCODER.to_string(),
+                    target_codec: crate::streaming::decision::aac_encoder().to_string(),
                     bitrate_kbps: 192,
                 },
                 audio_stream_index: 0,
@@ -259,7 +259,7 @@ pub(super) async fn open(
         playlist_url: (!direct_play)
             .then(|| format!("/api/v1/admin/playback/sessions/{session_id}/master.m3u8")),
         direct_url: direct_play.then(|| format!("/api/v1/admin/stream/{session_id}/play")),
-        progressive_url: None,
+        progressive_url: progressive_url(session_id, initial_method, body.delivery),
         duration_seconds: estimated_duration,
         subtitles: vec![],
         audio_tracks: vec![],
