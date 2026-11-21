@@ -361,11 +361,9 @@
             onSelect: toggleWatched
           },
           onWatchlistToggle && {
-            label: movie.in_watchlist ? 'On My List' : 'Want to Watch',
+            label: movie.in_watchlist ? 'On My List' : 'Add to My List',
             icon: movie.in_watchlist ? 'playlist_add_check' : 'playlist_add',
-            title: movie.in_watchlist
-              ? 'Remove from your watch list'
-              : 'Add to your watch list — shows up in Up Next',
+            title: movie.in_watchlist ? 'Remove from My List' : 'Shows up in Up Next',
             active: movie.in_watchlist,
             pinned: true,
             onSelect: () => onWatchlistToggle(!movie.in_watchlist)

@@ -29,7 +29,7 @@
     streamTarget,
     type EpisodeRef
   } from './discoverDetail';
-  import { wantDiscoverEpisodeRef, wantDiscoverItem } from './discoverWant';
+  import { wantDiscoverEpisodeRef, wantDiscoverItem, watchlistDiscoverItem } from './discoverWant';
   import { createDiscoverReturn } from './discoverReturn';
 
   interface Props {
@@ -48,6 +48,7 @@
   let detail = $state<DiscoverDetailResponse | null>(null);
   let error = $state<string | null>(null);
   let wanting = $state(false);
+  let listing = $state(false);
   let wantingEpisode = $state<string | null>(null);
 
   const item = $derived(parseDiscoverItem(detail, preview));
@@ -156,6 +157,17 @@
     }
   }
 
+  async function addToList() {
+    if (listing) return;
+    listing = true;
+    try {
+      goto(await watchlistDiscoverItem(mediaType, item, provider, providerId));
+    } catch (e) {
+      showMessage(e instanceof Error ? e.message : 'Failed to add to your list');
+      listing = false;
+    }
+  }
+
   async function wantEpisode(ref: EpisodeRef) {
     wantingEpisode = refKey(ref);
     try {
@@ -226,6 +238,13 @@
               busy: wanting,
               pinned: true,
               onSelect: want
+            },
+            (mediaType === 'tv' || mediaType === 'movie') && {
+              label: listing ? 'Adding…' : 'Add to My List',
+              icon: 'playlist_add',
+              title: 'Put it on your list to stream later, without downloading it',
+              busy: listing,
+              onSelect: addToList
             }
           ]}
         >

@@ -322,6 +322,10 @@ pub fn create_router(state: AppState) -> Router {
             post(discover_routes::want_discover_season),
         )
         .route(
+            "/api/v1/admin/discover/watchlist",
+            post(routes::admin::discover_watchlist::add_discover_to_watchlist),
+        )
+        .route(
             "/api/v1/admin/discover/watch-providers",
             get(discover_routes::list_watch_providers),
         )

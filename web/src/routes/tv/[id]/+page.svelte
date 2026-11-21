@@ -99,14 +99,14 @@
     try {
       if (inWatchlist) {
         await api.addToWatchlist('show', show.id);
-        showMessage('Added to your watch list');
+        showMessage('Added to My List');
       } else {
         await api.removeFromWatchlist('show', show.id);
-        showMessage('Removed from your watch list');
+        showMessage('Removed from My List');
       }
       await loadShow(show.id);
     } catch (e) {
-      showMessage(e instanceof Error ? e.message : 'Failed to update your watch list');
+      showMessage(e instanceof Error ? e.message : 'Failed to update My List');
     }
   };
 

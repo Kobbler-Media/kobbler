@@ -412,11 +412,9 @@
       <HeroActions
         actions={[
           onWatchlistToggle && {
-            label: show.in_watchlist ? 'On My List' : 'Want to Watch',
+            label: show.in_watchlist ? 'On My List' : 'Add to My List',
             icon: show.in_watchlist ? 'playlist_add_check' : 'playlist_add',
-            title: show.in_watchlist
-              ? 'Remove from your watch list'
-              : 'Add to your watch list — shows up in Up Next',
+            title: show.in_watchlist ? 'Remove from My List' : 'Shows up in Up Next',
             active: show.in_watchlist,
             pinned: true,
             onSelect: handleWatchlistChange

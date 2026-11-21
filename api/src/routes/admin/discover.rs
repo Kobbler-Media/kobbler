@@ -17,7 +17,7 @@ use crate::AppState;
 use crate::LibraryEvent;
 use crate::discover_art::art_url;
 use crate::for_you::ForYouItem;
-use crate::images::ImageEntry;
+use crate::images::{ImageEntry, ImageMap};
 use crate::jobs::handlers::discover_sync::{DISCOVER_PROVIDER, DiscoverItem, DiscoverSection};
 use crate::jobs::{self, JobContext};
 use crate::repositories::{media_roots, metadata_cache, tv_episodes, tv_seasons, tv_shows};
@@ -433,7 +433,6 @@ pub async fn get_discover_season(
 pub struct DiscoverShowSpec {
     pub provider: String,
     pub provider_id: String,
-    pub season_number: u32,
     pub title: String,
     pub year: Option<i32>,
     pub identifiers: Option<serde_json::Value>,
@@ -451,6 +450,7 @@ pub struct DiscoverShowSpec {
 pub struct WantEpisodeRequest {
     #[serde(flatten)]
     pub show: DiscoverShowSpec,
+    pub season_number: u32,
     pub episode_number: u32,
 }
 
@@ -458,6 +458,7 @@ pub struct WantEpisodeRequest {
 pub struct WantSeasonRequest {
     #[serde(flatten)]
     pub show: DiscoverShowSpec,
+    pub season_number: u32,
 }
 
 struct ResolvedSeason {
@@ -475,82 +476,85 @@ fn internal(msg: String) -> (StatusCode, Json<Value>) {
     )
 }
 
+/// The library row for a discover show and whether this call created it.
+/// `monitored` only applies to a new row: an existing show keeps its settings.
+pub(super) async fn ensure_discover_show(
+    pool: &sqlx::PgPool,
+    spec: &DiscoverShowSpec,
+    monitored: bool,
+) -> crate::repositories::Result<(Uuid, bool)> {
+    let identifier_key = format!("{}_id", spec.provider);
+    if let Some(show) =
+        tv_shows::get_by_identifier(pool, &identifier_key, &spec.provider_id).await?
+    {
+        info!(show_id = %show.id, "Found existing show for discover");
+        return Ok((show.id, false));
+    }
+
+    let media_root_id = media_roots::get_default_for_type(pool, "tv")
+        .await
+        .ok()
+        .flatten()
+        .map(|r| r.id);
+
+    let input = tv_shows::TvShowInput {
+        title: spec.title.clone(),
+        year: spec.year,
+        description: spec.description.clone(),
+        images: spec.images(),
+        identifiers: spec.identifiers.clone(),
+        genres: spec.genres.clone(),
+        rating: spec.rating,
+        rating_count: spec.rating_count,
+        network: spec.network.clone(),
+        runtime: spec.runtime,
+        is_monitored: Some(monitored),
+        auto_want_mode: Some("none".to_string()),
+        media_root_id,
+        ..Default::default()
+    };
+
+    let id = tv_shows::upsert_by_provider(pool, &spec.provider, &spec.provider_id, input).await?;
+    info!(show_id = %id, "Created show from discover");
+    Ok((id, true))
+}
+
+impl DiscoverShowSpec {
+    pub(super) fn images(&self) -> Option<ImageMap> {
+        let img_map: ImageMap = [
+            ("poster", &self.poster_url),
+            ("backdrop", &self.backdrop_url),
+        ]
+        .into_iter()
+        .filter_map(|(kind, url)| {
+            url.clone().map(|u| {
+                (
+                    kind.to_string(),
+                    ImageEntry {
+                        source_url: Some(u),
+                        cached_at: None,
+                    },
+                )
+            })
+        })
+        .collect();
+        (!img_map.is_empty()).then_some(img_map)
+    }
+}
+
 /// Find or create the show, find or create the season, and fetch the season's
 /// episode list from the metadata provider.
 async fn resolve_discover_season(
     state: &AppState,
     spec: DiscoverShowSpec,
+    season_number: u32,
 ) -> Result<ResolvedSeason, (StatusCode, Json<Value>)> {
     let pool = &state.pool;
+    let (show_id, _) = ensure_discover_show(pool, &spec, true)
+        .await
+        .map_err(|e| internal(format!("Failed to resolve show: {e}")))?;
 
-    let identifier_key = format!("{}_id", spec.provider);
-    let show_id = match tv_shows::get_by_identifier(pool, &identifier_key, &spec.provider_id).await
-    {
-        Ok(Some(show)) => {
-            info!(show_id = %show.id, "Found existing show for discover want");
-            show.id
-        }
-        Ok(None) => {
-            let mut img_map = HashMap::new();
-            if let Some(url) = spec.poster_url.clone() {
-                img_map.insert(
-                    "poster".to_string(),
-                    ImageEntry {
-                        source_url: Some(url),
-                        cached_at: None,
-                    },
-                );
-            }
-            if let Some(url) = spec.backdrop_url.clone() {
-                img_map.insert(
-                    "backdrop".to_string(),
-                    ImageEntry {
-                        source_url: Some(url),
-                        cached_at: None,
-                    },
-                );
-            }
-
-            let media_root_id = media_roots::get_default_for_type(pool, "tv")
-                .await
-                .ok()
-                .flatten()
-                .map(|r| r.id);
-
-            let input = tv_shows::TvShowInput {
-                title: spec.title.clone(),
-                year: spec.year,
-                description: spec.description.clone(),
-                images: if img_map.is_empty() {
-                    None
-                } else {
-                    Some(img_map)
-                },
-                identifiers: spec.identifiers.clone(),
-                genres: spec.genres.clone(),
-                rating: spec.rating,
-                rating_count: spec.rating_count,
-                network: spec.network.clone(),
-                runtime: spec.runtime,
-                is_monitored: Some(true),
-                auto_want_mode: Some("none".to_string()),
-                media_root_id,
-                ..Default::default()
-            };
-
-            match tv_shows::upsert_by_provider(pool, &spec.provider, &spec.provider_id, input).await
-            {
-                Ok(id) => {
-                    info!(show_id = %id, "Created show for discover want");
-                    id
-                }
-                Err(e) => return Err(internal(format!("Failed to create show: {e}"))),
-            }
-        }
-        Err(e) => return Err(internal(format!("Failed to look up show: {e}"))),
-    };
-
-    let season_str = spec.season_number.to_string();
+    let season_str = season_number.to_string();
     let season_id = {
         let seasons = tv_seasons::list_by_show(pool, show_id)
             .await
@@ -563,7 +567,7 @@ async fn resolve_discover_season(
                 tv_seasons::SeasonInput {
                     show_id,
                     season_identifier: season_str,
-                    season_sort_order: spec.season_number as i32,
+                    season_sort_order: season_number as i32,
                     title: None,
                     description: None,
                     images: None,
@@ -585,7 +589,7 @@ async fn resolve_discover_season(
         .get_season_merged(
             &spec.provider,
             &spec.provider_id,
-            spec.season_number,
+            season_number,
             &identifiers,
         )
         .await
@@ -601,7 +605,7 @@ async fn resolve_discover_season(
         show_id,
         season_id,
         title: spec.title,
-        season_number: spec.season_number,
+        season_number,
         provider_episodes,
     })
 }
@@ -645,7 +649,7 @@ fn episode_input(
 }
 
 /// Enqueue the catch-up enrichment that fills in the rest of the show.
-async fn enqueue_show_enrich(state: &AppState, show_id: Uuid, title: &str) {
+pub(super) async fn enqueue_show_enrich(state: &AppState, show_id: Uuid, title: &str) {
     let display = jobs::fetch_job_display(&state.pool, "tv_show", show_id).await;
     let context =
         JobContext::for_entity("tv_show", show_id, format!("Enriching TV show '{title}'"))
@@ -681,7 +685,7 @@ pub async fn want_discover_episode(
     }
 
     let episode_number = body.episode_number;
-    let resolved = match resolve_discover_season(&state, body.show).await {
+    let resolved = match resolve_discover_season(&state, body.show, body.season_number).await {
         Ok(r) => r,
         Err((status, body)) => return (status, body).into_response(),
     };
@@ -793,7 +797,7 @@ pub async fn want_discover_season(
         return e.into_response();
     }
 
-    let resolved = match resolve_discover_season(&state, body.show).await {
+    let resolved = match resolve_discover_season(&state, body.show, body.season_number).await {
         Ok(r) => r,
         Err((status, body)) => return (status, body).into_response(),
     };

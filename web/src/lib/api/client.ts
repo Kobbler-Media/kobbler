@@ -3491,6 +3491,21 @@ export async function addToWatchlist(
   });
 }
 
+export type DiscoverWatchlistParams = NonNullable<StreamResolveParams['auto_create']> & {
+  media_type: string;
+  provider: string;
+  provider_id: string;
+};
+
+export async function addDiscoverToWatchlist(
+  params: DiscoverWatchlistParams
+): Promise<{ media_type: WatchlistMediaType; media_id: string }> {
+  return request('/api/v1/admin/discover/watchlist', {
+    method: 'POST',
+    body: JSON.stringify(params)
+  });
+}
+
 export async function removeFromWatchlist(
   mediaType: WatchlistMediaType,
   mediaId: string

@@ -1,4 +1,5 @@
 import {
+  addDiscoverToWatchlist,
   createBook,
   createMovie,
   createTvShow,
@@ -73,4 +74,20 @@ export async function wantDiscoverEpisodeRef(
     episode_number: ref.episode
   });
   return `/tv/${result.show_id}`;
+}
+
+/** On the caller's list, in the library but not wanted; resolves to the library page. */
+export async function watchlistDiscoverItem(
+  mediaType: string,
+  item: DiscoverItem,
+  provider: string,
+  providerId: string
+): Promise<string> {
+  const { media_type, media_id } = await addDiscoverToWatchlist({
+    ...autoCreateFor(item, provider, providerId, null),
+    media_type: mediaType,
+    provider,
+    provider_id: providerId
+  });
+  return media_type === 'show' ? `/tv/${media_id}` : `/movies/${media_id}`;
 }

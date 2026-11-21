@@ -81,14 +81,14 @@
     try {
       if (inWatchlist) {
         await api.addToWatchlist('movie', movie.id);
-        showMessage('Added to your watch list');
+        showMessage('Added to My List');
       } else {
         await api.removeFromWatchlist('movie', movie.id);
-        showMessage('Removed from your watch list');
+        showMessage('Removed from My List');
       }
       await loadMovie(movie.id);
     } catch (e) {
-      showMessage(e instanceof Error ? e.message : 'Failed to update your watch list');
+      showMessage(e instanceof Error ? e.message : 'Failed to update My List');
     }
   };
 

@@ -27,6 +27,7 @@ mod devices;
 pub mod diagnostics;
 pub mod discover;
 mod discover_book;
+pub mod discover_watchlist;
 pub(crate) mod downloads;
 pub mod episode_cast;
 mod filesystem;

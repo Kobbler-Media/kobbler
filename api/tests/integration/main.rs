@@ -74,6 +74,7 @@ mod diagnostics_test;
 mod discover_art_test;
 mod discover_book_test;
 mod discover_sync_test;
+mod discover_watchlist_test;
 mod dlna_delivery_test;
 mod download_ahead_test;
 mod e2e_want_flow_test;
