@@ -475,7 +475,7 @@ dependencies = [
 [[package]]
 name = "boko"
 version = "0.6.0"
-source = "git+https://github.com/tinyfiddler/boko?rev=66d8bbc91610bf5b1305346f1b80ee92536f8cd4#66d8bbc91610bf5b1305346f1b80ee92536f8cd4"
+source = "git+https://github.com/tinyfiddler/boko?rev=8e49adef0cbcb4d2f5481af36b9dd41ecb7fa0e5#8e49adef0cbcb4d2f5481af36b9dd41ecb7fa0e5"
 dependencies = [
  "base64 0.23.1",
  "bstr",
