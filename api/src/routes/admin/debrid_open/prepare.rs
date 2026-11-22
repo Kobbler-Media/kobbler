@@ -265,6 +265,7 @@ pub(super) async fn run(ctx: Prepare) {
                 crate::media_cache::debrid_file_cache_dir(&local_cache_path).join("trickplay"),
             );
             session.audio_metas = audio_metas.clone();
+            session.file_meta = Some(file_meta.clone());
             session.preferred_audio_index = preferred_audio;
             session.file_path = local_cache_path.clone();
             session.chapters = probe_info.chapters.clone();

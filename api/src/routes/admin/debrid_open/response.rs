@@ -20,15 +20,13 @@ pub(crate) fn live_response(
     if session.error.is_some() {
         return None;
     }
-    // file_path stays empty until the probe lands; a transcode is only expected after it.
+    // file_path stays empty until the probe lands.
     let probed = !session.file_path.as_os_str().is_empty();
-    let needs_transcode = session.decision.method != PlaybackMethod::DirectPlay;
-    let transcode_dead = session
-        .transcode
-        .as_mut()
-        .map(|t| !t.is_running())
-        .unwrap_or(true);
-    if probed && needs_transcode && transcode_dead {
+    // Not attached yet, or finished with every segment written, is as good as running:
+    // only an encoder that failed leaves nothing to play.
+    if let Some(transcode) = session.transcode.as_mut()
+        && transcode.check_health().is_err()
+    {
         return None;
     }
 

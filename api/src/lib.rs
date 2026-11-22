@@ -171,9 +171,7 @@ pub struct AppState {
     pub stremio_play_cache: Arc<dashmap::DashMap<String, routes::stremio::CachedStremioRedirect>>,
     pub stremio_resolve_locks:
         Arc<dashmap::DashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
-    /// Maps debrid cache key (info_hash or info_hash_fN) → active session_id.
-    /// Prevents duplicate sessions for the same torrent file.
-    pub debrid_session_index: Arc<dashmap::DashMap<String, uuid::Uuid>>,
+    pub debrid_session_index: Arc<crate::streaming::release_sessions::ReleaseSessions>,
     /// Per-key locks for serializing debrid session creation.
     pub debrid_resolve_locks: Arc<dashmap::DashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
     /// Instant Stream: debrid sessions warmed ahead of a Play press, until claimed.
@@ -2607,7 +2605,7 @@ pub fn create_app_state(
         )),
         stremio_play_cache: Arc::new(dashmap::DashMap::new()),
         stremio_resolve_locks: Arc::new(dashmap::DashMap::new()),
-        debrid_session_index: Arc::new(dashmap::DashMap::new()),
+        debrid_session_index: Arc::default(),
         debrid_resolve_locks: Arc::new(dashmap::DashMap::new()),
         stream_prewarms: Arc::default(),
         downloads_ahead: Arc::default(),

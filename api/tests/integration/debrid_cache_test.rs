@@ -498,7 +498,6 @@ async fn a_debrid_stream_has_its_black_bars_measured_while_it_plays_and_a_replay
 
     let state = &rig.server.app_state;
     state.playback_sessions.remove(&session);
-    state.debrid_session_index.clear();
     let replay = rig.resolve_with(&body).await;
     assert_ne!(session_id_of(&replay), session);
     assert_letterbox(&replay["picture"]);

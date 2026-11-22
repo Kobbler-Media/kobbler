@@ -232,6 +232,7 @@ pub(super) async fn open(
             thumbnail_dir: Some(thumb_dir),
             debrid_cache_key: super::release_key(body.info_hash.as_deref(), body.file_id),
             audio_metas,
+            file_meta: Some(file_meta.clone()),
             audio_loudness,
             preferred_audio_index: preferred,
             force_video_transcode: false,

@@ -220,6 +220,7 @@ pub(super) async fn open(
             thumbnail_dir: None,
             debrid_cache_key: release_key.clone(),
             audio_metas: vec![],
+            file_meta: None,
             audio_loudness: media
                 .as_ref()
                 .map(|c| c.audio_loudness.clone())

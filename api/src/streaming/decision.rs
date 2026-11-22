@@ -90,7 +90,7 @@ impl SubtitleHandling {
 }
 
 /// The complete playback decision.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackDecision {
     pub method: PlaybackMethod,
     pub video_mode: VideoMode,

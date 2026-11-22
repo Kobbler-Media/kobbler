@@ -533,6 +533,7 @@ async fn build_session(
         thumbnail_dir: None,
         debrid_cache_key: None,
         audio_metas: vec![],
+        file_meta: None,
         audio_loudness: Vec::new(),
         preferred_audio_index: None,
         force_video_transcode: false,

@@ -316,11 +316,10 @@ async fn deleting_a_stream_stops_its_download() {
         .await
         .assert_status(StatusCode::NOT_FOUND);
     assert!(
-        rig.server
+        !rig.server
             .app_state
             .debrid_session_index
-            .get("deletehash")
-            .is_none()
+            .contains_key("deletehash")
     );
     let path = rig.cache_file("deletehash");
     tokio::time::sleep(Duration::from_millis(300)).await;

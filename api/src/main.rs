@@ -802,7 +802,7 @@ async fn run(tracker: Arc<PollTracker>) {
                         }
                         // Remove from debrid session dedup index
                         if let Some(ref key) = session.debrid_cache_key {
-                            debrid_index.remove(key);
+                            debrid_index.remove(key, id);
                         }
                         // For IPTV live sessions: release provider connection
                         if let Some(provider_id) = session.provider_id {

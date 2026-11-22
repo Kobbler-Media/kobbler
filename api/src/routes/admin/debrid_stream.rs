@@ -214,7 +214,7 @@ pub async fn stream_resolve(
     // same release share one session.
     let _resolve_guard = match key {
         Some(ref key) => {
-            if let Some(resp) = dedup_hit(&state, key, body.delivery).await {
+            if let Some(resp) = dedup_hit(&state, key, &body).await {
                 return resp;
             }
             let guard = state
@@ -224,7 +224,7 @@ pub async fn stream_resolve(
                 .clone()
                 .lock_owned()
                 .await;
-            if let Some(resp) = dedup_hit(&state, key, body.delivery).await {
+            if let Some(resp) = dedup_hit(&state, key, &body).await {
                 return resp;
             }
             Some(guard)
@@ -241,27 +241,34 @@ pub async fn stream_resolve(
 async fn dedup_hit(
     state: &AppState,
     key: &str,
-    delivery: Delivery,
+    body: &StreamResolveBody,
 ) -> Option<axum::response::Response> {
-    let existing_id = state.debrid_session_index.get(key).map(|e| *e)?;
-    if let Some(mut session) = state.playback_sessions.get_mut(&existing_id) {
-        session.touch();
-    }
-    match debrid_open::live_response(state, existing_id, None, delivery) {
-        Some(mut resp) => {
-            info!(session_id = %existing_id, cache_key = %key, "debrid session dedup hit");
-            resp.picture = debrid_stream_sessions::picture(&state.pool, existing_id)
-                .await
-                .ok()
-                .flatten()
-                .and_then(debrid_open::picture::shown);
-            Some(Json(resp).into_response())
+    let runtime = state.runtime_config.get().await;
+    for existing_id in state.debrid_session_index.of(key) {
+        {
+            let Some(mut session) = state.playback_sessions.get_mut(&existing_id) else {
+                state.debrid_session_index.remove(key, existing_id);
+                continue;
+            };
+            if !debrid_open::suits(state, &runtime, &session, body) {
+                continue;
+            }
+            session.touch();
         }
-        None => {
-            state.debrid_session_index.remove(key);
-            None
-        }
+        let Some(mut resp) = debrid_open::live_response(state, existing_id, None, body.delivery)
+        else {
+            state.debrid_session_index.remove(key, existing_id);
+            continue;
+        };
+        info!(session_id = %existing_id, cache_key = %key, "debrid session dedup hit");
+        resp.picture = debrid_stream_sessions::picture(&state.pool, existing_id)
+            .await
+            .ok()
+            .flatten()
+            .and_then(debrid_open::picture::shown);
+        return Some(Json(resp).into_response());
     }
+    None
 }
 
 async fn kids_may_search(pool: &sqlx::PgPool, body: &StreamSearchBody) -> bool {

@@ -3,34 +3,6 @@
 
 use crate::common::debrid_rig::*;
 use crate::common::debrid_upstream::UpstreamPlan;
-use serde_json::{Value, json};
-
-/// A two-second 64x64 mkv encoded with these codecs.
-fn encoded(video: &str, audio: &str) -> Vec<u8> {
-    let dir = tempfile::tempdir().unwrap();
-    let out = dir.path().join("film.mkv");
-    let status = std::process::Command::new("ffmpeg")
-        .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
-        .arg("testsrc=size=64x64:rate=24:duration=2")
-        .args(["-f", "lavfi", "-i", "sine=duration=2"])
-        .args([
-            "-c:v",
-            video,
-            "-x265-params",
-            "log-level=error",
-            "-c:a",
-            audio,
-        ])
-        .arg(&out)
-        .status()
-        .expect("ffmpeg");
-    assert!(status.success());
-    std::fs::read(out).unwrap()
-}
-
-fn mkv_h264_aac_caps() -> Value {
-    json!({ "video_codecs": ["h264"], "audio_codecs": ["aac"], "containers": ["mkv", "matroska"] })
-}
 
 #[tokio::test]
 async fn a_release_on_disk_is_decided_by_the_clients_codecs() {
@@ -41,7 +13,7 @@ async fn a_release_on_disk_is_decided_by_the_clients_codecs() {
         ("all supported", "libx264", "aac", "direct_play"),
     ];
     for (what, video, audio, expected) in cases {
-        let rig = Rig::start(UpstreamPlan::new(encoded(video, audio)), "film.mkv").await;
+        let rig = Rig::start(UpstreamPlan::new(encoded_mkv(video, audio)), "film.mkv").await;
         let movie = rig.movie().await;
         rig.put_on_disk("diskhash", movie).await;
         let resolves = rig.kobload_requests("/stream/resolve").await.len();

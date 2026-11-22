@@ -70,6 +70,7 @@ mod debrid_dlna_delivery_test;
 mod debrid_local_decision_test;
 mod debrid_outcomes_test;
 mod debrid_play_test;
+mod debrid_session_reuse_test;
 mod debrid_stream_test;
 mod deterministic_selection_test;
 mod diagnostics_test;

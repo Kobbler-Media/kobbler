@@ -985,6 +985,7 @@ pub(crate) async fn open_file_session(
         thumbnail_dir: None,
         debrid_cache_key: None,
         audio_metas: audio_metas.clone(),
+        file_meta: None,
         audio_loudness,
         preferred_audio_index: None,
         force_video_transcode: restore.as_ref().is_some_and(|p| p.force_video_transcode),
@@ -1114,7 +1115,7 @@ pub(crate) async fn end_session(state: &AppState, session_id: Uuid) -> bool {
         cancel.cancel();
     }
     if let Some(ref key) = session.debrid_cache_key {
-        state.debrid_session_index.remove(key);
+        state.debrid_session_index.remove(key, session_id);
     }
     session.kill_all_transcodes().await;
     enqueue_session_cleanup(state, session.segment_dir()).await;

@@ -6,7 +6,7 @@
 use crate::ffmpeg::cue_gate::CueGate;
 use crate::ffmpeg::detect::HwAccel;
 use crate::ffmpeg::transcode::TranscodeProcess;
-use crate::streaming::decision::{AudioTrackMeta, PlaybackDecision};
+use crate::streaming::decision::{AudioTrackMeta, FileMeta, PlaybackDecision};
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::feed::StreamFeed;
 use crate::streaming::segment_cache::SegmentCache;
@@ -131,6 +131,9 @@ pub struct PlaybackSession {
     /// Audio track metadata from probe/DB — stored so the decision engine can be
     /// re-run when switching audio tracks without re-probing the file.
     pub audio_metas: Vec<AudioTrackMeta>,
+    /// Debrid sessions only, once probed: what the decision was made from, so a repeat
+    /// resolve can tell whether this session plays what it would be given.
+    pub file_meta: Option<FileMeta>,
     pub audio_loudness: Vec<crate::streaming::loudness::TrackLoudness>,
     /// Debrid sessions only: the audio track the viewer's language preference picks, once
     /// the probe has listed the tracks. `None` when no track matches.
@@ -228,6 +231,7 @@ impl PlaybackSession {
             thumbnail_dir: None,
             debrid_cache_key: None,
             audio_metas: vec![],
+            file_meta: None,
             audio_loudness: vec![],
             preferred_audio_index: None,
             force_video_transcode: false,

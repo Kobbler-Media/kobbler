@@ -8,12 +8,14 @@ pub(crate) mod picture;
 mod prepare;
 mod remote;
 mod response;
+mod reuse;
 mod subtitles;
 
 pub(crate) use media::commit_media;
 pub(crate) use prepare::probe_json;
 pub(crate) use remote::WARM_HEAD_BYTES;
 pub(crate) use response::live_response;
+pub(crate) use reuse::suits;
 
 use std::path::Path;
 

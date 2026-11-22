@@ -30,6 +30,33 @@ pub fn noise(len: usize) -> Vec<u8> {
         .collect()
 }
 
+/// A two-second 64x64 mkv encoded with these codecs.
+pub fn encoded_mkv(video: &str, audio: &str) -> Vec<u8> {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("film.mkv");
+    let status = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-y", "-f", "lavfi", "-i"])
+        .arg("testsrc=size=64x64:rate=24:duration=2")
+        .args(["-f", "lavfi", "-i", "sine=duration=2"])
+        .args([
+            "-c:v",
+            video,
+            "-x265-params",
+            "log-level=error",
+            "-c:a",
+            audio,
+        ])
+        .arg(&out)
+        .status()
+        .expect("ffmpeg");
+    assert!(status.success());
+    std::fs::read(out).unwrap()
+}
+
+pub fn mkv_h264_aac_caps() -> Value {
+    json!({ "video_codecs": ["h264"], "audio_codecs": ["aac"], "containers": ["mkv", "matroska"] })
+}
+
 pub fn direct_play_caps() -> Value {
     json!({
         "video_codecs": ["h264", "hevc"],
