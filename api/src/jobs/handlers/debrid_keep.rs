@@ -23,7 +23,7 @@ use crate::repositories::{
     debrid_cache_files as cache_files, debrid_keeps, movie_files, movies, tv_episode_files,
     tv_episodes, tv_seasons,
 };
-use crate::routes::admin::debrid_play::{PlaySession, playable_url};
+use crate::routes::admin::debrid_play::{PlaySession, cache_ahead_url};
 use crate::routes::admin::stream_keep::KEEP_JOB;
 use crate::routes::ingest::placement::{self, FileKind, Placement};
 use crate::streaming::cache_download;
@@ -193,14 +193,14 @@ async fn start_download(
     session: &PlaySession,
     cache_path: &Path,
 ) -> Result<JoinHandle<Result<(), String>>, String> {
-    let url = playable_url(state, session).await.map_err(|resp| {
+    let url = cache_ahead_url(state, session).await.map_err(|resp| {
         format!(
             "the debrid host would not serve the file ({})",
             resp.status()
         )
     })?;
     if let Some(key) = crate::routes::admin::debrid_open::release_key(
-        session.info_hash.as_deref(),
+        session.release_key.as_deref(),
         session.file_id,
     ) {
         state.downloads_ahead.hand_over(&key).await;
@@ -341,7 +341,7 @@ async fn register(
         .unwrap_or("mkv")
         .to_lowercase();
     let source_metadata = Some(json!({
-        "info_hash": session.info_hash,
+        "info_hash": session.release_key,
         "file_id": session.file_id,
         "release_title": session.release_title,
     }));

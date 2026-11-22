@@ -233,7 +233,7 @@ async fn files_analysed_before_per_track_loudness_are_re_measured_by_the_fill() 
     }
 }
 
-async fn dubbed_download(server: &TestServer, info_hash: &str) -> (Uuid, std::path::PathBuf) {
+async fn dubbed_download(server: &TestServer, release_key: &str) -> (Uuid, std::path::PathBuf) {
     let movie: Value = server
         .admin_client()
         .post_json(
@@ -243,9 +243,9 @@ async fn dubbed_download(server: &TestServer, info_hash: &str) -> (Uuid, std::pa
         .await
         .json();
     let movie_id: Uuid = movie["id"].as_str().unwrap().parse().unwrap();
-    let path = Path::new(&server.storage_root()).join(format!("{info_hash}.mkv"));
+    let path = Path::new(&server.storage_root()).join(format!("{release_key}.mkv"));
     std::fs::write(&path, ITA_ENG_FIXTURE).unwrap();
-    let session = downloaded_session(server, "movie", movie_id, info_hash, &path).await;
+    let session = downloaded_session(server, "movie", movie_id, release_key, &path).await;
     (session, path)
 }
 

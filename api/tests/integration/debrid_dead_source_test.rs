@@ -57,7 +57,7 @@ async fn open_session(server: &TestServer) -> String {
             "/api/v1/admin/stream/resolve",
             &json!({
                 "debrid_provider_id": Uuid::nil(),
-                "info_hash": format!("{}", movie_id.simple()),
+                "release_key": format!("{}", movie_id.simple()),
                 "file_id": 16,
                 "media_type": "movie",
                 "media_id": movie_id,

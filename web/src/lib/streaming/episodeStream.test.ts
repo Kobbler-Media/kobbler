@@ -34,7 +34,7 @@ const option = {
   release_title: 'R',
   size: 1,
   indexer: 'x',
-  info_hash: 'h',
+  release_key: 'h',
   total_score: 1,
   match_score: 1,
   quality_score: 1,

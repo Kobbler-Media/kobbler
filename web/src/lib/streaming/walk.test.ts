@@ -29,7 +29,7 @@ function option(
     release_title: `Release ${hash}`,
     size: 1,
     indexer: 'x',
-    info_hash: hash,
+    release_key: hash,
     total_score: 1,
     match_score: 1,
     quality_score: 1,
@@ -73,7 +73,7 @@ function harness(behaviour: Record<string, Behaviour>, msPerResolve = 0) {
   let attemptFailures = 0;
   const deps: WalkDeps = {
     resolve: async (o): Promise<StreamResolveResponse> => {
-      const hash = o.info_hash!;
+      const hash = o.release_key!;
       resolved.push(hash);
       clock += msPerResolve;
       const b = behaviour[hash] ?? 'ready';
@@ -96,7 +96,7 @@ function harness(behaviour: Record<string, Behaviour>, msPerResolve = 0) {
 }
 
 const letters = (s: string) => s.split('');
-const hashesOf = (opts: StreamOption[]) => opts.map((o) => o.info_hash);
+const hashesOf = (opts: StreamOption[]) => opts.map((o) => o.release_key);
 
 describe('rankOptions', () => {
   const opts = [option('a'), option('b'), option('c', { fileId: 1 }), option('c', { fileId: 2 })];
@@ -108,20 +108,20 @@ describe('rankOptions', () => {
 
   it.each([
     ['keeps server order without a preference', {}, ['a', 'b', 'c|1', 'c|2']],
-    ['moves the preferred hash first', { preferred_info_hash: 'b' }, ['b', 'a', 'c|1', 'c|2']],
+    ['moves the preferred hash first', { preferred_release_key: 'b' }, ['b', 'a', 'c|1', 'c|2']],
     [
       'matches the preferred file inside a pack',
-      { preferred_info_hash: 'c', preferred_file_id: 2 },
+      { preferred_release_key: 'c', preferred_file_id: 2 },
       ['c|2', 'a', 'b', 'c|1']
     ],
     [
       'ignores a preference missing from the list',
-      { preferred_info_hash: 'z' },
+      { preferred_release_key: 'z' },
       ['a', 'b', 'c|1', 'c|2']
     ]
   ])('%s', (_name, extra, expected) => {
     const ranked = rankOptions(response(extra)).map((o) =>
-      o.info_hash === 'c' ? `c|${o.files[0].id}` : o.info_hash
+      o.release_key === 'c' ? `c|${o.files[0].id}` : o.release_key
     );
     expect(ranked).toEqual(expected);
   });
@@ -171,7 +171,7 @@ describe('walkStreams', () => {
     async (reason) => {
       const opts = letters('abcdefghij').map((x) => option(x));
       const behaviour = Object.fromEntries(
-        opts.slice(0, 9).map((o) => [o.info_hash!, refusal(reason)])
+        opts.slice(0, 9).map((o) => [o.release_key!, refusal(reason)])
       );
       const h = harness(behaviour);
       const result = await walkStreams(opts, newWalkState(), h.deps);
@@ -182,7 +182,7 @@ describe('walkStreams', () => {
 
   it(`caps one walk at ${MAX_WALK_RESOLVES} resolves, refusals included`, async () => {
     const opts = letters('abcdefghijklmnop').map((x) => option(x));
-    const h = harness(Object.fromEntries(opts.map((o) => [o.info_hash!, blocked()])));
+    const h = harness(Object.fromEntries(opts.map((o) => [o.release_key!, blocked()])));
     const result = await walkStreams(opts, newWalkState(), h.deps);
     expect(result).toEqual({ kind: 'exhausted', stopped: false });
     expect(h.resolved).toHaveLength(MAX_WALK_RESOLVES);
@@ -190,7 +190,7 @@ describe('walkStreams', () => {
 
   it(`stops after ${MAX_ATTEMPTS} real failed attempts`, async () => {
     const opts = letters('abcdefghij').map((x) => option(x));
-    const h = harness(Object.fromEntries(opts.map((o) => [o.info_hash!, refusal('timeout')])));
+    const h = harness(Object.fromEntries(opts.map((o) => [o.release_key!, refusal('timeout')])));
     const state = newWalkState();
     const result = await walkStreams(opts, state, h.deps);
     expect(result.kind).toBe('exhausted');
@@ -208,7 +208,7 @@ describe('walkStreams', () => {
   it('gives up once a walk has run for 30 seconds', async () => {
     const opts = letters('abcdef').map((x) => option(x));
     const h = harness(
-      Object.fromEntries(opts.map((o) => [o.info_hash!, refusal('unavailable')])),
+      Object.fromEntries(opts.map((o) => [o.release_key!, refusal('unavailable')])),
       10_000
     );
     await walkStreams(opts, newWalkState(), h.deps);
@@ -228,7 +228,7 @@ describe('walkStreams', () => {
       newWalkState(),
       h.deps
     );
-    expect(result).toMatchObject({ kind: 'caching', option: { info_hash: 'b' } });
+    expect(result).toMatchObject({ kind: 'caching', option: { release_key: 'b' } });
     expect(h.resolved).toEqual(['a', 'b', 'c']);
   });
 
@@ -239,7 +239,7 @@ describe('walkStreams', () => {
       newWalkState(),
       h.deps
     );
-    expect(result).toMatchObject({ kind: 'caching', option: { info_hash: 'u1' } });
+    expect(result).toMatchObject({ kind: 'caching', option: { release_key: 'u1' } });
     expect(h.resolved).toEqual(['a', 'u1']);
   });
 
@@ -258,9 +258,20 @@ describe('walkStreams', () => {
     expect(keys.size).toBe(3);
   });
 
+  it('tells NZBs kobload has not imported apart by their indexer listing', () => {
+    const nzb = (guid: string) =>
+      option('', {
+        release_key: undefined,
+        nzb_ref: { indexer_id: '7', guid },
+        source_type: 'usenet',
+        files: []
+      });
+    expect(optionKey(nzb('g1'))).not.toBe(optionKey(nzb('g2')));
+  });
+
   it('shares the budget across walks of one run', async () => {
     const opts = letters('abcdefgh').map((x) => option(x));
-    const h = harness(Object.fromEntries(opts.map((o) => [o.info_hash!, refusal('timeout')])));
+    const h = harness(Object.fromEntries(opts.map((o) => [o.release_key!, refusal('timeout')])));
     const state = newWalkState();
     await walkStreams(opts.slice(0, 4), state, h.deps);
     await walkStreams(opts, state, h.deps);

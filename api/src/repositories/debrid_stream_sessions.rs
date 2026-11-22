@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct SessionRelease {
-    pub info_hash: Option<String>,
+    pub release_key: Option<String>,
     pub file_id: Option<i32>,
     pub debrid_provider: String,
     pub release_title: String,
@@ -19,7 +19,7 @@ pub struct PlayedSession {
     pub user_id: Uuid,
     pub media_type: String,
     pub media_id: Uuid,
-    pub info_hash: Option<String>,
+    pub release_key: Option<String>,
     pub file_id: Option<i32>,
     pub debrid_provider: String,
     pub release_title: String,
@@ -28,7 +28,7 @@ pub struct PlayedSession {
 
 #[derive(Debug, Clone)]
 pub struct PlayedRelease {
-    pub info_hash: String,
+    pub release_key: String,
     pub file_id: Option<i32>,
     pub release_title: String,
     pub cache_path: Option<String>,
@@ -45,7 +45,7 @@ where
     let row = sqlx::query_as!(
         SessionRelease,
         r#"
-        SELECT info_hash, file_id, debrid_provider, release_title, filename
+        SELECT release_key, file_id, debrid_provider, release_title, filename
         FROM debrid_stream_sessions
         WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)
         "#,
@@ -55,6 +55,26 @@ where
     .fetch_optional(exec)
     .await?;
     Ok(row)
+}
+
+/// The key kobload gave an NZB the last time a session of it resolved.
+pub async fn release_key_of_nzb<'e, E>(exec: E, nzb: &nats_jobs::NzbRef) -> Result<Option<String>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let key = sqlx::query_scalar!(
+        r#"
+        SELECT release_key AS "release_key!"
+        FROM debrid_stream_sessions
+        WHERE nzb_ref = $1 AND release_key IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+        Json(nzb) as _,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(key)
 }
 
 /// Stamps every report, so `played_at` orders a title's releases by when each was last
@@ -71,7 +91,7 @@ where
         FROM (SELECT id, played_at FROM debrid_stream_sessions WHERE id = $1 FOR UPDATE) prior
         WHERE s.id = prior.id
         RETURNING prior.played_at IS NULL AS "first!", s.user_id, s.media_type, s.media_id,
-                  s.info_hash, s.file_id, s.debrid_provider, s.release_title, s.filename
+                  s.release_key, s.file_id, s.debrid_provider, s.release_title, s.filename
         "#,
         session_id,
     )
@@ -92,10 +112,10 @@ where
     let rows = sqlx::query_as!(
         PlayedRelease,
         r#"
-        SELECT info_hash AS "info_hash!", file_id, release_title, cache_path
+        SELECT release_key AS "release_key!", file_id, release_title, cache_path
         FROM debrid_stream_sessions
         WHERE media_type = $1 AND media_id = $2
-          AND info_hash IS NOT NULL AND played_at IS NOT NULL
+          AND release_key IS NOT NULL AND played_at IS NOT NULL
         ORDER BY played_at DESC
         LIMIT 20
         "#,
@@ -119,12 +139,12 @@ where
     let row = sqlx::query_as!(
         PlayedRelease,
         r#"
-        SELECT s.info_hash AS "info_hash!", s.file_id, s.release_title, s.cache_path
+        SELECT s.release_key AS "release_key!", s.file_id, s.release_title, s.cache_path
         FROM debrid_stream_sessions s
         JOIN tv_episodes e ON e.id = s.media_id
         JOIN tv_seasons se ON se.id = e.season_id
         WHERE s.media_type = 'episode' AND s.user_id = $1 AND s.media_id <> $2
-          AND s.info_hash IS NOT NULL AND s.played_at IS NOT NULL
+          AND s.release_key IS NOT NULL AND s.played_at IS NOT NULL
           AND se.show_id = (
               SELECT ts.show_id FROM tv_episodes te
               JOIN tv_seasons ts ON ts.id = te.season_id
@@ -196,7 +216,7 @@ where
 /// The picture area any earlier session measured for this release.
 pub async fn release_picture<'e, E>(
     exec: E,
-    info_hash: &str,
+    release_key: &str,
     file_id: Option<i32>,
 ) -> Result<Option<serde_json::Value>>
 where
@@ -206,11 +226,11 @@ where
         r#"
         SELECT picture AS "picture!"
         FROM debrid_stream_sessions
-        WHERE info_hash = $1 AND file_id IS NOT DISTINCT FROM $2 AND picture IS NOT NULL
+        WHERE release_key = $1 AND file_id IS NOT DISTINCT FROM $2 AND picture IS NOT NULL
         ORDER BY updated_at DESC
         LIMIT 1
         "#,
-        info_hash,
+        release_key,
         file_id,
     )
     .fetch_optional(exec)
@@ -230,7 +250,7 @@ pub async fn release_analysis<'e, E>(
     exec: E,
     media_type: &str,
     media_id: Uuid,
-    info_hash: Option<&str>,
+    release_key: Option<&str>,
     file_id: Option<i32>,
     cache_path: Option<&str>,
 ) -> Result<ReleaseAnalysis>
@@ -243,14 +263,14 @@ where
         SELECT audio_loudness AS "audio_loudness: Json<Vec<TrackLoudness>>", picture
         FROM debrid_stream_sessions
         WHERE media_type = $1 AND media_id = $2
-          AND ((info_hash = $3 AND file_id IS NOT DISTINCT FROM $4) OR cache_path = $5)
+          AND ((release_key = $3 AND file_id IS NOT DISTINCT FROM $4) OR cache_path = $5)
           AND (audio_loudness IS NOT NULL OR picture IS NOT NULL)
         ORDER BY updated_at DESC
         LIMIT 1
         "#,
         media_type,
         media_id,
-        info_hash,
+        release_key,
         file_id,
         cache_path,
     )

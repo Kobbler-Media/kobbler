@@ -73,13 +73,15 @@ pub(crate) struct SessionRow {
     pub release_title: String,
     pub debrid_provider: String,
     pub debrid_provider_id: Uuid,
-    pub info_hash: Option<String>,
+    pub release_key: Option<String>,
+    pub nzb_ref: Option<nats_jobs::NzbRef>,
     pub file_id: Option<i32>,
     pub quality: Option<serde_json::Value>,
     pub filename: String,
     pub filesize: i64,
     pub cache_path: Option<String>,
     pub debrid_url: Option<String>,
+    pub debrid_cache_url: Option<String>,
     pub debrid_url_expires_at: Option<OffsetDateTime>,
     pub chapters: Vec<ChapterResponse>,
     /// The file at `cache_path` is complete, so nothing else will analyse it.
@@ -105,17 +107,18 @@ impl SessionRow {
     ) -> Result<(), sqlx::Error> {
         sqlx::query!(
             r#"INSERT INTO debrid_stream_sessions
-                (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
+                (id, user_id, media_type, media_id, release_title, release_key, debrid_provider,
                  debrid_provider_id, quality, filename, filesize, file_id, cache_path,
-                 debrid_url, debrid_url_expires_at, audio_loudness, picture)
+                 debrid_url, debrid_url_expires_at, audio_loudness, picture, nzb_ref,
+                 debrid_cache_url)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-                    $17)"#,
+                    $17, $18, $19)"#,
             self.session_id,
             self.user_id,
             media_type,
             media_id,
             self.release_title,
-            self.info_hash,
+            self.release_key,
             self.debrid_provider,
             self.debrid_provider_id,
             self.quality,
@@ -127,6 +130,8 @@ impl SessionRow {
             self.debrid_url_expires_at,
             audio_loudness.map(sqlx::types::Json) as _,
             picture,
+            self.nzb_ref.clone().map(sqlx::types::Json) as _,
+            self.debrid_cache_url,
         )
         .execute(pool)
         .await?;
@@ -150,7 +155,7 @@ impl SessionRow {
             &state.pool,
             &media_type,
             media_id,
-            self.info_hash.as_deref(),
+            self.release_key.as_deref(),
             self.file_id,
             self.cache_path.as_deref(),
         )
@@ -210,13 +215,31 @@ impl SessionRow {
     }
 }
 
-/// The dedup key for a debrid release's live session, from (info_hash, file_id).
-pub(crate) fn release_key(info_hash: Option<&str>, file_id: Option<i32>) -> Option<String> {
-    let hash = info_hash?;
+/// The dedup key for a debrid release file's live session, from (release_key, file_id).
+pub(crate) fn release_key(release_key: Option<&str>, file_id: Option<i32>) -> Option<String> {
+    let hash = release_key?;
     Some(match file_id {
         Some(fid) => format!("{hash}_f{fid}"),
         None => hash.to_string(),
     })
+}
+
+/// An NZB is named by its indexer listing until kobload imports it. Once any session of it
+/// has resolved, its key is known here too, so dedup, warm claims and the local cache find
+/// the release without asking kobload again.
+pub(crate) async fn name_release(state: &AppState, body: &mut StreamResolveBody) {
+    let Some(nzb) = body.nzb_ref.as_ref().filter(|_| body.release_key.is_none()) else {
+        return;
+    };
+    body.release_key = match state.stream_prewarms.key_of_nzb(nzb) {
+        Some(key) => Some(key),
+        None => debrid_stream_sessions::release_key_of_nzb(&state.pool, nzb)
+            .await
+            .unwrap_or_else(|e| {
+                warn!(error = %e, "NZB key lookup failed");
+                None
+            }),
+    };
 }
 
 /// A Play session is committed and listed in the dedup index before this returns; a Warm
@@ -231,7 +254,7 @@ pub(crate) async fn open(
     if let Some(cached) = complete_cache_entry(
         state,
         body.debrid_provider_id,
-        body.info_hash.as_deref(),
+        body.release_key.as_deref(),
         body.file_id,
     )
     .await
@@ -244,11 +267,11 @@ pub(crate) async fn open(
 pub(crate) async fn complete_cache_entry(
     state: &AppState,
     debrid_provider_id: Uuid,
-    info_hash: Option<&str>,
+    release_key: Option<&str>,
     file_id: Option<i32>,
 ) -> Option<cache_files::CachedFile> {
-    let info_hash = info_hash?;
-    let cached = cache_files::find_release(&state.pool, debrid_provider_id, info_hash, file_id)
+    let release_key = release_key?;
+    let cached = cache_files::find_release(&state.pool, debrid_provider_id, release_key, file_id)
         .await
         .ok()
         .flatten()?;
@@ -266,7 +289,7 @@ pub(crate) async fn complete_cache_entry(
 }
 
 fn register(state: &AppState, body: &StreamResolveBody, session_id: Uuid) {
-    if let Some(key) = release_key(body.info_hash.as_deref(), body.file_id) {
+    if let Some(key) = release_key(body.release_key.as_deref(), body.file_id) {
         state.debrid_session_index.insert(key, session_id);
     }
 }

@@ -167,7 +167,7 @@ pub async fn stream_search(
                 serde_json::from_value(value["options"].clone()).unwrap_or_default();
             let replay = debrid_outcomes::playable_preference(preference.replay, &options);
             if let Some(replay) = replay {
-                value["preferred_info_hash"] = json!(replay.info_hash);
+                value["preferred_release_key"] = json!(replay.release_key);
                 if let Some(fid) = replay.file_id {
                     value["preferred_file_id"] = json!(fid);
                 }
@@ -186,7 +186,7 @@ pub async fn stream_search(
 ///
 /// Shared with `debrid_cache_cleanup` so the sidecar is deleted alongside the
 /// file it describes — an orphaned sidecar is trusted verbatim if the same
-/// info_hash is ever re-downloaded.
+/// release is ever re-downloaded.
 pub(crate) fn probe_sidecar_path(cache_path: &std::path::Path) -> std::path::PathBuf {
     cache_path.with_extension(
         cache_path
@@ -200,16 +200,17 @@ pub(crate) fn probe_sidecar_path(cache_path: &std::path::Path) -> std::path::Pat
 pub async fn stream_resolve(
     State(state): State<AppState>,
     auth: PlaybackAuth,
-    Json(body): Json<StreamResolveBody>,
+    Json(mut body): Json<StreamResolveBody>,
 ) -> impl IntoResponse {
     if auth.is_kids && !kids_may_resolve(&state.pool, &body).await {
         return (StatusCode::NOT_FOUND, "not available on a Kids profile").into_response();
     }
+    debrid_open::name_release(&state, &mut body).await;
     if let Some(claimed) = stream_prewarm::claim_for_resolve(&state, auth.user_id, &body).await {
         return claimed;
     }
 
-    let key = debrid_open::release_key(body.info_hash.as_deref(), body.file_id);
+    let key = debrid_open::release_key(body.release_key.as_deref(), body.file_id);
     // Held until the new session is in the dedup index, so concurrent resolves of the
     // same release share one session.
     let _resolve_guard = match key {
@@ -350,11 +351,11 @@ pub struct AutoCreateMedia {
 pub struct StreamResolveBody {
     pub debrid_provider_id: Uuid,
     #[serde(default)]
-    pub info_hash: Option<String>,
+    pub release_key: Option<String>,
     #[serde(default)]
     pub magnet_url: Option<String>,
     #[serde(default)]
-    pub nzb_url: Option<String>,
+    pub nzb_ref: Option<nats_jobs::NzbRef>,
     #[serde(default)]
     pub file_id: Option<i32>,
     // Metadata for session persistence
@@ -390,9 +391,9 @@ pub struct StreamResolveBody {
 impl StreamResolveBody {
     pub fn apply_option(&mut self, option: &nats_jobs::StreamOption) {
         self.debrid_provider_id = option.debrid_provider_id;
-        self.info_hash = option.info_hash.clone();
+        self.release_key = option.release_key.clone();
         self.magnet_url = option.magnet_url.clone();
-        self.nzb_url = option.nzb_url.clone();
+        self.nzb_ref = option.nzb_ref.clone();
         self.file_id = option.files.first().map(|f| f.id);
         self.release_title = option.release_title.clone();
         self.debrid_provider = option.debrid_provider.clone();

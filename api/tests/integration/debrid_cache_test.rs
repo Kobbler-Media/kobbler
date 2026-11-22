@@ -10,11 +10,11 @@ use uuid::Uuid;
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, ResponseTemplate};
 
-async fn cache_rows(rig: &Rig, info_hash: &str) -> i64 {
+async fn cache_rows(rig: &Rig, release_key: &str) -> i64 {
     sqlx::query_scalar(
         "SELECT COUNT(*) FROM debrid_cache_files WHERE file_path LIKE '%/' || $1 || '/%'",
     )
-    .bind(info_hash)
+    .bind(release_key)
     .fetch_one(&rig.server.pool)
     .await
     .unwrap()
@@ -28,12 +28,12 @@ async fn delete_session(rig: &Rig, session_id: Uuid) {
         .assert_status(StatusCode::NO_CONTENT);
 }
 
-/// A finished download of `info_hash`, whose session has since been deleted.
-async fn orphaned_download(rig: &Rig, info_hash: &str) -> Value {
+/// A finished download of `release_key`, whose session has since been deleted.
+async fn orphaned_download(rig: &Rig, release_key: &str) -> Value {
     let movie = rig.movie().await;
-    let body = rig.resolve_body(info_hash, movie, direct_play_caps());
+    let body = rig.resolve_body(release_key, movie, direct_play_caps());
     let first = session_id_of(&rig.resolve_with(&body).await);
-    rig.wait_for_complete(info_hash).await;
+    rig.wait_for_complete(release_key).await;
     wait_for_probe(rig, first).await;
     delete_session(rig, first).await;
     body
@@ -314,7 +314,7 @@ async fn a_title_with_its_release_on_disk_offers_it_without_a_search() {
     let resp = local_option(&rig, movie).await;
     resp.assert_ok();
     let option: Value = resp.json();
-    assert_eq!(option["info_hash"], "localhash", "{option}");
+    assert_eq!(option["release_key"], "localhash", "{option}");
     assert_eq!(
         option["debrid_provider_id"], body["debrid_provider_id"],
         "{option}"
@@ -345,7 +345,7 @@ async fn a_release_on_disk_is_not_offered_once_another_was_played_after_it() {
 
     sqlx::query(
         "INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
+            (id, user_id, media_type, media_id, release_title, release_key, debrid_provider,
              debrid_provider_id, filename, filesize, file_id, played_at)
          SELECT $1, user_id, media_type, media_id, 'Streamed.Release', 'streamedhash',
                 debrid_provider, debrid_provider_id, filename, filesize, file_id, NOW()
@@ -369,7 +369,7 @@ async fn a_release_on_disk_is_not_offered_once_another_was_played_after_it() {
         .await
         .assert_status(StatusCode::NO_CONTENT);
     let again: Value = local_option(&rig, movie).await.json();
-    assert_eq!(again["info_hash"], "localhash", "{again}");
+    assert_eq!(again["release_key"], "localhash", "{again}");
 }
 
 #[tokio::test]
@@ -387,7 +387,7 @@ async fn a_copy_reported_bad_is_told_to_kobload_and_leaves_the_disk() {
     wait_for_probe(&rig, session).await;
     let report = json!({
         "debrid_provider_id": body["debrid_provider_id"],
-        "info_hash": "localhash",
+        "release_key": "localhash",
         "file_id": body["file_id"],
         "bad": true,
     });

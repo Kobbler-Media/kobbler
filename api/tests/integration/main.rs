@@ -165,6 +165,7 @@ mod reading_test;
 mod recents_test;
 mod recommendations_test;
 mod regrab_additional_copy_test;
+mod release_key_test;
 mod resolve_media_test;
 mod search_backend_test;
 mod search_facets_test;

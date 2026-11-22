@@ -5,7 +5,7 @@
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use std::sync::{Arc, Mutex};
@@ -49,6 +49,16 @@ struct Shared {
     plan: UpstreamPlan,
     ranges: Arc<Mutex<Vec<String>>>,
     whole_gets: Arc<Mutex<usize>>,
+    requests: Arc<Mutex<Vec<Seen>>>,
+}
+
+/// One GET the host answered: its path, its Range header if it had one, and its User-Agent
+/// (kobbler's own client, ffmpeg's or a probe reader's).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Seen {
+    pub path: String,
+    pub range: Option<String>,
+    pub agent: Option<String>,
 }
 
 pub struct Upstream {
@@ -56,6 +66,7 @@ pub struct Upstream {
     size: usize,
     ranges: Arc<Mutex<Vec<String>>>,
     whole_gets: Arc<Mutex<usize>>,
+    requests: Arc<Mutex<Vec<Seen>>>,
 }
 
 impl Upstream {
@@ -65,6 +76,7 @@ impl Upstream {
             plan,
             ranges: Arc::default(),
             whole_gets: Arc::default(),
+            requests: Arc::default(),
         };
         let app = Router::new()
             .route("/{*file}", axum::routing::get(serve))
@@ -79,6 +91,7 @@ impl Upstream {
             size,
             ranges: shared.ranges,
             whole_gets: shared.whole_gets,
+            requests: shared.requests,
         }
     }
 
@@ -97,15 +110,28 @@ impl Upstream {
     pub fn whole_gets(&self) -> usize {
         *self.whole_gets.lock().unwrap()
     }
+
+    pub fn requests(&self) -> Vec<Seen> {
+        self.requests.lock().unwrap().clone()
+    }
 }
 
-async fn serve(State(s): State<Shared>, headers: HeaderMap) -> Response {
+async fn serve(State(s): State<Shared>, uri: Uri, headers: HeaderMap) -> Response {
+    let range = headers.get(header::RANGE).and_then(|v| v.to_str().ok());
+    s.requests.lock().unwrap().push(Seen {
+        path: uri.path().to_string(),
+        range: range.map(str::to_string),
+        agent: headers
+            .get(header::USER_AGENT)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string),
+    });
     if let Some(status) = s.plan.refuse {
         return status.into_response();
     }
     let data = s.plan.data.clone();
     let total = data.len() as u64;
-    let Some(range) = headers.get(header::RANGE).and_then(|v| v.to_str().ok()) else {
+    let Some(range) = range else {
         *s.whole_gets.lock().unwrap() += 1;
         return Response::builder()
             .status(StatusCode::OK)

@@ -12,7 +12,7 @@ pub const PREWARM_JOB: &str = "debrid_prewarm";
 #[derive(Clone)]
 pub struct StreamRelease {
     pub debrid_provider_id: Option<Uuid>,
-    pub info_hash: Option<String>,
+    pub release_key: Option<String>,
     pub file_id: Option<i32>,
     pub release_title: String,
     pub filename: String,
@@ -22,7 +22,7 @@ impl From<sessions::SessionRelease> for StreamRelease {
     fn from(r: sessions::SessionRelease) -> Self {
         Self {
             debrid_provider_id: Uuid::parse_str(&r.debrid_provider).ok(),
-            info_hash: r.info_hash,
+            release_key: r.release_key,
             file_id: r.file_id,
             release_title: r.release_title,
             filename: r.filename,
@@ -30,9 +30,9 @@ impl From<sessions::SessionRelease> for StreamRelease {
     }
 }
 
-/// Usenet sessions carry no info_hash, and kobload keys every outcome by one.
+/// An NZB kobload never resolved has no key yet, and kobload keys every outcome by one.
 async fn forward(state: &AppState, release: &StreamRelease, ok: bool, reason: Option<&str>) {
-    let Some(info_hash) = release.info_hash.as_deref() else {
+    let Some(release_key) = release.release_key.as_deref() else {
         return;
     };
     let runtime = state.runtime_config.get().await;
@@ -45,7 +45,7 @@ async fn forward(state: &AppState, release: &StreamRelease, ok: bool, reason: Op
     };
     let report = StreamOutcomeReport {
         debrid_provider_id: release.debrid_provider_id,
-        info_hash: info_hash.to_string(),
+        release_key: release_key.to_string(),
         file_id: release.file_id,
         ok,
         reason: reason.map(String::from),
@@ -53,7 +53,7 @@ async fn forward(state: &AppState, release: &StreamRelease, ok: bool, reason: Op
         filename: Some(release.filename.clone()),
     };
     if let Err(e) = client.stream_outcome(&report).await {
-        warn!(error = %e, info_hash, ok, "failed to forward stream outcome to kobload");
+        warn!(error = %e, release_key, ok, "failed to forward stream outcome to kobload");
     }
 }
 
@@ -76,7 +76,7 @@ pub async fn record_played(state: &AppState, session_id: Uuid) {
         state,
         &StreamRelease {
             debrid_provider_id: Uuid::parse_str(&played.debrid_provider).ok(),
-            info_hash: played.info_hash.clone(),
+            release_key: played.release_key.clone(),
             file_id: played.file_id,
             release_title: played.release_title.clone(),
             filename: played.filename.clone(),
@@ -112,7 +112,7 @@ pub async fn record_played(state: &AppState, session_id: Uuid) {
 
 fn preference(played: PlayedRelease) -> StreamPreference {
     StreamPreference {
-        info_hash: played.info_hash,
+        release_key: played.release_key,
         file_id: played.file_id,
         release_title: Some(played.release_title),
     }
@@ -182,9 +182,9 @@ pub fn playable_preference(
     preferred.filter(|p| {
         !options.iter().any(|o| {
             o.playback == Some(StreamPlayback::Failed)
-                && o.info_hash
+                && o.release_key
                     .as_deref()
-                    .is_some_and(|h| h.eq_ignore_ascii_case(&p.info_hash))
+                    .is_some_and(|h| h.eq_ignore_ascii_case(&p.release_key))
                 && (p.file_id.is_none() || o.files.first().map(|f| f.id) == p.file_id)
         })
     })

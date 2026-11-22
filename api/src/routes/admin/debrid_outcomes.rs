@@ -59,7 +59,7 @@ pub async fn stream_outcome(
 #[derive(Debug, Deserialize, Serialize)]
 pub struct BadCopyBody {
     pub debrid_provider_id: Uuid,
-    pub info_hash: String,
+    pub release_key: String,
     #[serde(default)]
     pub file_id: Option<i32>,
     pub bad: bool,
@@ -93,7 +93,7 @@ pub async fn stream_bad(
         && let Some(cached) = debrid_open::complete_cache_entry(
             &state,
             body.debrid_provider_id,
-            Some(&body.info_hash),
+            Some(&body.release_key),
             body.file_id,
         )
         .await

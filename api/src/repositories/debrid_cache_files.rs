@@ -6,7 +6,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Default)]
 pub struct CacheRelease {
     pub debrid_provider_id: Option<Uuid>,
-    pub info_hash: Option<String>,
+    pub release_key: Option<String>,
     pub file_id: Option<i32>,
     pub filename: String,
 }
@@ -30,14 +30,14 @@ where
     sqlx::query!(
         r#"
         INSERT INTO debrid_cache_files
-            (file_path, file_size, expires_at, debrid_provider_id, info_hash, file_id, filename)
+            (file_path, file_size, expires_at, debrid_provider_id, release_key, file_id, filename)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (file_path) DO UPDATE SET
             last_accessed_at = NOW(),
             expires_at = GREATEST(debrid_cache_files.expires_at, EXCLUDED.expires_at),
             file_size = EXCLUDED.file_size,
             debrid_provider_id = COALESCE(EXCLUDED.debrid_provider_id, debrid_cache_files.debrid_provider_id),
-            info_hash = COALESCE(EXCLUDED.info_hash, debrid_cache_files.info_hash),
+            release_key = COALESCE(EXCLUDED.release_key, debrid_cache_files.release_key),
             file_id = COALESCE(EXCLUDED.file_id, debrid_cache_files.file_id),
             filename = EXCLUDED.filename,
             completed_at = NULL
@@ -46,7 +46,7 @@ where
         file_size,
         expires_at,
         release.debrid_provider_id,
-        release.info_hash,
+        release.release_key,
         release.file_id,
         release.filename,
     )
@@ -59,7 +59,7 @@ where
 pub async fn find_release<'e, E>(
     exec: E,
     debrid_provider_id: Uuid,
-    info_hash: &str,
+    release_key: &str,
     file_id: Option<i32>,
 ) -> Result<Option<CachedFile>>
 where
@@ -70,13 +70,13 @@ where
         r#"
         SELECT file_path, file_size
         FROM debrid_cache_files
-        WHERE info_hash = $1
+        WHERE release_key = $1
           AND file_id IS NOT DISTINCT FROM $2
           AND (debrid_provider_id IS NULL OR debrid_provider_id = $3)
         ORDER BY last_accessed_at DESC
         LIMIT 1
         "#,
-        info_hash,
+        release_key,
         file_id,
         debrid_provider_id,
     )

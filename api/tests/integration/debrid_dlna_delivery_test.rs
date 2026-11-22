@@ -58,8 +58,8 @@ fn cases() -> Vec<Case> {
     ]
 }
 
-fn body(rig: &Rig, info_hash: &str, movie: Uuid, caps: Value, delivery: Option<&str>) -> Value {
-    let mut body = rig.resolve_body(info_hash, movie, caps);
+fn body(rig: &Rig, release_key: &str, movie: Uuid, caps: Value, delivery: Option<&str>) -> Value {
+    let mut body = rig.resolve_body(release_key, movie, caps);
     if let Some(d) = delivery {
         body["delivery"] = json!(d);
     }

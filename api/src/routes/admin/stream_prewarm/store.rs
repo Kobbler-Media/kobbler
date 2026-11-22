@@ -127,6 +127,14 @@ impl PrewarmStore {
             .map(|e| e.clone())
     }
 
+    /// The key kobload gave an NZB when a prewarm of it resolved.
+    pub(crate) fn key_of_nzb(&self, nzb: &nats_jobs::NzbRef) -> Option<String> {
+        self.entries
+            .iter()
+            .find(|e| e.row.nzb_ref.as_ref() == Some(nzb) && e.row.release_key.is_some())
+            .and_then(|e| e.row.release_key.clone())
+    }
+
     pub(crate) fn untouched(&self) -> Vec<Uuid> {
         self.entries
             .iter()

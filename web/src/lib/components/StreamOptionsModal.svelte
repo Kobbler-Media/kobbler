@@ -167,7 +167,7 @@
                 </div>
                 <span class="material-icons-outlined play-icon">play_circle</span>
               </button>
-              {#if option.info_hash}
+              {#if option.release_key}
                 <button
                   type="button"
                   class="report-btn"

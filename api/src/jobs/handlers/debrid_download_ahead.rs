@@ -65,13 +65,14 @@ impl JobHandler for DebridDownloadAheadHandler {
         {
             return Ok(json!({ "skipped": "already on disk" }));
         }
-        let Some(body) = stream_prewarm::pick_episode(state, user_id, episode_id).await else {
+        let Some(mut body) = stream_prewarm::pick_episode(state, user_id, episode_id).await else {
             return Ok(json!({ "skipped": "nothing streamable" }));
         };
-        let Some(key) = release_key(body.info_hash.as_deref(), body.file_id) else {
-            return Ok(json!({ "skipped": "release has no info hash" }));
+        let playing = |body: &crate::routes::admin::debrid_stream::StreamResolveBody| {
+            release_key(body.release_key.as_deref(), body.file_id)
+                .is_some_and(|key| state.debrid_session_index.contains_key(&key))
         };
-        if state.debrid_session_index.contains_key(&key) {
+        if playing(&body) {
             return Ok(json!({ "skipped": "already playing" }));
         }
         let runtime = state.runtime_config.get().await;
@@ -80,9 +81,9 @@ impl JobHandler for DebridDownloadAheadHandler {
         let resolved = client
             .stream_resolve(&nats_jobs::StreamResolveRequest {
                 debrid_provider_id: body.debrid_provider_id,
-                info_hash: body.info_hash.clone(),
+                release_key: body.release_key.clone(),
                 magnet_url: body.magnet_url.clone(),
-                nzb_url: body.nzb_url.clone(),
+                nzb_ref: body.nzb_ref.clone(),
                 file_id: body.file_id,
                 priority: Some(nats_jobs::StreamPriority::Warm),
                 release_title: Some(body.release_title.clone()).filter(|t| !t.is_empty()),
@@ -90,6 +91,15 @@ impl JobHandler for DebridDownloadAheadHandler {
             })
             .await
             .map_err(|e| JobError::retryable(e.to_string()))?;
+        if body.release_key.is_none() {
+            body.release_key = resolved.release_key.clone();
+        }
+        let Some(key) = release_key(body.release_key.as_deref(), body.file_id) else {
+            return Ok(json!({ "skipped": "release has no key" }));
+        };
+        if playing(&body) {
+            return Ok(json!({ "skipped": "already playing" }));
+        }
         // Uncached on the provider means waiting on a torrent, which is the player's call.
         if !resolved.cached {
             return Ok(json!({ "skipped": "not cached on the provider" }));
@@ -101,7 +111,7 @@ impl JobHandler for DebridDownloadAheadHandler {
 
         let session_id = Uuid::new_v4();
         let cache_path = cache_download::cache_dir(state, &runtime)
-            .join(body.info_hash.as_deref().unwrap_or_default())
+            .join(body.release_key.as_deref().unwrap_or_default())
             .join(&resolved.filename);
         let meter = DownloadMeter::new(resolved.filesize.max(0) as u64, on_disk(&cache_path).await);
         let Some(claim) = state.downloads_ahead.claim(&key, &cancel, meter.clone()) else {
@@ -114,13 +124,15 @@ impl JobHandler for DebridDownloadAheadHandler {
             release_title: body.release_title.clone(),
             debrid_provider: body.debrid_provider.clone(),
             debrid_provider_id: body.debrid_provider_id,
-            info_hash: body.info_hash.clone(),
+            release_key: body.release_key.clone(),
+            nzb_ref: body.nzb_ref.clone(),
             file_id: body.file_id,
             quality: body.quality.clone(),
             filename: resolved.filename.clone(),
             filesize: resolved.filesize,
             cache_path: Some(cache_path.to_string_lossy().to_string()),
             debrid_url: Some(resolved.stream_url.clone()),
+            debrid_cache_url: resolved.cache_url.clone(),
             debrid_url_expires_at: resolved.expires_at.as_deref().and_then(|s| {
                 time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
             }),
@@ -132,12 +144,12 @@ impl JobHandler for DebridDownloadAheadHandler {
 
         let target = DownloadTarget {
             session_id,
-            url: resolved.stream_url,
+            url: resolved.cache_url.unwrap_or(resolved.stream_url),
             cache_path: cache_path.clone(),
             filesize: resolved.filesize,
             release: CacheRelease {
                 debrid_provider_id: Some(body.debrid_provider_id),
-                info_hash: body.info_hash.clone(),
+                release_key: body.release_key.clone(),
                 file_id: body.file_id,
                 filename: resolved.filename.clone(),
             },

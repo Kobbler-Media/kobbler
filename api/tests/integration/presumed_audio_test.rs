@@ -245,7 +245,7 @@ async fn a_debrid_release_with_one_untagged_track_plays_in_the_original_language
 
     let discovered = json!({
         "debrid_provider_id": PROVIDER_ID,
-        "info_hash": "discoveredhash",
+        "release_key": "discoveredhash",
         "media_type": "movie",
         "media_id": Uuid::nil(),
         "release_title": "Discovered.2024",

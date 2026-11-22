@@ -68,7 +68,7 @@ async fn test_stream_play_uses_cached_url_without_expiry() {
     sqlx::query(
         r#"
         INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash,
+            (id, user_id, media_type, media_id, release_title, release_key,
              debrid_provider, filename, filesize, debrid_url, debrid_url_expires_at)
         VALUES ($1, $2, 'movie', $3, 'Test.Movie.2025.1080p', 'abc123hash',
                 '00000000-0000-0000-0000-000000000001', 'test.mp4', 1000000,
@@ -161,7 +161,7 @@ async fn test_stream_play_returns_503_for_empty_resolve_url() {
     sqlx::query(
         r#"
         INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash,
+            (id, user_id, media_type, media_id, release_title, release_key,
              debrid_provider, filename, filesize, debrid_url, debrid_url_expires_at)
         VALUES ($1, $2, 'movie', $3, 'Test.Movie.2025.1080p', 'abc123hash',
                 '00000000-0000-0000-0000-000000000001', 'test.mp4', 1000000,
@@ -233,7 +233,7 @@ async fn test_stream_play_serves_raw_mkv_for_direct_play_session() {
     sqlx::query(
         r#"
         INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash,
+            (id, user_id, media_type, media_id, release_title, release_key,
              debrid_provider, filename, filesize, cache_path,
              debrid_url, debrid_url_expires_at)
         VALUES ($1, $2, 'movie', $3, 'Test.Movie.2025.1080p', 'directplay',
@@ -473,7 +473,7 @@ async fn test_sse_probe_complete_forwards_method() {
     sqlx::query(
         r#"
         INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash,
+            (id, user_id, media_type, media_id, release_title, release_key,
              debrid_provider, filename, filesize, probe_data)
         VALUES ($1, $2, 'movie', $3, 'Refine.Test.2026', 'refhash',
                 '00000000-0000-0000-0000-000000000001', 'test.mkv', 1000, $4)
@@ -562,7 +562,7 @@ async fn test_sse_download_complete_fires_once_on_real_completion() {
     sqlx::query(
         r#"
         INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash,
+            (id, user_id, media_type, media_id, release_title, release_key,
              debrid_provider, filename, filesize, cache_path)
         VALUES ($1, $2, 'movie', $3, 'SSE.Test.2026', 'ssehash',
                 '00000000-0000-0000-0000-000000000001', 'test.mkv', $4, $5)
@@ -745,7 +745,7 @@ async fn resolve_stream_for_movie(server: &TestServer, movie_id: Uuid) {
             "/api/v1/admin/stream/resolve",
             &json!({
                 "debrid_provider_id": Uuid::nil(),
-                "info_hash": format!("hash{}", movie_id.simple()),
+                "release_key": format!("hash{}", movie_id.simple()),
                 "media_type": "movie",
                 "media_id": movie_id,
                 "release_title": "Some.Release.2025.1080p",
@@ -824,7 +824,7 @@ async fn test_sse_stays_open_until_processing_has_delivered_its_segments() {
     sqlx::query(
         r#"
         INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash,
+            (id, user_id, media_type, media_id, release_title, release_key,
              debrid_provider, filename, filesize, cache_path, probe_data)
         VALUES ($1, $2, 'movie', $3, 'SSE.Processing.2026', 'prochash', 'rd', 'done.mkv', 100,
                 $4, '{"duration": 3000.0}')

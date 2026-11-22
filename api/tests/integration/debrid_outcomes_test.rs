@@ -96,7 +96,7 @@ async fn insert_show(server: &TestServer, title: &str) -> Vec<Uuid> {
 struct SessionSeed<'a> {
     media_type: &'a str,
     media_id: Uuid,
-    info_hash: &'a str,
+    release_key: &'a str,
     file_id: Option<i32>,
     debrid_url: Option<&'a str>,
     debrid_url_expires_at: Option<&'a str>,
@@ -106,11 +106,11 @@ struct SessionSeed<'a> {
 }
 
 impl<'a> SessionSeed<'a> {
-    fn new(media_id: Uuid, info_hash: &'a str) -> Self {
+    fn new(media_id: Uuid, release_key: &'a str) -> Self {
         Self {
             media_type: "movie",
             media_id,
-            info_hash,
+            release_key,
             file_id: None,
             debrid_url: None,
             debrid_url_expires_at: None,
@@ -120,10 +120,10 @@ impl<'a> SessionSeed<'a> {
         }
     }
 
-    fn episode(media_id: Uuid, info_hash: &'a str) -> Self {
+    fn episode(media_id: Uuid, release_key: &'a str) -> Self {
         Self {
             media_type: "episode",
-            ..Self::new(media_id, info_hash)
+            ..Self::new(media_id, release_key)
         }
     }
 }
@@ -132,7 +132,7 @@ async fn insert_session(server: &TestServer, user_id: Uuid, seed: SessionSeed<'_
     let id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
+            (id, user_id, media_type, media_id, release_title, release_key, debrid_provider,
              filename, filesize, file_id, debrid_url, debrid_url_expires_at, cache_path,
              created_at, played_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7,
@@ -144,8 +144,8 @@ async fn insert_session(server: &TestServer, user_id: Uuid, seed: SessionSeed<'_
     .bind(user_id)
     .bind(seed.media_type)
     .bind(seed.media_id)
-    .bind(format!("Release.{}.1080p-GRP", seed.info_hash))
-    .bind(seed.info_hash)
+    .bind(format!("Release.{}.1080p-GRP", seed.release_key))
+    .bind(seed.release_key)
     .bind(PROVIDER_ID)
     .bind(seed.file_id)
     .bind(seed.debrid_url)
@@ -186,17 +186,17 @@ async fn wait_for_reports(mock: &MockServer, count: usize) -> Vec<Value> {
 
 fn summary(report: &Value) -> (String, Option<i64>, bool, Option<String>) {
     (
-        report["info_hash"].as_str().unwrap().to_string(),
+        report["release_key"].as_str().unwrap().to_string(),
         report["file_id"].as_i64(),
         report["ok"].as_bool().unwrap(),
         report["reason"].as_str().map(String::from),
     )
 }
 
-fn option(info_hash: &str, file_id: Option<i32>, playback: Option<&str>) -> Value {
+fn option(release_key: &str, file_id: Option<i32>, playback: Option<&str>) -> Value {
     let id = match file_id {
-        Some(f) => format!("torrent_{info_hash}_f{f}_{PROVIDER_ID}"),
-        None => format!("torrent_{info_hash}_{PROVIDER_ID}"),
+        Some(f) => format!("torrent_{release_key}_f{f}_{PROVIDER_ID}"),
+        None => format!("torrent_{release_key}_{PROVIDER_ID}"),
     };
     let files: Vec<Value> = file_id
         .map(|f| json!({ "id": f, "path": format!("Show/E{f}.mkv"), "size": 1000 }))
@@ -204,10 +204,10 @@ fn option(info_hash: &str, file_id: Option<i32>, playback: Option<&str>) -> Valu
         .collect();
     let mut value = json!({
         "id": id,
-        "release_title": format!("Release.{info_hash}"),
+        "release_title": format!("Release.{release_key}"),
         "size": 1000,
         "indexer": "test",
-        "info_hash": info_hash,
+        "release_key": release_key,
         "total_score": 1.0,
         "match_score": 1.0,
         "quality_score": 1.0,
@@ -410,11 +410,11 @@ async fn test_search_prefers_the_latest_of_two_cached_plays() {
     }
 
     let body = search(&server, json!({ "movie_id": movie })).await;
-    assert_eq!(body["preferred_info_hash"], "newhash", "{body}");
+    assert_eq!(body["preferred_release_key"], "newhash", "{body}");
     let prefers: Vec<Value> = requests_to(&mock, "/stream/search")
         .await
         .into_iter()
-        .map(|r| r["prefer"]["info_hash"].clone())
+        .map(|r| r["prefer"]["release_key"].clone())
         .collect();
     assert_eq!(prefers, [json!("newhash")]);
 }
@@ -449,8 +449,9 @@ async fn test_search_prefers_the_release_played_last_over_an_older_one_on_disk()
     streamed.played = true;
     insert_session(&server, user, streamed).await;
 
-    let preferred =
-        async || search(&server, json!({ "movie_id": movie })).await["preferred_info_hash"].clone();
+    let preferred = async || {
+        search(&server, json!({ "movie_id": movie })).await["preferred_release_key"].clone()
+    };
     assert_eq!(preferred().await, "streamhash");
 
     server
@@ -506,7 +507,7 @@ async fn test_search_prefers_only_streams_that_played() {
     for (movie, preferred) in cases {
         let body = search(&server, json!({ "movie_id": movie })).await;
         assert_eq!(
-            body.get("preferred_info_hash").and_then(|v| v.as_str()),
+            body.get("preferred_release_key").and_then(|v| v.as_str()),
             preferred,
             "movie {movie}: {body}"
         );
@@ -520,10 +521,10 @@ async fn test_search_prefers_only_streams_that_played() {
     assert_eq!(
         prefers,
         vec![
-            json!({ "info_hash": "workedhash", "file_id": null,
+            json!({ "release_key": "workedhash", "file_id": null,
                     "release_title": "Release.workedhash.1080p-GRP" }),
             Value::Null,
-            json!({ "info_hash": "brokenhash", "file_id": null,
+            json!({ "release_key": "brokenhash", "file_id": null,
                     "release_title": "Release.brokenhash.1080p-GRP" }),
         ],
         "kobload is told what played so it ranks and warms it before anything else"
@@ -552,7 +553,7 @@ async fn test_episode_search_carries_continuity_from_the_last_played_episode() {
     let requests = requests_to(&mock, "/stream/search").await;
     assert_eq!(
         requests[0]["prefer"],
-        json!({ "info_hash": "packhash", "file_id": 1,
+        json!({ "release_key": "packhash", "file_id": 1,
                 "release_title": "Release.packhash.1080p-GRP" })
     );
 }
@@ -597,7 +598,7 @@ async fn test_next_episode_prewarm_fires_once_and_matches_the_real_search() {
     );
     assert_eq!(
         prewarm[0]["prefer"],
-        json!({ "info_hash": "s1pack", "file_id": 2,
+        json!({ "release_key": "s1pack", "file_id": 2,
                 "release_title": "Release.s1pack.1080p-GRP" })
     );
 
@@ -688,7 +689,7 @@ async fn test_resolve_errors_are_friendly_and_left_to_kobload() {
     for (hash, raw, _) in &cases {
         Mock::given(method("POST"))
             .and(path_regex("/api/v1/stream/resolve"))
-            .and(body_partial_json(json!({ "info_hash": hash })))
+            .and(body_partial_json(json!({ "release_key": hash })))
             .respond_with(ResponseTemplate::new(500).set_body_string(*raw))
             .mount(&mock)
             .await;
@@ -701,7 +702,7 @@ async fn test_resolve_errors_are_friendly_and_left_to_kobload() {
                 "/api/v1/admin/stream/resolve",
                 &json!({
                     "debrid_provider_id": PROVIDER_ID,
-                    "info_hash": hash,
+                    "release_key": hash,
                     "media_type": "movie",
                     "release_title": "Some.Release",
                     "debrid_provider": "realdebrid"
@@ -748,7 +749,7 @@ async fn test_resolve_non_video_is_forwarded_against_the_release() {
             "/api/v1/admin/stream/resolve",
             &json!({
                 "debrid_provider_id": PROVIDER_ID,
-                "info_hash": "exehash",
+                "release_key": "exehash",
                 "file_id": 2,
                 "media_type": "movie",
                 "media_id": movie,
@@ -826,7 +827,7 @@ async fn test_resolve_of_an_uncached_release_reports_caching() {
             "/api/v1/admin/stream/resolve",
             &json!({
                 "debrid_provider_id": PROVIDER_ID,
-                "info_hash": "uncachedhash",
+                "release_key": "uncachedhash",
                 "media_type": "movie",
                 "release_title": "Some.Release",
                 "debrid_provider": "realdebrid"
@@ -891,7 +892,7 @@ async fn test_background_probe_failure_is_forwarded() {
             "/api/v1/admin/stream/resolve",
             &json!({
                 "debrid_provider_id": PROVIDER_ID,
-                "info_hash": "probehash",
+                "release_key": "probehash",
                 "file_id": 5,
                 "media_type": "movie",
                 "media_id": movie,
@@ -1072,7 +1073,7 @@ async fn test_stremio_play_rebuilds_fallbacks_after_restart() {
     let tried: Vec<String> = requests_to(&mock, "/stream/resolve")
         .await
         .iter()
-        .map(|r| r["info_hash"].as_str().unwrap().to_string())
+        .map(|r| r["release_key"].as_str().unwrap().to_string())
         .collect();
     assert_eq!(tried, ["rebuildfirst", "rebuildnext"]);
 
@@ -1090,7 +1091,7 @@ fn usenet_option(guid: &str) -> Value {
         "release_title": format!("Usenet.Release.{guid}"),
         "size": 1000,
         "indexer": "test",
-        "nzb_url": format!("https://indexer.test/getnzb/{guid}.nzb?apikey=k"),
+        "nzb_ref": { "indexer_id": "7", "guid": guid },
         "total_score": 1.0,
         "match_score": 1.0,
         "quality_score": 1.0,
@@ -1103,7 +1104,7 @@ fn usenet_option(guid: &str) -> Value {
 }
 
 #[tokio::test]
-async fn test_stremio_play_resolves_usenet_with_the_listed_nzb_url() {
+async fn test_stremio_play_resolves_usenet_with_the_listed_nzb_ref() {
     for (n, restarted) in [false, true].into_iter().enumerate() {
         let (server, mock) = kobload_server().await;
         let user = admin_id(&server).await;
@@ -1145,9 +1146,9 @@ async fn test_stremio_play_resolves_usenet_with_the_listed_nzb_url() {
             .into_iter()
             .map(|r| {
                 (
-                    r["nzb_url"].clone(),
+                    r["nzb_ref"].clone(),
                     r["release_title"].clone(),
-                    r["info_hash"].clone(),
+                    r["release_key"].clone(),
                 )
             })
             .collect();
@@ -1155,7 +1156,7 @@ async fn test_stremio_play_resolves_usenet_with_the_listed_nzb_url() {
             .iter()
             .map(|o| {
                 (
-                    o["nzb_url"].clone(),
+                    o["nzb_ref"].clone(),
                     o["release_title"].clone(),
                     Value::Null,
                 )

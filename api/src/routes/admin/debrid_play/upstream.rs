@@ -42,14 +42,37 @@ pub(super) fn cached_url(session: &PlaySession) -> Option<String> {
 
 /// A URL the debrid host will serve this session's file from, re-resolving through
 /// Kobload when the cached one has lapsed. The error is the reply to send.
-pub(crate) async fn playable_url(
+pub(super) async fn playable_url(
     state: &AppState,
     session: &PlaySession,
 ) -> Result<String, Response> {
     if let Some(url) = cached_url(session) {
         return Ok(url);
     }
+    Ok(re_resolve(state, session).await?.stream_url)
+}
 
+/// Where the cache-ahead downloads from: kobload's second URL for the same bytes when it
+/// gave one, so the download queues behind playback instead of competing with it.
+pub(crate) async fn cache_ahead_url(
+    state: &AppState,
+    session: &PlaySession,
+) -> Result<String, Response> {
+    if let Some(url) = cached_url(session) {
+        return Ok(session
+            .debrid_cache_url
+            .clone()
+            .filter(|u| !u.is_empty())
+            .unwrap_or(url));
+    }
+    let resolved = re_resolve(state, session).await?;
+    Ok(resolved.cache_url.unwrap_or(resolved.stream_url))
+}
+
+async fn re_resolve(
+    state: &AppState,
+    session: &PlaySession,
+) -> Result<nats_jobs::StreamResolveResponse, Response> {
     let runtime = state.runtime_config.get().await;
     let client = build_kobload_client(&runtime).map_err(IntoResponse::into_response)?;
     let Some(debrid_provider_id) = session.provider_id() else {
@@ -61,9 +84,9 @@ pub(crate) async fn playable_url(
     };
     let resolve_req = nats_jobs::StreamResolveRequest {
         debrid_provider_id,
-        info_hash: session.info_hash.clone(),
+        release_key: session.release_key.clone(),
         magnet_url: None,
-        nzb_url: None,
+        nzb_ref: session.nzb_ref.clone(),
         file_id: session.file_id,
         priority: None,
         release_title: Some(session.release_title.clone()).filter(|t| !t.is_empty()),
@@ -99,10 +122,12 @@ pub(crate) async fn playable_url(
     let _ = sqlx::query!(
         r#"
             UPDATE debrid_stream_sessions
-            SET debrid_url = $1, debrid_url_expires_at = $2, updated_at = NOW()
-            WHERE id = $3
+            SET debrid_url = $1, debrid_cache_url = $2, debrid_url_expires_at = $3,
+                updated_at = NOW()
+            WHERE id = $4
             "#,
         resolved.stream_url,
+        resolved.cache_url,
         expires_at,
         session.id,
     )
@@ -113,7 +138,7 @@ pub(crate) async fn playable_url(
     } else {
         warn!(session_id = %session.id, "Resolved debrid URL has no expiry — caching without TTL");
     }
-    Ok(resolved.stream_url)
+    Ok(resolved)
 }
 
 pub(super) fn fail_session(state: &AppState, session_id: Uuid, code: &'static str, message: &str) {

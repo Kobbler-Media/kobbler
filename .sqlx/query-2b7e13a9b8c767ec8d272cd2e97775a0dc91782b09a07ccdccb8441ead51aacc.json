@@ -1,16 +1,16 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT info_hash, file_id, debrid_provider, release_title, filename\n        FROM debrid_stream_sessions\n        WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n        ",
+  "query": "\n        SELECT release_key, file_id, debrid_provider, release_title, filename\n        FROM debrid_stream_sessions\n        WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "info_hash",
+        "name": "release_key",
         "type_info": "Text",
         "origin": {
           "Table": {
             "table": "debrid_stream_sessions",
-            "name": "info_hash"
+            "name": "release_key"
           }
         }
       },
@@ -73,5 +73,5 @@
       false
     ]
   },
-  "hash": "f3732d832181af07d816c283c9959c2dbdba2fd5efe06def1dbc36fce03c5e78"
+  "hash": "2b7e13a9b8c767ec8d272cd2e97775a0dc91782b09a07ccdccb8441ead51aacc"
 }

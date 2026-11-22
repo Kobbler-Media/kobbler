@@ -121,7 +121,7 @@ async fn the_queued_episode_is_downloaded_and_then_plays_from_disk() {
         ))
         .await;
     local.assert_status(StatusCode::OK);
-    assert_eq!(local.json::<Value>()["info_hash"], "aheadhash");
+    assert_eq!(local.json::<Value>()["release_key"], "aheadhash");
 }
 
 /// Starting the episode while it downloads ahead shares that download: a second writer
@@ -161,14 +161,14 @@ async fn a_viewer_joins_the_download_ahead_rather_than_restarting_it() {
         .await
         .json();
     assert_eq!(
-        offered["info_hash"], "joinhash",
+        offered["release_key"], "joinhash",
         "the download in flight was not offered"
     );
 
     let session = session_id_of(
         &rig.resolve_with(&json!({
             "debrid_provider_id": PROVIDER_ID,
-            "info_hash": "joinhash",
+            "release_key": "joinhash",
             "media_type": "episode",
             "media_id": episodes[1],
             "release_title": "Release",

@@ -11,7 +11,7 @@ use crate::ffmpeg::mkv_cue_cache::{
 };
 
 pub(crate) struct GateSpec<'a> {
-    pub info_hash: Option<&'a str>,
+    pub release_key: Option<&'a str>,
     pub filename: &'a str,
     pub filesize: i64,
     pub local: Option<&'a Path>,
@@ -57,7 +57,7 @@ pub(crate) async fn session_cue_gate(
             state.cue_trim_cache.clone(),
             format!(
                 "remote:{}:{}:{}",
-                spec.info_hash.unwrap_or(""),
+                spec.release_key.unwrap_or(""),
                 spec.filename,
                 spec.filesize
             ),

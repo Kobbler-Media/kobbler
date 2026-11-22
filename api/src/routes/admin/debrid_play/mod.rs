@@ -9,7 +9,7 @@ mod remux;
 mod upstream;
 
 pub(crate) use gate::{GateSpec, session_cue_gate};
-pub(crate) use upstream::playable_url;
+pub(crate) use upstream::cache_ahead_url;
 
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
@@ -38,7 +38,8 @@ use crate::streaming::progressive::DownloadTarget;
 pub(crate) struct PlaySession {
     pub id: Uuid,
     pub debrid_provider_id: Option<Uuid>,
-    pub info_hash: Option<String>,
+    pub release_key: Option<String>,
+    pub nzb_ref: Option<nats_jobs::NzbRef>,
     pub file_id: Option<i32>,
     pub debrid_provider: String,
     pub filename: String,
@@ -46,6 +47,7 @@ pub(crate) struct PlaySession {
     pub release_title: String,
     pub cache_path: Option<String>,
     pub debrid_url: Option<String>,
+    pub debrid_cache_url: Option<String>,
     pub debrid_url_expires_at: Option<OffsetDateTime>,
 }
 
@@ -112,7 +114,7 @@ fn touch(state: &AppState, session: &PlaySession) -> Live {
         .as_ref()
         .is_some_and(|c| c.is_cancelled())
         && !crate::routes::admin::debrid_open::release_key(
-            session.info_hash.as_deref(),
+            session.release_key.as_deref(),
             session.file_id,
         )
         .is_some_and(|k| state.downloads_ahead.contains(&k));
@@ -148,7 +150,7 @@ async fn resume_download(
     let session = session.clone();
     info!(session_id = %session.id, "Resuming stopped download");
     tokio::spawn(async move {
-        let Ok(url) = upstream::playable_url(&bg_state, &session).await else {
+        let Ok(url) = upstream::cache_ahead_url(&bg_state, &session).await else {
             return;
         };
         let cache_path = PathBuf::from(session.cache_path.as_deref().unwrap_or(""));
@@ -171,10 +173,12 @@ impl PlaySession {
     ) -> Result<Option<Self>, sqlx::Error> {
         let row = sqlx::query!(
             r#"
-            SELECT id, debrid_provider_id, info_hash, file_id, debrid_provider, filename,
+            SELECT id, debrid_provider_id, release_key, file_id, debrid_provider, filename,
                    filesize, release_title,
+                   nzb_ref AS "nzb_ref: sqlx::types::Json<nats_jobs::NzbRef>",
                    cache_path AS "cache_path?",
                    debrid_url AS "debrid_url?",
+                   debrid_cache_url,
                    debrid_url_expires_at AS "debrid_url_expires_at?"
             FROM debrid_stream_sessions
             WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)
@@ -187,7 +191,8 @@ impl PlaySession {
         Ok(row.map(|s| Self {
             id: s.id,
             debrid_provider_id: s.debrid_provider_id,
-            info_hash: s.info_hash,
+            release_key: s.release_key,
+            nzb_ref: s.nzb_ref.map(|sqlx::types::Json(r)| r),
             file_id: s.file_id,
             debrid_provider: s.debrid_provider,
             filename: s.filename,
@@ -195,6 +200,7 @@ impl PlaySession {
             release_title: s.release_title,
             cache_path: s.cache_path,
             debrid_url: s.debrid_url,
+            debrid_cache_url: s.debrid_cache_url,
             debrid_url_expires_at: s.debrid_url_expires_at,
         }))
     }
@@ -212,7 +218,7 @@ impl PlaySession {
             filesize: self.filesize,
             release: CacheRelease {
                 debrid_provider_id: self.provider_id(),
-                info_hash: self.info_hash.clone(),
+                release_key: self.release_key.clone(),
                 file_id: self.file_id,
                 filename: self.filename.clone(),
             },
@@ -293,7 +299,7 @@ async fn respond(
 
     let release = StreamRelease {
         debrid_provider_id: session.provider_id(),
-        info_hash: session.info_hash.clone(),
+        release_key: session.release_key.clone(),
         file_id: session.file_id,
         release_title: session.release_title.clone(),
         filename: session.filename.clone(),
@@ -346,7 +352,7 @@ fn gate_spec<'a>(
     url: Option<String>,
 ) -> GateSpec<'a> {
     GateSpec {
-        info_hash: session.info_hash.as_deref(),
+        release_key: session.release_key.as_deref(),
         filename: &session.filename,
         filesize: session.filesize,
         local,

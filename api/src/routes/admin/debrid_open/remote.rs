@@ -42,9 +42,9 @@ pub(super) async fn open(
     };
     let resolve_req = nats_jobs::StreamResolveRequest {
         debrid_provider_id: body.debrid_provider_id,
-        info_hash: body.info_hash.clone(),
+        release_key: body.release_key.clone(),
         magnet_url: body.magnet_url.clone(),
-        nzb_url: body.nzb_url.clone(),
+        nzb_ref: body.nzb_ref.clone(),
         file_id: body.file_id,
         priority: Some(priority),
         release_title: Some(body.release_title.clone()).filter(|t| !t.is_empty()),
@@ -66,9 +66,32 @@ pub(super) async fn open(
         .into_response());
     }
 
+    // An NZB is only named once kobload has imported it.
+    let keyed;
+    let body = match resolved.release_key.clone() {
+        Some(key) if body.release_key.is_none() => {
+            keyed = StreamResolveBody {
+                release_key: Some(key),
+                ..body.clone()
+            };
+            if let Some(cached) = super::complete_cache_entry(
+                state,
+                keyed.debrid_provider_id,
+                keyed.release_key.as_deref(),
+                keyed.file_id,
+            )
+            .await
+            {
+                return super::local::open(state, runtime, user_id, &keyed, cached, mode).await;
+            }
+            &keyed
+        }
+        _ => body,
+    };
+
     let release = StreamRelease {
         debrid_provider_id: Some(body.debrid_provider_id),
-        info_hash: body.info_hash.clone(),
+        release_key: body.release_key.clone(),
         file_id: body.file_id,
         release_title: body.release_title.clone(),
         filename: resolved.filename.clone(),
@@ -92,9 +115,9 @@ pub(super) async fn open(
 
     let session_id = Uuid::new_v4();
     let session_key = session_id.to_string();
-    // Keyed by info_hash so another session for the same release finds the bytes.
+    // Keyed by release so another session for the same release finds the bytes.
     let local_cache_path = cache_download::cache_dir(state, runtime)
-        .join(body.info_hash.as_deref().unwrap_or(&session_key))
+        .join(body.release_key.as_deref().unwrap_or(&session_key))
         .join(&resolved.filename);
     let row = SessionRow {
         session_id,
@@ -102,13 +125,15 @@ pub(super) async fn open(
         release_title: body.release_title.clone(),
         debrid_provider: body.debrid_provider.clone(),
         debrid_provider_id: body.debrid_provider_id,
-        info_hash: body.info_hash.clone(),
+        release_key: body.release_key.clone(),
+        nzb_ref: body.nzb_ref.clone(),
         file_id: body.file_id,
         quality: body.quality.clone(),
         filename: resolved.filename.clone(),
         filesize: resolved.filesize,
         cache_path: Some(local_cache_path.to_string_lossy().to_string()),
         debrid_url: Some(resolved.stream_url.clone()).filter(|u| !u.is_empty()),
+        debrid_cache_url: resolved.cache_url.clone(),
         debrid_url_expires_at: resolved.expires_at.as_deref().and_then(|s| {
             time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
         }),
@@ -135,7 +160,7 @@ pub(super) async fn open(
     let on_disk = tokio::fs::metadata(&local_cache_path)
         .await
         .map_or(0, |m| m.len());
-    let release_key = super::release_key(body.info_hash.as_deref(), body.file_id);
+    let release_key = super::release_key(body.release_key.as_deref(), body.file_id);
     // A Warm session stops its download at the head, which would stop the shared one.
     let joined = match mode {
         OpenMode::Play => release_key
@@ -244,7 +269,7 @@ pub(super) async fn open(
         state,
         session_id,
         crate::routes::admin::debrid_play::GateSpec {
-            info_hash: body.info_hash.as_deref(),
+            release_key: body.release_key.as_deref(),
             filename: &resolved.filename,
             filesize: resolved.filesize,
             local: Some(&local_cache_path),
@@ -285,12 +310,15 @@ pub(super) async fn open(
 
     let target = DownloadTarget {
         session_id,
-        url: resolved.stream_url.clone(),
+        url: resolved
+            .cache_url
+            .clone()
+            .unwrap_or_else(|| resolved.stream_url.clone()),
         cache_path: local_cache_path.clone(),
         filesize: resolved.filesize,
         release: CacheRelease {
             debrid_provider_id: Some(body.debrid_provider_id),
-            info_hash: body.info_hash.clone(),
+            release_key: body.release_key.clone(),
             file_id: body.file_id,
             filename: resolved.filename.clone(),
         },

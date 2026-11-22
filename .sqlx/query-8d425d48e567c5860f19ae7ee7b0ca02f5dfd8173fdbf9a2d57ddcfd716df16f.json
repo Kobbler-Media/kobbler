@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT file_path, file_size\n        FROM debrid_cache_files\n        WHERE info_hash = $1\n          AND file_id IS NOT DISTINCT FROM $2\n          AND (debrid_provider_id IS NULL OR debrid_provider_id = $3)\n        ORDER BY last_accessed_at DESC\n        LIMIT 1\n        ",
+  "query": "\n        SELECT file_path, file_size\n        FROM debrid_cache_files\n        WHERE release_key = $1\n          AND file_id IS NOT DISTINCT FROM $2\n          AND (debrid_provider_id IS NULL OR debrid_provider_id = $3)\n        ORDER BY last_accessed_at DESC\n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
@@ -38,5 +38,5 @@
       false
     ]
   },
-  "hash": "90f47ea20aedfd0c0f62617f2bc96c0b5e9f2eb416f43de904c04fe4370a0385"
+  "hash": "8d425d48e567c5860f19ae7ee7b0ca02f5dfd8173fdbf9a2d57ddcfd716df16f"
 }

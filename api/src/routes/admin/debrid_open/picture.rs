@@ -27,7 +27,7 @@ pub(crate) async fn measured(
     source: &str,
     duration_secs: f64,
 ) -> Option<serde_json::Value> {
-    if let Some(hash) = release.info_hash.as_deref()
+    if let Some(hash) = release.release_key.as_deref()
         && let Ok(Some(known)) =
             debrid_stream_sessions::release_picture(pool, hash, release.file_id).await
     {

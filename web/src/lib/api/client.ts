@@ -6606,7 +6606,9 @@ export interface StreamOption {
   release_title: string;
   size: number;
   indexer: string;
-  info_hash?: string;
+  /** A torrent's info hash, or `nzb-<sha256>` for an NZB kobload has imported. */
+  release_key?: string;
+  nzb_ref?: NzbRef;
   quality?: Record<string, unknown>;
   total_score: number;
   match_score: number;
@@ -6625,6 +6627,12 @@ export interface StreamOption {
   reported_bad?: boolean;
 }
 
+/** An NZB as its indexer lists it; only kobload can fetch it. */
+export interface NzbRef {
+  indexer_id: string;
+  guid: string;
+}
+
 export type StreamAvailability = 'ready' | 'likely' | 'unknown' | 'uncached';
 
 export type StreamGroup = 'played' | 'account' | 'available' | 'uncached' | 'failed';
@@ -6632,17 +6640,17 @@ export type StreamGroup = 'played' | 'account' | 'available' | 'uncached' | 'fai
 export interface StreamSearchResponse {
   options: StreamOption[];
   errors: string[];
-  /** Info hash of the last successfully used stream for this media item. */
-  preferred_info_hash?: string;
+  /** Release key of the last successfully used stream for this media item. */
+  preferred_release_key?: string;
   /** File ID within the preferred torrent (for season packs). */
   preferred_file_id?: number;
 }
 
 export interface StreamResolveParams {
   debrid_provider_id: string;
-  info_hash?: string;
+  release_key?: string;
   magnet_url?: string;
-  nzb_url?: string;
+  nzb_ref?: NzbRef;
   file_id?: number;
   media_type?: string;
   media_id?: string;
@@ -6745,14 +6753,14 @@ export async function streamPause(providerId: string): Promise<StreamPause | nul
 }
 
 export async function reportBadRelease(
-  release: Pick<StreamOption, 'debrid_provider_id' | 'info_hash' | 'files'>,
+  release: Pick<StreamOption, 'debrid_provider_id' | 'release_key' | 'files'>,
   bad: boolean
 ): Promise<void> {
   return request('/api/v1/admin/stream/bad', {
     method: 'POST',
     body: JSON.stringify({
       debrid_provider_id: release.debrid_provider_id,
-      info_hash: release.info_hash,
+      release_key: release.release_key,
       file_id: release.files[0]?.id ?? null,
       bad
     })

@@ -16,9 +16,9 @@ fn padded_fixture() -> Vec<u8> {
     data
 }
 
-async fn warm_rig(data: Vec<u8>, info_hash: &str) -> Rig {
+async fn warm_rig(data: Vec<u8>, release_key: &str) -> Rig {
     let rig = Rig::start(UpstreamPlan::new(data), "film.mkv").await;
-    rig.mount_search(json!([rig.option(info_hash)])).await;
+    rig.mount_search(json!([rig.option(release_key)])).await;
     rig
 }
 
@@ -360,13 +360,13 @@ async fn a_release_on_disk_is_warmed_without_a_search() {
 
     let reply = wait_ready(&rig, &movie_body(movie)).await;
     let claimed: Value = claim(&rig, prewarm_id(&reply)).await.json();
-    let info_hash: Option<String> =
-        sqlx::query_scalar("SELECT info_hash FROM debrid_stream_sessions WHERE id = $1")
+    let release_key: Option<String> =
+        sqlx::query_scalar("SELECT release_key FROM debrid_stream_sessions WHERE id = $1")
             .bind(session_id_of(&claimed))
             .fetch_one(&rig.server.pool)
             .await
             .unwrap();
-    assert_eq!(info_hash.as_deref(), Some("diskhash"));
+    assert_eq!(release_key.as_deref(), Some("diskhash"));
     assert_eq!(
         rig.kobload_requests("/stream/search").await.len(),
         searches,

@@ -4,32 +4,7 @@ use crate::common::*;
 use api::jobs::handlers::DebridKeepHandler;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
-use std::path::PathBuf;
 use uuid::Uuid;
-
-struct Library {
-    _dir: tempfile::TempDir,
-    root: PathBuf,
-}
-
-async fn library(rig: &Rig) -> Library {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    for media_type in ["movie", "tv"] {
-        let path = root.join(media_type);
-        std::fs::create_dir_all(&path).unwrap();
-        sqlx::query(
-            "INSERT INTO media_roots (id, path, media_type, is_default) VALUES ($1, $2, $3, TRUE)",
-        )
-        .bind(Uuid::now_v7())
-        .bind(path.to_string_lossy().to_string())
-        .bind(media_type)
-        .execute(&rig.server.pool)
-        .await
-        .unwrap();
-    }
-    Library { _dir: dir, root }
-}
 
 async fn episode(rig: &Rig) -> Uuid {
     let (show, season, episode) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
@@ -115,7 +90,7 @@ async fn keeping_a_stream_imports_it_as_a_library_file() {
             plan.whole = WholeBody::Stall { first: 20_000 };
         }
         let rig = Rig::start(plan, "film.mkv").await;
-        let lib = library(&rig).await;
+        let lib = rig.media_roots().await;
         let media_id = match media_type {
             "movie" => rig.movie().await,
             _ => episode(&rig).await,
@@ -153,7 +128,7 @@ async fn keeping_a_stream_imports_it_as_a_library_file() {
             .await
             .unwrap_or_else(|| panic!("{media_type}: no library file"));
         assert!(
-            kept.starts_with(&lib.root.to_string_lossy().to_string()),
+            kept.starts_with(&lib.path().to_string_lossy().to_string()),
             "{kept}"
         );
         assert!(std::fs::read(&kept).unwrap() == ITA_ENG_FIXTURE);
@@ -162,7 +137,7 @@ async fn keeping_a_stream_imports_it_as_a_library_file() {
             "the cache copy stayed behind"
         );
         let cache_rows: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM debrid_cache_files WHERE info_hash = $1")
+            sqlx::query_scalar("SELECT COUNT(*) FROM debrid_cache_files WHERE release_key = $1")
                 .bind(&hash)
                 .fetch_one(&rig.server.pool)
                 .await
@@ -181,7 +156,7 @@ async fn keeping_a_stream_imports_it_as_a_library_file() {
 #[tokio::test]
 async fn a_failed_keep_says_why_and_can_be_retried() {
     let rig = Rig::start(UpstreamPlan::new(ITA_ENG_FIXTURE.to_vec()), "film.mkv").await;
-    let _lib = library(&rig).await;
+    let _lib = rig.media_roots().await;
     let movie = rig.movie().await;
     let session = session_id_of(
         &rig.resolve_with(&rig.resolve_body("failkeep", movie, direct_play_caps()))

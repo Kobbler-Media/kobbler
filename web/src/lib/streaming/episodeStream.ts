@@ -11,7 +11,8 @@ async function resolveEpisodeStream(episodeId: string): Promise<PlaybackSessionR
   return resolveFirstReady(options, (opt) =>
     streamResolve({
       debrid_provider_id: opt.debrid_provider_id,
-      info_hash: opt.info_hash,
+      release_key: opt.release_key,
+      nzb_ref: opt.nzb_ref,
       file_id: opt.files[0]?.id,
       media_type: 'episode',
       media_id: episodeId,

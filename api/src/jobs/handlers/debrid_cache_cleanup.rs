@@ -42,7 +42,7 @@ pub(crate) async fn remove_cache_entry(file_path: &str) -> bool {
         return false;
     }
     // The sidecar carries probe results for *this* file. Left behind, it is
-    // trusted verbatim if the same info_hash is downloaded again later.
+    // trusted verbatim if the same release is downloaded again later.
     let sidecar = crate::routes::admin::debrid_stream::probe_sidecar_path(path);
     if let Err(e) = tokio::fs::remove_file(&sidecar).await
         && e.kind() != std::io::ErrorKind::NotFound

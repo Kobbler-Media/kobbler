@@ -219,7 +219,7 @@ async fn playback_token_authenticates_debrid_stream_routes() {
     sqlx::query(
         r#"
         INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash,
+            (id, user_id, media_type, media_id, release_title, release_key,
              debrid_provider, filename, filesize, debrid_url, debrid_url_expires_at)
         VALUES ($1, $2, 'movie', $3, 'Test.Movie.2024.1080p', 'tokhash',
                 '00000000-0000-0000-0000-000000000001', 'test.mp4', 1000000,

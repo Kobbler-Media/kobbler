@@ -29,7 +29,7 @@ enum KobloadStreamEvent {
         download: serde_json::Value,
     },
     StreamWarmReady {
-        info_hash: String,
+        release_key: String,
         file_id: Option<i32>,
         debrid_provider_id: String,
         debrid_provider: String,
@@ -149,13 +149,16 @@ fn handle_sse_message(
             LibraryEvent::kobload_download_updated(download)
         }
         KobloadStreamEvent::StreamWarmReady {
-            info_hash,
+            release_key,
             file_id,
             debrid_provider_id,
             debrid_provider,
-        } => {
-            LibraryEvent::stream_warm_ready(info_hash, file_id, debrid_provider_id, debrid_provider)
-        }
+        } => LibraryEvent::stream_warm_ready(
+            release_key,
+            file_id,
+            debrid_provider_id,
+            debrid_provider,
+        ),
     };
 
     // Broadcast to all connected SSE clients (ignore send errors - no receivers)

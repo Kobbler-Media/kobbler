@@ -40,8 +40,11 @@ export type WalkResult =
   | { kind: 'exhausted'; stopped: boolean }
   | { kind: 'aborted' };
 
-export function optionKey(o: Pick<StreamOption, 'debrid_provider_id' | 'info_hash' | 'files'>) {
-  return `${o.debrid_provider_id}|${o.info_hash ?? ''}|${o.files[0]?.id ?? ''}`;
+export function optionKey(
+  o: Pick<StreamOption, 'debrid_provider_id' | 'release_key' | 'nzb_ref' | 'files'>
+) {
+  const release = o.release_key ?? (o.nzb_ref ? `${o.nzb_ref.indexer_id}/${o.nzb_ref.guid}` : '');
+  return `${o.debrid_provider_id}|${release}|${o.files[0]?.id ?? ''}`;
 }
 
 export function newWalkState(tried: Iterable<string> = []): WalkState {
@@ -55,10 +58,10 @@ export function refillBudget(state: WalkState) {
 
 export function rankOptions(result: StreamSearchResponse): StreamOption[] {
   const ranked = [...result.options];
-  if (!result.preferred_info_hash) return ranked;
+  if (!result.preferred_release_key) return ranked;
   const idx = ranked.findIndex(
     (o) =>
-      o.info_hash === result.preferred_info_hash &&
+      o.release_key === result.preferred_release_key &&
       (result.preferred_file_id == null || o.files[0]?.id === result.preferred_file_id)
   );
   if (idx > 0) ranked.unshift(...ranked.splice(idx, 1));

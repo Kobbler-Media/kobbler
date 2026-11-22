@@ -45,11 +45,11 @@ pub(crate) async fn local_option(
 ) -> Result<Option<Value>, sqlx::Error> {
     let Some(r) = sqlx::query!(
         r#"
-        SELECT info_hash AS "info_hash!", file_id, release_title, filename, filesize, quality,
-               debrid_provider, debrid_provider_id AS "debrid_provider_id!"
+        SELECT release_key AS "release_key!", file_id, release_title, filename, filesize, quality,
+               debrid_provider, debrid_provider_id AS "debrid_provider_id!", nzb_ref
         FROM debrid_stream_sessions
         WHERE media_type = $1 AND media_id = $2
-          AND info_hash IS NOT NULL AND debrid_provider_id IS NOT NULL
+          AND release_key IS NOT NULL AND debrid_provider_id IS NOT NULL
         ORDER BY COALESCE(played_at, created_at) DESC
         LIMIT 1
         "#,
@@ -61,10 +61,10 @@ pub(crate) async fn local_option(
     else {
         return Ok(None);
     };
-    let downloading = release_key(Some(&r.info_hash), r.file_id)
+    let downloading = release_key(Some(&r.release_key), r.file_id)
         .is_some_and(|key| state.downloads_ahead.contains(&key));
     if !downloading
-        && complete_cache_entry(state, r.debrid_provider_id, Some(&r.info_hash), r.file_id)
+        && complete_cache_entry(state, r.debrid_provider_id, Some(&r.release_key), r.file_id)
             .await
             .is_none()
     {
@@ -75,11 +75,11 @@ pub(crate) async fn local_option(
         .map(|id| vec![json!({ "id": id, "path": r.filename, "size": r.filesize })])
         .unwrap_or_default();
     Ok(Some(json!({
-            "id": format!("local-{}-{}", r.info_hash, r.file_id.unwrap_or(-1)),
+            "id": format!("local-{}-{}", r.release_key, r.file_id.unwrap_or(-1)),
             "release_title": r.release_title,
             "size": r.filesize,
             "indexer": "cache",
-            "info_hash": r.info_hash,
+            "release_key": r.release_key,
             "quality": r.quality,
             "total_score": 1.0,
             "match_score": 1.0,
@@ -87,7 +87,8 @@ pub(crate) async fn local_option(
             "debrid_provider": r.debrid_provider,
             "debrid_provider_id": r.debrid_provider_id,
             "cached": true,
-            "source_type": "torrent",
+            "source_type": if r.nzb_ref.is_some() { "usenet" } else { "torrent" },
+            "nzb_ref": r.nzb_ref,
             "availability": "ready",
             "files": files,
     })))

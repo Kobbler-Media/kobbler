@@ -105,7 +105,7 @@ pub enum LibraryEvent {
     },
     /// A stream option finished debrid cache warming and is ready for instant playback.
     StreamWarmReady {
-        info_hash: String,
+        release_key: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         file_id: Option<i32>,
         debrid_provider_id: String,
@@ -234,13 +234,13 @@ impl LibraryEvent {
     }
 
     pub fn stream_warm_ready(
-        info_hash: String,
+        release_key: String,
         file_id: Option<i32>,
         debrid_provider_id: String,
         debrid_provider: String,
     ) -> Self {
         Self::StreamWarmReady {
-            info_hash,
+            release_key,
             file_id,
             debrid_provider_id,
             debrid_provider,

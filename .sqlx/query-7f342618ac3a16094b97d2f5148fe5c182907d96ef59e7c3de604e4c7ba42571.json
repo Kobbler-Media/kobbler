@@ -1,16 +1,16 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT info_hash AS \"info_hash!\", file_id, release_title, cache_path\n        FROM debrid_stream_sessions\n        WHERE media_type = $1 AND media_id = $2\n          AND info_hash IS NOT NULL AND played_at IS NOT NULL\n        ORDER BY played_at DESC\n        LIMIT 20\n        ",
+  "query": "\n        SELECT s.release_key AS \"release_key!\", s.file_id, s.release_title, s.cache_path\n        FROM debrid_stream_sessions s\n        JOIN tv_episodes e ON e.id = s.media_id\n        JOIN tv_seasons se ON se.id = e.season_id\n        WHERE s.media_type = 'episode' AND s.user_id = $1 AND s.media_id <> $2\n          AND s.release_key IS NOT NULL AND s.played_at IS NOT NULL\n          AND se.show_id = (\n              SELECT ts.show_id FROM tv_episodes te\n              JOIN tv_seasons ts ON ts.id = te.season_id\n              WHERE te.id = $2\n          )\n        ORDER BY s.played_at DESC\n        LIMIT 1\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "info_hash!",
+        "name": "release_key!",
         "type_info": "Text",
         "origin": {
           "Table": {
             "table": "debrid_stream_sessions",
-            "name": "info_hash"
+            "name": "release_key"
           }
         }
       },
@@ -50,7 +50,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
+        "Uuid",
         "Uuid"
       ]
     },
@@ -61,5 +61,5 @@
       true
     ]
   },
-  "hash": "030bda9bbf5ca985609ea69f5890e711bde4438f230b11400a8b0669389af240"
+  "hash": "7f342618ac3a16094b97d2f5148fe5c182907d96ef59e7c3de604e4c7ba42571"
 }

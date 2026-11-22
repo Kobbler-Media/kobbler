@@ -54,30 +54,30 @@ async fn caught_up(server: &TestServer) -> Vec<Uuid> {
     episodes
 }
 
-async fn cached_release(server: &TestServer, episode: Uuid, info_hash: &str, complete: bool) {
-    let path = format!("/cache/{info_hash}/ep.mkv");
+async fn cached_release(server: &TestServer, episode: Uuid, release_key: &str, complete: bool) {
+    let path = format!("/cache/{release_key}/ep.mkv");
     sqlx::query(
         "INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
+            (id, user_id, media_type, media_id, release_title, release_key, debrid_provider,
              filename, filesize, cache_path)
          SELECT $1, id, 'episode', $2, 'Release', $3, 'realdebrid', 'ep.mkv', 1, $4
          FROM users WHERE role = 'admin' LIMIT 1",
     )
     .bind(Uuid::now_v7())
     .bind(episode)
-    .bind(info_hash)
+    .bind(release_key)
     .bind(&path)
     .execute(&server.pool)
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO debrid_cache_files (file_path, file_size, expires_at, info_hash, filename,
+        "INSERT INTO debrid_cache_files (file_path, file_size, expires_at, release_key, filename,
                                          completed_at)
          VALUES ($1, 1, NOW() + INTERVAL '1 day', $2, 'ep.mkv',
                  CASE WHEN $3 THEN NOW() END)",
     )
     .bind(&path)
-    .bind(info_hash)
+    .bind(release_key)
     .bind(complete)
     .execute(&server.pool)
     .await
@@ -205,7 +205,7 @@ async fn the_watch_downloads_the_new_episode_which_then_shows() {
     assert_eq!(up_next(server).await, vec![episodes[1].to_string()]);
 
     let held: bool = sqlx::query_scalar(
-        "SELECT expires_at > NOW() + INTERVAL '13 days' FROM debrid_cache_files WHERE info_hash = 'newhash'",
+        "SELECT expires_at > NOW() + INTERVAL '13 days' FROM debrid_cache_files WHERE release_key = 'newhash'",
     )
     .fetch_one(&server.pool)
     .await

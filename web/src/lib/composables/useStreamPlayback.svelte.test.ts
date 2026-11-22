@@ -39,7 +39,7 @@ function option(hash: string): StreamOption {
     release_title: `Release ${hash}`,
     size: 1,
     indexer: 'x',
-    info_hash: hash,
+    release_key: hash,
     total_score: 1,
     match_score: 1,
     quality_score: 1,
@@ -75,7 +75,7 @@ function serve(
   api.streamSearch.mockResolvedValue({ options: hashes.map(option), errors: [], ...extra });
   api.streamResolve.mockImplementation(
     async (p: StreamResolveParams): Promise<StreamResolveResponse> => {
-      const hash = p.info_hash!;
+      const hash = p.release_key!;
       resolveCount[hash] = (resolveCount[hash] ?? 0) + 1;
       const step = plan[hash] ?? 'ready';
       if (step === 'hang') return new Promise(() => {});
@@ -113,7 +113,7 @@ function setup(withWant = true) {
   return { stream, playback, want, onMessage, played, lastSession };
 }
 
-const resolved = () => api.streamResolve.mock.calls.map(([p]) => p.info_hash);
+const resolved = () => api.streamResolve.mock.calls.map(([p]) => p.release_key);
 const startTimes = () => api.streamResolve.mock.calls.map(([p]) => p.start_time);
 
 async function settle() {
@@ -160,6 +160,21 @@ describe('useStreamPlayback', () => {
     expect(api.streamSearch).not.toHaveBeenCalled();
   });
 
+  it('resolves an NZB kobload has not imported by its indexer listing', async () => {
+    const nzb_ref = { indexer_id: '7', guid: 'g1' };
+    api.streamSearch.mockResolvedValue({
+      options: [{ ...option('x'), release_key: undefined, nzb_ref, source_type: 'usenet' }],
+      errors: []
+    });
+    api.streamResolve.mockResolvedValue(session('nzb'));
+    const { stream, played } = setup();
+    await stream.autoPlay();
+    expect(api.streamResolve.mock.calls.map(([p]) => [p.release_key, p.nzb_ref])).toEqual([
+      [undefined, nzb_ref]
+    ]);
+    expect(played()).toEqual(['nzb']);
+  });
+
   it('searches when the release on disk will not open', async () => {
     serve(['a'], { disk: 'blocked' });
     api.streamLocal.mockResolvedValue(option('disk'));
@@ -176,11 +191,11 @@ describe('useStreamPlayback', () => {
     const { stream } = setup();
     await stream.preWarmStream();
     expect(api.streamSearch).not.toHaveBeenCalled();
-    expect(stream.knownOptions?.map((o) => o.info_hash)).toEqual(['disk']);
+    expect(stream.knownOptions?.map((o) => o.release_key)).toEqual(['disk']);
   });
 
   it('plays the preferred option first without showing the list', async () => {
-    serve(['a', 'b', 'c'], {}, { preferred_info_hash: 'c' });
+    serve(['a', 'b', 'c'], {}, { preferred_release_key: 'c' });
     const { stream, played } = setup();
     await stream.autoPlay();
     expect(resolved()).toEqual(['c']);

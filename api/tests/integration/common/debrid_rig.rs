@@ -65,6 +65,54 @@ pub fn direct_play_caps() -> Value {
     })
 }
 
+/// Where a release comes from, and so how a client names it before kobload has resolved it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    Torrent,
+    Usenet,
+}
+
+pub const TORRENT_KEY: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c";
+pub const USENET_KEY: &str = "nzb-9a8b7c6d5e4f30211203f4e5d6c7b8a99a8b7c6d5e4f30211203f4e5d6c7b8a9";
+
+impl Source {
+    pub const ALL: [Source; 2] = [Source::Torrent, Source::Usenet];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Source::Torrent => TORRENT_KEY,
+            Source::Usenet => USENET_KEY,
+        }
+    }
+
+    pub fn nzb_ref(self) -> Value {
+        match self {
+            Source::Torrent => Value::Null,
+            Source::Usenet => json!({ "indexer_id": "7", "guid": "guid-usenet-1" }),
+        }
+    }
+
+    pub fn source_type(self) -> &'static str {
+        match self {
+            Source::Torrent => "torrent",
+            Source::Usenet => "usenet",
+        }
+    }
+
+    /// What kobload's search lists: an NZB it has not imported yet has no key.
+    pub fn listed_key(self) -> Value {
+        match self {
+            Source::Torrent => json!(TORRENT_KEY),
+            Source::Usenet => Value::Null,
+        }
+    }
+
+    /// How a client names the release in a resolve body.
+    pub fn release_fields(self) -> Value {
+        json!({ "release_key": self.listed_key(), "nzb_ref": self.nzb_ref() })
+    }
+}
+
 pub struct Rig {
     pub server: TestServer,
     pub upstream: Upstream,
@@ -102,16 +150,45 @@ impl Rig {
         rig
     }
 
+    /// A rig whose kobload resolves the way it would for `source`: an NZB learns its key
+    /// at import, so only kobload's resolve can name it.
+    pub async fn start_as(source: Source, plan: UpstreamPlan, filename: &str) -> Self {
+        let rig = Self::start(plan, filename).await;
+        if source == Source::Usenet {
+            rig.mount_resolve_with(json!({ "release_key": USENET_KEY }))
+                .await;
+        }
+        rig
+    }
+
+    /// kobload resolving any release to this rig's file, with `extra` over the defaults.
+    pub async fn mount_resolve_with(&self, extra: Value) {
+        let mut body = self.resolved();
+        body.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        Mock::given(method("POST"))
+            .and(path_regex("/api/v1/stream/resolve$"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .with_priority(1)
+            .mount(&self.kobload)
+            .await;
+    }
+
+    fn resolved(&self) -> Value {
+        json!({
+            "stream_url": self.upstream.url(&self.filename),
+            "filename": self.filename,
+            "filesize": self.upstream.size(),
+            "cached": true
+        })
+    }
+
     /// kobload resolving any release to this rig's file, and accepting outcome reports.
     pub async fn mount_resolve(&self) {
         Mock::given(method("POST"))
             .and(path_regex("/api/v1/stream/resolve$"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "stream_url": self.upstream.url(&self.filename),
-                "filename": self.filename,
-                "filesize": self.upstream.size(),
-                "cached": true
-            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(self.resolved()))
             .mount(&self.kobload)
             .await;
         Mock::given(method("POST"))
@@ -131,13 +208,13 @@ impl Rig {
     }
 
     /// A cached option for this rig's file, as kobload would rank it first.
-    pub fn option(&self, info_hash: &str) -> Value {
+    pub fn option(&self, release_key: &str) -> Value {
         json!({
-            "id": format!("opt-{info_hash}"),
+            "id": format!("opt-{release_key}"),
             "release_title": "Feed.Movie.2025.1080p",
             "size": 1,
             "indexer": "test",
-            "info_hash": info_hash,
+            "release_key": release_key,
             "total_score": 1.0,
             "match_score": 1.0,
             "quality_score": 1.0,
@@ -147,6 +224,19 @@ impl Rig {
             "source_type": "torrent",
             "availability": "ready"
         })
+    }
+
+    /// The cached option kobload lists for a release from `source`.
+    pub fn option_from(&self, source: Source) -> Value {
+        let mut option = self.option(source.key());
+        let fields = option.as_object_mut().unwrap();
+        fields.insert("id".into(), json!(format!("opt-{}", source.source_type())));
+        fields.insert("release_key".into(), source.listed_key());
+        fields.insert("source_type".into(), json!(source.source_type()));
+        if source == Source::Usenet {
+            fields.insert("nzb_ref".into(), source.nzb_ref());
+        }
+        option
     }
 
     pub async fn movie(&self) -> Uuid {
@@ -163,10 +253,19 @@ impl Rig {
         movie_id
     }
 
-    pub fn resolve_body(&self, info_hash: &str, movie_id: Uuid, caps: Value) -> Value {
+    /// A resolve of a release from `source`, named the way the client has it.
+    pub fn resolve_body_from(&self, source: Source, media_type: &str, media_id: Uuid) -> Value {
+        let mut body = self.resolve_body(source.key(), media_id, direct_play_caps());
+        let fields = body.as_object_mut().unwrap();
+        fields.extend(source.release_fields().as_object().unwrap().clone());
+        fields.insert("media_type".into(), json!(media_type));
+        body
+    }
+
+    pub fn resolve_body(&self, release_key: &str, movie_id: Uuid, caps: Value) -> Value {
         json!({
             "debrid_provider_id": PROVIDER_ID,
-            "info_hash": info_hash,
+            "release_key": release_key,
             "media_type": "movie",
             "media_id": movie_id,
             "release_title": "Feed.Movie.2025",
@@ -185,34 +284,34 @@ impl Rig {
         resp.json()
     }
 
-    pub async fn resolve(&self, info_hash: &str) -> Uuid {
+    pub async fn resolve(&self, release_key: &str) -> Uuid {
         let movie_id = self.movie().await;
         session_id_of(
             &self
-                .resolve_with(&self.resolve_body(info_hash, movie_id, direct_play_caps()))
+                .resolve_with(&self.resolve_body(release_key, movie_id, direct_play_caps()))
                 .await,
         )
     }
 
     /// Download the release to the local cache and end the session that fetched it, so
-    /// the next resolve of `info_hash` plays it from disk.
-    pub async fn put_on_disk(&self, info_hash: &str, movie: Uuid) {
+    /// the next resolve of `release_key` plays it from disk.
+    pub async fn put_on_disk(&self, release_key: &str, movie: Uuid) {
         let first = session_id_of(
             &self
-                .resolve_with(&self.resolve_body(info_hash, movie, direct_play_caps()))
+                .resolve_with(&self.resolve_body(release_key, movie, direct_play_caps()))
                 .await,
         );
-        self.wait_for_complete(info_hash).await;
+        self.wait_for_complete(release_key).await;
         wait_for_probe(self, first).await;
         end_playback(&self.server, first).await;
     }
 
-    pub fn cache_file(&self, info_hash: &str) -> PathBuf {
-        self.cache_dir.path().join(info_hash).join(&self.filename)
+    pub fn cache_file(&self, release_key: &str) -> PathBuf {
+        self.cache_dir.path().join(release_key).join(&self.filename)
     }
 
-    pub async fn wait_for_local(&self, info_hash: &str, at_least: u64) {
-        let path = self.cache_file(info_hash);
+    pub async fn wait_for_local(&self, release_key: &str, at_least: u64) {
+        let path = self.cache_file(release_key);
         wait_until(
             Duration::from_secs(10),
             "download never got far enough",
@@ -222,11 +321,11 @@ impl Rig {
     }
 
     /// The whole file is on disk and the download has recorded it.
-    pub async fn wait_for_complete(&self, info_hash: &str) {
+    pub async fn wait_for_complete(&self, release_key: &str) {
         let total = self.upstream_size() as u64;
-        self.wait_for_local(info_hash, total).await;
+        self.wait_for_local(release_key, total).await;
         let pool = self.server.pool.clone();
-        let hash = info_hash.to_string();
+        let hash = release_key.to_string();
         wait_until_async(
             Duration::from_secs(10),
             "cache entry never recorded",
@@ -261,6 +360,25 @@ impl Rig {
             .filter(|r| r.url.path().ends_with(path_suffix))
             .map(|r| serde_json::from_slice(&r.body).unwrap_or(Value::Null))
             .collect()
+    }
+
+    /// A default movie and TV media root, so a kept stream has somewhere to go.
+    pub async fn media_roots(&self) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for media_type in ["movie", "tv"] {
+            let path = dir.path().join(media_type);
+            std::fs::create_dir_all(&path).unwrap();
+            sqlx::query(
+                "INSERT INTO media_roots (id, path, media_type, is_default) VALUES ($1, $2, $3, TRUE)",
+            )
+            .bind(Uuid::now_v7())
+            .bind(path.to_string_lossy().to_string())
+            .bind(media_type)
+            .execute(&self.server.pool)
+            .await
+            .unwrap();
+        }
+        dir
     }
 
     pub async fn set_config(&self, patch: Value) {
@@ -382,7 +500,7 @@ pub async fn proxied_mkv_session(
     let session_id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash,
+            (id, user_id, media_type, media_id, release_title, release_key,
              debrid_provider, filename, filesize, debrid_url, debrid_url_expires_at)
         VALUES ($1, $2, 'movie', $3, 'Cue.Movie.2025', $4, $5, 'film.mkv', $6, $7, NULL)"#,
     )
@@ -448,14 +566,14 @@ pub async fn downloaded_session(
     server: &TestServer,
     media_type: &str,
     media_id: Uuid,
-    info_hash: &str,
+    release_key: &str,
     path: &std::path::Path,
 ) -> Uuid {
     let session = Uuid::now_v7();
     let size = std::fs::metadata(path).map(|m| m.len() as i64).unwrap_or(0);
     sqlx::query(
         "INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash, debrid_provider,
+            (id, user_id, media_type, media_id, release_title, release_key, debrid_provider,
              filename, filesize, cache_path)
          SELECT $1, id, $2, $3, 'Ahead.Release', $4, 'realdebrid', $5, $6, $7
          FROM users WHERE role = 'admin' LIMIT 1",
@@ -463,7 +581,7 @@ pub async fn downloaded_session(
     .bind(session)
     .bind(media_type)
     .bind(media_id)
-    .bind(info_hash)
+    .bind(release_key)
     .bind(path.file_name().unwrap().to_string_lossy())
     .bind(size)
     .bind(path.to_string_lossy())

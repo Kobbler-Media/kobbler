@@ -51,7 +51,7 @@ async fn insert_session(pool: &sqlx::PgPool, user_id: Uuid, release_title: &str)
     sqlx::query(
         r#"
         INSERT INTO debrid_stream_sessions
-            (id, user_id, media_type, media_id, release_title, info_hash,
+            (id, user_id, media_type, media_id, release_title, release_key,
              debrid_provider, filename, filesize, debrid_url, debrid_url_expires_at)
         VALUES ($1, $2, 'movie', $3, $4, 'deadbeef',
                 'realdebrid', 'file.mkv', 1000000,

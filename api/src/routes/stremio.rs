@@ -461,9 +461,9 @@ async fn try_resolve_option(
     };
     let mut body = crate::routes::admin::debrid_stream::StreamResolveBody {
         debrid_provider_id: Uuid::nil(),
-        info_hash: None,
+        release_key: None,
         magnet_url: None,
-        nzb_url: None,
+        nzb_ref: None,
         file_id: None,
         media_type: "movie".to_string(),
         media_id: Some(Uuid::new_v4()),

@@ -42,10 +42,10 @@ async fn discover_library_id(rig: &Rig, tmdb_id: &str) -> Value {
     resp.json::<Value>()["library_id"].clone()
 }
 
-fn discover_resolve(info_hash: &str, tmdb_id: Value) -> Value {
+fn discover_resolve(release_key: &str, tmdb_id: Value) -> Value {
     json!({
         "debrid_provider_id": PROVIDER_ID,
-        "info_hash": info_hash,
+        "release_key": release_key,
         "media_type": "movie",
         "media_id": Uuid::nil(),
         "release_title": "Discovered.2024",

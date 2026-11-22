@@ -115,8 +115,8 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
   $effect(() => {
     const cb = on(
       'stream_warm_ready',
-      (data: { info_hash: string; file_id?: number | null; debrid_provider_id: string }) =>
-        markCached(data.info_hash, data.file_id ?? null, data.debrid_provider_id)
+      (data: { release_key: string; file_id?: number | null; debrid_provider_id: string }) =>
+        markCached(data.release_key, data.file_id ?? null, data.debrid_provider_id)
     );
     const unload = () => prewarm.release(true);
     window.addEventListener('beforeunload', unload);
@@ -128,9 +128,9 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
     };
   });
 
-  function markCached(info_hash: string, file_id: number | null, provider_id: string) {
+  function markCached(release_key: string, file_id: number | null, provider_id: string) {
     streamOptions = streamOptions.map((o) =>
-      o.info_hash === info_hash &&
+      o.release_key === release_key &&
       o.debrid_provider_id === provider_id &&
       (o.files[0]?.id ?? null) === file_id
         ? { ...o, cached: true }
@@ -188,7 +188,8 @@ export function useStreamPlayback(opts: UseStreamPlaybackOpts) {
   function buildResolveParams(option: StreamOption): StreamResolveParams {
     const params: StreamResolveParams = {
       debrid_provider_id: option.debrid_provider_id,
-      info_hash: option.info_hash,
+      release_key: option.release_key,
+      nzb_ref: option.nzb_ref,
       file_id: option.files[0]?.id,
       media_type: opts.mediaType,
       media_id: opts.getMediaId(),

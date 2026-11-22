@@ -26,7 +26,7 @@ pub struct DebridStreamSession {
     pub debrid_url: String,
     /// Debrid provider ID for re-resolving expired URLs.
     pub debrid_provider_id: Uuid,
-    pub info_hash: Option<String>,
+    pub release_key: Option<String>,
     pub release_title: String,
     pub filename: String,
     pub filesize: i64,

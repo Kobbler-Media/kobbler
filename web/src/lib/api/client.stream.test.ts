@@ -87,7 +87,7 @@ describe('streamPause', () => {
 describe('reportBadRelease', () => {
   const release = {
     debrid_provider_id: 'p',
-    info_hash: 'h',
+    release_key: 'h',
     files: [{ id: 3, path: 'a', size: 1 }]
   };
 
@@ -98,7 +98,7 @@ describe('reportBadRelease', () => {
       '/api/v1/admin/stream/bad',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ debrid_provider_id: 'p', info_hash: 'h', file_id: 3, bad })
+        body: JSON.stringify({ debrid_provider_id: 'p', release_key: 'h', file_id: 3, bad })
       })
     );
   });
@@ -109,7 +109,12 @@ describe('reportBadRelease', () => {
     expect(fetch).toHaveBeenCalledWith(
       '/api/v1/admin/stream/bad',
       expect.objectContaining({
-        body: JSON.stringify({ debrid_provider_id: 'p', info_hash: 'h', file_id: null, bad: true })
+        body: JSON.stringify({
+          debrid_provider_id: 'p',
+          release_key: 'h',
+          file_id: null,
+          bad: true
+        })
       })
     );
   });

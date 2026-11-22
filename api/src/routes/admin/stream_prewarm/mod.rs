@@ -130,9 +130,9 @@ impl PrewarmBody {
         };
         let template = StreamResolveBody {
             debrid_provider_id: Uuid::nil(),
-            info_hash: None,
+            release_key: None,
             magnet_url: None,
-            nzb_url: None,
+            nzb_ref: None,
             file_id: None,
             media_type: self.media_type,
             media_id: library_id,
@@ -184,7 +184,7 @@ pub async fn prewarm(
         return (StatusCode::NOT_FOUND, "not available on a Kids profile").into_response();
     }
     let release_key =
-        debrid_open::release_key(resolve_body.info_hash.as_deref(), resolve_body.file_id);
+        debrid_open::release_key(resolve_body.release_key.as_deref(), resolve_body.file_id);
     // One download per release file: a release already playing, or warming for someone
     // else, is left to the normal walk.
     if let Some(key) = &release_key
@@ -216,6 +216,10 @@ pub async fn prewarm(
         }
     };
     let now = Instant::now();
+    // An NZB's key is only known once kobload has resolved it.
+    let release_key =
+        debrid_open::release_key(opened.row.release_key.as_deref(), opened.row.file_id)
+            .or(release_key);
     let prewarm = Prewarm {
         id: Uuid::now_v7(),
         user_id: auth.user_id,
@@ -329,10 +333,12 @@ async fn pick(
         .await
         .map_err(|e| warn!(error = %e, "prewarm search failed"))
         .ok()?;
-    value["options"]
+    let (option, mut body) = value["options"]
         .as_array()?
         .iter()
-        .find_map(|raw| pickable(title, raw))
+        .find_map(|raw| pickable(title, raw))?;
+    debrid_open::name_release(state, &mut body).await;
+    Some((option, body))
 }
 
 fn pickable(title: &Title, raw: &Value) -> Option<(Value, StreamResolveBody)> {
@@ -508,7 +514,7 @@ pub async fn claim_for_resolve(
     user_id: Uuid,
     body: &StreamResolveBody,
 ) -> Option<Response> {
-    let key = debrid_open::release_key(body.info_hash.as_deref(), body.file_id)?;
+    let key = debrid_open::release_key(body.release_key.as_deref(), body.file_id)?;
     let prewarm = state.stream_prewarms.warm_for_release(&key)?;
     if prewarm.user_id != user_id {
         end(state, prewarm.id, Phase::Released).await;

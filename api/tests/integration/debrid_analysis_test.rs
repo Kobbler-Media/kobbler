@@ -174,7 +174,7 @@ fn no_vhash() -> Vec<u8> {
 async fn analysed_release(
     server: &TestServer,
     episode: Uuid,
-    info_hash: &str,
+    release_key: &str,
     release: &Path,
     (fingerprint, vhash, duration): (&[u8], &[u8], f64),
 ) -> Uuid {
@@ -190,7 +190,7 @@ async fn analysed_release(
         vhash,
         duration,
     );
-    downloaded_session(server, "episode", episode, info_hash, release).await
+    downloaded_session(server, "episode", episode, release_key, release).await
 }
 
 /// The segments of `kind` the player of `session` is served: its download's.
@@ -634,7 +634,7 @@ async fn alternating_between_two_releases_analyses_neither_again() {
             queued_processing(&rig.server).await,
             Vec::<Value>::new(),
             "{} was analysed again",
-            body["info_hash"]
+            body["release_key"]
         );
         end_playback(&rig.server, replay).await;
     }
