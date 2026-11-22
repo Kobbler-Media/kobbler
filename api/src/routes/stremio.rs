@@ -56,8 +56,8 @@ pub struct CachedStremioRedirect {
     pub session_id: Uuid,
     pub redirect_url: String,
     pub last_accessed_at: std::time::Instant,
-    /// Fallback option IDs to try if this option fails (uncached, DMCA, etc).
-    pub fallback_option_ids: Vec<String>,
+    pub option: StreamOption,
+    pub fallbacks: Vec<StreamOption>,
 }
 
 /// Check cache for a live session. Returns the redirect URL if found.
@@ -249,12 +249,12 @@ async fn apply_preference(
 }
 
 /// Options that failed for this user before are listed but never fallen back to.
-fn fallback_ids<'a>(options: impl IntoIterator<Item = &'a StreamOption>) -> Vec<String> {
+fn fallbacks<'a>(options: impl IntoIterator<Item = &'a StreamOption>) -> Vec<StreamOption> {
     options
         .into_iter()
         .filter(|o| o.playback != Some(nats_jobs::StreamPlayback::Failed))
         .take(5)
-        .map(|o| o.id.clone())
+        .cloned()
         .collect()
 }
 
@@ -435,7 +435,8 @@ pub async fn stream(
                 session_id: Uuid::nil(),
                 redirect_url: String::new(),
                 last_accessed_at: std::time::Instant::now(),
-                fallback_option_ids: fallback_ids(&options[i + 1..]),
+                option: opt.clone(),
+                fallbacks: fallbacks(&options[i + 1..]),
             },
         );
     }
@@ -446,59 +447,28 @@ pub async fn stream(
     Json(StremioStreamResponse { streams }).into_response()
 }
 
-/// Parsed option_id components: (info_hash, nzb_url, debrid_provider_id, file_id).
-type ParsedOptionId = (Option<String>, Option<String>, Uuid, Option<i32>);
-
-/// Parse an option_id into its components for resolve.
-fn parse_option_id(option_id: &str) -> Option<ParsedOptionId> {
-    if let Some(rest) = option_id.strip_prefix("torrent_") {
-        let (hash_part, provider_str) = rest.rsplit_once('_')?;
-        let provider_id = Uuid::parse_str(provider_str).ok()?;
-        let (hash, file_idx) = if let Some(f_pos) = hash_part.rfind("_f") {
-            let idx_str = &hash_part[f_pos + 2..];
-            if let Ok(idx) = idx_str.parse::<i32>() {
-                (&hash_part[..f_pos], Some(idx))
-            } else {
-                (hash_part, None)
-            }
-        } else {
-            (hash_part, None)
-        };
-        Some((Some(hash.to_string()), None, provider_id, file_idx))
-    } else if let Some(rest) = option_id.strip_prefix("usenet_") {
-        let (guid, provider_str) = rest.rsplit_once('_')?;
-        let provider_id = Uuid::parse_str(provider_str).ok()?;
-        Some((None, Some(guid.to_string()), provider_id, None))
-    } else {
-        None
-    }
-}
-
-/// Try to resolve a single option_id. Returns (session_id, redirect_url) on success.
 async fn try_resolve_option(
     state: &AppState,
     user_id: Uuid,
-    option_id: &str,
+    option: &StreamOption,
     base_url: &str,
     api_key: &str,
 ) -> Option<(Uuid, String)> {
-    let (info_hash, nzb_url, debrid_provider_id, file_id) = parse_option_id(option_id)?;
-
     let auth = crate::routes::PlaybackAuth {
         user_id,
         role: "admin".to_string(),
         is_kids: false,
     };
-    let body = crate::routes::admin::debrid_stream::StreamResolveBody {
-        debrid_provider_id,
-        info_hash,
+    let mut body = crate::routes::admin::debrid_stream::StreamResolveBody {
+        debrid_provider_id: Uuid::nil(),
+        info_hash: None,
         magnet_url: None,
-        nzb_url,
-        file_id,
+        nzb_url: None,
+        file_id: None,
         media_type: "movie".to_string(),
         media_id: Some(Uuid::new_v4()),
-        release_title: option_id.to_string(),
-        debrid_provider: debrid_provider_id.to_string(),
+        release_title: String::new(),
+        debrid_provider: String::new(),
         quality: None,
         capabilities: Some(stremio_capabilities()),
         estimated_duration: None,
@@ -508,6 +478,7 @@ async fn try_resolve_option(
         preferred_audio_title: None,
         delivery: crate::routes::admin::streaming::Delivery::Hls,
     };
+    body.apply_option(option);
 
     let resolve_resp =
         crate::routes::admin::debrid_stream::stream_resolve(State(state.clone()), auth, Json(body))
@@ -516,7 +487,7 @@ async fn try_resolve_option(
 
     let (parts, body) = resolve_resp.into_parts();
     if !parts.status.is_success() {
-        warn!(option_id, status = %parts.status, "stremio resolve failed");
+        warn!(option_id = %option.id, status = %parts.status, "stremio resolve failed");
         return None;
     }
 
@@ -530,19 +501,19 @@ async fn try_resolve_option(
 
     let redirect_url = format!("{base_url}/stremio/{api_key}/file/{sid}");
 
-    // Cache the successful resolution, preserving fallbacks
     let existing_fallbacks = state
         .stremio_play_cache
-        .get(option_id)
-        .map(|e| e.fallback_option_ids.clone())
+        .get(&option.id)
+        .map(|e| e.fallbacks.clone())
         .unwrap_or_default();
     state.stremio_play_cache.insert(
-        option_id.to_string(),
+        option.id.clone(),
         CachedStremioRedirect {
             session_id: sid,
             redirect_url: redirect_url.clone(),
             last_accessed_at: std::time::Instant::now(),
-            fallback_option_ids: existing_fallbacks,
+            option: option.clone(),
+            fallbacks: existing_fallbacks,
         },
     );
 
@@ -558,32 +529,43 @@ pub struct PlayQuery {
 }
 
 /// Re-run the search stream() listed the option from, ranked the same way, and
-/// return the fallback chain stream() would have cached for `option_id`.
-async fn rebuild_fallbacks(
+/// return that option with the chain of the others to fall back to.
+async fn relist(
     state: &AppState,
     user_id: Uuid,
-    media_type: &str,
-    id: &str,
+    query: &PlayQuery,
     option_id: &str,
-) -> Vec<String> {
+) -> (Option<StreamOption>, Vec<StreamOption>) {
+    let (Some(media_type), Some(id)) = (query.media_type.as_deref(), query.id.as_deref()) else {
+        return (None, vec![]);
+    };
     let search_request = match media_type {
         "movie" => build_movie_search(id, state).await,
         "series" => build_series_search(id, state).await,
-        _ => return vec![],
+        _ => return (None, vec![]),
     };
     let Ok(mut search_request) = search_request else {
-        return vec![];
+        return (None, vec![]);
     };
     apply_preference(state, user_id, media_type, id, &mut search_request).await;
     let runtime = state.runtime_config.get().await;
     let Ok(client) = build_kobload_client(&runtime) else {
-        return vec![];
+        return (None, vec![]);
     };
     match client.stream_search(&search_request).await {
-        Ok(r) => fallback_ids(r.options.iter().filter(|o| o.id != option_id)),
+        Ok(r) => {
+            let (listed, others): (Vec<_>, Vec<_>) =
+                r.options.into_iter().partition(|o| o.id == option_id);
+            info!(
+                option_id,
+                found = !listed.is_empty(),
+                "stremio play: relisted from a fresh search"
+            );
+            (listed.into_iter().next(), fallbacks(&others))
+        }
         Err(e) => {
-            warn!(error = %e, media_type, id, "stremio fallback search failed");
-            vec![]
+            warn!(error = %e, media_type, id, "stremio relist search failed");
+            (None, vec![])
         }
     }
 }
@@ -630,43 +612,43 @@ pub async fn play(
 
     let base_url = derive_base_url(&headers, &state.runtime_config.get().await);
 
-    // Try the requested option first
-    if let Some((_sid, redirect_url)) =
-        try_resolve_option(&state, user_id, &option_id, &base_url, &api_key).await
+    let cached = state
+        .stremio_play_cache
+        .get(&option_id)
+        .map(|e| (e.option.clone(), e.fallbacks.clone()));
+    let mut relisted = cached.is_none();
+    let (primary, mut chain) = match cached {
+        Some((option, chain)) => (Some(option), chain),
+        None => relist(&state, user_id, &query, &option_id).await,
+    };
+
+    if let Some(option) = &primary
+        && let Some((_sid, redirect_url)) =
+            try_resolve_option(&state, user_id, option, &base_url, &api_key).await
     {
         return Redirect::temporary(&redirect_url).into_response();
     }
 
-    // Primary failed — try fallback options
-    let mut fallbacks = state
-        .stremio_play_cache
-        .get(&option_id)
-        .map(|e| e.fallback_option_ids.clone())
-        .unwrap_or_default();
-
-    if fallbacks.is_empty()
-        && let (Some(media_type), Some(id)) = (&query.media_type, &query.id)
-    {
-        fallbacks = rebuild_fallbacks(&state, user_id, media_type, id, &option_id).await;
-        info!(option_id = %option_id, count = fallbacks.len(), "stremio play: rebuilt fallbacks from a fresh search");
+    if chain.is_empty() && !relisted {
+        chain = relist(&state, user_id, &query, &option_id).await.1;
+        relisted = true;
     }
 
-    for alt_id in &fallbacks {
-        // Check if this fallback already has a cached session
-        if let Some(url) = check_stremio_cache(&state, alt_id) {
-            info!(option_id = %option_id, fallback = %alt_id, "stremio fallback cache hit");
+    for alt in &chain {
+        if let Some(url) = check_stremio_cache(&state, &alt.id) {
+            info!(option_id = %option_id, fallback = %alt.id, "stremio fallback cache hit");
             return Redirect::temporary(&url).into_response();
         }
 
         if let Some((_sid, redirect_url)) =
-            try_resolve_option(&state, user_id, alt_id, &base_url, &api_key).await
+            try_resolve_option(&state, user_id, alt, &base_url, &api_key).await
         {
-            info!(option_id = %option_id, fallback = %alt_id, "stremio fallback succeeded");
+            info!(option_id = %option_id, fallback = %alt.id, "stremio fallback succeeded");
             return Redirect::temporary(&redirect_url).into_response();
         }
     }
 
-    warn!(option_id = %option_id, fallback_count = fallbacks.len(), "stremio play: all options exhausted");
+    warn!(option_id = %option_id, fallback_count = chain.len(), relisted, "stremio play: all options exhausted");
     StatusCode::SERVICE_UNAVAILABLE.into_response()
 }
 

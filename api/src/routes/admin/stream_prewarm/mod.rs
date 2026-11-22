@@ -345,14 +345,7 @@ fn pickable(title: &Title, raw: &Value) -> Option<(Value, StreamResolveBody)> {
     let failed = option.playback == Some(nats_jobs::StreamPlayback::Failed);
     (available && !failed).then(|| {
         let mut body = title.template.clone();
-        body.debrid_provider_id = option.debrid_provider_id;
-        body.info_hash = option.info_hash.clone();
-        body.magnet_url = option.magnet_url.clone();
-        body.nzb_url = option.nzb_url.clone();
-        body.file_id = option.files.first().map(|f| f.id);
-        body.release_title = option.release_title.clone();
-        body.debrid_provider = option.debrid_provider.clone();
-        body.quality = option.quality.clone();
+        body.apply_option(&option);
         (raw.clone(), body)
     })
 }

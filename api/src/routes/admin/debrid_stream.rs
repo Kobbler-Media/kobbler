@@ -387,6 +387,19 @@ pub struct StreamResolveBody {
     pub delivery: Delivery,
 }
 
+impl StreamResolveBody {
+    pub fn apply_option(&mut self, option: &nats_jobs::StreamOption) {
+        self.debrid_provider_id = option.debrid_provider_id;
+        self.info_hash = option.info_hash.clone();
+        self.magnet_url = option.magnet_url.clone();
+        self.nzb_url = option.nzb_url.clone();
+        self.file_id = option.files.first().map(|f| f.id);
+        self.release_title = option.release_title.clone();
+        self.debrid_provider = option.debrid_provider.clone();
+        self.quality = option.quality.clone();
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ResolveStatusQuery {
     pub provider_id: String,

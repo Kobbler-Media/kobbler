@@ -648,13 +648,15 @@ async fn test_stremio_keeps_kobload_order_and_drops_failed_from_fallbacks() {
         );
     }
 
-    let fallbacks = server
+    let fallbacks: Vec<String> = server
         .app_state
         .stremio_play_cache
         .get(&format!("torrent_stremok_{PROVIDER_ID}"))
         .unwrap()
-        .fallback_option_ids
-        .clone();
+        .fallbacks
+        .iter()
+        .map(|o| o.id.clone())
+        .collect();
     assert_eq!(fallbacks, vec![format!("torrent_stremnext_{PROVIDER_ID}")]);
 }
 
@@ -1080,4 +1082,85 @@ async fn test_stremio_play_rebuilds_fallbacks_after_restart() {
         searches[1], searches[0],
         "the rebuilt chain must come from the same ranked search Stremio listed"
     );
+}
+
+fn usenet_option(guid: &str) -> Value {
+    json!({
+        "id": format!("usenet_{guid}_{PROVIDER_ID}"),
+        "release_title": format!("Usenet.Release.{guid}"),
+        "size": 1000,
+        "indexer": "test",
+        "nzb_url": format!("https://indexer.test/getnzb/{guid}.nzb?apikey=k"),
+        "total_score": 1.0,
+        "match_score": 1.0,
+        "quality_score": 1.0,
+        "debrid_provider": "torbox",
+        "debrid_provider_id": PROVIDER_ID,
+        "cached": false,
+        "source_type": "usenet",
+        "files": [],
+    })
+}
+
+#[tokio::test]
+async fn test_stremio_play_resolves_usenet_with_the_listed_nzb_url() {
+    for (n, restarted) in [false, true].into_iter().enumerate() {
+        let (server, mock) = kobload_server().await;
+        let user = admin_id(&server).await;
+        let imdb = format!("tt900003{n}");
+        insert_movie(&server, &imdb).await;
+        let key = format!("usenet-key-{n}");
+        sqlx::query("INSERT INTO stremio_api_keys (user_id, api_key) VALUES ($1, $2)")
+            .bind(user)
+            .bind(&key)
+            .execute(&server.pool)
+            .await
+            .unwrap();
+        let options = vec![usenet_option("guid-first"), usenet_option("guid-next")];
+        mount_search(&mock, options.clone()).await;
+        Mock::given(method("POST"))
+            .and(path_regex("/api/v1/stream/resolve"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Debrid error: nope"))
+            .mount(&mock)
+            .await;
+
+        let resp = TestClient::new(&server.api_url)
+            .get(&format!("/stremio/{key}/stream/movie/{imdb}.json"))
+            .await;
+        resp.assert_ok();
+        let body: Value = resp.json();
+        let url = body["streams"][0]["url"].as_str().unwrap();
+        let play_path = &url[url.find("/stremio/").unwrap()..];
+
+        if restarted {
+            server.app_state.stremio_play_cache.clear();
+        }
+        TestClient::new(&server.api_url)
+            .get(play_path)
+            .await
+            .assert_status(StatusCode::SERVICE_UNAVAILABLE);
+
+        let tried: Vec<(Value, Value, Value)> = requests_to(&mock, "/stream/resolve")
+            .await
+            .into_iter()
+            .map(|r| {
+                (
+                    r["nzb_url"].clone(),
+                    r["release_title"].clone(),
+                    r["info_hash"].clone(),
+                )
+            })
+            .collect();
+        let expected: Vec<(Value, Value, Value)> = options
+            .iter()
+            .map(|o| {
+                (
+                    o["nzb_url"].clone(),
+                    o["release_title"].clone(),
+                    Value::Null,
+                )
+            })
+            .collect();
+        assert_eq!(tried, expected, "restarted={restarted}");
+    }
 }
