@@ -206,6 +206,11 @@ pub async fn stream_resolve(
         return (StatusCode::NOT_FOUND, "not available on a Kids profile").into_response();
     }
     debrid_open::name_release(&state, &mut body).await;
+    if let Err(resp) =
+        debrid_open::pin_file(&state, &mut body, nats_jobs::StreamPriority::User).await
+    {
+        return resp;
+    }
     if let Some(claimed) = stream_prewarm::claim_for_resolve(&state, auth.user_id, &body).await {
         return claimed;
     }
@@ -386,6 +391,13 @@ pub struct StreamResolveBody {
     pub preferred_audio_title: Option<String>,
     #[serde(default)]
     pub delivery: Delivery,
+    /// The episode a pack's file is picked for, when the caller knows it better than the
+    /// body's media does.
+    #[serde(skip)]
+    pub episode: Option<nats_jobs::StreamEpisode>,
+    /// kobload's answer, when it was asked before the session was opened.
+    #[serde(skip)]
+    pub resolved: Option<nats_jobs::StreamResolveResponse>,
 }
 
 impl StreamResolveBody {

@@ -20,6 +20,7 @@ pub struct DownloadMeter {
     window_bytes: AtomicU64,
     bps: AtomicU64,
     grew: Notify,
+    failure_reported: AtomicBool,
 }
 
 impl DownloadMeter {
@@ -38,6 +39,7 @@ impl DownloadMeter {
             window_bytes: AtomicU64::new(on_disk),
             bps: AtomicU64::new(0),
             grew: Notify::new(),
+            failure_reported: AtomicBool::new(false),
         })
     }
 
@@ -71,6 +73,12 @@ impl DownloadMeter {
             );
         }
         self.grew.notify_waiters();
+    }
+
+    /// `true` the first time only: a session's download reports its release dead once,
+    /// however often it is restarted.
+    pub fn first_failure_report(&self) -> bool {
+        !self.failure_reported.swap(true, Ordering::AcqRel)
     }
 
     pub fn finished(&self, complete: bool) {

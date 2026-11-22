@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, debrid_provider_id, release_key, file_id, debrid_provider, filename,\n                   filesize, release_title,\n                   nzb_ref AS \"nzb_ref: sqlx::types::Json<nats_jobs::NzbRef>\",\n                   cache_path AS \"cache_path?\",\n                   debrid_url AS \"debrid_url?\",\n                   debrid_cache_url,\n                   debrid_url_expires_at AS \"debrid_url_expires_at?\"\n            FROM debrid_stream_sessions\n            WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n            ",
+  "query": "\n            SELECT id, media_type, media_id, debrid_provider_id, release_key, file_id, debrid_provider, filename,\n                   filesize, release_title,\n                   nzb_ref AS \"nzb_ref: sqlx::types::Json<nats_jobs::NzbRef>\",\n                   cache_path AS \"cache_path?\",\n                   debrid_url AS \"debrid_url?\",\n                   debrid_cache_url,\n                   debrid_url_expires_at AS \"debrid_url_expires_at?\"\n            FROM debrid_stream_sessions\n            WHERE id = $1 AND ($2::uuid IS NULL OR user_id = $2)\n            ",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,28 @@
       },
       {
         "ordinal": 1,
+        "name": "media_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "media_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "media_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "media_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
         "name": "debrid_provider_id",
         "type_info": "Uuid",
         "origin": {
@@ -26,7 +48,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 4,
         "name": "release_key",
         "type_info": "Text",
         "origin": {
@@ -37,7 +59,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 5,
         "name": "file_id",
         "type_info": "Int4",
         "origin": {
@@ -48,7 +70,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "debrid_provider",
         "type_info": "Text",
         "origin": {
@@ -59,7 +81,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "filename",
         "type_info": "Text",
         "origin": {
@@ -70,7 +92,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "filesize",
         "type_info": "Int8",
         "origin": {
@@ -81,7 +103,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "release_title",
         "type_info": "Text",
         "origin": {
@@ -92,7 +114,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "nzb_ref: sqlx::types::Json<nats_jobs::NzbRef>",
         "type_info": "Jsonb",
         "origin": {
@@ -103,7 +125,7 @@
         }
       },
       {
-        "ordinal": 9,
+        "ordinal": 11,
         "name": "cache_path?",
         "type_info": "Text",
         "origin": {
@@ -114,7 +136,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 12,
         "name": "debrid_url?",
         "type_info": "Text",
         "origin": {
@@ -125,7 +147,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 13,
         "name": "debrid_cache_url",
         "type_info": "Text",
         "origin": {
@@ -136,7 +158,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 14,
         "name": "debrid_url_expires_at?",
         "type_info": "Timestamptz",
         "origin": {
@@ -155,6 +177,8 @@
     },
     "nullable": [
       false,
+      false,
+      false,
       true,
       true,
       true,
@@ -169,5 +193,5 @@
       true
     ]
   },
-  "hash": "40ab46d5f245037cecf7fa0475aebcdd8c12e77ac2df49860b03edcf20d8e87a"
+  "hash": "044d4b171d4822d8ec7624a92de09447f5a298eb89e5071900c9624fc13dce7b"
 }

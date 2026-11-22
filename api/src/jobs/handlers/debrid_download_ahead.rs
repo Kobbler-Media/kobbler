@@ -12,7 +12,7 @@ use crate::download_ahead::DOWNLOAD_AHEAD_JOB;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::repositories::debrid_cache_files::{self as cache_files, CacheRelease};
-use crate::routes::admin::debrid_open::{SessionRow, VIDEO_CONTAINERS, release_key};
+use crate::routes::admin::debrid_open::{SessionRow, VIDEO_CONTAINERS, episode, release_key};
 use crate::routes::admin::{stream_local, stream_prewarm};
 use crate::routes::helpers::build_kobload_client;
 use crate::streaming::cache_download;
@@ -88,11 +88,15 @@ impl JobHandler for DebridDownloadAheadHandler {
                 priority: Some(nats_jobs::StreamPriority::Warm),
                 release_title: Some(body.release_title.clone()).filter(|t| !t.is_empty()),
                 file_name: None,
+                episode: episode::of_media(&state.pool, "episode", episode_id).await,
             })
             .await
             .map_err(|e| JobError::retryable(e.to_string()))?;
         if body.release_key.is_none() {
             body.release_key = resolved.release_key.clone();
+        }
+        if body.file_id.is_none() {
+            body.file_id = resolved.file_id;
         }
         let Some(key) = release_key(body.release_key.as_deref(), body.file_id) else {
             return Ok(json!({ "skipped": "release has no key" }));
@@ -111,7 +115,7 @@ impl JobHandler for DebridDownloadAheadHandler {
 
         let session_id = Uuid::new_v4();
         let cache_path = cache_download::cache_dir(state, &runtime)
-            .join(body.release_key.as_deref().unwrap_or_default())
+            .join(&key)
             .join(&resolved.filename);
         let meter = DownloadMeter::new(resolved.filesize.max(0) as u64, on_disk(&cache_path).await);
         let Some(claim) = state.downloads_ahead.claim(&key, &cancel, meter.clone()) else {

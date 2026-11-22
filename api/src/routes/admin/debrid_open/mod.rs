@@ -2,9 +2,11 @@
 //! release is already on disk, otherwise resolved through kobload and downloaded while it
 //! plays. A warm session is the same thing held back from the viewer until it is claimed.
 
+pub(crate) mod episode;
 mod local;
 mod media;
 pub(crate) mod picture;
+mod pin;
 mod prepare;
 mod remote;
 mod response;
@@ -12,6 +14,7 @@ mod reuse;
 mod subtitles;
 
 pub(crate) use media::commit_media;
+pub(crate) use pin::pin_file;
 pub(crate) use prepare::probe_json;
 pub(crate) use remote::WARM_HEAD_BYTES;
 pub(crate) use response::live_response;

@@ -9,6 +9,7 @@
 
 use crate::repositories::debrid_cache_files::{self as cache_files, CacheRelease};
 use crate::streaming::download_meter::DownloadMeter;
+use crate::streaming::resume::{self, Interruption, Resume};
 use nats_jobs::Publisher;
 use sqlx::PgPool;
 use std::path::{Path, PathBuf};
@@ -18,6 +19,17 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
+pub type UrlRefresh =
+    Arc<dyn Fn(bool) -> futures::future::BoxFuture<'static, Option<String>> + Send + Sync>;
+
+struct Sink<'a> {
+    dest: &'a Path,
+    session_id: Uuid,
+    expected_size: i64,
+    cancel: &'a CancellationToken,
+    meter: &'a DownloadMeter,
+}
+
 /// A host still refusing after this many retries has not handed over a single byte: the
 /// client is watching a spinner over it, so it is a dead link, not a hiccup.
 const MAX_ATTEMPTS_BEFORE_FIRST_BYTE: u32 = 1;
@@ -26,13 +38,15 @@ const MAX_ATTEMPTS_BEFORE_FIRST_BYTE: u32 = 1;
 pub enum DownloadError {
     /// The host answered, and not with the file.
     Refused(String),
+    /// The release itself cannot be served past some point; the reason is kobload's.
+    Dead(String),
     Failed(String),
 }
 
 impl std::fmt::Display for DownloadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Refused(m) | Self::Failed(m) => f.write_str(m),
+            Self::Refused(m) | Self::Dead(m) | Self::Failed(m) => f.write_str(m),
         }
     }
 }
@@ -80,6 +94,7 @@ pub struct ProgressiveDownloadManager {
     pool: PgPool,
     http_client: reqwest::Client,
     nats_publisher: Publisher,
+    refresh: Option<UrlRefresh>,
 }
 
 impl ProgressiveDownloadManager {
@@ -94,7 +109,15 @@ impl ProgressiveDownloadManager {
             pool,
             http_client,
             nats_publisher,
+            refresh: None,
         }
+    }
+
+    /// Where to get a fresh URL between attempts; `true` asks for one even if the current
+    /// URL has not expired.
+    pub fn with_refresh(mut self, refresh: UrlRefresh) -> Self {
+        self.refresh = Some(refresh);
+        self
     }
 
     /// Start a progressive download for a debrid stream session.
@@ -207,8 +230,9 @@ impl ProgressiveDownloadManager {
         }
     }
 
-    /// Download file from URL to local path with progress tracking.
-    /// Automatically resumes with Range requests if the connection drops.
+    /// Download file from URL to local path with progress tracking, resuming over Range
+    /// whenever the connection drops, and taking a fresh URL when the host refuses a lapsed
+    /// one.
     async fn download_file(
         &self,
         url: &str,
@@ -218,14 +242,7 @@ impl ProgressiveDownloadManager {
         cancel: &CancellationToken,
         meter: &DownloadMeter,
     ) -> Result<(), DownloadError> {
-        use futures_util::StreamExt;
-
         let mut downloaded: i64 = 0;
-        let mut last_progress_update = tokio::time::Instant::now();
-        let mut resume_attempts = 0;
-        const MAX_RESUME_ATTEMPTS: u32 = 10;
-
-        // Resume from existing partial download if present
         let mut file = if tokio::fs::try_exists(dest).await.unwrap_or(false) {
             let existing_size = tokio::fs::metadata(dest)
                 .await
@@ -263,182 +280,120 @@ impl ProgressiveDownloadManager {
                 .map_err(|e| format!("Failed to create file: {e}"))?
         };
 
+        let mut url = url.to_string();
+        let mut resume = Resume::new();
+        let mut want_fresh = false;
+        let mut refreshed_after_refusal = false;
         loop {
-            // Open connection — use Range header if resuming
             let req = if downloaded > 0 {
                 self.http_client
-                    .get(url)
+                    .get(&url)
                     .header("Range", format!("bytes={downloaded}-"))
             } else {
-                self.http_client.get(url)
+                self.http_client.get(&url)
             };
-
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| format!("HTTP request failed: {e}"))?;
-
-            let status = resp.status();
-            if !status.is_success() && status != reqwest::StatusCode::PARTIAL_CONTENT {
-                // Debrid CDN nodes 503/429 sporadically and serve the very next
-                // request fine, so a transient status is a retry, not a failure.
-                // A permanent one (404/410/dead link) still fails immediately.
-                if !is_transient_status(status) {
-                    return Err(DownloadError::Refused(format!("HTTP {status}")));
+            let interruption = match req.send().await {
+                Err(e) if e.is_connect() => {
+                    warn!(session_id = %session_id, error = %e, "Download host unreachable, will retry");
+                    Interruption::Unreachable
                 }
-                resume_attempts += 1;
-                let max_attempts = if downloaded == 0 {
-                    MAX_ATTEMPTS_BEFORE_FIRST_BYTE
-                } else {
-                    MAX_RESUME_ATTEMPTS
-                };
-                if resume_attempts > max_attempts {
-                    return Err(DownloadError::Refused(format!(
-                        "HTTP {status} after {max_attempts} retries at {}MB",
-                        downloaded / (1024 * 1024)
-                    )));
+                Err(e) => {
+                    warn!(session_id = %session_id, error = %e, "Download host cut the response, will retry");
+                    Interruption::Aborted
                 }
-                let delay = std::time::Duration::from_secs(1 << resume_attempts.min(4));
-                warn!(
-                    session_id = %session_id,
-                    %status,
-                    attempt = resume_attempts,
-                    downloaded_mb = downloaded / (1024 * 1024),
-                    delay_secs = delay.as_secs(),
-                    "Transient HTTP status opening download, retrying"
-                );
-                tokio::time::sleep(delay).await;
-                if cancel.is_cancelled() {
-                    return Err(DownloadError::Failed("Cancelled".to_string()));
+                Ok(resp) if !resp.status().is_success() => {
+                    let status = resp.status();
+                    if let Some(code) = resume::error_code(resp)
+                        .await
+                        .filter(|c| resume::dead_code(c))
+                    {
+                        return Err(DownloadError::Dead(code));
+                    }
+                    if resume::is_lapsed(status)
+                        && self.refresh.is_some()
+                        && !refreshed_after_refusal
+                    {
+                        refreshed_after_refusal = true;
+                        want_fresh = true;
+                        Interruption::Busy
+                    } else if !resume::is_transient_status(status) {
+                        return Err(DownloadError::Refused(format!("HTTP {status}")));
+                    } else if downloaded == 0 && resume.attempts() >= MAX_ATTEMPTS_BEFORE_FIRST_BYTE
+                    {
+                        return Err(DownloadError::Refused(format!(
+                            "HTTP {status} after {MAX_ATTEMPTS_BEFORE_FIRST_BYTE} retries"
+                        )));
+                    } else {
+                        Interruption::Busy
+                    }
                 }
-                continue;
-            }
-
-            // A server that ignores our Range header answers 200 with the whole
-            // file from byte 0. Appending that to a partial download silently
-            // corrupts the cache, so start the file over instead.
-            if downloaded > 0 && status == reqwest::StatusCode::OK {
-                warn!(
-                    session_id = %session_id,
-                    discarded_mb = downloaded / (1024 * 1024),
-                    "Server ignored Range header, restarting download from zero"
-                );
-                file.flush()
-                    .await
-                    .map_err(|e| format!("Flush error: {e}"))?;
-                file = tokio::fs::File::create(dest)
-                    .await
-                    .map_err(|e| format!("Failed to truncate file: {e}"))?;
-                downloaded = 0;
-                meter.record(0);
-            }
-
-            let mut stream = resp.bytes_stream();
-            let mut stream_error = false;
-
-            loop {
-                // A stalled host must not keep a cancelled download holding the file:
-                // whoever resumes it would append alongside.
-                let chunk = tokio::select! {
-                    chunk = stream.next() => chunk,
-                    _ = cancel.cancelled() => return Err(DownloadError::Failed("Cancelled".to_string())),
-                };
-                let Some(chunk) = chunk else {
-                    break;
-                };
-                if cancel.is_cancelled() {
-                    // Keep partial file on disk for resume on next playback.
-                    // Cache cleanup job handles expiration.
-                    return Err(DownloadError::Failed("Cancelled".to_string()));
-                }
-
-                match chunk {
-                    Ok(data) => {
-                        if let Err(e) = file.write_all(&data).await {
-                            return Err(format!("Write error: {e}").into());
-                        }
-                        // tokio's File returns from a write before it lands. A local read
-                        // follows this file, so the meter must count exactly what a reader
-                        // can see: never less, or a client is served bytes reported missing.
+                Ok(resp) => {
+                    // A server that ignores our Range header answers 200 with the whole
+                    // file from byte 0. Appending that to a partial download silently
+                    // corrupts the cache, so start the file over instead.
+                    if downloaded > 0 && resp.status() == reqwest::StatusCode::OK {
+                        warn!(
+                            session_id = %session_id,
+                            discarded_mb = downloaded / (1024 * 1024),
+                            "Server ignored Range header, restarting download from zero"
+                        );
                         file.flush()
                             .await
                             .map_err(|e| format!("Flush error: {e}"))?;
-                        downloaded += data.len() as i64;
-                        meter.record(downloaded as u64);
-                        // Reset resume counter on successful data
-                        resume_attempts = 0;
+                        file = tokio::fs::File::create(dest)
+                            .await
+                            .map_err(|e| format!("Failed to truncate file: {e}"))?;
+                        downloaded = 0;
+                        meter.record(0);
                     }
-                    Err(e) => {
-                        warn!(
-                            session_id = %session_id,
-                            downloaded_mb = downloaded / (1024 * 1024),
-                            error = %e,
-                            "Download stream interrupted, will resume"
-                        );
-                        stream_error = true;
+                    let sink = Sink {
+                        dest,
+                        session_id,
+                        expected_size,
+                        cancel,
+                        meter,
+                    };
+                    let pumped = self
+                        .pump(resp, &mut file, &mut downloaded, &mut resume, &sink)
+                        .await?;
+                    if pumped {
                         break;
                     }
+                    refreshed_after_refusal = false;
+                    Interruption::Aborted
                 }
+            };
 
-                if last_progress_update.elapsed() > std::time::Duration::from_secs(5) {
-                    if expected_size > 0 {
-                        let pct = (downloaded as f64) / (expected_size as f64) * 100.0;
-                        let dl_mb = downloaded / (1024 * 1024);
-                        let total_mb = expected_size / (1024 * 1024);
-                        info!(
-                            session_id = %session_id,
-                            progress = format!("{pct:.0}%"),
-                            downloaded_mb = dl_mb,
-                            total_mb = total_mb,
-                            "Download progress"
-                        );
-                    }
-
-                    let pool = self.pool.clone();
-                    let sid = session_id;
-                    let path = dest.to_string_lossy().to_string();
-                    tokio::spawn(async move {
-                        let _ = sqlx::query!(
-                            "UPDATE debrid_stream_sessions SET updated_at = NOW() WHERE id = $1",
-                            sid,
-                        )
-                        .execute(&pool)
-                        .await;
-                        let _ = cache_files::touch(&pool, &path).await;
-                    });
-
-                    last_progress_update = tokio::time::Instant::now();
-                }
-            }
-
-            if !stream_error {
-                // Stream ended normally — download complete
-                break;
-            }
-
-            // Stream broke — try to resume
-            resume_attempts += 1;
-            if resume_attempts > MAX_RESUME_ATTEMPTS {
-                return Err(format!(
-                    "Download failed after {MAX_RESUME_ATTEMPTS} resume attempts at {}MB",
-                    downloaded / (1024 * 1024)
-                )
-                .into());
-            }
-
-            // Flush what we have before resuming
+            let Some(delay) = resume.interrupted(interruption) else {
+                let at_mb = downloaded / (1024 * 1024);
+                return Err(match interruption {
+                    Interruption::Aborted => DownloadError::Dead("upstream_aborted".to_string()),
+                    _ => DownloadError::Failed(format!(
+                        "no progress at {at_mb}MB after {} attempts",
+                        resume.attempts()
+                    )),
+                });
+            };
             let _ = file.flush().await;
             meter.record(downloaded as u64);
-
-            let delay = std::time::Duration::from_secs(1 << resume_attempts.min(4));
             info!(
                 session_id = %session_id,
-                attempt = resume_attempts,
+                attempt = resume.attempts(),
                 downloaded_mb = downloaded / (1024 * 1024),
-                delay_secs = delay.as_secs(),
+                delay_ms = delay.as_millis() as u64,
+                ?interruption,
                 "Resuming download"
             );
-            tokio::time::sleep(delay).await;
+            tokio::select! {
+                _ = tokio::time::sleep(delay) => {}
+                _ = cancel.cancelled() => return Err(DownloadError::Failed("Cancelled".to_string())),
+            }
+            if let Some(refresh) = &self.refresh
+                && let Some(fresh) = refresh(want_fresh).await
+            {
+                url = fresh;
+            }
+            want_fresh = false;
         }
 
         file.flush()
@@ -455,6 +410,90 @@ impl ProgressiveDownloadManager {
         Ok(())
     }
 
+    /// Append one response's body to the file. `true` when it ended normally, `false` when
+    /// it was cut short.
+    async fn pump(
+        &self,
+        resp: reqwest::Response,
+        file: &mut tokio::fs::File,
+        downloaded: &mut i64,
+        resume: &mut Resume,
+        sink: &Sink<'_>,
+    ) -> Result<bool, DownloadError> {
+        use futures_util::StreamExt;
+        let Sink {
+            dest,
+            session_id,
+            expected_size,
+            cancel,
+            meter,
+        } = *sink;
+        let mut last_progress_update = tokio::time::Instant::now();
+        let mut stream = resp.bytes_stream();
+        loop {
+            // A stalled host must not keep a cancelled download holding the file:
+            // whoever resumes it would append alongside.
+            let chunk = tokio::select! {
+                chunk = stream.next() => chunk,
+                _ = cancel.cancelled() => return Err(DownloadError::Failed("Cancelled".to_string())),
+            };
+            let Some(chunk) = chunk else {
+                return Ok(true);
+            };
+            let data = match chunk {
+                Ok(data) => data,
+                Err(e) => {
+                    warn!(
+                        session_id = %session_id,
+                        downloaded_mb = *downloaded / (1024 * 1024),
+                        error = %e,
+                        "Download stream interrupted, will resume"
+                    );
+                    return Ok(false);
+                }
+            };
+            if let Err(e) = file.write_all(&data).await {
+                return Err(format!("Write error: {e}").into());
+            }
+            // tokio's File returns from a write before it lands. A local read
+            // follows this file, so the meter must count exactly what a reader
+            // can see: never less, or a client is served bytes reported missing.
+            file.flush()
+                .await
+                .map_err(|e| format!("Flush error: {e}"))?;
+            *downloaded += data.len() as i64;
+            meter.record(*downloaded as u64);
+            if !data.is_empty() {
+                resume.progressed();
+            }
+
+            if last_progress_update.elapsed() > std::time::Duration::from_secs(5) {
+                if expected_size > 0 {
+                    let pct = (*downloaded as f64) / (expected_size as f64) * 100.0;
+                    info!(
+                        session_id = %session_id,
+                        progress = format!("{pct:.0}%"),
+                        downloaded_mb = *downloaded / (1024 * 1024),
+                        total_mb = expected_size / (1024 * 1024),
+                        "Download progress"
+                    );
+                }
+                let pool = self.pool.clone();
+                let path = dest.to_string_lossy().to_string();
+                tokio::spawn(async move {
+                    let _ = sqlx::query!(
+                        "UPDATE debrid_stream_sessions SET updated_at = NOW() WHERE id = $1",
+                        session_id,
+                    )
+                    .execute(&pool)
+                    .await;
+                    let _ = cache_files::touch(&pool, &path).await;
+                });
+                last_progress_update = tokio::time::Instant::now();
+            }
+        }
+    }
+
     /// Trigger the processing pipeline on a fully-cached file.
     ///
     /// Enqueues a `debrid_process` job that chains: probe → thumbnails → skip_detect.
@@ -468,15 +507,4 @@ impl ProgressiveDownloadManager {
         )
         .await;
     }
-}
-
-/// Whether an HTTP status opening the download is worth retrying.
-///
-/// Debrid CDN nodes return 429/5xx under load and recover within seconds;
-/// 4xx (other than 429) means the link itself is dead and retrying just
-/// burns the session's startup budget.
-fn is_transient_status(status: reqwest::StatusCode) -> bool {
-    status == reqwest::StatusCode::TOO_MANY_REQUESTS
-        || status == reqwest::StatusCode::REQUEST_TIMEOUT
-        || status.is_server_error()
 }

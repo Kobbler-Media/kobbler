@@ -5,9 +5,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use crate::AppState;
+use crate::debrid_outcomes::{self, StreamRelease};
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::progressive::{
     DownloadError, DownloadTarget, ProgressiveDownloadConfig, ProgressiveDownloadManager,
+    UrlRefresh,
 };
 use crate::streaming::session::SessionError;
 
@@ -48,13 +50,41 @@ async fn fetch(
         .timeout(std::time::Duration::from_secs(3600))
         .build()
         .map_err(|e| DownloadError::Failed(format!("download client: {e}")))?;
-    let manager = Arc::new(ProgressiveDownloadManager::new(
-        config,
-        state.pool.clone(),
-        client,
-        state.nats.publisher().clone(),
-    ));
-    manager.start_download(target, cancel, meter).await
+    let manager = Arc::new(
+        ProgressiveDownloadManager::new(
+            config,
+            state.pool.clone(),
+            client,
+            state.nats.publisher().clone(),
+        )
+        .with_refresh(fresh_url(state, target.session_id)),
+    );
+    let release = StreamRelease {
+        debrid_provider_id: target.release.debrid_provider_id,
+        release_key: target.release.release_key.clone(),
+        file_id: target.release.file_id,
+        release_title: String::new(),
+        filename: target.release.filename.clone(),
+    };
+    let session_id = target.session_id;
+    let outcome = manager.start_download(target, cancel, meter.clone()).await;
+    if let Err(DownloadError::Dead(reason)) = &outcome
+        && meter.first_failure_report()
+    {
+        warn!(%session_id, %reason, "the release cannot be downloaded past where it stopped");
+        debrid_outcomes::report_failure(state, &release, reason).await;
+    }
+    outcome
+}
+
+fn fresh_url(state: &AppState, session_id: uuid::Uuid) -> UrlRefresh {
+    let state = state.clone();
+    Arc::new(move |force| {
+        let state = state.clone();
+        Box::pin(async move {
+            crate::routes::admin::debrid_play::fresh_cache_url(&state, session_id, force).await
+        })
+    })
 }
 
 pub fn spawn(

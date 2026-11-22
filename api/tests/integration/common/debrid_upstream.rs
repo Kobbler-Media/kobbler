@@ -1,6 +1,8 @@
 //! A debrid host stand-in that wiremock cannot play: it streams a whole-file GET at a
 //! pace the test controls (so the progressive download can be held mid-file) and
-//! answers ranged GETs after a fixed delay, the way a far-away CDN does.
+//! answers ranged GETs after a fixed delay, the way a far-away CDN does. Its connections
+//! pass through a TCP front the test can cut, or take down for a while the way a
+//! restarting usenet engine is.
 
 use axum::Router;
 use axum::body::Body;
@@ -28,6 +30,23 @@ pub struct UpstreamPlan {
     pub whole: WholeBody,
     /// Answer every request with this status and no body.
     pub refuse: Option<StatusCode>,
+    /// Bytes from this offset on can never be served, as a usenet post with missing
+    /// articles: every response stops there.
+    pub hole: Option<Hole>,
+}
+
+#[derive(Clone, Copy)]
+pub struct Hole {
+    pub at: usize,
+    pub answer: HoleAnswer,
+}
+
+#[derive(Clone, Copy)]
+pub enum HoleAnswer {
+    /// The response ends with an error where the hole starts, with no explanation.
+    Abort,
+    /// A request that starts in the hole is refused with `{"error": code}`.
+    Error(StatusCode, &'static str),
 }
 
 impl UpstreamPlan {
@@ -40,6 +59,7 @@ impl UpstreamPlan {
                 pause: Duration::ZERO,
             },
             refuse: None,
+            hole: None,
         }
     }
 }
@@ -50,6 +70,7 @@ struct Shared {
     ranges: Arc<Mutex<Vec<String>>>,
     whole_gets: Arc<Mutex<usize>>,
     requests: Arc<Mutex<Vec<Seen>>>,
+    revoked: Arc<Mutex<Vec<String>>>,
 }
 
 /// One GET the host answered: its path, its Range header if it had one, and its User-Agent
@@ -67,6 +88,8 @@ pub struct Upstream {
     ranges: Arc<Mutex<Vec<String>>>,
     whole_gets: Arc<Mutex<usize>>,
     requests: Arc<Mutex<Vec<Seen>>>,
+    revoked: Arc<Mutex<Vec<String>>>,
+    outages: tokio::sync::mpsc::UnboundedSender<Duration>,
 }
 
 impl Upstream {
@@ -77,22 +100,39 @@ impl Upstream {
             ranges: Arc::default(),
             whole_gets: Arc::default(),
             requests: Arc::default(),
+            revoked: Arc::default(),
         };
         let app = Router::new()
             .route("/{*file}", axum::routing::get(serve))
             .with_state(shared.clone());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
+        let backend = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let backend_addr = backend.local_addr().unwrap();
         tokio::spawn(async move {
-            axum::serve(listener, app).await.ok();
+            axum::serve(backend, app).await.ok();
         });
+        let front = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = front.local_addr().unwrap();
+        let (outages, requested) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(run_front(front, backend_addr, requested));
         Self {
             base: format!("http://{addr}"),
             size,
             ranges: shared.ranges,
             whole_gets: shared.whole_gets,
             requests: shared.requests,
+            revoked: shared.revoked,
+            outages,
         }
+    }
+
+    /// Every connection open now is cut, and new ones are refused for `outage`.
+    pub fn go_down(&self, outage: Duration) {
+        self.outages.send(outage).unwrap();
+    }
+
+    /// Requests for paths under `prefix` are answered 403 from now on.
+    pub fn revoke(&self, prefix: &str) {
+        self.revoked.lock().unwrap().push(prefix.to_string());
     }
 
     pub fn url(&self, filename: &str) -> String {
@@ -129,6 +169,14 @@ async fn serve(State(s): State<Shared>, uri: Uri, headers: HeaderMap) -> Respons
     if let Some(status) = s.plan.refuse {
         return status.into_response();
     }
+    if s.revoked
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|p| uri.path().starts_with(p.as_str()))
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     let data = s.plan.data.clone();
     let total = data.len() as u64;
     let Some(range) = range else {
@@ -136,7 +184,11 @@ async fn serve(State(s): State<Shared>, uri: Uri, headers: HeaderMap) -> Respons
         return Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_LENGTH, total.to_string())
-            .body(whole_body(data, s.plan.whole.clone()))
+            .body(holed(
+                whole_body(data, s.plan.whole.clone()),
+                0,
+                s.plan.hole,
+            ))
             .unwrap();
     };
     s.ranges.lock().unwrap().push(range.to_string());
@@ -149,6 +201,14 @@ async fn serve(State(s): State<Shared>, uri: Uri, headers: HeaderMap) -> Respons
     } else {
         b.parse::<u64>().unwrap().min(total - 1)
     };
+    if let Some(Hole {
+        at,
+        answer: HoleAnswer::Error(status, code),
+    }) = s.plan.hole
+        && start as usize >= at
+    {
+        return (status, axum::Json(serde_json::json!({ "error": code }))).into_response();
+    }
     let slice = data[start as usize..=end as usize].to_vec();
     Response::builder()
         .status(StatusCode::PARTIAL_CONTENT)
@@ -157,8 +217,71 @@ async fn serve(State(s): State<Shared>, uri: Uri, headers: HeaderMap) -> Respons
             header::CONTENT_RANGE,
             format!("bytes {start}-{end}/{total}"),
         )
-        .body(Body::from(slice))
+        .body(holed(Body::from(slice), start as usize, s.plan.hole))
         .unwrap()
+}
+
+/// `body`, which starts at `offset` in the file, cut short with an error where `hole`
+/// begins.
+fn holed(body: Body, offset: usize, hole: Option<Hole>) -> Body {
+    use futures::StreamExt;
+    let Some(hole) = hole else {
+        return body;
+    };
+    let mut at = offset;
+    let stream = body.into_data_stream();
+    Body::from_stream(async_stream::stream! {
+        futures::pin_mut!(stream);
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(std::io::Error::other)?;
+            if at + chunk.len() > hole.at {
+                let keep = hole.at.saturating_sub(at);
+                if keep > 0 {
+                    yield Ok::<_, std::io::Error>(chunk.slice(..keep));
+                }
+                Err(std::io::Error::other("missing articles"))?;
+            }
+            at += chunk.len();
+            yield Ok(chunk);
+        }
+    })
+}
+
+/// Pipes each connection to the backend. An outage cuts every connection piped so far and
+/// leaves the port closed, so connecting is refused, until it is over.
+async fn run_front(
+    front: tokio::net::TcpListener,
+    backend: std::net::SocketAddr,
+    mut outages: tokio::sync::mpsc::UnboundedReceiver<Duration>,
+) {
+    let addr = front.local_addr().unwrap();
+    let mut front = front;
+    let mut cut = tokio_util::sync::CancellationToken::new();
+    loop {
+        tokio::select! {
+            accepted = front.accept() => {
+                let Ok((mut client, _)) = accepted else { continue };
+                let cut = cut.clone();
+                tokio::spawn(async move {
+                    let Ok(mut server) = tokio::net::TcpStream::connect(backend).await else {
+                        return;
+                    };
+                    tokio::select! {
+                        _ = tokio::io::copy_bidirectional(&mut client, &mut server) => {}
+                        _ = cut.cancelled() => {}
+                    }
+                });
+            }
+            outage = outages.recv() => {
+                let Some(outage) = outage else { return };
+                drop(front);
+                cut.cancel();
+                cut = tokio_util::sync::CancellationToken::new();
+                tokio::time::sleep(outage).await;
+                front = tokio::net::TcpListener::bind(addr).await.unwrap();
+            }
+        }
+    }
 }
 
 fn whole_body(data: Arc<Vec<u8>>, plan: WholeBody) -> Body {

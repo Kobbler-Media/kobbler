@@ -11,7 +11,8 @@ use crate::ffmpeg::mkv_cue_cache::{
 };
 
 pub(crate) struct GateSpec<'a> {
-    pub release_key: Option<&'a str>,
+    /// The release file's key, as `debrid_open::release_key` makes it.
+    pub release_key: Option<String>,
     pub filename: &'a str,
     pub filesize: i64,
     pub local: Option<&'a Path>,
@@ -57,7 +58,7 @@ pub(crate) async fn session_cue_gate(
             state.cue_trim_cache.clone(),
             format!(
                 "remote:{}:{}:{}",
-                spec.release_key.unwrap_or(""),
+                spec.release_key.as_deref().unwrap_or(""),
                 spec.filename,
                 spec.filesize
             ),

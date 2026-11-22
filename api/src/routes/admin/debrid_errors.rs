@@ -60,6 +60,14 @@ impl StreamFailure {
             Self::Blocked
         } else if has(&["not a video"]) {
             Self::NotVideo
+        } else if has(&[
+            "usenet release is not cached",
+            "missing articles",
+            "was not found in this",
+        ]) {
+            Self::NotCached
+        } else if has(&["unavailable for nzb grabs", "providers_unavailable"]) {
+            Self::Unavailable
         } else if status == Some(429) || has(&["rate limit", "fair usage", "too many active"]) {
             Self::RateLimited
         } else if matches!(status, Some(401 | 403))
@@ -161,6 +169,101 @@ mod tests {
             (
                 Some(500),
                 "Debrid error: Usenet download failed: missing articles",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: Usenet release is not cached: articles are missing on every provider (missing_articles)",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: Usenet release is not cached: its articles are corrupt on every provider (corrupt_articles)",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: Usenet release is not cached: it is older than every provider's retention (retention)",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: Usenet release is not cached: the indexer's NZB is invalid (invalid_nzb)",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: Usenet release is not cached: the indexer no longer has its NZB (404 Not Found)",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: Usenet release is not cached: the indexer no longer has its NZB (410 Gone)",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: Usenet release is not cached: its NZB is over 128 MB",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: S01E07 was not found in this pack",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: file 9 was not found in this release",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: Usenet release is blocked: its archive is password-protected (password)",
+                Blocked,
+            ),
+            (
+                Some(500),
+                "Debrid error: Resolved release is not a video the engine can stream: its archive is compressed (unsupported)",
+                NotVideo,
+            ),
+            (
+                Some(500),
+                "Debrid error: Resolved release is not a video: the NZB holds another NZB (nested_nzb)",
+                NotVideo,
+            ),
+            (
+                Some(500),
+                "Debrid error: Resolved release is not a video: it holds no playable file",
+                NotVideo,
+            ),
+            (
+                Some(500),
+                "Debrid error: The indexer is rate limiting NZB grabs (429 Too Many Requests)",
+                RateLimited,
+            ),
+            (
+                Some(500),
+                "Debrid error: The indexer refused the NZB grab: authentication failed (401 Unauthorized)",
+                AuthFailed,
+            ),
+            (
+                Some(500),
+                "Debrid error: The indexer refused the NZB grab: authentication failed (403 Forbidden)",
+                AuthFailed,
+            ),
+            (
+                Some(500),
+                "Debrid error: No usenet provider can serve this right now (providers_unavailable)",
+                Unavailable,
+            ),
+            (
+                Some(500),
+                "Debrid error: The indexer is unavailable for NZB grabs (503 Service Unavailable)",
+                Unavailable,
+            ),
+            (
+                Some(500),
+                "Debrid error: The indexer is unavailable for NZB grabs (504 Gateway Timeout)",
                 Unavailable,
             ),
             (None, "request failed: connection refused", Unavailable),

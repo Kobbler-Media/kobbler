@@ -9,7 +9,7 @@ mod remux;
 mod upstream;
 
 pub(crate) use gate::{GateSpec, session_cue_gate};
-pub(crate) use upstream::cache_ahead_url;
+pub(crate) use upstream::{cache_ahead_url, fresh_cache_url};
 
 use std::path::{Path as FsPath, PathBuf};
 use std::sync::Arc;
@@ -31,12 +31,15 @@ use crate::routes::admin::debrid_stream::session_owner;
 use crate::streaming::byte_range::{ByteRange, parse_byte_range};
 use crate::streaming::cache_download;
 use crate::streaming::decision::PlaybackMethod;
+use crate::streaming::dlna;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::feed::{FeedSource, FeedTicket, StreamFeed, metered};
 use crate::streaming::progressive::DownloadTarget;
 
 pub(crate) struct PlaySession {
     pub id: Uuid,
+    pub media_type: String,
+    pub media_id: Uuid,
     pub debrid_provider_id: Option<Uuid>,
     pub release_key: Option<String>,
     pub nzb_ref: Option<nats_jobs::NzbRef>,
@@ -97,7 +100,15 @@ pub async fn stream_play(
         resume_download(&state, &session, live.meter.clone(), cancel).await;
     }
     let ticket = live.feed.as_ref().map(StreamFeed::open);
-    let resp = respond(&state, &session, &live, &headers).await;
+    let mut resp = respond(&state, &session, &live, &headers).await;
+    if resp.status().is_success() {
+        let resource = if resp.headers().contains_key(header::ACCEPT_RANGES) {
+            dlna::Resource::Original
+        } else {
+            dlna::Resource::Transcoded
+        };
+        dlna::add_headers(resp.headers_mut(), &headers, resource);
+    }
     metered_response(resp, ticket)
 }
 
@@ -173,7 +184,7 @@ impl PlaySession {
     ) -> Result<Option<Self>, sqlx::Error> {
         let row = sqlx::query!(
             r#"
-            SELECT id, debrid_provider_id, release_key, file_id, debrid_provider, filename,
+            SELECT id, media_type, media_id, debrid_provider_id, release_key, file_id, debrid_provider, filename,
                    filesize, release_title,
                    nzb_ref AS "nzb_ref: sqlx::types::Json<nats_jobs::NzbRef>",
                    cache_path AS "cache_path?",
@@ -190,6 +201,8 @@ impl PlaySession {
         .await?;
         Ok(row.map(|s| Self {
             id: s.id,
+            media_type: s.media_type,
+            media_id: s.media_id,
             debrid_provider_id: s.debrid_provider_id,
             release_key: s.release_key,
             nzb_ref: s.nzb_ref.map(|sqlx::types::Json(r)| r),
@@ -352,7 +365,10 @@ fn gate_spec<'a>(
     url: Option<String>,
 ) -> GateSpec<'a> {
     GateSpec {
-        release_key: session.release_key.as_deref(),
+        release_key: crate::routes::admin::debrid_open::release_key(
+            session.release_key.as_deref(),
+            session.file_id,
+        ),
         filename: &session.filename,
         filesize: session.filesize,
         local,

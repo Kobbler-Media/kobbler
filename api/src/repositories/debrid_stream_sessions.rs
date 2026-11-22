@@ -77,6 +77,34 @@ where
     Ok(key)
 }
 
+/// The file of the release an earlier session of this title played, so a pack's episode
+/// finds its own file again.
+pub async fn file_played<'e, E>(
+    exec: E,
+    release_key: &str,
+    media_type: &str,
+    media_id: Uuid,
+) -> Result<Option<i32>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let file_id = sqlx::query_scalar!(
+        r#"
+        SELECT file_id AS "file_id!"
+        FROM debrid_stream_sessions
+        WHERE release_key = $1 AND media_type = $2 AND media_id = $3 AND file_id IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 1
+        "#,
+        release_key,
+        media_type,
+        media_id,
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(file_id)
+}
+
 /// Stamps every report, so `played_at` orders a title's releases by when each was last
 /// watched. `None` when the session is unknown.
 pub async fn mark_played<'e, E>(exec: E, session_id: Uuid) -> Result<Option<PlayedSession>>

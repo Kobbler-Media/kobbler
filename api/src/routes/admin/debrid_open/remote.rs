@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::prepare::{self, Prepare};
@@ -16,7 +16,6 @@ use crate::repositories::debrid_cache_files::CacheRelease;
 use crate::routes::admin::debrid_errors::StreamFailure;
 use crate::routes::admin::debrid_stream::StreamResolveBody;
 use crate::routes::admin::streaming::{SessionResponse, progressive_url};
-use crate::routes::helpers::build_kobload_client;
 use crate::runtime_config::RuntimeConfig;
 use crate::streaming::cache_download;
 use crate::streaming::decision::PlaybackMethod;
@@ -35,25 +34,14 @@ pub(super) async fn open(
     body: &StreamResolveBody,
     mode: OpenMode,
 ) -> Result<Opened, axum::response::Response> {
-    let client = build_kobload_client(runtime).map_err(IntoResponse::into_response)?;
     let priority = match mode {
         OpenMode::Play => nats_jobs::StreamPriority::User,
         OpenMode::Warm(_) => nats_jobs::StreamPriority::Warm,
     };
-    let resolve_req = nats_jobs::StreamResolveRequest {
-        debrid_provider_id: body.debrid_provider_id,
-        release_key: body.release_key.clone(),
-        magnet_url: body.magnet_url.clone(),
-        nzb_ref: body.nzb_ref.clone(),
-        file_id: body.file_id,
-        priority: Some(priority),
-        release_title: Some(body.release_title.clone()).filter(|t| !t.is_empty()),
-        file_name: None,
+    let resolved = match body.resolved.clone() {
+        Some(resolved) => resolved,
+        None => super::pin::resolve(state, runtime, body, priority).await?,
     };
-    let resolved = client.stream_resolve(&resolve_req).await.map_err(|e| {
-        error!(error = %e, "stream resolve failed");
-        StreamFailure::from_kobload(&e).response(StatusCode::BAD_GATEWAY, &e.to_string())
-    })?;
 
     if !resolved.cached {
         info!(torrent_id = ?resolved.torrent_id, "Stream not cached, returning caching status for client polling");
@@ -66,12 +54,20 @@ pub(super) async fn open(
         .into_response());
     }
 
-    // An NZB is only named once kobload has imported it.
+    // An NZB is only named, and a pack's file only picked, once kobload has imported it.
     let keyed;
-    let body = match resolved.release_key.clone() {
-        Some(key) if body.release_key.is_none() => {
+    let learned_key = resolved
+        .release_key
+        .clone()
+        .filter(|_| body.release_key.is_none());
+    let learned_file = resolved.file_id.filter(|_| body.file_id.is_none());
+    let body = match (learned_key, learned_file) {
+        (None, None) => body,
+        (key, file_id) => {
             keyed = StreamResolveBody {
-                release_key: Some(key),
+                release_key: body.release_key.clone().or(key),
+                file_id: body.file_id.or(file_id),
+                resolved: None,
                 ..body.clone()
             };
             if let Some(cached) = super::complete_cache_entry(
@@ -86,7 +82,6 @@ pub(super) async fn open(
             }
             &keyed
         }
-        _ => body,
     };
 
     let release = StreamRelease {
@@ -114,10 +109,14 @@ pub(super) async fn open(
     }
 
     let session_id = Uuid::new_v4();
-    let session_key = session_id.to_string();
-    // Keyed by release so another session for the same release finds the bytes.
+    let release_key = super::release_key(body.release_key.as_deref(), body.file_id);
+    // Keyed by release file so another session for the same file finds the bytes.
     let local_cache_path = cache_download::cache_dir(state, runtime)
-        .join(body.release_key.as_deref().unwrap_or(&session_key))
+        .join(
+            release_key
+                .clone()
+                .unwrap_or_else(|| session_id.to_string()),
+        )
         .join(&resolved.filename);
     let row = SessionRow {
         session_id,
@@ -160,7 +159,6 @@ pub(super) async fn open(
     let on_disk = tokio::fs::metadata(&local_cache_path)
         .await
         .map_or(0, |m| m.len());
-    let release_key = super::release_key(body.release_key.as_deref(), body.file_id);
     // A Warm session stops its download at the head, which would stop the shared one.
     let joined = match mode {
         OpenMode::Play => release_key
@@ -269,7 +267,7 @@ pub(super) async fn open(
         state,
         session_id,
         crate::routes::admin::debrid_play::GateSpec {
-            release_key: body.release_key.as_deref(),
+            release_key: release_key.clone(),
             filename: &resolved.filename,
             filesize: resolved.filesize,
             local: Some(&local_cache_path),

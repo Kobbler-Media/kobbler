@@ -49,7 +49,7 @@ async fn forward(state: &AppState, release: &StreamRelease, ok: bool, reason: Op
         file_id: release.file_id,
         ok,
         reason: reason.map(String::from),
-        release_title: Some(release.release_title.clone()),
+        release_title: Some(release.release_title.clone()).filter(|t| !t.is_empty()),
         filename: Some(release.filename.clone()),
     };
     if let Err(e) = client.stream_outcome(&report).await {

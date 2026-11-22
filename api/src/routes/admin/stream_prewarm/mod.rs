@@ -146,6 +146,8 @@ impl PrewarmBody {
             preferred_audio_language: self.preferred_audio_language,
             preferred_audio_title: self.preferred_audio_title,
             delivery: self.delivery,
+            episode: None,
+            resolved: None,
         };
         Ok(Title {
             target,
@@ -177,11 +179,17 @@ pub async fn prewarm(
         end(&state, existing.id, Phase::Released).await;
     }
 
-    let Some((option, resolve_body)) = pick(&state, auth.user_id, &title).await else {
+    let Some((option, mut resolve_body)) = pick(&state, auth.user_id, &title).await else {
         return StatusCode::NO_CONTENT.into_response();
     };
     if auth.is_kids && !kids_may_resolve(&state.pool, &resolve_body).await {
         return (StatusCode::NOT_FOUND, "not available on a Kids profile").into_response();
+    }
+    if let Err(resp) =
+        debrid_open::pin_file(&state, &mut resolve_body, nats_jobs::StreamPriority::Warm).await
+    {
+        info!(status = %resp.status(), title = %title.key, "prewarm resolve did not name a file");
+        return StatusCode::NO_CONTENT.into_response();
     }
     let release_key =
         debrid_open::release_key(resolve_body.release_key.as_deref(), resolve_body.file_id);

@@ -447,10 +447,23 @@ pub async fn stream(
     Json(StremioStreamResponse { streams }).into_response()
 }
 
+/// The season and episode a series play names, which pick the file out of a pack.
+fn series_episode(query: &PlayQuery) -> Option<nats_jobs::StreamEpisode> {
+    if query.media_type.as_deref() != Some("series") {
+        return None;
+    }
+    let mut parts = query.id.as_deref()?.splitn(3, ':').skip(1);
+    Some(nats_jobs::StreamEpisode {
+        season: parts.next()?.parse().ok()?,
+        episode: parts.next()?.parse().ok()?,
+    })
+}
+
 async fn try_resolve_option(
     state: &AppState,
     user_id: Uuid,
     option: &StreamOption,
+    episode: Option<nats_jobs::StreamEpisode>,
     base_url: &str,
     api_key: &str,
 ) -> Option<(Uuid, String)> {
@@ -477,6 +490,8 @@ async fn try_resolve_option(
         preferred_audio_language: None,
         preferred_audio_title: None,
         delivery: crate::routes::admin::streaming::Delivery::Hls,
+        episode,
+        resolved: None,
     };
     body.apply_option(option);
 
@@ -617,6 +632,7 @@ pub async fn play(
         .get(&option_id)
         .map(|e| (e.option.clone(), e.fallbacks.clone()));
     let mut relisted = cached.is_none();
+    let episode = series_episode(&query);
     let (primary, mut chain) = match cached {
         Some((option, chain)) => (Some(option), chain),
         None => relist(&state, user_id, &query, &option_id).await,
@@ -624,7 +640,7 @@ pub async fn play(
 
     if let Some(option) = &primary
         && let Some((_sid, redirect_url)) =
-            try_resolve_option(&state, user_id, option, &base_url, &api_key).await
+            try_resolve_option(&state, user_id, option, episode, &base_url, &api_key).await
     {
         return Redirect::temporary(&redirect_url).into_response();
     }
@@ -641,7 +657,7 @@ pub async fn play(
         }
 
         if let Some((_sid, redirect_url)) =
-            try_resolve_option(&state, user_id, alt, &base_url, &api_key).await
+            try_resolve_option(&state, user_id, alt, episode, &base_url, &api_key).await
         {
             info!(option_id = %option_id, fallback = %alt.id, "stremio fallback succeeded");
             return Redirect::temporary(&redirect_url).into_response();

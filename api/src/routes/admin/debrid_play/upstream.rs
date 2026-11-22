@@ -16,6 +16,7 @@ use super::local::reply;
 use crate::AppState;
 use crate::ffmpeg::cue_gate::{CueGate, gated};
 use crate::routes::admin::debrid_errors::StreamFailure;
+use crate::routes::admin::debrid_open::episode;
 use crate::routes::helpers::build_kobload_client;
 use crate::streaming::byte_range::{ByteRange, content_range_start, parse_byte_range};
 use crate::streaming::session::SessionError;
@@ -69,6 +70,25 @@ pub(crate) async fn cache_ahead_url(
     Ok(resolved.cache_url.unwrap_or(resolved.stream_url))
 }
 
+/// A URL for the cache-ahead to carry on from: the session's own while it is good, and a
+/// freshly resolved one when it has lapsed or `force` says the host refused it. `None`
+/// when there is no session row to resolve it for (a warm session) or kobload could not.
+pub(crate) async fn fresh_cache_url(
+    state: &AppState,
+    session_id: Uuid,
+    force: bool,
+) -> Option<String> {
+    let session = PlaySession::load(&state.pool, session_id, None)
+        .await
+        .ok()
+        .flatten()?;
+    if !force {
+        return cache_ahead_url(state, &session).await.ok();
+    }
+    let resolved = re_resolve(state, &session).await.ok()?;
+    Some(resolved.cache_url.unwrap_or(resolved.stream_url))
+}
+
 async fn re_resolve(
     state: &AppState,
     session: &PlaySession,
@@ -91,6 +111,7 @@ async fn re_resolve(
         priority: None,
         release_title: Some(session.release_title.clone()).filter(|t| !t.is_empty()),
         file_name: Some(session.filename.clone()).filter(|f| !f.is_empty()),
+        episode: episode::of_media(&state.pool, &session.media_type, session.media_id).await,
     };
 
     let resolved = match client.stream_resolve(&resolve_req).await {
@@ -98,7 +119,10 @@ async fn re_resolve(
         Err(e) => {
             error!(session_id = %session.id, error = %e, "failed to re-resolve stream URL");
             let failure = StreamFailure::from_kobload(&e);
-            if matches!(failure, StreamFailure::Blocked | StreamFailure::NotCached) {
+            if matches!(
+                failure,
+                StreamFailure::Blocked | StreamFailure::NotCached | StreamFailure::NotVideo
+            ) {
                 fail_session(state, session.id, failure.code(), failure.message());
             }
             return Err(failure.response(StatusCode::BAD_GATEWAY, &e.to_string()));

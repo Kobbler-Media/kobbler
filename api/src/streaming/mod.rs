@@ -19,6 +19,7 @@ pub mod persist;
 pub mod presumed_audio;
 pub mod progressive;
 pub mod release_sessions;
+pub mod resume;
 pub mod segment_cache;
 pub mod session;
 pub mod session_gate;

@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT file_id AS \"file_id!\"\n        FROM debrid_stream_sessions\n        WHERE release_key = $1 AND media_type = $2 AND media_id = $3 AND file_id IS NOT NULL\n        ORDER BY created_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_id!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "file_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "f9276ac44da0934a8e88bf6c99e866b2b080bee20b8c656c67be0ab44bccdeaa"
+}
