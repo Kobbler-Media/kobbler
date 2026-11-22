@@ -885,3 +885,128 @@ async fn test_kobload_delivery_announces_acquisition_once() {
         );
     }
 }
+
+/// What Kobbler told Kobload about one ingest, in either reporting mode: the
+/// kobload endpoint it called, or the status it published on NATS.
+async fn ingest_report(
+    server: &TestServer,
+    mock_server: &MockServer,
+    download_id: Uuid,
+    request: Value,
+    nats: bool,
+) -> String {
+    if !nats {
+        TestClient::new(&server.api_url)
+            .post_json(&format!("/api/v1/ingest/{}", server.ingest_token), &request)
+            .await
+            .assert_success();
+        server.process_pending_ingest_jobs().await;
+        let reports: Vec<String> = mock_server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .iter()
+            .filter(|r| r.method.as_str() == "POST")
+            .filter_map(|r| {
+                r.url
+                    .path()
+                    .strip_prefix(&format!("/api/v1/downloads/{download_id}/"))
+                    .map(String::from)
+            })
+            .collect();
+        return reports.join(",");
+    }
+
+    use api::jobs::worker::JobHandler;
+    use futures::StreamExt;
+    let url = std::env::var("NATS_URL_TEST").unwrap_or_else(|_| "nats://localhost:4223".into());
+    let nats = nats_jobs::NatsClient::connect(&nats_jobs::NatsConfig::new(&url, "ingest-report"))
+        .await
+        .expect("nats");
+    let mut results = nats
+        .client()
+        .subscribe("events.ingest.result")
+        .await
+        .unwrap();
+    api::jobs::handlers::KobloadIngestHandler::new(server.app_state.clone())
+        .execute(
+            Uuid::now_v7(),
+            json!({ "request": request, "response_mode": "nats" }),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while let Ok(Some(msg)) = tokio::time::timeout_at(deadline, results.next()).await {
+        let event: Value = serde_json::from_slice(&msg.payload).unwrap();
+        if event["payload"]["download_id"] == json!(download_id) {
+            return event["payload"]["status"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+        }
+    }
+    String::new()
+}
+
+/// A release is only to blame when its content is wrong. When Kobbler cannot
+/// fetch the files from Kobload (or store them), Kobload must retry the ingest
+/// rather than exclude the release and delete the download.
+#[tokio::test]
+async fn test_ingest_reports_retry_for_infrastructure_failures_and_failure_for_bad_content() {
+    struct Case {
+        name: &'static str,
+        files_status: u16,
+        files: Value,
+        http: &'static str,
+        nats: &'static str,
+    }
+    let cases = [
+        Case {
+            name: "kobload file fetch fails",
+            files_status: 502,
+            files: json!([{ "path": "Mistborn.epub", "size": 1_048_576, "extension": "epub" }]),
+            http: "import-retry",
+            nats: "Retry",
+        },
+        Case {
+            name: "no ebook in the download",
+            files_status: 200,
+            files: json!([{ "path": "readme.txt", "size": 256, "extension": "txt", "mime_type": "text/plain" }]),
+            http: "import-failed",
+            nats: "Failed",
+        },
+    ];
+
+    let mut failures = Vec::new();
+    for case in &cases {
+        for nats in [false, true] {
+            let (server, mock_server, wanted_id) = setup_wanted_with_kobload().await;
+            let download_id = queue_download(&server, &mock_server, &wanted_id).await;
+            Mock::given(method("GET"))
+                .and(path_regex(format!(
+                    r"/api/v1/downloads/{download_id}/files/.*"
+                )))
+                .respond_with(ResponseTemplate::new(case.files_status))
+                .mount(&mock_server)
+                .await;
+            let request = json!({
+                "download_id": download_id,
+                "status": "completed",
+                "metadata": { "book_id": wanted_id },
+                "files": case.files,
+            });
+
+            let got = ingest_report(&server, &mock_server, download_id, request, nats).await;
+            let want = if nats { case.nats } else { case.http };
+            if got != want {
+                failures.push(format!(
+                    "{} ({}): reported {got:?}, expected {want:?}",
+                    case.name,
+                    if nats { "nats" } else { "http" }
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

@@ -2,7 +2,7 @@
 //!
 //! Receives ingest requests (via NATS subscription or HTTP 202), processes the
 //! files, and sends the result back via NATS (`events.ingest.result`) or HTTP
-//! (`/api/v1/downloads/{id}/imported` or `/api/v1/downloads/{id}/import-failed`).
+//! (`/api/v1/downloads/{id}/{imported,import-failed,import-deferred,import-retry}`).
 
 use crate::AppState;
 use crate::jobs::worker::JobHandler;
@@ -140,20 +140,25 @@ impl JobHandler for KobloadIngestHandler {
                 }))
             }
             Err(err) => {
-                warn!(download_id = %download_id, error = %err, "Kobload ingest failed");
+                warn!(download_id = %download_id, error = %err, retryable = err.retryable, "Kobload ingest failed");
+                let status = if err.retryable {
+                    IngestResultStatus::Retry
+                } else {
+                    IngestResultStatus::Failed
+                };
                 send_result(
                     &self.state,
                     download_id,
                     &response_mode,
-                    IngestResultStatus::Failed,
-                    Some(err.clone()),
+                    status,
+                    Some(err.message.clone()),
                 )
                 .await;
                 // Return success to the job system — we handled the failure by notifying kobload
                 Ok(serde_json::json!({
                     "download_id": download_id,
-                    "status": "failed",
-                    "error": err,
+                    "status": if err.retryable { "retry" } else { "failed" },
+                    "error": err.message,
                 }))
             }
         }
@@ -208,49 +213,19 @@ async fn send_result(
         };
 
         let client = crate::http::new_client();
-
-        match status {
-            IngestResultStatus::Imported => {
-                let url = format!(
-                    "{}/api/v1/downloads/{}/imported",
-                    kobload_base_url, download_id
-                );
-                if let Err(e) = client.post(&url).bearer_auth(&api_key).send().await {
-                    warn!(download_id = %download_id, error = %e, "Failed to confirm import to Kobload via HTTP");
-                }
-            }
-            IngestResultStatus::Failed => {
-                let url = format!(
-                    "{}/api/v1/downloads/{}/import-failed",
-                    kobload_base_url, download_id
-                );
-                let body = serde_json::json!({ "error": error_msg });
-                if let Err(e) = client
-                    .post(&url)
-                    .bearer_auth(&api_key)
-                    .json(&body)
-                    .send()
-                    .await
-                {
-                    warn!(download_id = %download_id, error = %e, "Failed to send import-failed to Kobload via HTTP");
-                }
-            }
-            IngestResultStatus::Deferred => {
-                let url = format!(
-                    "{}/api/v1/downloads/{}/import-deferred",
-                    kobload_base_url, download_id
-                );
-                let body = serde_json::json!({ "error": error_msg });
-                if let Err(e) = client
-                    .post(&url)
-                    .bearer_auth(&api_key)
-                    .json(&body)
-                    .send()
-                    .await
-                {
-                    warn!(download_id = %download_id, error = %e, "Failed to send import-deferred to Kobload via HTTP");
-                }
-            }
+        let endpoint = match status {
+            IngestResultStatus::Imported => "imported",
+            IngestResultStatus::Failed => "import-failed",
+            IngestResultStatus::Deferred => "import-deferred",
+            IngestResultStatus::Retry => "import-retry",
+        };
+        let url = format!("{kobload_base_url}/api/v1/downloads/{download_id}/{endpoint}");
+        let mut request = client.post(&url).bearer_auth(&api_key);
+        if status != IngestResultStatus::Imported {
+            request = request.json(&serde_json::json!({ "error": error_msg }));
+        }
+        if let Err(e) = request.send().await {
+            warn!(download_id = %download_id, endpoint, error = %e, "Failed to send ingest result to Kobload via HTTP");
         }
     }
 }

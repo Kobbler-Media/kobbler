@@ -609,6 +609,20 @@ pub enum IngestOutcome {
     Deferred(Uuid),
 }
 
+/// Why an ingest did not go through. `retryable` failures are ours or the
+/// transport's (the files could not be fetched or stored), not the release's.
+#[derive(Debug)]
+pub struct IngestError {
+    pub message: String,
+    pub retryable: bool,
+}
+
+impl std::fmt::Display for IngestError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
 /// The naming template renders the same path for every copy of an episode, so a
 /// regrab would rename its download straight over the file it is meant to sit
 /// beside — losing the old copy on disk while the DB still shows two rows. Only
@@ -784,7 +798,7 @@ pub async fn process_kobload_ingest(
     payload: KobloadCallbackRequest,
     skip_http_confirm: bool,
     cancel: tokio_util::sync::CancellationToken,
-) -> Result<IngestOutcome, String> {
+) -> Result<IngestOutcome, IngestError> {
     // Early idempotency check — detect duplicates before doing any work
     if let Some(idempotency_key) = payload.idempotency_key {
         match wanted_attempts::check_idempotency_key(&state.pool, idempotency_key).await {
@@ -824,13 +838,17 @@ pub async fn process_kobload_ingest(
         let media_root_id = body
             .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
             .and_then(|v| v.get("media_root_id")?.as_str()?.parse::<Uuid>().ok());
-        if let Some(id) = media_root_id {
-            Ok(IngestOutcome::Deferred(id))
-        } else {
-            Err("Ingest returned 503 but no media_root_id".to_string())
-        }
+        media_root_id
+            .map(IngestOutcome::Deferred)
+            .ok_or(IngestError {
+                message: "Ingest returned 503 but no media_root_id".to_string(),
+                retryable: true,
+            })
     } else {
-        Err(format!("Ingest returned status {}", status))
+        Err(IngestError {
+            message: format!("Ingest returned status {status}"),
+            retryable: status.is_server_error(),
+        })
     }
 }
 
@@ -1263,12 +1281,24 @@ async fn ingest_single_book(
     // Get Kobload base URL and API key
     let kobload_base_url = match runtime.kobload_base_url.clone() {
         Some(url) if !url.trim().is_empty() => url,
-        _ => return (StatusCode::BAD_REQUEST, "kobload_base_url not configured").into_response(),
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "kobload_base_url not configured",
+            )
+                .into_response();
+        }
     };
 
     let api_key = match runtime.kobload_api_key.clone() {
         Some(key) if !key.trim().is_empty() => key,
-        _ => return (StatusCode::BAD_REQUEST, "kobload_api_key not configured").into_response(),
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "kobload_api_key not configured",
+            )
+                .into_response();
+        }
     };
 
     if let Err(err) = fs::create_dir_all(&target_dir).await {
@@ -2044,11 +2074,23 @@ async fn ingest_movie(
     // Get Kobload base URL and API key
     let kobload_base_url = match runtime.kobload_base_url.clone() {
         Some(url) if !url.trim().is_empty() => url,
-        _ => return (StatusCode::BAD_REQUEST, "kobload_base_url not configured").into_response(),
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "kobload_base_url not configured",
+            )
+                .into_response();
+        }
     };
     let api_key = match runtime.kobload_api_key.clone() {
         Some(key) if !key.trim().is_empty() => key,
-        _ => return (StatusCode::BAD_REQUEST, "kobload_api_key not configured").into_response(),
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "kobload_api_key not configured",
+            )
+                .into_response();
+        }
     };
 
     if let Err(err) = fs::create_dir_all(&target_dir).await {
@@ -2538,11 +2580,23 @@ async fn ingest_tv_episode(
     // Get Kobload base URL and API key
     let kobload_base_url = match runtime.kobload_base_url.clone() {
         Some(url) if !url.trim().is_empty() => url,
-        _ => return (StatusCode::BAD_REQUEST, "kobload_base_url not configured").into_response(),
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "kobload_base_url not configured",
+            )
+                .into_response();
+        }
     };
     let api_key = match runtime.kobload_api_key.clone() {
         Some(key) if !key.trim().is_empty() => key,
-        _ => return (StatusCode::BAD_REQUEST, "kobload_api_key not configured").into_response(),
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "kobload_api_key not configured",
+            )
+                .into_response();
+        }
     };
 
     if let Err(err) = fs::create_dir_all(&target_dir).await {
@@ -3152,11 +3206,23 @@ async fn ingest_tv_season(
     // Get Kobload base URL and API key
     let kobload_base_url = match runtime.kobload_base_url.clone() {
         Some(url) if !url.trim().is_empty() => url,
-        _ => return (StatusCode::BAD_REQUEST, "kobload_base_url not configured").into_response(),
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "kobload_base_url not configured",
+            )
+                .into_response();
+        }
     };
     let api_key = match runtime.kobload_api_key.clone() {
         Some(key) if !key.trim().is_empty() => key,
-        _ => return (StatusCode::BAD_REQUEST, "kobload_api_key not configured").into_response(),
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "kobload_api_key not configured",
+            )
+                .into_response();
+        }
     };
 
     if let Err(err) = fs::create_dir_all(&target_dir).await {
