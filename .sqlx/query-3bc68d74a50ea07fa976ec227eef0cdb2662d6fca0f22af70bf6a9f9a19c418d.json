@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.file_id AS \"file_id!\"\n        FROM debrid_stream_sessions s\n        JOIN debrid_cache_files c ON c.file_path = s.cache_path AND c.completed_at IS NOT NULL\n        JOIN tv_episodes e ON e.id = s.media_id\n        JOIN tv_seasons se ON se.id = e.season_id\n        WHERE s.release_key = $1 AND s.media_type = 'episode' AND s.file_id IS NOT NULL\n          AND TRIM(se.season_identifier) = $2 AND TRIM(e.episode_identifier) = $3\n        ORDER BY c.last_accessed_at DESC\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "file_id!",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "debrid_stream_sessions",
+            "name": "file_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "3bc68d74a50ea07fa976ec227eef0cdb2662d6fca0f22af70bf6a9f9a19c418d"
+}

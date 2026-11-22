@@ -34,7 +34,10 @@ struct InFlight {
 /// player reads along with this one, and anything else that must write waits for it to
 /// stop and resumes from what it left.
 #[derive(Default)]
-pub struct DownloadsAhead(DashMap<String, InFlight>);
+pub struct DownloadsAhead {
+    flights: DashMap<String, InFlight>,
+    damaged: dashmap::DashSet<String>,
+}
 
 pub struct Claim {
     owner: Arc<DownloadsAhead>,
@@ -52,7 +55,7 @@ impl Drop for Claim {
     fn drop(&mut self) {
         self.flight.stopped.cancel();
         self.owner
-            .0
+            .flights
             .remove_if(&self.key, |_, f| f.stopped.is_cancelled());
     }
 }
@@ -70,7 +73,7 @@ impl DownloadsAhead {
             stopped: CancellationToken::new(),
             meter,
         };
-        match self.0.entry(key.to_string()) {
+        match self.flights.entry(key.to_string()) {
             dashmap::Entry::Occupied(_) => None,
             dashmap::Entry::Vacant(v) => {
                 v.insert(flight.clone());
@@ -84,18 +87,28 @@ impl DownloadsAhead {
     }
 
     pub fn contains(&self, key: &str) -> bool {
-        self.0.contains_key(key)
+        self.flights.contains_key(key)
     }
 
     /// The meter of the download in flight, for a player to read the file along with it.
     pub fn join(&self, key: &str) -> Option<Arc<DownloadMeter>> {
-        self.0.get(key).map(|f| f.meter.clone())
+        self.flights.get(key).map(|f| f.meter.clone())
+    }
+
+    /// Damage is reported the first time a download ahead meets it; a later attempt at the
+    /// same release would only meet and report it again.
+    pub fn mark_damaged(&self, key: &str) {
+        self.damaged.insert(key.to_string());
+    }
+
+    pub fn is_damaged(&self, key: &str) -> bool {
+        self.damaged.contains(key)
     }
 
     /// Stop the download ahead of this release, if any, and wait until it has stopped
     /// writing.
     pub async fn hand_over(&self, key: &str) {
-        let Some(flight) = self.0.get(key).map(|f| f.clone()) else {
+        let Some(flight) = self.flights.get(key).map(|f| f.clone()) else {
             return;
         };
         flight.cancel.cancel();

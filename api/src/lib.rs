@@ -168,9 +168,10 @@ pub struct AppState {
     /// maps because the tuner is a LAN device with a hard 4-slot cap, not a pool
     /// of interchangeable remote sources.
     pub livetv: Arc<livetv::live_session::LivetvState>,
-    pub stremio_play_cache: Arc<dashmap::DashMap<String, routes::stremio::CachedStremioRedirect>>,
+    pub stremio_play_cache:
+        Arc<dashmap::DashMap<routes::stremio::PlayKey, routes::stremio::CachedStremioRedirect>>,
     pub stremio_resolve_locks:
-        Arc<dashmap::DashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+        Arc<dashmap::DashMap<routes::stremio::PlayKey, std::sync::Arc<tokio::sync::Mutex<()>>>>,
     pub debrid_session_index: Arc<crate::streaming::release_sessions::ReleaseSessions>,
     /// Per-key locks for serializing debrid session creation.
     pub debrid_resolve_locks: Arc<dashmap::DashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,

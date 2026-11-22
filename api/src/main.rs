@@ -42,7 +42,12 @@ async fn run(tracker: Arc<PollTracker>) {
 
     dotenvy::dotenv().ok();
 
-    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+    // HybridIo logs the signed engine URL it opens at info, and those stay valid for hours.
+    let env_filter = tracing_subscriber::EnvFilter::from_default_env().add_directive(
+        "kob_ffmpeg::hybrid_io=warn"
+            .parse()
+            .expect("static log directive"),
+    );
     let fmt_layer = tracing_subscriber::fmt::layer();
 
     #[cfg(feature = "tokio-console")]

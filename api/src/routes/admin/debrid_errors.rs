@@ -53,9 +53,19 @@ impl StreamFailure {
         }
     }
 
+    /// A verdict on the release: another attempt at it fails the same way.
+    pub fn is_permanent(self) -> bool {
+        matches!(self, Self::Blocked | Self::NotCached | Self::NotVideo)
+    }
+
     pub fn classify(status: Option<u16>, detail: &str) -> Self {
         let text = detail.to_ascii_lowercase();
         let has = |needles: &[&str]| needles.iter().any(|n| text.contains(n));
+        match engine_code(&text) {
+            Some("internal") => return Self::Unavailable,
+            Some("unknown_release") => return Self::NotCached,
+            _ => {}
+        }
         if has(&["refused this", "infringing", "blocked"]) {
             Self::Blocked
         } else if has(&["not a video"]) {
@@ -64,6 +74,8 @@ impl StreamFailure {
             "usenet release is not cached",
             "missing articles",
             "was not found in this",
+            "not listed any more",
+            "not warmed",
         ]) {
             Self::NotCached
         } else if has(&["unavailable for nzb grabs", "providers_unavailable"]) {
@@ -104,6 +116,15 @@ impl StreamFailure {
         )
             .into_response()
     }
+}
+
+/// The usenet engine's code kobload puts in parentheses at the end of its message.
+fn engine_code(text: &str) -> Option<&str> {
+    let inner = text.trim_end().strip_suffix(')')?;
+    let code = &inner[inner.rfind('(')? + 1..];
+    code.chars()
+        .all(|c| c.is_ascii_lowercase() || c == '_')
+        .then_some(code)
 }
 
 #[cfg(test)]
@@ -277,6 +298,26 @@ mod tests {
                 Some(500),
                 "Debrid error: Failed to add magnet: Provider refused this torrent (too big for the account)",
                 Blocked,
+            ),
+            (
+                Some(500),
+                "Debrid error: The usenet engine refused this release (internal)",
+                Unavailable,
+            ),
+            (
+                Some(500),
+                "Debrid error: The usenet engine refused this release (unknown_release)",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: This NZB is not listed any more; search again",
+                NotCached,
+            ),
+            (
+                Some(500),
+                "Debrid error: Not warmed: only the release a search would auto-play is grabbed from the indexer ahead of a tap",
+                NotCached,
             ),
         ];
         for (status, detail, want) in cases {

@@ -19,6 +19,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::repositories::debrid_stream_sessions;
 use crate::routes::PlaybackAuth;
 use crate::routes::admin::debrid_open::{self, OpenMode, WarmGate, live_response, probe_json};
 use crate::routes::admin::debrid_stream::{AutoCreateMedia, StreamResolveBody, kids_may_resolve};
@@ -28,6 +29,7 @@ use crate::routes::admin::streaming::{Delivery, progressive_url};
 use crate::routes::helpers::build_kobload_client;
 use crate::streaming::cache_download;
 use crate::streaming::decision::ClientCapabilities;
+use crate::streaming::progressive::DownloadTarget;
 use store::{PER_USER, Phase, Prewarm, SAME_PREWARM_FOR};
 
 #[derive(Debug, Deserialize)]
@@ -511,7 +513,39 @@ fn resume_download(state: &AppState, prewarm: &Prewarm) {
     let cancel = CancellationToken::new();
     session.download_cancel = Some(cancel.clone());
     drop(session);
-    cache_download::spawn(state, target, cancel, meter);
+    let state = state.clone();
+    let mut body = prewarm.body.clone();
+    body.release_key = prewarm.row.release_key.clone();
+    body.file_id = prewarm.row.file_id;
+    let session_id = prewarm.session_id;
+    tokio::spawn(async move {
+        let target = for_viewer(&state, &body, session_id, target).await;
+        cache_download::for_session(&state, target, cancel, meter).await;
+    });
+}
+
+/// A warm resolve's URLs serve below library downloads; the viewer's rest of the file is
+/// fetched through URLs resolved for a viewer. Without kobload the warm ones still serve.
+async fn for_viewer(
+    state: &AppState,
+    body: &StreamResolveBody,
+    session_id: Uuid,
+    mut target: DownloadTarget,
+) -> DownloadTarget {
+    let runtime = state.runtime_config.get().await;
+    let resolved =
+        match debrid_open::resolve(state, &runtime, body, nats_jobs::StreamPriority::User).await {
+            Ok(r) if !r.stream_url.is_empty() => r,
+            Ok(_) | Err(_) => {
+                info!(%session_id, "kept the warm URLs for the claimed download");
+                return target;
+            }
+        };
+    if let Err(e) = debrid_stream_sessions::set_urls(&state.pool, session_id, &resolved).await {
+        warn!(%session_id, error = %e, "failed to store the viewer's URLs");
+    }
+    target.url = resolved.cache_url.unwrap_or(resolved.stream_url);
+    target
 }
 
 /// A resolve of a release this viewer has warm claims that prewarm instead of opening a

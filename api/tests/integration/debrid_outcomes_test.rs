@@ -652,7 +652,7 @@ async fn test_stremio_keeps_kobload_order_and_drops_failed_from_fallbacks() {
     let fallbacks: Vec<String> = server
         .app_state
         .stremio_play_cache
-        .get(&format!("torrent_stremok_{PROVIDER_ID}"))
+        .get(&(format!("torrent_stremok_{PROVIDER_ID}"), None))
         .unwrap()
         .fallbacks
         .iter()
@@ -916,7 +916,7 @@ async fn test_background_probe_failure_is_forwarded() {
 }
 
 #[tokio::test]
-async fn test_stream_play_upstream_failure_is_forwarded() {
+async fn test_stream_play_unreachable_upstream_is_not_reported() {
     let (server, mock) = kobload_server().await;
     let user = admin_id(&server).await;
     let movie = insert_movie(&server, "tt9000050").await;
@@ -931,15 +931,10 @@ async fn test_stream_play_upstream_failure_is_forwarded() {
         .await
         .assert_status(StatusCode::BAD_GATEWAY);
 
-    let reports = wait_for_reports(&mock, 1).await;
-    assert_eq!(
-        reports.iter().map(summary).collect::<Vec<_>>(),
-        vec![(
-            "upstreamhash".to_string(),
-            Some(9),
-            false,
-            Some("upstream_failed".to_string())
-        )]
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(
+        outcome_reports(&mock).await.is_empty(),
+        "an unreachable host says nothing about the release"
     );
 }
 

@@ -21,6 +21,8 @@ pub enum WholeBody {
     Stall { first: usize },
     /// `chunk` bytes every `every`, for ever (the file is repeated).
     Trickle { chunk: usize, every: Duration },
+    /// Only the first `len` bytes, with a Content-Length that says so, ended cleanly.
+    Short { len: usize },
 }
 
 #[derive(Clone)]
@@ -64,13 +66,33 @@ impl UpstreamPlan {
     }
 }
 
+/// A refusal for paths under `prefix`, with the engine's `{"error": code}` when it has one.
+#[derive(Clone)]
+struct Refusal {
+    prefix: String,
+    status: StatusCode,
+    code: Option<&'static str>,
+}
+
+#[derive(Clone)]
+struct Busy {
+    until: std::time::Instant,
+    status: StatusCode,
+    code: &'static str,
+}
+
+/// How far before the asked-for offset a misplaced 206 starts.
+pub const MISPLACED_BY: u64 = 4096;
+
 #[derive(Clone)]
 struct Shared {
     plan: UpstreamPlan,
     ranges: Arc<Mutex<Vec<String>>>,
     whole_gets: Arc<Mutex<usize>>,
     requests: Arc<Mutex<Vec<Seen>>>,
-    revoked: Arc<Mutex<Vec<String>>>,
+    revoked: Arc<Mutex<Vec<Refusal>>>,
+    busy: Arc<Mutex<Option<Busy>>>,
+    misplaced: Arc<Mutex<Option<u64>>>,
 }
 
 /// One GET the host answered: its path, its Range header if it had one, and its User-Agent
@@ -88,7 +110,9 @@ pub struct Upstream {
     ranges: Arc<Mutex<Vec<String>>>,
     whole_gets: Arc<Mutex<usize>>,
     requests: Arc<Mutex<Vec<Seen>>>,
-    revoked: Arc<Mutex<Vec<String>>>,
+    revoked: Arc<Mutex<Vec<Refusal>>>,
+    busy: Arc<Mutex<Option<Busy>>>,
+    misplaced: Arc<Mutex<Option<u64>>>,
     outages: tokio::sync::mpsc::UnboundedSender<Duration>,
 }
 
@@ -101,6 +125,8 @@ impl Upstream {
             whole_gets: Arc::default(),
             requests: Arc::default(),
             revoked: Arc::default(),
+            busy: Arc::default(),
+            misplaced: Arc::default(),
         };
         let app = Router::new()
             .route("/{*file}", axum::routing::get(serve))
@@ -121,6 +147,8 @@ impl Upstream {
             whole_gets: shared.whole_gets,
             requests: shared.requests,
             revoked: shared.revoked,
+            busy: shared.busy,
+            misplaced: shared.misplaced,
             outages,
         }
     }
@@ -132,7 +160,36 @@ impl Upstream {
 
     /// Requests for paths under `prefix` are answered 403 from now on.
     pub fn revoke(&self, prefix: &str) {
-        self.revoked.lock().unwrap().push(prefix.to_string());
+        self.refuse_under(prefix, StatusCode::FORBIDDEN, None);
+    }
+
+    /// Requests for paths under `prefix` are answered as an engine that no longer knows the
+    /// release, from now on.
+    pub fn forget(&self, prefix: &str) {
+        self.refuse_under(prefix, StatusCode::NOT_FOUND, Some("unknown_release"));
+    }
+
+    fn refuse_under(&self, prefix: &str, status: StatusCode, code: Option<&'static str>) {
+        self.revoked.lock().unwrap().push(Refusal {
+            prefix: prefix.to_string(),
+            status,
+            code,
+        });
+    }
+
+    /// Every request is answered `status` with `{"error": code}` for the next `lasting`.
+    pub fn busy_for(&self, status: StatusCode, code: &'static str, lasting: Duration) {
+        *self.busy.lock().unwrap() = Some(Busy {
+            until: std::time::Instant::now() + lasting,
+            status,
+            code,
+        });
+    }
+
+    /// The next answer to an open-ended range from `offset` starts `MISPLACED_BY` bytes
+    /// before it, with a Content-Range that says so.
+    pub fn misplace_range_at(&self, offset: u64) {
+        *self.misplaced.lock().unwrap() = Some(offset);
     }
 
     pub fn url(&self, filename: &str) -> String {
@@ -169,21 +226,31 @@ async fn serve(State(s): State<Shared>, uri: Uri, headers: HeaderMap) -> Respons
     if let Some(status) = s.plan.refuse {
         return status.into_response();
     }
-    if s.revoked
+    let busy = s.busy.lock().unwrap().clone();
+    if let Some(busy) = busy.filter(|b| std::time::Instant::now() < b.until) {
+        return engine_error(busy.status, Some(busy.code));
+    }
+    let refusal = s
+        .revoked
         .lock()
         .unwrap()
         .iter()
-        .any(|p| uri.path().starts_with(p.as_str()))
-    {
-        return StatusCode::FORBIDDEN.into_response();
+        .find(|r| uri.path().starts_with(r.prefix.as_str()))
+        .cloned();
+    if let Some(r) = refusal {
+        return engine_error(r.status, r.code);
     }
     let data = s.plan.data.clone();
     let total = data.len() as u64;
     let Some(range) = range else {
         *s.whole_gets.lock().unwrap() += 1;
+        let length = match s.plan.whole {
+            WholeBody::Short { len } => len.min(data.len()) as u64,
+            _ => total,
+        };
         return Response::builder()
             .status(StatusCode::OK)
-            .header(header::CONTENT_LENGTH, total.to_string())
+            .header(header::CONTENT_LENGTH, length.to_string())
             .body(holed(
                 whole_body(data, s.plan.whole.clone()),
                 0,
@@ -195,7 +262,14 @@ async fn serve(State(s): State<Shared>, uri: Uri, headers: HeaderMap) -> Respons
     tokio::time::sleep(s.plan.range_delay).await;
     let spec = range.trim_start_matches("bytes=");
     let (a, b) = spec.split_once('-').unwrap();
-    let start: u64 = a.parse().unwrap();
+    let mut start: u64 = a.parse().unwrap();
+    if b.is_empty() {
+        let mut misplaced = s.misplaced.lock().unwrap();
+        if *misplaced == Some(start) && start >= MISPLACED_BY {
+            *misplaced = None;
+            start -= MISPLACED_BY;
+        }
+    }
     let end: u64 = if b.is_empty() {
         total - 1
     } else {
@@ -219,6 +293,13 @@ async fn serve(State(s): State<Shared>, uri: Uri, headers: HeaderMap) -> Respons
         )
         .body(holed(Body::from(slice), start as usize, s.plan.hole))
         .unwrap()
+}
+
+fn engine_error(status: StatusCode, code: Option<&'static str>) -> Response {
+    match code {
+        Some(code) => (status, axum::Json(serde_json::json!({ "error": code }))).into_response(),
+        None => status.into_response(),
+    }
 }
 
 /// `body`, which starts at `offset` in the file, cut short with an error where `hole`
@@ -307,6 +388,9 @@ fn whole_body(data: Arc<Vec<u8>>, plan: WholeBody) -> Body {
                     at = if end == data.len() { 0 } else { end };
                     tokio::time::sleep(every).await;
                 }
+            }
+            WholeBody::Short { len } => {
+                yield Ok(Bytes::copy_from_slice(&data[..len.min(data.len())]));
             }
         }
     };

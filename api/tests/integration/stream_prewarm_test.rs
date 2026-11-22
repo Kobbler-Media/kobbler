@@ -1,10 +1,12 @@
 use crate::common::debrid_rig::*;
-use crate::common::debrid_upstream::UpstreamPlan;
+use crate::common::debrid_upstream::{UpstreamPlan, WholeBody};
 use crate::common::*;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 use std::time::Duration;
 use uuid::Uuid;
+use wiremock::matchers::{body_partial_json, method, path_regex};
+use wiremock::{Mock, ResponseTemplate};
 
 const PREWARM: &str = "/api/v1/admin/stream/prewarm";
 const WARM_HEAD: usize = 8 * MB;
@@ -151,7 +153,23 @@ async fn resolving_the_warmed_release_claims_it() {
         .await;
 
     assert_eq!(session_id_of(&resolved), session);
-    assert_eq!(rig.kobload_requests("/stream/resolve").await.len(), 1);
+    wait_until_async(
+        Duration::from_secs(5),
+        "the claim never resolved for the viewer",
+        || async { rig.kobload_requests("/stream/resolve").await.len() >= 2 },
+    )
+    .await;
+    let asked: Vec<Value> = rig
+        .kobload_requests("/stream/resolve")
+        .await
+        .into_iter()
+        .map(|r| r["priority"].clone())
+        .collect();
+    assert_eq!(
+        asked,
+        [json!("warm"), json!("user")],
+        "the resolve walked the options instead of claiming"
+    );
 }
 
 #[tokio::test]
@@ -372,4 +390,58 @@ async fn a_release_on_disk_is_warmed_without_a_search() {
         searches,
         "searched with the release on disk"
     );
+}
+
+/// A warm resolve's URLs serve below library downloads; the viewer who claims the session
+/// downloads the rest through URLs resolved for them.
+#[tokio::test]
+async fn a_claimed_prewarm_downloads_the_rest_through_a_viewer_resolved_url() {
+    let data = padded_fixture();
+    let mut plan = UpstreamPlan::new(data.clone());
+    plan.whole = WholeBody::Pause {
+        first: WARM_HEAD + MB,
+        pause: Duration::from_secs(120),
+    };
+    let rig = Rig::start(plan, "film.mkv").await;
+    rig.mount_search(json!([rig.option("purposehash")])).await;
+    for priority in ["warm", "user"] {
+        Mock::given(method("POST"))
+            .and(path_regex("/api/v1/stream/resolve$"))
+            .and(body_partial_json(json!({ "priority": priority })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "stream_url": rig.upstream.url(&format!("{priority}/play/film.mkv")),
+                "cache_url": rig.upstream.url(&format!("{priority}/cache/film.mkv")),
+                "filename": "film.mkv",
+                "filesize": data.len(),
+                "cached": true,
+            })))
+            .with_priority(1)
+            .mount(&rig.kobload)
+            .await;
+    }
+    let body = movie_body(rig.movie().await);
+    let id = prewarm_id(&wait_ready(&rig, &body).await);
+
+    claim(&rig, id).await.assert_ok();
+    rig.wait_for_local("purposehash", data.len() as u64).await;
+
+    let rest: Vec<String> = rig
+        .upstream
+        .requests()
+        .into_iter()
+        .filter(|r| r.range.is_some() && r.path.ends_with("/cache/film.mkv"))
+        .map(|r| r.path)
+        .collect();
+    assert!(!rest.is_empty(), "the rest was never fetched by range");
+    assert!(
+        rest.iter().all(|p| p == "/user/cache/film.mkv"),
+        "the claimed download went through {rest:?}"
+    );
+    let asked: Vec<Value> = rig
+        .kobload_requests("/stream/resolve")
+        .await
+        .into_iter()
+        .map(|r| r["priority"].clone())
+        .collect();
+    assert_eq!(asked, [json!("warm"), json!("user")]);
 }

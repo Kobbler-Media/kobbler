@@ -5,6 +5,7 @@
 
 mod gate;
 mod local;
+mod refusal;
 mod remux;
 mod upstream;
 
@@ -24,7 +25,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::debrid_outcomes::{self, StreamRelease};
+use crate::debrid_outcomes::StreamRelease;
 use crate::repositories::debrid_cache_files::{self as cache_files, CacheRelease};
 use crate::routes::PlaybackAuth;
 use crate::routes::admin::debrid_stream::session_owner;
@@ -162,6 +163,7 @@ async fn resume_download(
     info!(session_id = %session.id, "Resuming stopped download");
     tokio::spawn(async move {
         let Ok(url) = upstream::cache_ahead_url(&bg_state, &session).await else {
+            cancel.cancel();
             return;
         };
         let cache_path = PathBuf::from(session.cache_path.as_deref().unwrap_or(""));
@@ -171,8 +173,7 @@ async fn resume_download(
         let meter =
             meter.unwrap_or_else(|| DownloadMeter::new(session.filesize.max(0) as u64, on_disk));
         let target = session.download_target(url, cache_path);
-        // Fire-and-forget cache warm; playback does not depend on it finishing.
-        let _ = cache_download::download(&bg_state, target, cancel, meter).await;
+        cache_download::for_session(&bg_state, target, cancel, meter).await;
     });
 }
 
@@ -319,11 +320,7 @@ async fn respond(
     };
     if remux {
         live.serving_from(FeedSource::Proxy);
-        let resp = remux::remux_proxy_stream(&url, live.audio_stream).await;
-        if resp.status() == StatusCode::BAD_GATEWAY {
-            debrid_outcomes::report_failure(state, &release, "upstream_failed").await;
-        }
-        return resp;
+        return remux::remux_proxy_stream(&url, live.audio_stream).await;
     }
 
     let gate = session_cue_gate(
@@ -337,23 +334,20 @@ async fn respond(
             live.serving_from(FeedSource::Proxy);
             resp
         }
-        upstream::Proxied::Refused(status) => {
-            if status.is_client_error()
-                && status != reqwest::StatusCode::RANGE_NOT_SATISFIABLE
-                && status != reqwest::StatusCode::TOO_MANY_REQUESTS
-            {
-                upstream::fail_session(
-                    state,
-                    session.id,
-                    "upstream_refused",
-                    &format!("The debrid host refused the file ({status})"),
-                );
-            }
-            debrid_outcomes::report_failure(state, &release, "upstream_failed").await;
-            (StatusCode::BAD_GATEWAY, "upstream error").into_response()
+        upstream::Proxied::Refused { status, code } => {
+            refusal::answer(
+                state,
+                refusal::Refusal {
+                    session_id: session.id,
+                    release: &release,
+                    meter: live.meter.as_deref(),
+                    status,
+                    code: code.as_deref(),
+                },
+            )
+            .await
         }
         upstream::Proxied::Unreachable => {
-            debrid_outcomes::report_failure(state, &release, "upstream_failed").await;
             (StatusCode::BAD_GATEWAY, "upstream connection failed").into_response()
         }
     }

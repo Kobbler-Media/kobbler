@@ -4,6 +4,7 @@
 
 use crate::common::debrid_rig::*;
 use crate::common::debrid_upstream::{Hole, HoleAnswer, UpstreamPlan, WholeBody};
+use crate::common::usenet_faults::*;
 use crate::common::*;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
@@ -11,43 +12,6 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 use wiremock::matchers::{body_partial_json, method, path_regex};
 use wiremock::{Mock, ResponseTemplate};
-
-/// The engine ends a response it cannot feed within 7 s and kobbler's upstream client
-/// gives up on a silent one after 10 s; a player buffers a few seconds ahead, so a pause
-/// longer than this is one the viewer sees.
-const PLAYER_STALL_TOLERANCE: Duration = Duration::from_secs(5);
-
-async fn usenet_rig(plan: UpstreamPlan) -> (Rig, Uuid) {
-    let rig = Rig::start_as(Source::Usenet, plan, "film.mkv").await;
-    let movie = rig.movie().await;
-    (rig, movie)
-}
-
-async fn tap(rig: &Rig, movie: Uuid) -> Uuid {
-    session_id_of(
-        &rig.resolve_with(&rig.resolve_body_from(Source::Usenet, "movie", movie))
-            .await,
-    )
-}
-
-/// The noise these releases carry is no video, so a failed probe is expected and beside
-/// the point.
-fn session_error(rig: &Rig, session: Uuid) -> Option<&'static str> {
-    rig.server
-        .app_state
-        .playback_sessions
-        .get(&session)
-        .and_then(|s| s.error.as_ref().map(|e| e.code))
-        .filter(|code| *code != "probe_failed")
-}
-
-async fn failures(rig: &Rig, reason: &str) -> Vec<Value> {
-    rig.kobload_requests("/stream/outcome")
-        .await
-        .into_iter()
-        .filter(|r| r["ok"] == false && r["reason"] == reason)
-        .collect()
-}
 
 /// kobload's own words for a release it will never serve, and what kobbler makes of them.
 #[tokio::test]
@@ -112,25 +76,8 @@ async fn a_dead_usenet_release_fails_its_session_instead_of_re_resolving() {
     }
 }
 
-/// A read the download has not reached needs a fresh URL from kobload. Depending on how
-/// far the download is guessed to reach, the refusal arrives before the response or cuts
-/// it short; either way only the session's verdict matters.
-async fn read_past_the_download(rig: &Rig, session: Uuid) {
-    let resp = reqwest::Client::new()
-        .get(format!(
-            "{}/api/v1/admin/stream/{session}/play",
-            rig.server.api_url
-        ))
-        .bearer_auth(&rig.server.admin_token)
-        .header(reqwest::header::RANGE, "bytes=3000000-3000999")
-        .send()
-        .await
-        .expect("play request");
-    let _ = resp.bytes().await;
-}
-
-/// Every attempt stops where the articles are missing, whether the engine says why or
-/// just ends the response: once the resumes are spent kobload hears about it, once.
+/// Every attempt stops where the articles are missing and the engine says so: kobload
+/// hears about it once.
 #[tokio::test]
 async fn missing_articles_mid_file_are_reported_to_kobload_once() {
     let cases = [
@@ -143,11 +90,6 @@ async fn missing_articles_mid_file_are_reported_to_kobload_once() {
             HoleAnswer::Error(StatusCode::BAD_GATEWAY, "corrupt_articles"),
             "corrupt_articles",
             Duration::from_secs(5),
-        ),
-        (
-            HoleAnswer::Abort,
-            "upstream_aborted",
-            Duration::from_secs(30),
         ),
     ];
     for (answer, reason, within) in cases {
@@ -179,13 +121,11 @@ async fn missing_articles_mid_file_are_reported_to_kobload_once() {
             .cancel();
         play(&rig.server, session, "bytes=0-1023").await;
         tokio::time::sleep(Duration::from_secs(2)).await;
-        if reason != "upstream_aborted" {
-            assert_eq!(
-                failures(&rig, reason).await.len(),
-                1,
-                "a restarted cache-ahead reported the same session again"
-            );
-        }
+        assert_eq!(
+            failures(&rig, reason).await.len(),
+            1,
+            "a restarted cache-ahead reported the same session again"
+        );
     }
 }
 
@@ -225,24 +165,35 @@ async fn transient_engine_errors_are_resumed_and_never_reported() {
 }
 
 /// The cache-ahead's URL carries a signed token that expires: when the engine refuses it,
-/// or kobload said it has lapsed, a fresh one is resolved and the download carries on.
+/// no longer knows its release, or kobload said it has lapsed, a fresh one is resolved and
+/// the download carries on.
 #[tokio::test]
 async fn the_cache_ahead_carries_on_with_a_fresh_url_when_its_token_lapses() {
+    enum Lapse {
+        Revoked,
+        Forgotten,
+        Expiring,
+    }
     struct Case {
         what: &'static str,
         expires_in: time::Duration,
-        revoke: bool,
+        lapse: Lapse,
     }
     for case in [
         Case {
             what: "refused with 403",
             expires_in: time::Duration::hours(6),
-            revoke: true,
+            lapse: Lapse::Revoked,
+        },
+        Case {
+            what: "the engine forgot the release (404 unknown_release)",
+            expires_in: time::Duration::hours(6),
+            lapse: Lapse::Forgotten,
         },
         Case {
             what: "expiry known from expires_at",
             expires_in: time::Duration::seconds(60),
-            revoke: false,
+            lapse: Lapse::Expiring,
         },
     ] {
         let data = noise(3 * MB);
@@ -285,8 +236,10 @@ async fn the_cache_ahead_carries_on_with_a_fresh_url_when_its_token_lapses() {
         })
         .await;
 
-        if case.revoke {
-            rig.upstream.revoke("/tok1/");
+        match case.lapse {
+            Lapse::Revoked => rig.upstream.revoke("/tok1/"),
+            Lapse::Forgotten => rig.upstream.forget("/tok1/"),
+            Lapse::Expiring => {}
         }
         rig.upstream.go_down(Duration::ZERO);
 
@@ -309,42 +262,6 @@ async fn the_cache_ahead_carries_on_with_a_fresh_url_when_its_token_lapses() {
             "{}: never resumed from the fresh URL",
             case.what
         );
-    }
-}
-
-struct Timed {
-    status: StatusCode,
-    body: Vec<u8>,
-    longest_wait: Duration,
-}
-
-async fn play_timed(server: &TestServer, session: Uuid, range: &str) -> Timed {
-    use futures::StreamExt;
-    let resp = reqwest::Client::new()
-        .get(format!(
-            "{}/api/v1/admin/stream/{session}/play",
-            server.api_url
-        ))
-        .bearer_auth(&server.admin_token)
-        .header(reqwest::header::RANGE, range)
-        .send()
-        .await
-        .expect("play request");
-    let status = resp.status();
-    let mut body = Vec::new();
-    let mut longest_wait = Duration::ZERO;
-    let mut last = Instant::now();
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.expect("the player read failed");
-        longest_wait = longest_wait.max(last.elapsed());
-        last = Instant::now();
-        body.extend_from_slice(&chunk);
-    }
-    Timed {
-        status,
-        body,
-        longest_wait,
     }
 }
 

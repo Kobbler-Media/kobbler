@@ -12,6 +12,8 @@ pub mod mp3;
 pub mod server;
 pub mod stremio_mock;
 pub mod tone;
+pub mod usenet_faults;
+pub mod usenet_pack;
 pub mod want_wire;
 
 pub use assertions::*;

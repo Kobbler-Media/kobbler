@@ -20,7 +20,7 @@ pub(super) async fn remux_proxy_stream(url: &str, audio_stream: Option<i32>) -> 
             return (StatusCode::BAD_GATEWAY, "upstream error").into_response();
         }
         Err(e) => {
-            error!(error = %e, "failed to connect to debrid stream for remux");
+            error!(error = %e.without_url(), "failed to connect to debrid stream for remux");
             return (StatusCode::BAD_GATEWAY, "upstream connection failed").into_response();
         }
     };
@@ -57,7 +57,7 @@ pub(super) async fn remux_proxy_stream(url: &str, audio_stream: Option<i32>) -> 
                     }
                 }
                 Err(e) => {
-                    warn!(error = %e, "upstream read error during remux");
+                    warn!(error = %e.without_url(), "upstream read error during remux");
                     break;
                 }
             }

@@ -6,6 +6,7 @@
 pub mod activity;
 pub mod byte_range;
 pub mod cache_download;
+pub mod cache_writers;
 pub mod debrid_session;
 pub mod decision;
 pub mod dlna;

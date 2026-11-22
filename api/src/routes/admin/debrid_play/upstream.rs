@@ -15,6 +15,7 @@ use super::PlaySession;
 use super::local::reply;
 use crate::AppState;
 use crate::ffmpeg::cue_gate::{CueGate, gated};
+use crate::repositories::debrid_stream_sessions;
 use crate::routes::admin::debrid_errors::StreamFailure;
 use crate::routes::admin::debrid_open::episode;
 use crate::routes::helpers::build_kobload_client;
@@ -119,10 +120,7 @@ async fn re_resolve(
         Err(e) => {
             error!(session_id = %session.id, error = %e, "failed to re-resolve stream URL");
             let failure = StreamFailure::from_kobload(&e);
-            if matches!(
-                failure,
-                StreamFailure::Blocked | StreamFailure::NotCached | StreamFailure::NotVideo
-            ) {
+            if failure.is_permanent() {
                 fail_session(state, session.id, failure.code(), failure.message());
             }
             return Err(failure.response(StatusCode::BAD_GATEWAY, &e.to_string()));
@@ -140,24 +138,10 @@ async fn re_resolve(
             .into_response());
     }
 
-    let expires_at = resolved.expires_at.as_deref().and_then(|s| {
-        OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
-    });
-    let _ = sqlx::query!(
-        r#"
-            UPDATE debrid_stream_sessions
-            SET debrid_url = $1, debrid_cache_url = $2, debrid_url_expires_at = $3,
-                updated_at = NOW()
-            WHERE id = $4
-            "#,
-        resolved.stream_url,
-        resolved.cache_url,
-        expires_at,
-        session.id,
-    )
-    .execute(&state.pool)
-    .await;
-    if expires_at.is_some() {
+    if let Err(e) = debrid_stream_sessions::set_urls(&state.pool, session.id, &resolved).await {
+        warn!(session_id = %session.id, error = %e, "failed to store the fresh debrid URL");
+    }
+    if resolved.expires_at.is_some() {
         info!(session_id = %session.id, "Cached fresh debrid URL");
     } else {
         warn!(session_id = %session.id, "Resolved debrid URL has no expiry — caching without TTL");
@@ -183,8 +167,11 @@ fn streaming_client() -> reqwest::Client {
 
 pub(super) enum Proxied {
     Served(Response),
-    /// The host answered and said no — the link is dead or this file is barred.
-    Refused(reqwest::StatusCode),
+    /// The host answered and said no, with the usenet engine's error code when it gave one.
+    Refused {
+        status: reqwest::StatusCode,
+        code: Option<String>,
+    },
     Unreachable,
 }
 
@@ -218,7 +205,7 @@ pub(super) async fn proxy_stream(
     let upstream = match req.send().await {
         Ok(r) => r,
         Err(e) => {
-            error!(error = %e, "failed to connect to debrid stream");
+            error!(error = %e.without_url(), "failed to connect to debrid stream");
             return Proxied::Unreachable;
         }
     };
@@ -230,7 +217,10 @@ pub(super) async fn proxy_stream(
         StatusCode::OK
     } else {
         error!(status = %upstream_status, "debrid upstream returned error");
-        return Proxied::Refused(upstream_status);
+        return Proxied::Refused {
+            status: upstream_status,
+            code: crate::streaming::resume::error_code(upstream).await,
+        };
     };
     let upstream_headers = upstream.headers().clone();
 
@@ -285,7 +275,7 @@ impl Remainder {
             )
             .send()
             .await
-            .map_err(std::io::Error::other)?;
+            .map_err(|e| std::io::Error::other(e.without_url()))?;
         let starts_at = resp
             .headers()
             .get(reqwest::header::CONTENT_RANGE)
@@ -300,7 +290,7 @@ impl Remainder {
         info!(session_id = %self.session.id, from = range.start, "local file stopped short, finishing from upstream");
         Ok(resp
             .bytes_stream()
-            .map(|r| r.map_err(std::io::Error::other))
+            .map(|r| r.map_err(|e| std::io::Error::other(e.without_url())))
             .boxed())
     }
 }

@@ -2,7 +2,7 @@
 //! disk with its intro and credits already known.
 
 use crate::common::debrid_rig::*;
-use crate::common::debrid_upstream::{UpstreamPlan, WholeBody};
+use crate::common::debrid_upstream::{Hole, HoleAnswer, UpstreamPlan, WholeBody};
 use crate::common::*;
 use api::jobs::handlers::DebridDownloadAheadHandler;
 use api::jobs::worker::JobHandler;
@@ -11,6 +11,8 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+use wiremock::matchers::{method, path_regex};
+use wiremock::{Mock, ResponseTemplate};
 
 const JOB: &str = "debrid_download_ahead";
 
@@ -203,4 +205,98 @@ async fn a_viewer_joins_the_download_ahead_rather_than_restarting_it() {
         resumed.is_empty(),
         "a second writer resumed the file: {resumed:?}"
     );
+}
+
+async fn admin(server: &TestServer) -> Uuid {
+    sqlx::query_scalar("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
+        .fetch_one(&server.pool)
+        .await
+        .unwrap()
+}
+
+async fn run_ahead(rig: &Rig, episode: Uuid) -> Result<Value, api::jobs::JobError> {
+    DebridDownloadAheadHandler::new(rig.server.app_state.clone())
+        .execute(
+            Uuid::now_v7(),
+            json!({ "user_id": admin(&rig.server).await, "episode_id": episode }),
+            CancellationToken::new(),
+        )
+        .await
+}
+
+/// kobload's verdict on a release is final for a download nobody is waiting on; only a
+/// provider that cannot serve right now is worth another attempt.
+#[tokio::test]
+async fn a_release_kobload_will_not_serve_is_skipped_not_retried() {
+    let cases = [
+        (
+            "Debrid error: Usenet release is not cached: articles are missing on every provider (missing_articles)",
+            Some("not_cached"),
+        ),
+        (
+            "Debrid error: Usenet release is blocked: its archive is password-protected (password)",
+            Some("blocked"),
+        ),
+        (
+            "Debrid error: Resolved release is not a video: it holds no playable file",
+            Some("not_video"),
+        ),
+        (
+            "Debrid error: Not warmed: only the release a search would auto-play is grabbed from the indexer ahead of a tap",
+            Some("not_cached"),
+        ),
+        (
+            "Debrid error: No usenet provider can serve this right now (providers_unavailable)",
+            None,
+        ),
+    ];
+    let rig = Rig::start(UpstreamPlan::new(noise(MB)), "ep.mkv").await;
+    rig.mount_search(json!([rig.option("refusedhash")])).await;
+    let episodes = season(&rig.server).await;
+    for (kobload_says, skipped) in cases {
+        rig.kobload.reset().await;
+        rig.mount_search(json!([rig.option("refusedhash")])).await;
+        Mock::given(method("POST"))
+            .and(path_regex("/api/v1/stream/resolve$"))
+            .respond_with(ResponseTemplate::new(500).set_body_string(kobload_says))
+            .mount(&rig.kobload)
+            .await;
+
+        let result = run_ahead(&rig, episodes[1]).await;
+
+        match skipped {
+            Some(code) => assert_eq!(result.unwrap()["skipped"], code, "{kobload_says}"),
+            None => assert!(result.unwrap_err().is_retryable(), "{kobload_says}"),
+        }
+    }
+}
+
+/// Damage met while downloading ahead is reported once, and the release is not fetched
+/// again for another attempt to meet it.
+#[tokio::test]
+async fn damage_met_downloading_ahead_is_reported_once_and_not_retried() {
+    let mut plan = UpstreamPlan::new(noise(2 * MB));
+    plan.hole = Some(Hole {
+        at: MB,
+        answer: HoleAnswer::Error(StatusCode::BAD_GATEWAY, "missing_articles"),
+    });
+    let rig = Rig::start(plan, "ep.mkv").await;
+    rig.mount_search(json!([rig.option("damagedhash")])).await;
+    let episodes = season(&rig.server).await;
+
+    let first = run_ahead(&rig, episodes[1]).await;
+    let again = run_ahead(&rig, episodes[1]).await;
+
+    assert!(
+        first.as_ref().is_err_and(|e| !e.is_retryable()),
+        "{first:?}"
+    );
+    assert!(again.is_ok(), "{again:?}");
+    let reports: Vec<Value> = rig
+        .kobload_requests("/stream/outcome")
+        .await
+        .into_iter()
+        .filter(|r| r["reason"] == "missing_articles")
+        .collect();
+    assert_eq!(reports.len(), 1, "{reports:?}");
 }

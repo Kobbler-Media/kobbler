@@ -52,6 +52,16 @@ impl StremioStreamTimings {
 
 const STREMIO_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
 
+/// An option id names a whole pack, so a play is cached per episode of it.
+pub type PlayKey = (String, Option<(i32, i32)>);
+
+fn play_key(option_id: &str, episode: Option<nats_jobs::StreamEpisode>) -> PlayKey {
+    (
+        option_id.to_string(),
+        episode.map(|e| (e.season, e.episode)),
+    )
+}
+
 pub struct CachedStremioRedirect {
     pub session_id: Uuid,
     pub redirect_url: String,
@@ -61,8 +71,9 @@ pub struct CachedStremioRedirect {
 }
 
 /// Check cache for a live session. Returns the redirect URL if found.
-fn check_stremio_cache(state: &AppState, option_id: &str) -> Option<String> {
-    if let Some(mut entry) = state.stremio_play_cache.get_mut(option_id) {
+fn check_stremio_cache(state: &AppState, key: &PlayKey) -> Option<String> {
+    let option_id = &key.0;
+    if let Some(mut entry) = state.stremio_play_cache.get_mut(key) {
         let cached = entry.value_mut();
         // Skip entries that only have fallbacks (no resolved session yet)
         if cached.session_id.is_nil() {
@@ -85,8 +96,8 @@ fn check_stremio_cache(state: &AppState, option_id: &str) -> Option<String> {
 
 /// Remove entries older than TTL. Called opportunistically on cache access.
 fn sweep_stremio_cache(
-    cache: &dashmap::DashMap<String, CachedStremioRedirect>,
-    locks: &dashmap::DashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>,
+    cache: &dashmap::DashMap<PlayKey, CachedStremioRedirect>,
+    locks: &dashmap::DashMap<PlayKey, std::sync::Arc<tokio::sync::Mutex<()>>>,
 ) {
     let now = std::time::Instant::now();
     cache.retain(|_, v| now.duration_since(v.last_accessed_at) < STREMIO_CACHE_TTL);
@@ -428,9 +439,10 @@ pub async fn stream(
         .collect();
 
     // Pre-populate fallback chains so play() can retry on failure
+    let episode = episode_of(Some(&media_type), Some(id));
     for (i, opt) in options.iter().enumerate() {
         state.stremio_play_cache.insert(
-            opt.id.clone(),
+            play_key(&opt.id, episode),
             CachedStremioRedirect {
                 session_id: Uuid::nil(),
                 redirect_url: String::new(),
@@ -449,10 +461,14 @@ pub async fn stream(
 
 /// The season and episode a series play names, which pick the file out of a pack.
 fn series_episode(query: &PlayQuery) -> Option<nats_jobs::StreamEpisode> {
-    if query.media_type.as_deref() != Some("series") {
+    episode_of(query.media_type.as_deref(), query.id.as_deref())
+}
+
+fn episode_of(media_type: Option<&str>, id: Option<&str>) -> Option<nats_jobs::StreamEpisode> {
+    if media_type != Some("series") {
         return None;
     }
-    let mut parts = query.id.as_deref()?.splitn(3, ':').skip(1);
+    let mut parts = id?.splitn(3, ':').skip(1);
     Some(nats_jobs::StreamEpisode {
         season: parts.next()?.parse().ok()?,
         episode: parts.next()?.parse().ok()?,
@@ -494,6 +510,11 @@ async fn try_resolve_option(
         resolved: None,
     };
     body.apply_option(option);
+    // kobload picks by file_id before episode, and an option lists the pack's files in
+    // whatever order, so the first one is anyone's episode.
+    if episode.is_some() {
+        body.file_id = None;
+    }
 
     let resolve_resp =
         crate::routes::admin::debrid_stream::stream_resolve(State(state.clone()), auth, Json(body))
@@ -516,13 +537,14 @@ async fn try_resolve_option(
 
     let redirect_url = format!("{base_url}/stremio/{api_key}/file/{sid}");
 
+    let key = play_key(&option.id, episode);
     let existing_fallbacks = state
         .stremio_play_cache
-        .get(&option.id)
+        .get(&key)
         .map(|e| e.fallbacks.clone())
         .unwrap_or_default();
     state.stremio_play_cache.insert(
-        option.id.clone(),
+        key,
         CachedStremioRedirect {
             session_id: sid,
             redirect_url: redirect_url.clone(),
@@ -604,21 +626,23 @@ pub async fn play(
         None => return StatusCode::UNAUTHORIZED.into_response(),
     };
 
+    let episode = series_episode(&query);
+    let key = play_key(&option_id, episode);
     // Fast path: check cache without locking
-    if let Some(url) = check_stremio_cache(&state, &option_id) {
+    if let Some(url) = check_stremio_cache(&state, &key) {
         return Redirect::temporary(&url).into_response();
     }
 
-    // Serialize concurrent resolves for the same option_id
+    // Serialize concurrent resolves for the same option and episode
     let resolve_lock = state
         .stremio_resolve_locks
-        .entry(option_id.clone())
+        .entry(key.clone())
         .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
         .clone();
     let _guard = resolve_lock.lock().await;
 
     // Double-check: another request may have resolved while we waited
-    if let Some(url) = check_stremio_cache(&state, &option_id) {
+    if let Some(url) = check_stremio_cache(&state, &key) {
         return Redirect::temporary(&url).into_response();
     }
 
@@ -629,10 +653,9 @@ pub async fn play(
 
     let cached = state
         .stremio_play_cache
-        .get(&option_id)
+        .get(&key)
         .map(|e| (e.option.clone(), e.fallbacks.clone()));
     let mut relisted = cached.is_none();
-    let episode = series_episode(&query);
     let (primary, mut chain) = match cached {
         Some((option, chain)) => (Some(option), chain),
         None => relist(&state, user_id, &query, &option_id).await,
@@ -651,7 +674,7 @@ pub async fn play(
     }
 
     for alt in &chain {
-        if let Some(url) = check_stremio_cache(&state, &alt.id) {
+        if let Some(url) = check_stremio_cache(&state, &play_key(&alt.id, episode)) {
             info!(option_id = %option_id, fallback = %alt.id, "stremio fallback cache hit");
             return Redirect::temporary(&url).into_response();
         }

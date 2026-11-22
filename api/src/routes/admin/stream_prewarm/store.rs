@@ -127,6 +127,22 @@ impl PrewarmStore {
             .map(|e| e.clone())
     }
 
+    /// The file a warm prewarm of this release picked for the episode.
+    pub(crate) fn warm_file(
+        &self,
+        release_key: &str,
+        episode: Option<nats_jobs::StreamEpisode>,
+    ) -> Option<i32> {
+        self.entries
+            .iter()
+            .find(|e| {
+                e.is_warm()
+                    && e.row.release_key.as_deref() == Some(release_key)
+                    && e.body.episode == episode
+            })
+            .and_then(|e| e.row.file_id)
+    }
+
     /// The key kobload gave an NZB when a prewarm of it resolved.
     pub(crate) fn key_of_nzb(&self, nzb: &nats_jobs::NzbRef) -> Option<String> {
         self.entries

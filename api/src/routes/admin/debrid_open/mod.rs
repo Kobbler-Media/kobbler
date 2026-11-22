@@ -14,7 +14,7 @@ mod reuse;
 mod subtitles;
 
 pub(crate) use media::commit_media;
-pub(crate) use pin::pin_file;
+pub(crate) use pin::{pin_file, resolve};
 pub(crate) use prepare::probe_json;
 pub(crate) use remote::WARM_HEAD_BYTES;
 pub(crate) use response::live_response;

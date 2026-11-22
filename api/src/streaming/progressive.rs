@@ -8,6 +8,8 @@
 //! (timeline thumbnails, skip-intro buttons, subtitles) as processing completes.
 
 use crate::repositories::debrid_cache_files::{self as cache_files, CacheRelease};
+use crate::streaming::byte_range::content_range_start;
+use crate::streaming::cache_writers;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::resume::{self, Interruption, Resume};
 use nats_jobs::Publisher;
@@ -242,6 +244,7 @@ impl ProgressiveDownloadManager {
         cancel: &CancellationToken,
         meter: &DownloadMeter,
     ) -> Result<(), DownloadError> {
+        let _writer = until_cancelled(cancel, cache_writers::lock(dest)).await?;
         let mut downloaded: i64 = 0;
         let mut file = if tokio::fs::try_exists(dest).await.unwrap_or(false) {
             let existing_size = tokio::fs::metadata(dest)
@@ -292,30 +295,31 @@ impl ProgressiveDownloadManager {
             } else {
                 self.http_client.get(&url)
             };
-            let interruption = match req.send().await {
+            let interruption = match until_cancelled(cancel, req.send()).await? {
                 Err(e) if e.is_connect() => {
-                    warn!(session_id = %session_id, error = %e, "Download host unreachable, will retry");
+                    warn!(session_id = %session_id, error = %e.without_url(), "Download host unreachable, will retry");
                     Interruption::Unreachable
                 }
                 Err(e) => {
-                    warn!(session_id = %session_id, error = %e, "Download host cut the response, will retry");
+                    warn!(session_id = %session_id, error = %e.without_url(), "Download host cut the response, will retry");
                     Interruption::Aborted
                 }
                 Ok(resp) if !resp.status().is_success() => {
                     let status = resp.status();
-                    if let Some(code) = resume::error_code(resp)
-                        .await
-                        .filter(|c| resume::dead_code(c))
-                    {
+                    let code = resume::error_code(resp).await;
+                    if let Some(code) = code.clone().filter(|c| resume::dead_code(c)) {
                         return Err(DownloadError::Dead(code));
                     }
-                    if resume::is_lapsed(status)
+                    let forgotten = code.as_deref() == Some(resume::FORGOTTEN_CODE);
+                    if (resume::is_lapsed(status) || forgotten)
                         && self.refresh.is_some()
                         && !refreshed_after_refusal
                     {
                         refreshed_after_refusal = true;
                         want_fresh = true;
                         Interruption::Busy
+                    } else if code.as_deref().is_some_and(resume::busy_code) {
+                        Interruption::Unavailable
                     } else if !resume::is_transient_status(status) {
                         return Err(DownloadError::Refused(format!("HTTP {status}")));
                     } else if downloaded == 0 && resume.attempts() >= MAX_ATTEMPTS_BEFORE_FIRST_BYTE
@@ -326,6 +330,15 @@ impl ProgressiveDownloadManager {
                     } else {
                         Interruption::Busy
                     }
+                }
+                Ok(resp) if !starts_at(&resp, downloaded) => {
+                    warn!(
+                        session_id = %session_id,
+                        asked = downloaded,
+                        answered = ?resp.headers().get(reqwest::header::CONTENT_RANGE),
+                        "Download host answered another range, asking again"
+                    );
+                    Interruption::Aborted
                 }
                 Ok(resp) => {
                     // A server that ignores our Range header answers 200 with the whole
@@ -356,8 +369,16 @@ impl ProgressiveDownloadManager {
                     let pumped = self
                         .pump(resp, &mut file, &mut downloaded, &mut resume, &sink)
                         .await?;
-                    if pumped {
+                    if pumped && (expected_size <= 0 || downloaded >= expected_size) {
                         break;
+                    }
+                    if pumped {
+                        warn!(
+                            session_id = %session_id,
+                            downloaded_mb = downloaded / (1024 * 1024),
+                            total_mb = expected_size / (1024 * 1024),
+                            "Download host ended the response before the file, resuming"
+                        );
                     }
                     refreshed_after_refusal = false;
                     Interruption::Aborted
@@ -365,14 +386,11 @@ impl ProgressiveDownloadManager {
             };
 
             let Some(delay) = resume.interrupted(interruption) else {
-                let at_mb = downloaded / (1024 * 1024);
-                return Err(match interruption {
-                    Interruption::Aborted => DownloadError::Dead("upstream_aborted".to_string()),
-                    _ => DownloadError::Failed(format!(
-                        "no progress at {at_mb}MB after {} attempts",
-                        resume.attempts()
-                    )),
-                });
+                return Err(DownloadError::Failed(format!(
+                    "no progress at {}MB after {} attempts ({interruption:?})",
+                    downloaded / (1024 * 1024),
+                    resume.attempts()
+                )));
             };
             let _ = file.flush().await;
             meter.record(downloaded as u64);
@@ -384,12 +402,9 @@ impl ProgressiveDownloadManager {
                 ?interruption,
                 "Resuming download"
             );
-            tokio::select! {
-                _ = tokio::time::sleep(delay) => {}
-                _ = cancel.cancelled() => return Err(DownloadError::Failed("Cancelled".to_string())),
-            }
+            until_cancelled(cancel, tokio::time::sleep(delay)).await?;
             if let Some(refresh) = &self.refresh
-                && let Some(fresh) = refresh(want_fresh).await
+                && let Some(fresh) = until_cancelled(cancel, refresh(want_fresh)).await?
             {
                 url = fresh;
             }
@@ -431,13 +446,7 @@ impl ProgressiveDownloadManager {
         let mut last_progress_update = tokio::time::Instant::now();
         let mut stream = resp.bytes_stream();
         loop {
-            // A stalled host must not keep a cancelled download holding the file:
-            // whoever resumes it would append alongside.
-            let chunk = tokio::select! {
-                chunk = stream.next() => chunk,
-                _ = cancel.cancelled() => return Err(DownloadError::Failed("Cancelled".to_string())),
-            };
-            let Some(chunk) = chunk else {
+            let Some(chunk) = until_cancelled(cancel, stream.next()).await? else {
                 return Ok(true);
             };
             let data = match chunk {
@@ -446,12 +455,15 @@ impl ProgressiveDownloadManager {
                     warn!(
                         session_id = %session_id,
                         downloaded_mb = *downloaded / (1024 * 1024),
-                        error = %e,
+                        error = %e.without_url(),
                         "Download stream interrupted, will resume"
                     );
                     return Ok(false);
                 }
             };
+            if cancel.is_cancelled() {
+                return Err(cancelled());
+            }
             if let Err(e) = file.write_all(&data).await {
                 return Err(format!("Write error: {e}").into());
             }
@@ -507,4 +519,31 @@ impl ProgressiveDownloadManager {
         )
         .await;
     }
+}
+
+fn cancelled() -> DownloadError {
+    DownloadError::Failed("Cancelled".to_string())
+}
+
+/// A cancelled download must not go on to write: whoever resumes it appends alongside.
+async fn until_cancelled<T>(
+    cancel: &CancellationToken,
+    work: impl std::future::Future<Output = T>,
+) -> Result<T, DownloadError> {
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(cancelled()),
+        out = work => Ok(out),
+    }
+}
+
+/// A 206 must start where the download asked it to.
+fn starts_at(resp: &reqwest::Response, downloaded: i64) -> bool {
+    resp.status() != reqwest::StatusCode::PARTIAL_CONTENT
+        || resp
+            .headers()
+            .get(reqwest::header::CONTENT_RANGE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(content_range_start)
+            == Some(downloaded as u64)
 }

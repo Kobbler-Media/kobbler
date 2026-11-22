@@ -453,11 +453,7 @@ impl TranscodeProcess {
         debrid_url: String,
         progress: std::sync::Arc<kob_ffmpeg::hybrid_io::DownloadProgress>,
     ) -> Result<HybridProbeResult, TranscodeError> {
-        info!(
-            cache = %local_cache_path.display(),
-            url = %debrid_url,
-            "Probing via HybridIo"
-        );
+        info!(cache = %local_cache_path.display(), "Probing via HybridIo");
 
         tokio::task::spawn_blocking(move || {
             let io = kob_ffmpeg::hybrid_io::HybridIo::new(local_cache_path, debrid_url, progress);

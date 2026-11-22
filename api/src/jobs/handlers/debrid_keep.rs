@@ -220,7 +220,9 @@ async fn start_download(
     let target = session.download_target(url, cache_path.to_path_buf());
     let state = state.clone();
     Ok(tokio::spawn(async move {
-        cache_download::download(&state, target, cancel, meter).await
+        cache_download::download(&state, target, cancel, meter)
+            .await
+            .map_err(|e| e.to_string())
     }))
 }
 

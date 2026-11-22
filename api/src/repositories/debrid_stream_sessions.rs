@@ -105,6 +105,77 @@ where
     Ok(file_id)
 }
 
+/// The pack file an earlier session played for this episode, whose download is complete.
+pub async fn downloaded_episode_file<'e, E>(
+    exec: E,
+    release_key: &str,
+    episode: nats_jobs::StreamEpisode,
+) -> Result<Option<i32>>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let file_id = sqlx::query_scalar!(
+        r#"
+        SELECT s.file_id AS "file_id!"
+        FROM debrid_stream_sessions s
+        JOIN debrid_cache_files c ON c.file_path = s.cache_path AND c.completed_at IS NOT NULL
+        JOIN tv_episodes e ON e.id = s.media_id
+        JOIN tv_seasons se ON se.id = e.season_id
+        WHERE s.release_key = $1 AND s.media_type = 'episode' AND s.file_id IS NOT NULL
+          AND TRIM(se.season_identifier) = $2 AND TRIM(e.episode_identifier) = $3
+        ORDER BY c.last_accessed_at DESC
+        LIMIT 1
+        "#,
+        release_key,
+        episode.season.to_string(),
+        episode.episode.to_string(),
+    )
+    .fetch_optional(exec)
+    .await?;
+    Ok(file_id)
+}
+
+pub async fn set_urls<'e, E>(
+    exec: E,
+    session_id: Uuid,
+    resolved: &nats_jobs::StreamResolveResponse,
+) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    let expires_at = resolved.expires_at.as_deref().and_then(|s| {
+        time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+    });
+    sqlx::query!(
+        r#"
+        UPDATE debrid_stream_sessions
+        SET debrid_url = $1, debrid_cache_url = $2, debrid_url_expires_at = $3,
+            updated_at = NOW()
+        WHERE id = $4
+        "#,
+        resolved.stream_url,
+        resolved.cache_url,
+        expires_at,
+        session_id,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
+pub async fn expire_urls<'e, E>(exec: E, session_id: Uuid) -> Result<()>
+where
+    E: Executor<'e, Database = Postgres>,
+{
+    sqlx::query!(
+        "UPDATE debrid_stream_sessions SET debrid_url_expires_at = NOW() WHERE id = $1",
+        session_id,
+    )
+    .execute(exec)
+    .await?;
+    Ok(())
+}
+
 /// Stamps every report, so `played_at` orders a title's releases by when each was last
 /// watched. `None` when the session is unknown.
 pub async fn mark_played<'e, E>(exec: E, session_id: Uuid) -> Result<Option<PlayedSession>>

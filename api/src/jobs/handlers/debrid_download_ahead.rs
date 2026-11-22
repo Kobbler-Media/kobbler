@@ -12,12 +12,13 @@ use crate::download_ahead::DOWNLOAD_AHEAD_JOB;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
 use crate::repositories::debrid_cache_files::{self as cache_files, CacheRelease};
+use crate::routes::admin::debrid_errors::StreamFailure;
 use crate::routes::admin::debrid_open::{SessionRow, VIDEO_CONTAINERS, episode, release_key};
 use crate::routes::admin::{stream_local, stream_prewarm};
 use crate::routes::helpers::build_kobload_client;
 use crate::streaming::cache_download;
 use crate::streaming::download_meter::DownloadMeter;
-use crate::streaming::progressive::DownloadTarget;
+use crate::streaming::progressive::{DownloadError, DownloadTarget};
 
 #[derive(Deserialize)]
 struct Payload {
@@ -90,8 +91,18 @@ impl JobHandler for DebridDownloadAheadHandler {
                 file_name: None,
                 episode: episode::of_media(&state.pool, "episode", episode_id).await,
             })
-            .await
-            .map_err(|e| JobError::retryable(e.to_string()))?;
+            .await;
+        let resolved = match resolved {
+            Ok(r) => r,
+            Err(e) => {
+                let failure = StreamFailure::from_kobload(&e);
+                if failure.is_permanent() {
+                    info!(%episode_id, reason = failure.code(), error = %e, "the release will not be served ahead");
+                    return Ok(json!({ "skipped": failure.code() }));
+                }
+                return Err(JobError::retryable(e.to_string()));
+            }
+        };
         if body.release_key.is_none() {
             body.release_key = resolved.release_key.clone();
         }
@@ -103,6 +114,9 @@ impl JobHandler for DebridDownloadAheadHandler {
         };
         if playing(&body) {
             return Ok(json!({ "skipped": "already playing" }));
+        }
+        if state.downloads_ahead.is_damaged(&key) {
+            return Ok(json!({ "skipped": "damaged" }));
         }
         // Uncached on the provider means waiting on a torrent, which is the player's call.
         if !resolved.cached {
@@ -172,7 +186,11 @@ impl JobHandler for DebridDownloadAheadHandler {
                 Ok(json!({ "episode_id": episode_id, "session_id": session_id }))
             }
             Err(_) if handed_over => Ok(json!({ "handed_over": session_id })),
-            Err(e) => Err(JobError::retryable(e)),
+            Err(DownloadError::Dead(reason)) => {
+                state.downloads_ahead.mark_damaged(&key);
+                Err(JobError::ExecutionFailed(reason))
+            }
+            Err(e) => Err(JobError::retryable(e.to_string())),
         }
     }
 }
