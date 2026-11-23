@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use async_trait::async_trait;
+use nats_jobs::StreamResolveResponse;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -14,12 +15,16 @@ use crate::jobs::{JobError, JobResult};
 use crate::repositories::debrid_cache_files::{self as cache_files, CacheRelease};
 use crate::routes::admin::debrid_errors::StreamFailure;
 use crate::routes::admin::debrid_open::{SessionRow, VIDEO_CONTAINERS, episode, release_key};
+use crate::routes::admin::debrid_stream::StreamResolveBody;
+use crate::routes::admin::stream_prewarm::TriedReleases;
 use crate::routes::admin::{stream_local, stream_prewarm};
 use crate::routes::helpers::build_kobload_client;
 use crate::streaming::cache_download;
 use crate::streaming::download_lane::DownloadLane;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::progressive::{DownloadError, DownloadTarget};
+
+const MAX_ATTEMPTS: usize = 3;
 
 #[derive(Deserialize)]
 struct Payload {
@@ -67,66 +72,11 @@ impl JobHandler for DebridDownloadAheadHandler {
         {
             return Ok(json!({ "skipped": "already on disk" }));
         }
-        let Some(mut body) = stream_prewarm::pick_episode(state, user_id, episode_id).await else {
-            return Ok(json!({ "skipped": "nothing streamable" }));
+        let (body, resolved, key) = match first_servable(state, user_id, episode_id).await? {
+            Walked::Servable(servable) => *servable,
+            Walked::Skipped(reason) => return Ok(json!({ "skipped": reason })),
         };
-        let playing = |body: &crate::routes::admin::debrid_stream::StreamResolveBody| {
-            release_key(body.release_key.as_deref(), body.file_id)
-                .is_some_and(|key| state.debrid_session_index.contains_key(&key))
-        };
-        if playing(&body) {
-            return Ok(json!({ "skipped": "already playing" }));
-        }
         let runtime = state.runtime_config.get().await;
-        let client =
-            build_kobload_client(&runtime).map_err(|(_, msg)| JobError::ExecutionFailed(msg))?;
-        let resolved = client
-            .stream_resolve(&nats_jobs::StreamResolveRequest {
-                debrid_provider_id: body.debrid_provider_id,
-                release_key: body.release_key.clone(),
-                magnet_url: body.magnet_url.clone(),
-                nzb_ref: body.nzb_ref.clone(),
-                file_id: body.file_id,
-                priority: Some(nats_jobs::StreamPriority::Warm),
-                release_title: Some(body.release_title.clone()).filter(|t| !t.is_empty()),
-                file_name: None,
-                episode: episode::of_media(&state.pool, "episode", episode_id).await,
-            })
-            .await;
-        let resolved = match resolved {
-            Ok(r) => r,
-            Err(e) => {
-                let failure = StreamFailure::from_kobload(&e);
-                if failure.is_permanent() {
-                    info!(%episode_id, reason = failure.code(), error = %e, "the release will not be served ahead");
-                    return Ok(json!({ "skipped": failure.code() }));
-                }
-                return Err(JobError::retryable(e.to_string()));
-            }
-        };
-        if body.release_key.is_none() {
-            body.release_key = resolved.release_key.clone();
-        }
-        if body.file_id.is_none() {
-            body.file_id = resolved.file_id;
-        }
-        let Some(key) = release_key(body.release_key.as_deref(), body.file_id) else {
-            return Ok(json!({ "skipped": "release has no key" }));
-        };
-        if playing(&body) {
-            return Ok(json!({ "skipped": "already playing" }));
-        }
-        if state.downloads_ahead.is_damaged(&key) {
-            return Ok(json!({ "skipped": "damaged" }));
-        }
-        // Uncached on the provider means waiting on a torrent, which is the player's call.
-        if !resolved.cached {
-            return Ok(json!({ "skipped": "not cached on the provider" }));
-        }
-        let container = resolved.filename.rsplit('.').next().unwrap_or_default();
-        if !VIDEO_CONTAINERS.contains(&container.to_lowercase().as_str()) {
-            return Ok(json!({ "skipped": "not a video" }));
-        }
 
         let session_id = Uuid::new_v4();
         let Some(cache_path) = cache_download::cache_file(
@@ -206,6 +156,93 @@ impl JobHandler for DebridDownloadAheadHandler {
             Err(e) => Err(JobError::retryable(e.to_string())),
         }
     }
+}
+
+enum Walked {
+    Servable(Box<(StreamResolveBody, StreamResolveResponse, String)>),
+    Skipped(&'static str),
+}
+
+fn playing(state: &AppState, body: &StreamResolveBody) -> bool {
+    release_key(body.release_key.as_deref(), body.file_id)
+        .is_some_and(|key| state.debrid_session_index.contains_key(&key))
+}
+
+fn refusal(state: &AppState, key: &str, resolved: &StreamResolveResponse) -> Option<&'static str> {
+    if state.downloads_ahead.is_damaged(key) {
+        return Some("damaged");
+    }
+    // Uncached on the provider means waiting on a torrent, which is the player's call.
+    if !resolved.cached {
+        return Some("not cached on the provider");
+    }
+    let container = resolved.filename.rsplit('.').next().unwrap_or_default();
+    (!VIDEO_CONTAINERS.contains(&container.to_lowercase().as_str())).then_some("not a video")
+}
+
+async fn first_servable(state: &AppState, user_id: Uuid, episode_id: Uuid) -> JobResult<Walked> {
+    let runtime = state.runtime_config.get().await;
+    let Ok(client) = build_kobload_client(&runtime) else {
+        return Ok(Walked::Skipped("nothing streamable"));
+    };
+    let wanted = episode::of_media(&state.pool, "episode", episode_id).await;
+    let mut tried = TriedReleases::default();
+    let mut refused = None;
+    for _ in 0..MAX_ATTEMPTS {
+        let Some(mut body) =
+            stream_prewarm::pick_episode(state, user_id, episode_id, &mut tried).await
+        else {
+            break;
+        };
+        if playing(state, &body) {
+            return Ok(Walked::Skipped("already playing"));
+        }
+        let resolved = client
+            .stream_resolve(&nats_jobs::StreamResolveRequest {
+                debrid_provider_id: body.debrid_provider_id,
+                release_key: body.release_key.clone(),
+                magnet_url: body.magnet_url.clone(),
+                nzb_ref: body.nzb_ref.clone(),
+                file_id: body.file_id,
+                priority: Some(nats_jobs::StreamPriority::Warm),
+                release_title: Some(body.release_title.clone()).filter(|t| !t.is_empty()),
+                file_name: None,
+                episode: wanted,
+            })
+            .await;
+        let resolved = match resolved {
+            Ok(r) => r,
+            Err(e) => {
+                let failure = StreamFailure::from_kobload(&e);
+                if !failure.is_permanent() {
+                    return Err(JobError::retryable(e.to_string()));
+                }
+                info!(%episode_id, reason = failure.code(), error = %e, "the release will not be served ahead");
+                tried.add(&body);
+                refused = Some(failure.code());
+                continue;
+            }
+        };
+        if body.release_key.is_none() {
+            body.release_key = resolved.release_key.clone();
+        }
+        if body.file_id.is_none() {
+            body.file_id = resolved.file_id;
+        }
+        let Some(key) = release_key(body.release_key.as_deref(), body.file_id) else {
+            return Ok(Walked::Skipped("release has no key"));
+        };
+        if playing(state, &body) {
+            return Ok(Walked::Skipped("already playing"));
+        }
+        if let Some(reason) = refusal(state, &key, &resolved) {
+            tried.add(&body);
+            refused = Some(reason);
+            continue;
+        }
+        return Ok(Walked::Servable(Box::new((body, resolved, key))));
+    }
+    Ok(Walked::Skipped(refused.unwrap_or("nothing streamable")))
 }
 
 async fn on_disk(path: &Path) -> u64 {

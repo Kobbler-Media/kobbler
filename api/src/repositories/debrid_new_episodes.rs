@@ -1,7 +1,17 @@
+use std::collections::HashSet;
+
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::Result;
+
+// Air dates are stored as the broadcast date and compared to the database's UTC date, where
+// a US evening premiere is already tomorrow.
+const RECENT_AIR_DAYS: i32 = 2;
+const RECENT_RETRY_HOURS: f64 = 2.0;
+const RETRY_HOURS: f64 = 12.0;
+// Real early releases land at most this far ahead of the listed date; earlier ones were fakes.
+const EARLY_RELEASE_DAYS: i32 = 3;
 
 pub struct Due {
     pub user_id: Uuid,
@@ -9,17 +19,13 @@ pub struct Due {
 }
 
 /// Debrid episodes Up Next is holding back for want of a download: each viewer's next
-/// episode of a show they had caught up on, out now and not yet on disk. A show leaves once
-/// Up Next would drop it anyway (14 days without a watch, unless it is a new season) or
-/// was dismissed, and an episode once it has been out `wait_days` with nothing usable.
-/// An episode queued within `retry_hours` is left to that attempt.
-pub async fn due(
-    pool: &PgPool,
-    job_type: &str,
-    wait_days: i32,
-    retry_hours: f64,
-) -> Result<Vec<Due>> {
-    Ok(sqlx::query_as!(
+/// episode of a show they had caught up on, out or about to be, and not yet on disk. A show
+/// leaves once Up Next would drop it anyway (14 days without a watch, unless it is a new
+/// season) or was dismissed, and an episode once it has been out `wait_days` with nothing
+/// usable.
+/// One whose last download ahead is still standing is left to it: see [`retry_due`].
+pub async fn due(pool: &PgPool, job_type: &str, wait_days: i32) -> Result<Vec<Due>> {
+    let candidates = sqlx::query_as!(
         Due,
         r#"
         WITH last_watched AS (
@@ -56,9 +62,9 @@ pub async fn due(
         SELECT DISTINCT ON (n.episode_id) n.user_id AS "user_id!", n.episode_id AS "episode_id!"
         FROM next n
         WHERE n.want_status = 'none'
-          AND n.air_date <= CURRENT_DATE
+          AND n.air_date <= CURRENT_DATE + $2::int
           AND n.air_date >= n.last_watched_at::date
-          AND n.air_date >= CURRENT_DATE - $2::int
+          AND n.air_date >= CURRENT_DATE - $1::int
           AND (n.last_watched_at >= NOW() - INTERVAL '14 days' OR n.new_season)
           AND NOT EXISTS (
               SELECT 1 FROM up_next_dismissals d
@@ -76,17 +82,68 @@ pub async fn due(
                 AND ws.position_seconds > 0
           )
           AND NOT debrid_episode_on_disk(n.episode_id)
-          AND NOT EXISTS (
-              SELECT 1 FROM job_status
-              WHERE job_type = $1 AND payload->>'episode_id' = n.episode_id::text
-                AND created_at > NOW() - $3::float8 * INTERVAL '1 hour'
-          )
         ORDER BY n.episode_id, n.last_watched_at DESC
         "#,
-        job_type,
         wait_days,
-        retry_hours,
+        EARLY_RELEASE_DAYS,
     )
     .fetch_all(pool)
-    .await?)
+    .await?;
+    let ids: Vec<Uuid> = candidates.iter().map(|c| c.episode_id).collect();
+    let ready = retry_due(pool, job_type, &ids).await?;
+    Ok(candidates
+        .into_iter()
+        .filter(|c| ready.contains(&c.episode_id))
+        .collect())
+}
+
+/// Which of these episodes have a whole debrid download on disk.
+pub async fn on_disk(pool: &PgPool, episode_ids: &[Uuid]) -> Result<HashSet<Uuid>> {
+    let found = sqlx::query_scalar!(
+        r#"SELECT id AS "id!" FROM UNNEST($1::uuid[]) AS id WHERE debrid_episode_on_disk(id)"#,
+        episode_ids,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(found.into_iter().collect())
+}
+
+/// Which of these episodes may be queued again. A job still alive holds its episode for as
+/// long as it heartbeats; one that downloaded holds it for the long interval; one that
+/// found nothing or failed holds it for an interval set by how recently the episode aired.
+pub async fn retry_due(
+    pool: &PgPool,
+    job_type: &str,
+    episode_ids: &[Uuid],
+) -> Result<HashSet<Uuid>> {
+    let due = sqlx::query_scalar!(
+        r#"
+        SELECT e.id
+        FROM tv_episodes e
+        WHERE e.id = ANY($1)
+          AND NOT EXISTS (
+              SELECT 1 FROM job_status j
+              WHERE j.job_type = $2 AND j.payload->>'episode_id' = e.id::text
+                AND CASE
+                    WHEN j.status IN ('pending', 'running', 'retrying')
+                        THEN COALESCE(j.updated_at, j.created_at)
+                             > NOW() - $5::float8 * INTERVAL '1 hour'
+                    WHEN j.status = 'completed' AND j.result->>'skipped' IS NULL
+                        THEN COALESCE(j.completed_at, j.created_at)
+                             > NOW() - $5::float8 * INTERVAL '1 hour'
+                    ELSE COALESCE(j.completed_at, j.created_at) > NOW()
+                         - CASE WHEN e.air_date BETWEEN CURRENT_DATE - $3::int AND CURRENT_DATE
+                                THEN $4::float8 ELSE $5::float8 END * INTERVAL '1 hour'
+                END
+          )
+        "#,
+        episode_ids,
+        job_type,
+        RECENT_AIR_DAYS,
+        RECENT_RETRY_HOURS,
+        RETRY_HOURS,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(due.into_iter().collect())
 }

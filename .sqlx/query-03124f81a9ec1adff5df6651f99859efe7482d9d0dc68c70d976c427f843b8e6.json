@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT e.title, e.air_date\n            FROM tv_episodes e\n            JOIN tv_seasons s ON s.id = e.season_id\n            WHERE s.show_id = $1\n              AND s.season_identifier = $2\n              AND e.episode_identifier = $3\n            ",
+  "query": "\n            SELECT e.title, e.air_date, e.season_id\n            FROM tv_episodes e\n            JOIN tv_seasons s ON s.id = e.season_id\n            WHERE s.show_id = $1\n              AND s.season_identifier = $2\n              AND e.episode_identifier = $3\n            ",
   "describe": {
     "columns": [
       {
@@ -24,6 +24,17 @@
             "name": "air_date"
           }
         }
+      },
+      {
+        "ordinal": 2,
+        "name": "season_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "season_id"
+          }
+        }
       }
     ],
     "parameters": {
@@ -35,8 +46,9 @@
     },
     "nullable": [
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "c77626d326d5edc8e13c56cfc2cd1616f162f322593a67f4f4ae6a8d7d6b8eae"
+  "hash": "03124f81a9ec1adff5df6651f99859efe7482d9d0dc68c70d976c427f843b8e6"
 }

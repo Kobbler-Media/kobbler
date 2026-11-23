@@ -10,14 +10,12 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::AppState;
+use crate::repositories::debrid_new_episodes;
 use crate::routes::helpers::build_kobload_client;
 use crate::streaming::download_lane::DownloadLane;
 use crate::streaming::download_meter::DownloadMeter;
 
 pub const DOWNLOAD_AHEAD_JOB: &str = "debrid_download_ahead";
-
-/// How long a queued download ahead of an episode stands before another may be queued.
-const REQUEUE_AFTER_HOURS: f64 = 12.0;
 
 /// How long after a debrid episode airs Up Next holds it back for a download, and the
 /// new-episode watch keeps looking for one: releases trickle in over the first day or
@@ -160,27 +158,26 @@ pub async fn consider(state: &AppState, user_id: Uuid, episode_id: Uuid) {
                 return;
             }
         };
-    let wanted = sqlx::query_scalar!(
+    let missing = sqlx::query_scalar!(
         r#"
         SELECT NOT EXISTS(
                    SELECT 1 FROM tv_episode_file_episodes fe
                    JOIN tv_episode_files f ON f.id = fe.episode_file_id
                    WHERE fe.episode_id = $1 AND f.available)
-               AND NOT EXISTS(
-                   SELECT 1 FROM job_status
-                   WHERE job_type = $2 AND payload->>'episode_id' = $1::text
-                     AND created_at > NOW() - $3::float8 * INTERVAL '1 hour')
-               AS "wanted!"
+               AS "missing!"
         "#,
         next,
-        DOWNLOAD_AHEAD_JOB,
-        REQUEUE_AFTER_HOURS,
     )
     .fetch_one(pool)
     .await
     .unwrap_or(false);
-    if wanted {
-        queue(state, user_id, next, None).await;
+    if !missing {
+        return;
+    }
+    match debrid_new_episodes::retry_due(pool, DOWNLOAD_AHEAD_JOB, &[next]).await {
+        Ok(due) if due.contains(&next) => queue(state, user_id, next, None).await,
+        Ok(_) => {}
+        Err(e) => warn!(error = %e, episode_id = %next, "download ahead retry check failed"),
     }
 }
 

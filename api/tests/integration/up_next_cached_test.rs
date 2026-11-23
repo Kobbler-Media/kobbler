@@ -231,7 +231,10 @@ async fn the_watch_retries_only_after_a_pause() {
     assert_eq!(queued(&server).await.len(), 1);
 
     sqlx::query(
-        "UPDATE job_status SET created_at = NOW() - INTERVAL '3 hours' WHERE job_type = $1",
+        r#"UPDATE job_status
+           SET status = 'completed', result = '{"skipped": "nothing streamable"}',
+               created_at = NOW() - INTERVAL '3 hours', completed_at = NOW() - INTERVAL '3 hours'
+           WHERE job_type = $1"#,
     )
     .bind(AHEAD_JOB)
     .execute(&server.pool)
@@ -256,7 +259,7 @@ async fn arrange(server: &TestServer, skip: Skip, e: &[Uuid]) {
                                                   updated_at = NOW() - make_interval(days => $2)
                        WHERE episode_id = $1";
     match skip {
-        Skip::Unaired => aired_days_ago(server, e[1], -1).await,
+        Skip::Unaired => aired_days_ago(server, e[1], -5).await,
         Skip::AiredOverAWeekAgo => {
             aired_days_ago(server, e[0], 30).await;
             aired_days_ago(server, e[1], 8).await;
@@ -308,5 +311,93 @@ async fn the_watch_leaves_episodes_it_should_not_fetch() {
         arrange(&server, skip, &episodes).await;
         watch(&server).await;
         assert!(queued(&server).await.is_empty(), "{skip:?}");
+    }
+}
+
+async fn copy_on_disk(server: &TestServer, episode: Uuid) -> bool {
+    let show: Uuid = sqlx::query_scalar(
+        "SELECT s.show_id FROM tv_seasons s JOIN tv_episodes e ON e.season_id = s.id
+         WHERE e.id = $1",
+    )
+    .bind(episode)
+    .fetch_one(&server.pool)
+    .await
+    .unwrap();
+    let resp = server
+        .admin_client()
+        .get(&format!("/api/v1/admin/tv/shows/{show}"))
+        .await;
+    resp.assert_ok();
+    resp.json::<Value>()["seasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|season| season["episodes"].as_array().unwrap())
+        .find(|ep| ep["id"] == json!(episode.to_string()))
+        .unwrap()["copy_on_disk"]
+        == json!(true)
+}
+
+async fn continue_episode(server: &TestServer, episode: Uuid) -> Value {
+    let show: Uuid = sqlx::query_scalar(
+        "SELECT s.show_id FROM tv_seasons s JOIN tv_episodes e ON e.season_id = s.id
+         WHERE e.id = $1",
+    )
+    .bind(episode)
+    .fetch_one(&server.pool)
+    .await
+    .unwrap();
+    let resp = server
+        .admin_client()
+        .get(&format!("/api/v1/admin/tv/shows/{show}"))
+        .await;
+    resp.assert_ok();
+    resp.json::<Value>()["continue_episode"]["episode_id"].clone()
+}
+
+/// A show listed for Monday that lands on Friday: the whole file on disk is what counts,
+/// on Home and on the show page alike.
+#[tokio::test]
+async fn a_future_listed_episode_shows_once_a_whole_copy_is_on_disk() {
+    let server = TestServer::start_api_only().await;
+    for (label, copy, want_status, shows) in [
+        ("no copy", None, "none", false),
+        ("partial copy", Some(false), "none", false),
+        ("whole copy", Some(true), "none", true),
+        (
+            "whole copy of a wanted episode",
+            Some(true),
+            "wanted",
+            false,
+        ),
+    ] {
+        sqlx::query("TRUNCATE tv_shows, debrid_stream_sessions, debrid_cache_files CASCADE")
+            .execute(&server.pool)
+            .await
+            .unwrap();
+        let episodes = caught_up(&server).await;
+        aired_days_ago(&server, episodes[1], -3).await;
+        sqlx::query("UPDATE tv_episodes SET want_status = $2 WHERE id = $1")
+            .bind(episodes[1])
+            .bind(want_status)
+            .execute(&server.pool)
+            .await
+            .unwrap();
+        if let Some(complete) = copy {
+            cached_release(&server, episodes[1], "early", complete).await;
+        }
+
+        let expected = episodes[1].to_string();
+        assert_eq!(up_next(&server).await.contains(&expected), shows, "{label}");
+        assert_eq!(
+            continue_episode(&server, episodes[1]).await == json!(expected),
+            shows,
+            "{label}: show page"
+        );
+        assert_eq!(
+            copy_on_disk(&server, episodes[1]).await,
+            shows,
+            "{label}: the app picks the next episode from this flag"
+        );
     }
 }

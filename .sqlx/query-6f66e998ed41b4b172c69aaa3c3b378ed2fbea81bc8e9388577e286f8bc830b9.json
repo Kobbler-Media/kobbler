@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.id\n        FROM tv_episodes e\n        WHERE e.id = ANY($1)\n          AND NOT EXISTS (\n              SELECT 1 FROM job_status j\n              WHERE j.job_type = $2 AND j.payload->>'episode_id' = e.id::text\n                AND CASE\n                    WHEN j.status IN ('pending', 'running', 'retrying')\n                        THEN COALESCE(j.updated_at, j.created_at)\n                             > NOW() - $5::float8 * INTERVAL '1 hour'\n                    WHEN j.status = 'completed' AND j.result->>'skipped' IS NULL\n                        THEN COALESCE(j.completed_at, j.created_at)\n                             > NOW() - $5::float8 * INTERVAL '1 hour'\n                    ELSE COALESCE(j.completed_at, j.created_at) > NOW()\n                         - CASE WHEN e.air_date BETWEEN CURRENT_DATE - $3::int AND CURRENT_DATE\n                                THEN $4::float8 ELSE $5::float8 END * INTERVAL '1 hour'\n                END\n          )\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "tv_episodes",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "Text",
+        "Int4",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6f66e998ed41b4b172c69aaa3c3b378ed2fbea81bc8e9388577e286f8bc830b9"
+}

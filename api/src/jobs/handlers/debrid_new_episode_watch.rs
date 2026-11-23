@@ -15,7 +15,6 @@ use crate::routes::helpers::build_kobload_client;
 
 pub const NEW_EPISODE_WATCH_JOB: &str = "debrid_new_episode_watch";
 
-const RETRY_HOURS: f64 = 2.0;
 /// As long as Up Next keeps a show without a watch.
 const HOLD_DAYS: i64 = 14;
 
@@ -46,13 +45,8 @@ impl JobHandler for DebridNewEpisodeWatchHandler {
         if build_kobload_client(&runtime).is_err() {
             return Ok(json!({ "skipped": "kobload not configured" }));
         }
-        let due = debrid_new_episodes::due(
-            &state.pool,
-            DOWNLOAD_AHEAD_JOB,
-            NEW_EPISODE_WAIT_DAYS,
-            RETRY_HOURS,
-        )
-        .await?;
+        let due = debrid_new_episodes::due(&state.pool, DOWNLOAD_AHEAD_JOB, NEW_EPISODE_WAIT_DAYS)
+            .await?;
         for d in &due {
             download_ahead::queue(state, d.user_id, d.episode_id, Some(HOLD_DAYS)).await;
         }

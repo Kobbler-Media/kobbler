@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT NOT EXISTS(\n                   SELECT 1 FROM tv_episode_file_episodes fe\n                   JOIN tv_episode_files f ON f.id = fe.episode_file_id\n                   WHERE fe.episode_id = $1 AND f.available)\n               AS \"missing!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "missing!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "822a6f9a2d8fb69f4d46d4aa2f7b4f86b7941ff875c2a866b9eeb9f2a2aab9a5"
+}

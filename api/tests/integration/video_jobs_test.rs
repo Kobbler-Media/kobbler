@@ -206,6 +206,7 @@ fn build_tv_episode_media_want(
         identifiers: Some(identifiers),
         alternate_titles: show.alternate_titles.clone().filter(|v| !v.is_empty()),
         episode_title: None,
+        season_premiere: None,
         quality_profile_id: show.quality_profile_id,
         quality_overrides: None,
     }

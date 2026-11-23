@@ -3,8 +3,10 @@
 //! player claims instead of walking the options itself.
 
 mod store;
+mod tried;
 
 pub use store::PrewarmStore;
+pub(crate) use tried::TriedReleases;
 
 use std::time::Instant;
 
@@ -182,7 +184,9 @@ pub async fn prewarm(
         end(&state, existing.id, Phase::Released).await;
     }
 
-    let Some((option, mut resolve_body)) = pick(&state, auth.user_id, &title).await else {
+    let Some((option, mut resolve_body)) =
+        pick(&state, auth.user_id, &title, &mut TriedReleases::default()).await
+    else {
         return StatusCode::NO_CONTENT.into_response();
     };
     if auth.is_kids && !kids_may_resolve(&state.pool, &resolve_body).await {
@@ -291,13 +295,12 @@ fn warm_reply(state: &AppState, prewarm: &Prewarm) -> Response {
     .into_response()
 }
 
-/// The top pick kobload offers that is cached and has not failed, as kobload sent it and
-/// as a resolve body.
-/// The release a prewarm of the episode would pick.
+/// The release a prewarm of the episode would pick, passing over those already tried.
 pub(crate) async fn pick_episode(
     state: &AppState,
     user_id: Uuid,
     episode_id: Uuid,
+    tried: &mut TriedReleases,
 ) -> Option<StreamResolveBody> {
     let title = PrewarmBody {
         media_type: "episode".to_string(),
@@ -314,18 +317,23 @@ pub(crate) async fn pick_episode(
     }
     .title()
     .ok()?;
-    pick(state, user_id, &title).await.map(|(_, body)| body)
+    pick(state, user_id, &title, tried)
+        .await
+        .map(|(_, body)| body)
 }
 
+/// The top pick kobload offers that is cached and has not failed, as kobload sent it and
+/// as a resolve body.
 async fn pick(
     state: &AppState,
     user_id: Uuid,
     title: &Title,
+    tried: &mut TriedReleases,
 ) -> Option<(Value, StreamResolveBody)> {
     if let Some(media_id) = title.template.media_id
         && let Ok(Some(raw)) =
             stream_local::local_option(state, &title.template.media_type, media_id).await
-        && let Some(picked) = pickable(title, &raw)
+        && let Some(picked) = pickable(title, &raw).filter(|(_, body)| !tried.holds(body))
     {
         return Some(picked);
     }
@@ -344,12 +352,27 @@ async fn pick(
         .await
         .map_err(|e| warn!(error = %e, "prewarm search failed"))
         .ok()?;
-    let (option, mut body) = value["options"]
-        .as_array()?
-        .iter()
-        .find_map(|raw| pickable(title, raw))?;
+    let (option, mut body) = next_pick(title, value["options"].as_array()?, tried)?;
     debrid_open::name_release(state, &mut body).await;
     Some((option, body))
+}
+
+fn next_pick(
+    title: &Title,
+    options: &[Value],
+    tried: &mut TriedReleases,
+) -> Option<(Value, StreamResolveBody)> {
+    let picks: Vec<_> = options
+        .iter()
+        .filter_map(|raw| pickable(title, raw))
+        .collect();
+    tried.link(picks.iter().map(|(_, body)| body));
+    // kobload grabs a never-imported NZB warm only for its search's first pickable option.
+    // While a refused release still holds that place, such an NZB would only be refused.
+    let may_grab = picks.first().is_some_and(|(_, body)| !tried.holds(body));
+    picks.into_iter().find(|(_, body)| {
+        !tried.holds(body) && (may_grab || body.nzb_ref.is_none() || body.release_key.is_some())
+    })
 }
 
 fn pickable(title: &Title, raw: &Value) -> Option<(Value, StreamResolveBody)> {

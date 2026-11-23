@@ -140,6 +140,7 @@ async fn discover_request(
             }),
             alternate_titles,
             episode_title: None,
+            season_premiere: None,
             quality_profile_id: None,
             quality_overrides: None,
         }
@@ -334,6 +335,7 @@ async fn episode_request(
                 .map(String::from),
         };
 
+        let season_premiere = tv_seasons::premiere(&state.pool, season.id).await;
         nats_jobs::MediaWant::TvEpisode {
             show_name: show.title.clone(),
             season: season.season_identifier,
@@ -346,6 +348,7 @@ async fn episode_request(
                 show.alternate_titles.iter().flatten(),
             ),
             episode_title: episode.title,
+            season_premiere,
             quality_profile_id: show.quality_profile_id,
             quality_overrides: show.preferred_languages.as_ref().map(|langs| {
                 nats_jobs::QualityOverrides {

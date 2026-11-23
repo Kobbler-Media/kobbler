@@ -23,9 +23,9 @@ use crate::images::{self, ImageEntry, endpoint_url, source_url};
 use crate::jobs::{self, JobContext};
 use crate::kobload::CreateDownloadRequest as KobloadDownloadRequest;
 use crate::repositories::{
-    PaginationDirection, audio_tracks, episode_skip_segments, external_subtitles, media_roots,
-    subtitle_tracks, tv_episode_files, tv_episodes, tv_seasons, tv_show_ratings, tv_shows,
-    tv_watch_states, wanted_attempts,
+    PaginationDirection, audio_tracks, debrid_new_episodes, episode_skip_segments,
+    external_subtitles, media_roots, subtitle_tracks, tv_episode_files, tv_episodes, tv_seasons,
+    tv_show_ratings, tv_shows, tv_watch_states, wanted_attempts,
 };
 use crate::routes::helpers::build_kobload_client;
 use crate::routes::library::helpers::{
@@ -194,6 +194,7 @@ struct EpisodeResponse {
     air_time: Option<OffsetDateTime>,
     runtime: Option<i32>,
     is_in_library: bool,
+    copy_on_disk: bool,
     want_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     watched: Option<bool>,
@@ -799,12 +800,26 @@ pub async fn get_show(
         .await
         .map_err(|e| AppError::Internal(format!("Failed to get watch states: {e}")))?;
 
-    response.continue_episode = compute_continue_episode(
-        &response.seasons,
-        &watch_states,
-        response.content_category == "sport",
-    );
+    let is_sport = response.content_category == "sport";
+    let today = time::OffsetDateTime::now_utc().date();
+    let listed_later: Vec<Uuid> = response
+        .seasons
+        .iter()
+        .flat_map(|season| &season.episodes)
+        .filter(|ep| {
+            !is_sport && ep.want_status == "none" && ep.air_date.is_some_and(|d| d > today)
+        })
+        .map(|ep| ep.id)
+        .collect();
+    let on_disk = debrid_new_episodes::on_disk(&state.pool, &listed_later)
+        .await
+        .map_err(|e| AppError::Internal(format!("Failed to check debrid downloads: {e}")))?;
+    response.continue_episode =
+        compute_continue_episode(&response.seasons, &watch_states, is_sport, &on_disk);
     annotate_episodes_with_watch_states(&mut response.seasons, &watch_states);
+    for episode in response.seasons.iter_mut().flat_map(|s| &mut s.episodes) {
+        episode.copy_on_disk = on_disk.contains(&episode.id);
+    }
     response.in_watchlist =
         crate::repositories::watchlist::contains(&state.pool, auth.user_id, "show", id)
             .await
@@ -3463,6 +3478,7 @@ fn episode_row_to_response(ep: tv_episodes::EpisodeRow) -> EpisodeResponse {
         air_time: ep.air_time,
         runtime: ep.runtime,
         is_in_library: ep.is_in_library,
+        copy_on_disk: false,
         want_status: ep.want_status,
         watched: None,
         watch_position_seconds: None,
@@ -3576,6 +3592,7 @@ pub async fn search_episode_releases(
                 .map(String::from),
         };
 
+        let season_premiere = tv_seasons::premiere(&state.pool, season.id).await;
         nats_jobs::MediaWant::TvEpisode {
             show_name: show.title.clone(),
             season: season.season_identifier.clone(),
@@ -3588,6 +3605,7 @@ pub async fn search_episode_releases(
                 show.alternate_titles.iter().flatten(),
             ),
             episode_title: episode.title.clone(),
+            season_premiere,
             quality_profile_id: show.quality_profile_id,
             quality_overrides: show.preferred_languages.as_ref().map(|langs| {
                 nats_jobs::QualityOverrides {
@@ -3959,12 +3977,13 @@ impl ContinueCandidate {
 /// A sport league is followed live, so steps 2 and 3 take the newest available event
 /// instead, and only when it is newer than every watched one.
 ///
-/// Available is a local file, or an aired episode nobody has wanted, which the client
-/// offers as "Stream" rather than "Resume".
+/// Available is a local file, or an episode nobody has wanted that has aired or is already
+/// downloaded from debrid, which the client offers as "Stream" rather than "Resume".
 fn compute_continue_episode(
     seasons: &[SeasonResponse],
     watch_states: &[tv_watch_states::TvWatchStateRow],
     is_sport: bool,
+    on_disk: &std::collections::HashSet<Uuid>,
 ) -> Option<ContinueEpisodeResponse> {
     let today = time::OffsetDateTime::now_utc().date();
 
@@ -3981,8 +4000,8 @@ fn compute_continue_episode(
         .filter(|(_, season)| !season.is_special)
         .flat_map(|(si, season)| {
             season.episodes.iter().enumerate().map(move |(ei, ep)| {
-                let streamable =
-                    ep.want_status == "none" && ep.air_date.is_some_and(|d| d <= today);
+                let streamable = ep.want_status == "none"
+                    && (ep.air_date.is_some_and(|d| d <= today) || on_disk.contains(&ep.id));
                 ContinueCandidate {
                     season_idx: si,
                     episode_idx: ei,

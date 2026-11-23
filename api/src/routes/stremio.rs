@@ -857,7 +857,7 @@ async fn build_series_search(
         // Try to find the specific episode for richer metadata
         let ep = sqlx::query!(
             r#"
-            SELECT e.title, e.air_date
+            SELECT e.title, e.air_date, e.season_id
             FROM tv_episodes e
             JOIN tv_seasons s ON s.id = e.season_id
             WHERE s.show_id = $1
@@ -881,6 +881,11 @@ async fn build_series_search(
                     ..Default::default()
                 });
 
+        let season_premiere = match &ep {
+            Some(e) => crate::repositories::tv_seasons::premiere(&state.pool, e.season_id).await,
+            None => None,
+        };
+
         let media_want = nats_jobs::MediaWant::TvEpisode {
             show_name: s.title.clone(),
             season: season_identifier,
@@ -893,6 +898,7 @@ async fn build_series_search(
                 &s.alternate_titles,
             ),
             episode_title: ep.as_ref().and_then(|e| e.title.clone()),
+            season_premiere,
             quality_profile_id: s.quality_profile_id,
             quality_overrides,
         };
@@ -1062,7 +1068,7 @@ async fn resolve_imdb_tv_episode(
             crate::wanted::alternate_titles::alternate_titles(&show.title, &alternate_titles);
 
         // Try to get episode details for air date and title
-        let (episode_title, air_date) =
+        let (episode_title, air_date, season_premiere) =
             if let Ok(season) = registry.get_season("tmdb", tmdb_id, season_num).await {
                 let ep = season
                     .episodes
@@ -1071,9 +1077,15 @@ async fn resolve_imdb_tv_episode(
                 (
                     ep.and_then(|e| e.title.clone()),
                     ep.and_then(|e| e.air_date.clone()),
+                    season
+                        .episodes
+                        .iter()
+                        .filter_map(|e| e.air_date.clone())
+                        .filter(|d| !d.is_empty())
+                        .min(),
                 )
             } else {
-                (None, None)
+                (None, None, None)
             };
 
         let identifiers = nats_jobs::TvIdentifiers {
@@ -1091,6 +1103,7 @@ async fn resolve_imdb_tv_episode(
             identifiers: Some(identifiers),
             alternate_titles,
             episode_title,
+            season_premiere,
             quality_profile_id: None,
             quality_overrides: None,
         };
@@ -1129,6 +1142,7 @@ async fn resolve_imdb_tv_episode(
             air_date: None,
             identifiers: Some(identifiers),
             episode_title: None,
+            season_premiere: None,
             quality_profile_id: None,
             quality_overrides: None,
         };
@@ -1166,6 +1180,7 @@ async fn resolve_imdb_tv_episode(
             air_date: None,
             identifiers: Some(identifiers),
             episode_title: None,
+            season_premiere: None,
             quality_profile_id: None,
             quality_overrides: None,
         };
@@ -1202,6 +1217,7 @@ async fn resolve_imdb_tv_episode(
         identifiers: Some(identifiers),
         alternate_titles: None,
         episode_title: None,
+        season_premiere: None,
         quality_profile_id: None,
         quality_overrides: None,
     };

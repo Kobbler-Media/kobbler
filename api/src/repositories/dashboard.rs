@@ -141,9 +141,9 @@ where
 /// Availability rules for the `up_next` CTE branch:
 ///   - Wanted episodes require a real file (kobload will set one once grabbed).
 ///   - A debrid-only episode (`want_status = 'none'`) that aired on or after the
-///     viewer's last watch of the show, within `NEW_EPISODE_WAIT_DAYS`, waits until a
-///     release of it is downloaded (`debrid_new_episode_watch` fetches it): release
-///     day rarely has one yet.
+///     viewer's last watch of the show, within `NEW_EPISODE_WAIT_DAYS`, or is listed for
+///     later, waits until a release of it is downloaded (`debrid_new_episode_watch`
+///     fetches it): release day rarely has one yet, and listed dates can run late.
 ///   - Other debrid-only episodes appear 24h after their stored DATE, so a binge
 ///     doesn't hinge on a download ahead surviving eviction, and an episode the watch
 ///     gave up on isn't hidden for good.
@@ -270,7 +270,7 @@ where
                       AND CASE
                           WHEN te.air_date >= lw.last_watched_at::date
                                AND te.air_date >= CURRENT_DATE - $3::int
-                              THEN te.air_date <= CURRENT_DATE AND debrid_episode_on_disk(te.id)
+                              THEN debrid_episode_on_disk(te.id)
                           ELSE (te.air_date::timestamp + INTERVAL '1 day') <= NOW()
                       END)
               )

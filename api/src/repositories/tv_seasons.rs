@@ -122,6 +122,21 @@ where
 // Read
 // =============================================================================
 
+/// The earliest listed air date of the season's episodes, as ISO 8601. Only informs a search,
+/// so a failed lookup costs the hint rather than the search.
+pub async fn premiere(pool: &sqlx::PgPool, season_id: Uuid) -> Option<String> {
+    sqlx::query_scalar!(
+        r#"SELECT MIN(air_date) AS "premiere" FROM tv_episodes WHERE season_id = $1"#,
+        season_id,
+    )
+    .fetch_one(pool)
+    .await
+    .inspect_err(|e| tracing::warn!(error = %e, %season_id, "season premiere lookup failed"))
+    .ok()
+    .flatten()
+    .map(|date| date.to_string())
+}
+
 /// Get a season by ID.
 pub async fn get<'e, E>(exec: E, id: Uuid) -> Result<Option<SeasonRow>>
 where

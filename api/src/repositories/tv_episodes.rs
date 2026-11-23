@@ -986,11 +986,17 @@ where
         FROM tv_episodes cur
         JOIN tv_seasons cs ON cs.id = cur.season_id
         JOIN tv_seasons s ON s.show_id = cs.show_id AND NOT s.is_special
+        JOIN tv_shows sh ON sh.id = s.show_id
         JOIN tv_episodes e ON e.season_id = s.id
         WHERE cur.id = $1
           AND (s.season_sort_order, e.episode_sort_order)
               > (cs.season_sort_order, cur.episode_sort_order)
-          AND (e.air_date IS NULL OR e.air_date <= CURRENT_DATE)
+          AND (e.air_date IS NULL
+               OR e.air_date <= CURRENT_DATE
+               OR (sh.content_category <> 'sport'
+                   AND EXISTS (SELECT 1 FROM tv_episodes premiered
+                               WHERE premiered.season_id = e.season_id
+                                 AND premiered.air_date <= CURRENT_DATE)))
         ORDER BY s.season_sort_order, e.episode_sort_order
         LIMIT 1
         "#,
