@@ -524,7 +524,7 @@ fn resume_download(state: &AppState, prewarm: &Prewarm) {
     });
 }
 
-/// A warm resolve's URLs serve below library downloads; the viewer's rest of the file is
+/// A warm resolve's cache URL serves below library downloads; the viewer's rest of the file is
 /// fetched through URLs resolved for a viewer. Without kobload the warm ones still serve.
 async fn for_viewer(
     state: &AppState,

@@ -434,3 +434,46 @@ async fn the_cache_ahead_reads_the_cache_url_and_the_player_the_stream_url() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_release_key_that_is_not_a_plain_name_is_refused() {
+    let rig = Rig::start_as(
+        Source::Usenet,
+        UpstreamPlan::new(ITA_ENG_FIXTURE.to_vec()),
+        "film.mkv",
+    )
+    .await;
+    let movie_id = rig.movie().await;
+    for key in ["../../escape", "a/b", "nzb-..", "", &"k".repeat(129)] {
+        let mut body = rig.resolve_body_from(Source::Usenet, "movie", movie_id);
+        body["release_key"] = json!(key);
+        let resp = rig
+            .server
+            .admin_client()
+            .post_json("/api/v1/admin/stream/resolve", &body)
+            .await;
+        assert!(
+            resp.status.is_client_error(),
+            "{key:?} was accepted: {}",
+            resp.status
+        );
+    }
+    assert!(
+        rig.kobload_requests("/stream/resolve").await.is_empty(),
+        "a refused key never reaches kobload"
+    );
+    let resp = rig
+        .server
+        .admin_client()
+        .post_json(
+            "/api/v1/admin/stream/bad",
+            &json!({ "debrid_provider_id": Uuid::nil(), "release_key": "../x", "bad": true }),
+        )
+        .await;
+    assert_eq!(
+        resp.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "bad-copy took {}",
+        resp.status
+    );
+}

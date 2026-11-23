@@ -59,6 +59,7 @@ pub async fn stream_outcome(
 #[derive(Debug, Deserialize, Serialize)]
 pub struct BadCopyBody {
     pub debrid_provider_id: Uuid,
+    #[serde(deserialize_with = "super::release_key_param::required")]
     pub release_key: String,
     #[serde(default)]
     pub file_id: Option<i32>,

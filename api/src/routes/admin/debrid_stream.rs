@@ -355,7 +355,7 @@ pub struct AutoCreateMedia {
 #[derive(Debug, Clone, Deserialize)]
 pub struct StreamResolveBody {
     pub debrid_provider_id: Uuid,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::release_key_param::optional")]
     pub release_key: Option<String>,
     #[serde(default)]
     pub magnet_url: Option<String>,
