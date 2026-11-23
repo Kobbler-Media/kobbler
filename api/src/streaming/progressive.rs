@@ -10,6 +10,7 @@
 use crate::repositories::debrid_cache_files::{self as cache_files, CacheRelease};
 use crate::streaming::byte_range::content_range_start;
 use crate::streaming::cache_writers;
+use crate::streaming::download_lane::DownloadLane;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::resume::{self, Interruption, Resume};
 use nats_jobs::Publisher;
@@ -17,6 +18,7 @@ use sqlx::PgPool;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -88,6 +90,7 @@ pub struct DownloadTarget {
     pub cache_path: PathBuf,
     pub filesize: i64,
     pub release: CacheRelease,
+    pub lane: Arc<DownloadLane>,
 }
 
 /// Manages progressive background downloads of debrid stream files.
@@ -157,6 +160,7 @@ impl ProgressiveDownloadManager {
             cache_path,
             filesize,
             release,
+            lane,
         } = target;
         if let Some(parent) = cache_path.parent()
             && let Err(e) = tokio::fs::create_dir_all(parent).await
@@ -202,7 +206,7 @@ impl ProgressiveDownloadManager {
 
         match self
             .download_file(
-                &debrid_url,
+                (&debrid_url, lane.upgrades()),
                 &cache_path,
                 session_id,
                 filesize,
@@ -237,7 +241,7 @@ impl ProgressiveDownloadManager {
     /// one.
     async fn download_file(
         &self,
-        url: &str,
+        (url, mut upgrades): (&str, watch::Receiver<Option<String>>),
         dest: &Path,
         session_id: Uuid,
         expected_size: i64,
@@ -284,6 +288,8 @@ impl ProgressiveDownloadManager {
         };
 
         let mut url = url.to_string();
+        // A viewer can join between the target being built and this download subscribing.
+        adopt(&upgrades, &mut url);
         let mut resume = Resume::new();
         let mut want_fresh = false;
         let mut refreshed_after_refusal = false;
@@ -295,7 +301,13 @@ impl ProgressiveDownloadManager {
             } else {
                 self.http_client.get(&url)
             };
-            let interruption = match until_cancelled(cancel, req.send()).await? {
+            let Some(sent) = until_cancelled(cancel, or_upgrade(&mut upgrades, req.send())).await?
+            else {
+                adopt(&upgrades, &mut url);
+                refreshed_after_refusal = false;
+                continue;
+            };
+            let interruption = match sent {
                 Err(e) if e.is_connect() => {
                     warn!(session_id = %session_id, error = %e.without_url(), "Download host unreachable, will retry");
                     Interruption::Unreachable
@@ -367,12 +379,28 @@ impl ProgressiveDownloadManager {
                         meter,
                     };
                     let pumped = self
-                        .pump(resp, &mut file, &mut downloaded, &mut resume, &sink)
+                        .pump(
+                            resp,
+                            &mut file,
+                            &mut downloaded,
+                            &mut resume,
+                            &sink,
+                            &mut upgrades,
+                        )
                         .await?;
-                    if pumped && (expected_size <= 0 || downloaded >= expected_size) {
+                    if pumped == Pumped::Upgraded {
+                        adopt(&upgrades, &mut url);
+                        refreshed_after_refusal = false;
+                        if expected_size > 0 && downloaded >= expected_size {
+                            break;
+                        }
+                        continue;
+                    }
+                    let ended = pumped == Pumped::Ended;
+                    if ended && (expected_size <= 0 || downloaded >= expected_size) {
                         break;
                     }
-                    if pumped {
+                    if ended {
                         warn!(
                             session_id = %session_id,
                             downloaded_mb = downloaded / (1024 * 1024),
@@ -402,7 +430,15 @@ impl ProgressiveDownloadManager {
                 ?interruption,
                 "Resuming download"
             );
-            until_cancelled(cancel, tokio::time::sleep(delay)).await?;
+            if until_cancelled(cancel, or_upgrade(&mut upgrades, tokio::time::sleep(delay)))
+                .await?
+                .is_none()
+            {
+                adopt(&upgrades, &mut url);
+                refreshed_after_refusal = false;
+                want_fresh = false;
+                continue;
+            }
             if let Some(refresh) = &self.refresh
                 && let Some(fresh) = until_cancelled(cancel, refresh(want_fresh)).await?
             {
@@ -425,8 +461,7 @@ impl ProgressiveDownloadManager {
         Ok(())
     }
 
-    /// Append one response's body to the file. `true` when it ended normally, `false` when
-    /// it was cut short.
+    /// Append one response's body to the file until it ends, is cut, or the lane moves.
     async fn pump(
         &self,
         resp: reqwest::Response,
@@ -434,7 +469,8 @@ impl ProgressiveDownloadManager {
         downloaded: &mut i64,
         resume: &mut Resume,
         sink: &Sink<'_>,
-    ) -> Result<bool, DownloadError> {
+        upgrades: &mut watch::Receiver<Option<String>>,
+    ) -> Result<Pumped, DownloadError> {
         use futures_util::StreamExt;
         let Sink {
             dest,
@@ -446,8 +482,12 @@ impl ProgressiveDownloadManager {
         let mut last_progress_update = tokio::time::Instant::now();
         let mut stream = resp.bytes_stream();
         loop {
-            let Some(chunk) = until_cancelled(cancel, stream.next()).await? else {
-                return Ok(true);
+            let Some(next) = until_cancelled(cancel, or_upgrade(upgrades, stream.next())).await?
+            else {
+                return Ok(Pumped::Upgraded);
+            };
+            let Some(chunk) = next else {
+                return Ok(Pumped::Ended);
             };
             let data = match chunk {
                 Ok(data) => data,
@@ -458,7 +498,7 @@ impl ProgressiveDownloadManager {
                         error = %e.without_url(),
                         "Download stream interrupted, will resume"
                     );
-                    return Ok(false);
+                    return Ok(Pumped::Cut);
                 }
             };
             if cancel.is_cancelled() {
@@ -518,6 +558,31 @@ impl ProgressiveDownloadManager {
             cache_path,
         )
         .await;
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pumped {
+    Ended,
+    Cut,
+    Upgraded,
+}
+
+/// `None` when the lane moved first; the abandoned work has written nothing.
+async fn or_upgrade<T>(
+    upgrades: &mut watch::Receiver<Option<String>>,
+    work: impl std::future::Future<Output = T>,
+) -> Option<T> {
+    tokio::select! {
+        biased;
+        Ok(()) = upgrades.changed() => None,
+        out = work => Some(out),
+    }
+}
+
+fn adopt(upgrades: &watch::Receiver<Option<String>>, url: &mut String) {
+    if let Some(upgraded) = upgrades.borrow().clone() {
+        *url = upgraded;
     }
 }
 

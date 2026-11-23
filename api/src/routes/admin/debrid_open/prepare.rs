@@ -18,7 +18,7 @@ pub(super) struct Prepare {
     pub session_id: Uuid,
     pub release: StreamRelease,
     pub capabilities: ClientCapabilities,
-    pub stream_url: String,
+    pub probe_url: String,
     pub container: String,
     pub segment_dir: PathBuf,
     pub local_cache_path: PathBuf,
@@ -64,7 +64,7 @@ pub(super) async fn run(ctx: Prepare) {
         session_id,
         release: bg_release,
         capabilities,
-        stream_url: bg_stream_url,
+        probe_url,
         container: bg_container,
         segment_dir: bg_segment_dir,
         local_cache_path,
@@ -104,7 +104,7 @@ pub(super) async fn run(ctx: Prepare) {
     } else {
         let result = match crate::ffmpeg::transcode::TranscodeProcess::probe_hybrid(
             local_cache_path.clone(),
-            bg_stream_url.clone(),
+            probe_url.clone(),
             download_meter.progress.clone(),
         )
         .await
@@ -279,7 +279,7 @@ pub(super) async fn run(ctx: Prepare) {
         if download_meter.is_complete() {
             local_cache_path.to_string_lossy().into_owned()
         } else {
-            bg_stream_url.clone()
+            probe_url.clone()
         },
         duration,
     ));

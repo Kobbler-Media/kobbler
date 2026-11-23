@@ -7,6 +7,7 @@ use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use nats_jobs::StreamPriority;
 use time::OffsetDateTime;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -51,7 +52,9 @@ pub(super) async fn playable_url(
     if let Some(url) = cached_url(session) {
         return Ok(url);
     }
-    Ok(re_resolve(state, session).await?.stream_url)
+    Ok(re_resolve(state, session, StreamPriority::User)
+        .await?
+        .stream_url)
 }
 
 /// Where the cache-ahead downloads from: kobload's second URL for the same bytes when it
@@ -59,6 +62,7 @@ pub(super) async fn playable_url(
 pub(crate) async fn cache_ahead_url(
     state: &AppState,
     session: &PlaySession,
+    priority: StreamPriority,
 ) -> Result<String, Response> {
     if let Some(url) = cached_url(session) {
         return Ok(session
@@ -67,7 +71,7 @@ pub(crate) async fn cache_ahead_url(
             .filter(|u| !u.is_empty())
             .unwrap_or(url));
     }
-    let resolved = re_resolve(state, session).await?;
+    let resolved = re_resolve(state, session, priority).await?;
     Ok(resolved.cache_url.unwrap_or(resolved.stream_url))
 }
 
@@ -78,21 +82,23 @@ pub(crate) async fn fresh_cache_url(
     state: &AppState,
     session_id: Uuid,
     force: bool,
+    priority: StreamPriority,
 ) -> Option<String> {
     let session = PlaySession::load(&state.pool, session_id, None)
         .await
         .ok()
         .flatten()?;
     if !force {
-        return cache_ahead_url(state, &session).await.ok();
+        return cache_ahead_url(state, &session, priority).await.ok();
     }
-    let resolved = re_resolve(state, &session).await.ok()?;
+    let resolved = re_resolve(state, &session, priority).await.ok()?;
     Some(resolved.cache_url.unwrap_or(resolved.stream_url))
 }
 
 async fn re_resolve(
     state: &AppState,
     session: &PlaySession,
+    priority: StreamPriority,
 ) -> Result<nats_jobs::StreamResolveResponse, Response> {
     let runtime = state.runtime_config.get().await;
     let client = build_kobload_client(&runtime).map_err(IntoResponse::into_response)?;
@@ -109,7 +115,7 @@ async fn re_resolve(
         magnet_url: None,
         nzb_ref: session.nzb_ref.clone(),
         file_id: session.file_id,
-        priority: None,
+        priority: Some(priority),
         release_title: Some(session.release_title.clone()).filter(|t| !t.is_empty()),
         file_name: Some(session.filename.clone()).filter(|f| !f.is_empty()),
         episode: episode::of_media(&state.pool, &session.media_type, session.media_id).await,

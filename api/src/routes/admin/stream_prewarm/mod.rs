@@ -19,9 +19,10 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
-use crate::repositories::debrid_stream_sessions;
 use crate::routes::PlaybackAuth;
-use crate::routes::admin::debrid_open::{self, OpenMode, WarmGate, live_response, probe_json};
+use crate::routes::admin::debrid_open::{
+    self, OpenMode, WarmGate, live_response, probe_json, upgrade,
+};
 use crate::routes::admin::debrid_stream::{AutoCreateMedia, StreamResolveBody, kids_may_resolve};
 use crate::routes::admin::stream_local;
 use crate::routes::admin::stream_search_request::{self, SearchTarget};
@@ -519,33 +520,45 @@ fn resume_download(state: &AppState, prewarm: &Prewarm) {
     body.file_id = prewarm.row.file_id;
     let session_id = prewarm.session_id;
     tokio::spawn(async move {
-        let target = for_viewer(&state, &body, session_id, target).await;
+        let (target, writer_done) = for_viewer(&state, &body, session_id, target).await;
         cache_download::for_session(&state, target, cancel, meter).await;
+        writer_done.cancel();
     });
 }
 
 /// A warm resolve's cache URL serves below library downloads; the viewer's rest of the file is
-/// fetched through URLs resolved for a viewer. Without kobload the warm ones still serve.
+/// fetched through a URL resolved for them. Until kobload gives one the warm URL still serves,
+/// and the returned token ends the retry when the download does.
 async fn for_viewer(
     state: &AppState,
     body: &StreamResolveBody,
     session_id: Uuid,
     mut target: DownloadTarget,
-) -> DownloadTarget {
-    let runtime = state.runtime_config.get().await;
-    let resolved =
-        match debrid_open::resolve(state, &runtime, body, nats_jobs::StreamPriority::User).await {
-            Ok(r) if !r.stream_url.is_empty() => r,
-            Ok(_) | Err(_) => {
-                info!(%session_id, "kept the warm URLs for the claimed download");
-                return target;
-            }
-        };
-    if let Err(e) = debrid_stream_sessions::set_urls(&state.pool, session_id, &resolved).await {
-        warn!(%session_id, error = %e, "failed to store the viewer's URLs");
+) -> (DownloadTarget, CancellationToken) {
+    let writer_done = CancellationToken::new();
+    let lane = target.lane.clone();
+    if let Some(url) = upgrade::viewer_url(state, body, session_id, &lane, None).await {
+        lane.upgrade(url.clone());
+        target.url = url;
+        return (target, writer_done);
     }
-    target.url = resolved.cache_url.unwrap_or(resolved.stream_url);
-    target
+    if !lane.needs_upgrade() {
+        lane.promote();
+        return (target, writer_done);
+    }
+    info!(%session_id, "kept the warm URLs for the claimed download, retrying");
+    tokio::spawn(upgrade::keep_trying(
+        upgrade::Upgrade {
+            state: state.clone(),
+            body: body.clone(),
+            writer: session_id,
+            viewer: session_id,
+            lane: target.lane.clone(),
+            writer_done: writer_done.clone(),
+        },
+        None,
+    ));
+    (target, writer_done)
 }
 
 /// A resolve of a release this viewer has warm claims that prewarm instead of opening a

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
@@ -6,6 +6,8 @@ use tracing::warn;
 
 use crate::AppState;
 use crate::debrid_outcomes::{self, StreamRelease};
+use crate::routes::admin::release_key_param::is_plain;
+use crate::streaming::download_lane::DownloadLane;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::progressive::{
     DownloadError, DownloadTarget, ProgressiveDownloadConfig, ProgressiveDownloadManager,
@@ -19,6 +21,19 @@ pub fn cache_dir(state: &AppState, runtime: &crate::runtime_config::RuntimeConfi
         .as_ref()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(&state.config.storage_root).join("debrid_cache"))
+}
+
+/// Where a release's file lives in the cache. Keys and filenames come from kobload and the
+/// provider, and `Path::join` lets an absolute or `..` part leave `dir`, so `None` refuses them.
+pub fn cache_file(dir: &Path, key: &str, filename: &str) -> Option<PathBuf> {
+    if !is_plain(key) {
+        return None;
+    }
+    let name = filename.rsplit(['/', '\\']).next()?;
+    if matches!(name, "" | "." | "..") || name.contains('\0') {
+        return None;
+    }
+    Some(dir.join(key).join(name))
 }
 
 /// Download `target` into the cache until it is complete or `cancel` fires. A partial
@@ -47,7 +62,7 @@ pub async fn download(
             client,
             state.nats.publisher().clone(),
         )
-        .with_refresh(fresh_url(state, target.session_id)),
+        .with_refresh(fresh_url(state, target.session_id, target.lane.clone())),
     );
     let release = StreamRelease {
         debrid_provider_id: target.release.debrid_provider_id,
@@ -67,12 +82,14 @@ pub async fn download(
     outcome
 }
 
-fn fresh_url(state: &AppState, session_id: uuid::Uuid) -> UrlRefresh {
+fn fresh_url(state: &AppState, session_id: uuid::Uuid, lane: Arc<DownloadLane>) -> UrlRefresh {
     let state = state.clone();
     Arc::new(move |force| {
         let state = state.clone();
+        let priority = lane.priority();
         Box::pin(async move {
-            crate::routes::admin::debrid_play::fresh_cache_url(&state, session_id, force).await
+            crate::routes::admin::debrid_play::fresh_cache_url(&state, session_id, force, priority)
+                .await
         })
     })
 }
@@ -135,4 +152,41 @@ pub fn stop_after_head(meter: Arc<DownloadMeter>, head: u64, cancel: Cancellatio
                 .await;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cache_file_stays_in_its_release_directory() {
+        let dir = Path::new("/cache");
+        let inside = Some(PathBuf::from("/cache/key_f1/x.mkv"));
+        for name in [
+            "x.mkv",
+            "../../x.mkv",
+            "/etc/x.mkv",
+            "..\\..\\x.mkv",
+            "a/b/x.mkv",
+        ] {
+            assert_eq!(cache_file(dir, "key_f1", name), inside, "{name}");
+        }
+        for name in ["", ".", "..", "a/..", "a/.", "a/", "a\\..", "x\0.mkv"] {
+            assert_eq!(cache_file(dir, "key", name), None, "{name:?}");
+        }
+        let long = "k".repeat(129);
+        for key in [
+            "",
+            ".",
+            "..",
+            "../x",
+            "/abs",
+            "a/b",
+            "a\\b",
+            "a b",
+            long.as_str(),
+        ] {
+            assert_eq!(cache_file(dir, key, "x.mkv"), None, "{key:?}");
+        }
+    }
 }

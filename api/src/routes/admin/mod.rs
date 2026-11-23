@@ -55,7 +55,7 @@ mod reader;
 mod reader_pack;
 mod reading;
 mod recents;
-mod release_key_param;
+pub(crate) mod release_key_param;
 mod search;
 pub mod session_restore;
 pub mod sessions;

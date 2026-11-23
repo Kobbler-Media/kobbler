@@ -422,6 +422,8 @@ async fn a_claimed_prewarm_downloads_the_rest_through_a_viewer_resolved_url() {
     let body = movie_body(rig.movie().await);
     let id = prewarm_id(&wait_ready(&rig, &body).await);
 
+    // The warm session's own readers stay on its warm URL; only the download has no agent.
+    let before_claim = rig.upstream.requests().len();
     claim(&rig, id).await.assert_ok();
     rig.wait_for_local("purposehash", data.len() as u64).await;
 
@@ -429,7 +431,10 @@ async fn a_claimed_prewarm_downloads_the_rest_through_a_viewer_resolved_url() {
         .upstream
         .requests()
         .into_iter()
-        .filter(|r| r.range.is_some() && r.path.ends_with("/cache/film.mkv"))
+        .skip(before_claim)
+        .filter(|r| r.range.as_ref().is_some_and(|range| range.ends_with('-')))
+        .filter(|r| r.agent.is_none())
+        .filter(|r| r.path.ends_with("/cache/film.mkv"))
         .map(|r| r.path)
         .collect();
     assert!(!rest.is_empty(), "the rest was never fetched by range");
@@ -444,4 +449,114 @@ async fn a_claimed_prewarm_downloads_the_rest_through_a_viewer_resolved_url() {
         .map(|r| r["priority"].clone())
         .collect();
     assert_eq!(asked, [json!("warm"), json!("user")]);
+}
+
+/// A speculative warm must not spend the stream-first reserve; a viewer's probe is what it
+/// is for.
+#[tokio::test]
+async fn a_warm_probe_reads_its_cache_url_and_a_viewers_reads_play() {
+    for (priority, read, unread) in [("warm", "cache", "play"), ("user", "play", "cache")] {
+        let data = padded_fixture();
+        let mut plan = UpstreamPlan::new(data.clone());
+        plan.whole = WholeBody::Stall { first: 0 };
+        let rig = Rig::start(plan, "film.mkv").await;
+        rig.mount_search(json!([rig.option("probehash")])).await;
+        Mock::given(method("POST"))
+            .and(path_regex("/api/v1/stream/resolve$"))
+            .and(body_partial_json(json!({ "priority": priority })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "stream_url": rig.upstream.url("lane/play/film.mkv"),
+                "cache_url": rig.upstream.url("lane/cache/film.mkv"),
+                "filename": "film.mkv",
+                "filesize": data.len(),
+                "cached": true,
+            })))
+            .with_priority(1)
+            .mount(&rig.kobload)
+            .await;
+        let movie = rig.movie().await;
+        if priority == "warm" {
+            prewarm_ok(&rig, &movie_body(movie)).await;
+        } else {
+            rig.resolve_with(&rig.resolve_body("probehash", movie, direct_play_caps()))
+                .await;
+        }
+
+        let ranged = |lane: &str| {
+            let path = format!("/lane/{lane}/film.mkv");
+            rig.upstream
+                .requests()
+                .into_iter()
+                .filter(|r| r.range.is_some() && r.path == path)
+                .count()
+        };
+        wait_until(Duration::from_secs(10), "the probe read nothing", || {
+            ranged(read) > 0
+        })
+        .await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(ranged(unread), 0, "{priority} probe read {unread}");
+    }
+}
+
+/// kobload failing at the claim leaves the download on its warm URL only until a retry works.
+#[tokio::test]
+async fn a_claim_whose_viewer_resolve_fails_retries_the_upgrade() {
+    let data = padded_fixture();
+    let mut plan = UpstreamPlan::new(data.clone());
+    plan.whole = WholeBody::Pause {
+        first: WARM_HEAD + MB,
+        pause: Duration::from_secs(120),
+    };
+    plan.range_delay = Duration::from_secs(3);
+    let rig = Rig::start(plan, "film.mkv").await;
+    rig.mount_search(json!([rig.option("retryhash")])).await;
+    let urls = |lane: &str| {
+        json!({
+            "stream_url": rig.upstream.url(&format!("{lane}/play/film.mkv")),
+            "cache_url": rig.upstream.url(&format!("{lane}/cache/film.mkv")),
+            "filename": "film.mkv",
+            "filesize": data.len(),
+            "cached": true,
+        })
+    };
+    let resolve = |priority: &str| {
+        Mock::given(method("POST"))
+            .and(path_regex("/api/v1/stream/resolve$"))
+            .and(body_partial_json(json!({ "priority": priority })))
+    };
+    resolve("warm")
+        .respond_with(ResponseTemplate::new(200).set_body_json(urls("warm")))
+        .with_priority(1)
+        .mount(&rig.kobload)
+        .await;
+    resolve("user")
+        .respond_with(ResponseTemplate::new(503).set_body_string("kobload is busy"))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&rig.kobload)
+        .await;
+    resolve("user")
+        .respond_with(ResponseTemplate::new(200).set_body_json(urls("user")))
+        .with_priority(2)
+        .mount(&rig.kobload)
+        .await;
+    let body = movie_body(rig.movie().await);
+    let id = prewarm_id(&wait_ready(&rig, &body).await);
+
+    claim(&rig, id).await.assert_ok();
+
+    wait_until(
+        Duration::from_secs(8),
+        "the claimed download stayed on its warm URL",
+        || {
+            rig.upstream
+                .requests()
+                .iter()
+                .any(|r| r.path == "/user/cache/film.mkv" && r.range.is_some())
+        },
+    )
+    .await;
+    rig.wait_for_local("retryhash", data.len() as u64).await;
+    assert!(std::fs::read(rig.cache_file("retryhash")).unwrap() == data);
 }

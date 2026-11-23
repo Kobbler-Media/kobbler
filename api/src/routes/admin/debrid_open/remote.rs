@@ -9,6 +9,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::prepare::{self, Prepare};
+use super::upgrade;
 use super::{OpenMode, Opened, SessionRow, VIDEO_CONTAINERS, audio_language, register};
 use crate::AppState;
 use crate::debrid_outcomes::{self, StreamRelease};
@@ -19,6 +20,7 @@ use crate::routes::admin::streaming::{SessionResponse, progressive_url};
 use crate::runtime_config::RuntimeConfig;
 use crate::streaming::cache_download;
 use crate::streaming::decision::PlaybackMethod;
+use crate::streaming::download_lane::DownloadLane;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::feed::StreamFeed;
 use crate::streaming::progressive::DownloadTarget;
@@ -111,13 +113,22 @@ pub(super) async fn open(
     let session_id = Uuid::new_v4();
     let release_key = super::release_key(body.release_key.as_deref(), body.file_id);
     // Keyed by release file so another session for the same file finds the bytes.
-    let local_cache_path = cache_download::cache_dir(state, runtime)
-        .join(
-            release_key
-                .clone()
-                .unwrap_or_else(|| session_id.to_string()),
-        )
-        .join(&resolved.filename);
+    let Some(local_cache_path) = cache_download::cache_file(
+        &cache_download::cache_dir(state, runtime),
+        release_key
+            .clone()
+            .unwrap_or_else(|| session_id.to_string())
+            .as_str(),
+        &resolved.filename,
+    ) else {
+        warn!(release_key = ?release_key, filename = ?resolved.filename, "Refused an unsafe cache path");
+        let failure = StreamFailure::NotVideo;
+        debrid_outcomes::report_failure(state, &release, failure.code()).await;
+        return Err(failure.response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "The release's key or filename cannot name a cache file",
+        ));
+    };
     let row = SessionRow {
         session_id,
         user_id,
@@ -168,7 +179,8 @@ pub(super) async fn open(
     };
     // Seeded with what is already on disk so HybridIo reads it from there.
     let download_meter = joined
-        .clone()
+        .as_ref()
+        .map(|j| j.meter.clone())
         .unwrap_or_else(|| DownloadMeter::new(resolved.filesize.max(0) as u64, on_disk));
     if download_meter.is_complete() {
         info!(session_id = %session_id, "Using completed cached file");
@@ -188,6 +200,12 @@ pub(super) async fn open(
             PlaybackMethod::DirectPlay
         }
         _ => PlaybackMethod::Remux,
+    };
+
+    // A warm session is speculative: everything it reads stays out of the stream-first reserve.
+    let probe_url = match (&mode, &resolved.cache_url) {
+        (OpenMode::Warm(_), Some(url)) if !url.is_empty() => url.clone(),
+        _ => resolved.stream_url.clone(),
     };
 
     let download_cancel = CancellationToken::new();
@@ -271,7 +289,7 @@ pub(super) async fn open(
             filename: &resolved.filename,
             filesize: resolved.filesize,
             local: Some(&local_cache_path),
-            url: Some(resolved.stream_url.clone()),
+            url: Some(probe_url.clone()),
         },
     )
     .await;
@@ -320,6 +338,10 @@ pub(super) async fn open(
             file_id: body.file_id,
             filename: resolved.filename.clone(),
         },
+        lane: match mode {
+            OpenMode::Play => DownloadLane::viewer(),
+            OpenMode::Warm(_) => DownloadLane::warm(resolved.cache_url.is_some()),
+        },
     };
     let (warm, remainder) = match mode {
         OpenMode::Play => (None, None),
@@ -332,8 +354,9 @@ pub(super) async fn open(
             (Some(gate), Some(target.clone()))
         }
     };
-    if joined.is_some() {
+    if let Some(joined) = joined {
         info!(%session_id, "joined the download ahead of this release");
+        upgrade::for_joined(state, body, session_id, joined, resolved.clone());
     } else {
         if let Some(key) = &release_key {
             state.downloads_ahead.hand_over(key).await;
@@ -346,7 +369,7 @@ pub(super) async fn open(
         session_id,
         release,
         capabilities: body.capabilities.clone().unwrap_or_default(),
-        stream_url: resolved.stream_url,
+        probe_url,
         container,
         segment_dir,
         local_cache_path,

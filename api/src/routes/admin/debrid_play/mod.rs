@@ -33,6 +33,7 @@ use crate::streaming::byte_range::{ByteRange, parse_byte_range};
 use crate::streaming::cache_download;
 use crate::streaming::decision::PlaybackMethod;
 use crate::streaming::dlna;
+use crate::streaming::download_lane::DownloadLane;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::feed::{FeedSource, FeedTicket, StreamFeed, metered};
 use crate::streaming::progressive::DownloadTarget;
@@ -162,7 +163,9 @@ async fn resume_download(
     let session = session.clone();
     info!(session_id = %session.id, "Resuming stopped download");
     tokio::spawn(async move {
-        let Ok(url) = upstream::cache_ahead_url(&bg_state, &session).await else {
+        let Ok(url) =
+            upstream::cache_ahead_url(&bg_state, &session, nats_jobs::StreamPriority::User).await
+        else {
             cancel.cancel();
             return;
         };
@@ -236,6 +239,7 @@ impl PlaySession {
                 file_id: self.file_id,
                 filename: self.filename.clone(),
             },
+            lane: DownloadLane::viewer(),
         }
     }
 }

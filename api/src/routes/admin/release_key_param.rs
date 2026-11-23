@@ -1,11 +1,14 @@
 use serde::{Deserialize, Deserializer, de::Error};
 
-fn plain(key: String) -> Result<String, String> {
-    let ok = (1..=128).contains(&key.len())
+pub(crate) fn is_plain(key: &str) -> bool {
+    (1..=128).contains(&key.len())
         && key
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
-    if ok {
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+fn plain(key: String) -> Result<String, String> {
+    if is_plain(&key) {
         Ok(key)
     } else {
         Err(format!("release_key {key:?} is not a release key"))

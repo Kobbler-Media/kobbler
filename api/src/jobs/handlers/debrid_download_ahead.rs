@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::AppState;
@@ -17,6 +17,7 @@ use crate::routes::admin::debrid_open::{SessionRow, VIDEO_CONTAINERS, episode, r
 use crate::routes::admin::{stream_local, stream_prewarm};
 use crate::routes::helpers::build_kobload_client;
 use crate::streaming::cache_download;
+use crate::streaming::download_lane::DownloadLane;
 use crate::streaming::download_meter::DownloadMeter;
 use crate::streaming::progressive::{DownloadError, DownloadTarget};
 
@@ -128,11 +129,21 @@ impl JobHandler for DebridDownloadAheadHandler {
         }
 
         let session_id = Uuid::new_v4();
-        let cache_path = cache_download::cache_dir(state, &runtime)
-            .join(&key)
-            .join(&resolved.filename);
+        let Some(cache_path) = cache_download::cache_file(
+            &cache_download::cache_dir(state, &runtime),
+            &key,
+            &resolved.filename,
+        ) else {
+            warn!(%episode_id, release_key = ?key, filename = ?resolved.filename, "refused an unsafe cache path");
+            return Ok(json!({ "skipped": "unsafe cache path" }));
+        };
         let meter = DownloadMeter::new(resolved.filesize.max(0) as u64, on_disk(&cache_path).await);
-        let Some(claim) = state.downloads_ahead.claim(&key, &cancel, meter.clone()) else {
+        let lane = DownloadLane::warm(resolved.cache_url.is_some());
+        let Some(claim) =
+            state
+                .downloads_ahead
+                .claim(&key, &cancel, meter.clone(), session_id, lane.clone())
+        else {
             return Ok(json!({ "skipped": "already downloading" }));
         };
         // The row is what analysis and a later Play find the file by.
@@ -159,6 +170,7 @@ impl JobHandler for DebridDownloadAheadHandler {
         }
         .insert(&state.pool, "episode", episode_id, Default::default(), None)
         .await?;
+        claim.row_written();
 
         let target = DownloadTarget {
             session_id,
@@ -171,6 +183,7 @@ impl JobHandler for DebridDownloadAheadHandler {
                 file_id: body.file_id,
                 filename: resolved.filename.clone(),
             },
+            lane,
         };
         let result = cache_download::download(state, target, claim.cancel(), meter).await;
         let handed_over = claim.cancel().is_cancelled() && !cancel.is_cancelled();

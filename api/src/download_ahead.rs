@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::routes::helpers::build_kobload_client;
+use crate::streaming::download_lane::DownloadLane;
 use crate::streaming::download_meter::DownloadMeter;
 
 pub const DOWNLOAD_AHEAD_JOB: &str = "debrid_download_ahead";
@@ -27,7 +28,19 @@ pub const NEW_EPISODE_WAIT_DAYS: i32 = 7;
 struct InFlight {
     cancel: CancellationToken,
     stopped: CancellationToken,
+    row_written: CancellationToken,
     meter: Arc<DownloadMeter>,
+    session_id: Uuid,
+    lane: Arc<DownloadLane>,
+}
+
+/// The download in flight, as a viewer reading along with it sees it.
+pub struct Joined {
+    pub meter: Arc<DownloadMeter>,
+    pub session_id: Uuid,
+    pub lane: Arc<DownloadLane>,
+    pub stopped: CancellationToken,
+    pub row_written: CancellationToken,
 }
 
 /// Background downloads by release key. Two writers on one cache file corrupt it, so a
@@ -49,6 +62,11 @@ impl Claim {
     pub fn cancel(&self) -> CancellationToken {
         self.flight.cancel.clone()
     }
+
+    /// An upgrade stores its URLs on the row, so it waits until there is one.
+    pub fn row_written(&self) {
+        self.flight.row_written.cancel();
+    }
 }
 
 impl Drop for Claim {
@@ -67,11 +85,16 @@ impl DownloadsAhead {
         key: &str,
         parent: &CancellationToken,
         meter: Arc<DownloadMeter>,
+        session_id: Uuid,
+        lane: Arc<DownloadLane>,
     ) -> Option<Claim> {
         let flight = InFlight {
             cancel: parent.child_token(),
             stopped: CancellationToken::new(),
+            row_written: CancellationToken::new(),
             meter,
+            session_id,
+            lane,
         };
         match self.flights.entry(key.to_string()) {
             dashmap::Entry::Occupied(_) => None,
@@ -90,9 +113,14 @@ impl DownloadsAhead {
         self.flights.contains_key(key)
     }
 
-    /// The meter of the download in flight, for a player to read the file along with it.
-    pub fn join(&self, key: &str) -> Option<Arc<DownloadMeter>> {
-        self.flights.get(key).map(|f| f.meter.clone())
+    pub fn join(&self, key: &str) -> Option<Joined> {
+        self.flights.get(key).map(|f| Joined {
+            meter: f.meter.clone(),
+            session_id: f.session_id,
+            lane: f.lane.clone(),
+            stopped: f.stopped.clone(),
+            row_written: f.row_written.clone(),
+        })
     }
 
     /// Damage is reported the first time a download ahead meets it; a later attempt at the
@@ -183,12 +211,17 @@ mod tests {
     async fn a_player_takes_over_only_once_the_download_ahead_has_stopped() {
         let ahead = Arc::new(DownloadsAhead::default());
         let parent = CancellationToken::new();
-        let meter = || DownloadMeter::new(10, 0);
-        let claim = ahead.claim("rel", &parent, meter()).unwrap();
-        assert!(
-            ahead.claim("rel", &parent, meter()).is_none(),
-            "two downloads of one release"
-        );
+        let claim_rel = || {
+            ahead.claim(
+                "rel",
+                &parent,
+                DownloadMeter::new(10, 0),
+                Uuid::nil(),
+                DownloadLane::warm(true),
+            )
+        };
+        let claim = claim_rel().unwrap();
+        assert!(claim_rel().is_none(), "two downloads of one release");
 
         let cancel = claim.cancel();
         let handed = tokio::spawn(async move {

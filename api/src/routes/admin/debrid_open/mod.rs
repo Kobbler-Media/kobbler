@@ -12,6 +12,7 @@ mod remote;
 mod response;
 mod reuse;
 mod subtitles;
+pub(crate) mod upgrade;
 
 pub(crate) use media::commit_media;
 pub(crate) use pin::{pin_file, resolve};

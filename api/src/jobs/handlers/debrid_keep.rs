@@ -193,12 +193,14 @@ async fn start_download(
     session: &PlaySession,
     cache_path: &Path,
 ) -> Result<JoinHandle<Result<(), String>>, String> {
-    let url = cache_ahead_url(state, session).await.map_err(|resp| {
-        format!(
-            "the debrid host would not serve the file ({})",
-            resp.status()
-        )
-    })?;
+    let url = cache_ahead_url(state, session, nats_jobs::StreamPriority::User)
+        .await
+        .map_err(|resp| {
+            format!(
+                "the debrid host would not serve the file ({})",
+                resp.status()
+            )
+        })?;
     if let Some(key) = crate::routes::admin::debrid_open::release_key(
         session.release_key.as_deref(),
         session.file_id,
