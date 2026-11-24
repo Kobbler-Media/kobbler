@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT MIN(e.air_date) AS \"premiere\"\n        FROM tv_episodes e\n        JOIN tv_seasons s ON s.id = e.season_id\n        WHERE e.season_id = $1 AND NOT s.is_special AND s.season_identifier <> '0'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "premiere",
+        "type_info": "Date",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3de0d280824ef132f4b08cf7661185bed0842f853242402b8780dd74fd003982"
+}

@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::jobs::JobContext;
+use crate::repositories::debrid_new_episodes;
 use crate::repositories::debrid_stream_sessions::{self as sessions, PlayedRelease};
 use crate::routes::helpers::build_kobload_client;
 
@@ -87,26 +88,29 @@ pub async fn record_played(state: &AppState, session_id: Uuid) {
     .await;
 
     if played.media_type == "episode" {
-        let payload = serde_json::json!({
-            "user_id": played.user_id,
-            "after_episode_id": played.media_id,
-        });
-        let context = JobContext::for_entity(
-            "episode",
-            played.media_id,
-            "Warming streams for the next episode",
-        );
-        if let Err(e) = crate::jobs::enqueue(
-            &state.pool,
-            state.nats.publisher(),
-            PREWARM_JOB,
-            payload,
-            context,
-        )
-        .await
-        {
-            warn!(error = %e, %session_id, "failed to queue next-episode prewarm");
+        queue_prewarm(state, played.user_id, played.media_id).await;
+    }
+}
+
+async fn queue_prewarm(state: &AppState, user_id: Uuid, after: Uuid) {
+    let next = match debrid_new_episodes::preload_due(&state.pool, PREWARM_JOB, after).await {
+        Ok(Some(next)) => next,
+        Ok(None) => return,
+        Err(e) => {
+            warn!(error = %e, %after, "next-episode prewarm check failed");
+            return;
         }
+    };
+    if let Err(e) = crate::jobs::enqueue(
+        &state.pool,
+        state.nats.publisher(),
+        PREWARM_JOB,
+        serde_json::json!({ "user_id": user_id, "episode_id": next }),
+        JobContext::for_entity("episode", next, "Warming streams for the next episode"),
+    )
+    .await
+    {
+        warn!(error = %e, episode_id = %next, "failed to queue next-episode prewarm");
     }
 }
 

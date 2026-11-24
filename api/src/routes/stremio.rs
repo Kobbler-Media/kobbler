@@ -1082,7 +1082,8 @@ async fn resolve_imdb_tv_episode(
                         .iter()
                         .filter_map(|e| e.air_date.clone())
                         .filter(|d| !d.is_empty())
-                        .min(),
+                        .min()
+                        .filter(|_| season_num != 0),
                 )
             } else {
                 (None, None, None)

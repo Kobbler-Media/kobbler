@@ -9,7 +9,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const PROVIDER_ID: &str = "00000000-0000-0000-0000-000000000001";
 
-async fn kobload_server() -> (TestServer, MockServer) {
+pub(crate) async fn kobload_server() -> (TestServer, MockServer) {
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path_regex("/api/v1/stream/outcome"))
@@ -28,7 +28,7 @@ async fn kobload_server() -> (TestServer, MockServer) {
     (server, mock)
 }
 
-async fn admin_id(server: &TestServer) -> Uuid {
+pub(crate) async fn admin_id(server: &TestServer) -> Uuid {
     sqlx::query_scalar("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
         .fetch_one(&server.pool)
         .await
@@ -93,14 +93,14 @@ async fn insert_show(server: &TestServer, title: &str) -> Vec<Uuid> {
     episodes
 }
 
-struct SessionSeed<'a> {
+pub(crate) struct SessionSeed<'a> {
     media_type: &'a str,
     media_id: Uuid,
     release_key: &'a str,
     file_id: Option<i32>,
     debrid_url: Option<&'a str>,
     debrid_url_expires_at: Option<&'a str>,
-    cache_path: Option<&'a str>,
+    pub(crate) cache_path: Option<&'a str>,
     created_minutes_ago: i64,
     played: bool,
 }
@@ -120,7 +120,7 @@ impl<'a> SessionSeed<'a> {
         }
     }
 
-    fn episode(media_id: Uuid, release_key: &'a str) -> Self {
+    pub(crate) fn episode(media_id: Uuid, release_key: &'a str) -> Self {
         Self {
             media_type: "episode",
             ..Self::new(media_id, release_key)
@@ -128,7 +128,11 @@ impl<'a> SessionSeed<'a> {
     }
 }
 
-async fn insert_session(server: &TestServer, user_id: Uuid, seed: SessionSeed<'_>) -> Uuid {
+pub(crate) async fn insert_session(
+    server: &TestServer,
+    user_id: Uuid,
+    seed: SessionSeed<'_>,
+) -> Uuid {
     let id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO debrid_stream_sessions
@@ -159,7 +163,7 @@ async fn insert_session(server: &TestServer, user_id: Uuid, seed: SessionSeed<'_
     id
 }
 
-async fn requests_to(mock: &MockServer, suffix: &str) -> Vec<Value> {
+pub(crate) async fn requests_to(mock: &MockServer, suffix: &str) -> Vec<Value> {
     mock.received_requests()
         .await
         .unwrap_or_default()
@@ -193,7 +197,7 @@ fn summary(report: &Value) -> (String, Option<i64>, bool, Option<String>) {
     )
 }
 
-fn option(release_key: &str, file_id: Option<i32>, playback: Option<&str>) -> Value {
+pub(crate) fn option(release_key: &str, file_id: Option<i32>, playback: Option<&str>) -> Value {
     let id = match file_id {
         Some(f) => format!("torrent_{release_key}_f{f}_{PROVIDER_ID}"),
         None => format!("torrent_{release_key}_{PROVIDER_ID}"),
@@ -223,7 +227,7 @@ fn option(release_key: &str, file_id: Option<i32>, playback: Option<&str>) -> Va
     value
 }
 
-async fn mount_search(mock: &MockServer, options: Vec<Value>) {
+pub(crate) async fn mount_search(mock: &MockServer, options: Vec<Value>) {
     Mock::given(method("POST"))
         .and(path_regex("/api/v1/stream/search"))
         .respond_with(
@@ -243,7 +247,7 @@ async fn search(server: &TestServer, body: Value) -> Value {
     resp.json()
 }
 
-fn outcome_path(session_id: Uuid) -> String {
+pub(crate) fn outcome_path(session_id: Uuid) -> String {
     format!("/api/v1/admin/stream/{session_id}/outcome")
 }
 

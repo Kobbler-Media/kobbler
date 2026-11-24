@@ -11,7 +11,7 @@ const RECENT_AIR_DAYS: i32 = 2;
 const RECENT_RETRY_HOURS: f64 = 2.0;
 const RETRY_HOURS: f64 = 12.0;
 // Real early releases land at most this far ahead of the listed date; earlier ones were fakes.
-const EARLY_RELEASE_DAYS: i32 = 3;
+pub(super) const EARLY_RELEASE_DAYS: i32 = 3;
 
 pub struct Due {
     pub user_id: Uuid,
@@ -106,6 +106,17 @@ pub async fn on_disk(pool: &PgPool, episode_ids: &[Uuid]) -> Result<HashSet<Uuid
     .fetch_all(pool)
     .await?;
     Ok(found.into_iter().collect())
+}
+
+/// The next episode after this one, when it may be preloaded and `job_type` is due to try it.
+pub async fn preload_due(pool: &PgPool, job_type: &str, after: Uuid) -> Result<Option<Uuid>> {
+    let Some(next) = super::tv_episodes::next_episode_to_preload(pool, after).await? else {
+        return Ok(None);
+    };
+    Ok(retry_due(pool, job_type, &[next])
+        .await?
+        .contains(&next)
+        .then_some(next))
 }
 
 /// Which of these episodes may be queued again. A job still alive holds its episode for as

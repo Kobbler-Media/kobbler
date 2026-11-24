@@ -974,33 +974,55 @@ fn extract_still_from_images(images: Option<serde_json::Value>) -> Option<String
     })
 }
 
-/// The episode after this one for streaming: unlike [`get_next_episode`] it needs no
-/// local file, only an air date that has passed (or none known). Specials are skipped.
-pub async fn next_streamable_episode<'e, E>(exec: E, episode_id: Uuid) -> Result<Option<Uuid>>
+/// The episode that plays next, if it is worth searching for yet. Never a later one: skipping
+/// a far-off episode for an undated one would fetch the wrong episode.
+///
+/// A date inside the early-release window needs a season already under way, since kobload
+/// refuses anything for a season yet to start. Further out, the season must have shown it runs
+/// ahead of its listing: the current episode, or another one here to play, is itself dated past
+/// the early-release window, where an ordinary early release cannot reach. The next episode's
+/// own copy is not evidence, as it may be the fake in question.
+pub async fn next_episode_to_preload<'e, E>(exec: E, episode_id: Uuid) -> Result<Option<Uuid>>
 where
     E: Executor<'e, Database = Postgres>,
 {
     let id = sqlx::query_scalar!(
         r#"
-        SELECT e.id
-        FROM tv_episodes cur
-        JOIN tv_seasons cs ON cs.id = cur.season_id
-        JOIN tv_seasons s ON s.show_id = cs.show_id AND NOT s.is_special
-        JOIN tv_shows sh ON sh.id = s.show_id
-        JOIN tv_episodes e ON e.season_id = s.id
-        WHERE cur.id = $1
-          AND (s.season_sort_order, e.episode_sort_order)
-              > (cs.season_sort_order, cur.episode_sort_order)
-          AND (e.air_date IS NULL
-               OR e.air_date <= CURRENT_DATE
-               OR (sh.content_category <> 'sport'
-                   AND EXISTS (SELECT 1 FROM tv_episodes premiered
-                               WHERE premiered.season_id = e.season_id
-                                 AND premiered.air_date <= CURRENT_DATE)))
-        ORDER BY s.season_sort_order, e.episode_sort_order
-        LIMIT 1
+        WITH next AS (
+            SELECT e.id, e.season_id, e.air_date, sh.content_category,
+                   e.season_id = cur.season_id AND cur.air_date > CURRENT_DATE + $2::int AS watching_early
+            FROM tv_episodes cur
+            JOIN tv_seasons cs ON cs.id = cur.season_id
+            JOIN tv_seasons s ON s.show_id = cs.show_id AND NOT s.is_special
+            JOIN tv_shows sh ON sh.id = s.show_id
+            JOIN tv_episodes e ON e.season_id = s.id
+            WHERE cur.id = $1
+              AND (s.season_sort_order, e.episode_sort_order)
+                  > (cs.season_sort_order, cur.episode_sort_order)
+            ORDER BY s.season_sort_order, e.episode_sort_order
+            LIMIT 1
+        )
+        SELECT n.id AS "id!"
+        FROM next n
+        WHERE n.air_date IS NULL
+           OR n.air_date <= CURRENT_DATE
+           OR (n.content_category <> 'sport'
+               AND (n.watching_early IS TRUE
+                    OR (n.air_date <= CURRENT_DATE + $2::int
+                        AND EXISTS (SELECT 1 FROM tv_episodes premiered
+                                    WHERE premiered.season_id = n.season_id
+                                      AND premiered.air_date <= CURRENT_DATE))
+                    OR EXISTS (SELECT 1 FROM tv_episodes ahead
+                               WHERE ahead.season_id = n.season_id
+                                 AND ahead.id <> n.id
+                                 AND ahead.air_date > CURRENT_DATE + $2::int
+                                 AND (debrid_episode_on_disk(ahead.id)
+                                      OR EXISTS (SELECT 1 FROM tv_episode_file_episodes fe
+                                                 JOIN tv_episode_files f ON f.id = fe.episode_file_id
+                                                 WHERE fe.episode_id = ahead.id AND f.available)))))
         "#,
         episode_id,
+        super::debrid_new_episodes::EARLY_RELEASE_DAYS,
     )
     .fetch_optional(exec)
     .await?;

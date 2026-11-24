@@ -39,9 +39,11 @@ async fn stremio_key(server: &TestServer) {
     .unwrap();
 }
 
-async fn stremio_search(server: &TestServer) {
+async fn stremio_search(server: &TestServer, season: u32) {
     TestClient::new(&server.api_url)
-        .get(&format!("/stremio/{KEY}/stream/series/{IMDB}:1:2.json"))
+        .get(&format!(
+            "/stremio/{KEY}/stream/series/{IMDB}:{season}:2.json"
+        ))
         .await
         .assert_ok();
 }
@@ -78,9 +80,38 @@ async fn dropped_season(rig: &Rig) -> (Uuid, String) {
 #[tokio::test]
 async fn every_library_episode_search_carries_the_season_premiere() {
     let rig = Rig::start(UpstreamPlan::new(noise(1024)), "ep.mkv").await;
+    let (episode, premiere) = dropped_season(&rig).await;
+    assert_every_search_sends(&rig, episode, 1, Some(premiere)).await;
+}
+
+/// S00 is a bag of one-offs, so its oldest special says nothing about when any other aired.
+/// Some import paths store season 0 without the special flag.
+#[tokio::test]
+async fn a_special_is_searched_without_a_premiere() {
+    for flagged in [true, false] {
+        let rig = Rig::start(UpstreamPlan::new(noise(1024)), "ep.mkv").await;
+        let (episode, _) = dropped_season(&rig).await;
+        sqlx::query(
+            "UPDATE tv_seasons SET season_identifier = '0', season_sort_order = 0, is_special = $2
+             WHERE id = (SELECT season_id FROM tv_episodes WHERE id = $1)",
+        )
+        .bind(episode)
+        .bind(flagged)
+        .execute(&rig.server.pool)
+        .await
+        .unwrap();
+        assert_every_search_sends(&rig, episode, 0, None).await;
+    }
+}
+
+async fn assert_every_search_sends(
+    rig: &Rig,
+    episode: Uuid,
+    season: u32,
+    premiere: Option<String>,
+) {
     rig.mount_search(json!([])).await;
     stremio_key(&rig.server).await;
-    let (episode, premiere) = dropped_season(&rig).await;
     let client = rig.server.admin_client();
     let user: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
         .fetch_one(&rig.server.pool)
@@ -108,18 +139,14 @@ async fn every_library_episode_search_carries_the_season_premiere() {
         )
         .await
         .unwrap();
-    stremio_search(&rig.server).await;
+    stremio_search(&rig.server, season).await;
     let searches = rig.kobload_requests("/stream/search").await;
     assert_eq!(searches.len(), 4, "search, prewarm, ahead, stremio");
     for (entry, request) in ["search", "prewarm", "ahead", "stremio"]
         .iter()
         .zip(&searches)
     {
-        assert_eq!(
-            premiere_in(request).as_ref(),
-            Some(&premiere),
-            "{entry}: {request}"
-        );
+        assert_eq!(premiere_in(request), premiere, "{entry}: {request}");
     }
 
     client
@@ -127,48 +154,50 @@ async fn every_library_episode_search_carries_the_season_premiere() {
         .await;
     let manual = rig.kobload_requests("/api/v1/search").await;
     assert_eq!(manual.len(), 1);
-    assert_eq!(premiere_in(&manual[0]).as_ref(), Some(&premiere), "manual");
+    assert_eq!(premiere_in(&manual[0]), premiere, "manual");
 }
 
 #[tokio::test]
 async fn a_stremio_search_outside_the_library_takes_the_premiere_from_tmdb() {
-    let (server, mock) = linked_server().await;
     let first = days_from_today(-10);
-    mount_show(
-        &mock,
-        IMDB,
-        777,
-        "Dropped Show",
-        "Returning Series",
-        "TV-14",
-        &[(
-            1,
-            &[(1, "One", first.clone()), (2, "Two", days_from_today(3))],
-        )],
-    )
-    .await;
-    Mock::given(method("POST"))
-        .and(path("/api/v1/stream/search"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "options": [] })))
-        .mount(&mock)
-        .await;
-    server
-        .admin_client()
-        .patch_json(
-            "/api/v1/admin/config",
-            &json!({ "kobload_base_url": mock.uri(), "kobload_api_key": "k" }),
+    for (season, expected) in [(1, Some(first.clone())), (0, None)] {
+        let (server, mock) = linked_server().await;
+        mount_show(
+            &mock,
+            IMDB,
+            777,
+            "Dropped Show",
+            "Returning Series",
+            "TV-14",
+            &[(
+                season,
+                &[(1, "One", first.clone()), (2, "Two", days_from_today(3))],
+            )],
         )
-        .await
-        .assert_ok();
-    stremio_key(&server).await;
+        .await;
+        Mock::given(method("POST"))
+            .and(path("/api/v1/stream/search"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "options": [] })))
+            .mount(&mock)
+            .await;
+        server
+            .admin_client()
+            .patch_json(
+                "/api/v1/admin/config",
+                &json!({ "kobload_base_url": mock.uri(), "kobload_api_key": "k" }),
+            )
+            .await
+            .assert_ok();
+        stremio_key(&server).await;
 
-    stremio_search(&server).await;
+        stremio_search(&server, season).await;
 
-    let requests = mock.received_requests().await.unwrap();
-    let search = requests
-        .iter()
-        .find(|r| r.url.path() == "/api/v1/stream/search")
-        .expect("no stream search");
-    let body: Value = serde_json::from_slice(&search.body).unwrap();
-    assert_eq!(premiere_in(&body), Some(first), "{body}");
+        let requests = mock.received_requests().await.unwrap();
+        let search = requests
+            .iter()
+            .find(|r| r.url.path() == "/api/v1/stream/search")
+            .expect("no stream search");
+        let body: Value = serde_json::from_slice(&search.body).unwrap();
+        assert_eq!(premiere_in(&body), expected, "season {season}: {body}");
+    }
 }

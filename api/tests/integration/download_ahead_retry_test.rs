@@ -94,8 +94,8 @@ const CASES: &[Case] = &[
     case("pre-air 2d, 4h", Some(-2), nothing_found(4), false, false),
     case("pre-air 2d, 13h", Some(-2), nothing_found(13), true, true),
     case("pre-air 3d, 13h", Some(-3), nothing_found(13), true, true),
-    case("pre-air 4d, 13h", Some(-4), nothing_found(13), false, true),
-    case("pre-air 5d, 13h", Some(-5), nothing_found(13), false, true),
+    case("pre-air 4d, 13h", Some(-4), nothing_found(13), false, false),
+    case("pre-air 5d, 13h", Some(-5), nothing_found(13), false, false),
     case(
         "fresh, downloaded 4h ago",
         Some(0),
@@ -294,10 +294,8 @@ async fn an_empty_search_before_the_air_date_is_no_failure_and_does_not_loop() {
     assert_eq!(jobs_for(server, next).await, 1, "requeued inside 12 hours");
 }
 
-/// A season dropped whole keeps its weekly listed dates, so a date in the future says nothing
-/// once the season has premiered. A season yet to premiere is still waited for.
 #[tokio::test]
-async fn the_mid_watch_preload_follows_the_season_premiere() {
+async fn the_mid_watch_preload_waits_for_the_early_release_window() {
     let server = TestServer::start_api_only().await;
     server
         .admin_client()
@@ -312,7 +310,8 @@ async fn the_mid_watch_preload_follows_the_season_premiere() {
         .await
         .unwrap();
     for (label, next_season, listed_in_days, queues) in [
-        ("premiered, listed in 10 days", false, 10, true),
+        ("premiered, listed in 10 days", false, 10, false),
+        ("premiered, listed in 3 days", false, 3, true),
         ("next season, premieres in 2 days", true, 2, false),
         ("next season, premieres in 10 days", true, 10, false),
     ] {
@@ -351,7 +350,7 @@ async fn the_mid_watch_preload_follows_the_season_premiere() {
             same_season_next
         };
         assert_eq!(
-            api::repositories::tv_episodes::next_streamable_episode(&server.pool, current)
+            api::repositories::tv_episodes::next_episode_to_preload(&server.pool, current)
                 .await
                 .unwrap(),
             queues.then_some(next),
@@ -377,7 +376,7 @@ async fn a_future_sport_event_is_not_preloaded() {
     .await
     .unwrap();
     assert_eq!(
-        api::repositories::tv_episodes::next_streamable_episode(&server.pool, current)
+        api::repositories::tv_episodes::next_episode_to_preload(&server.pool, current)
             .await
             .unwrap(),
         None

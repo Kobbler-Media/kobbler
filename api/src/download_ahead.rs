@@ -149,15 +149,14 @@ pub async fn consider(state: &AppState, user_id: Uuid, episode_id: Uuid) {
         return;
     }
     let pool = &state.pool;
-    let next =
-        match crate::repositories::tv_episodes::next_streamable_episode(pool, episode_id).await {
-            Ok(Some(next)) => next,
-            Ok(None) => return,
-            Err(e) => {
-                warn!(error = %e, %episode_id, "next episode lookup failed");
-                return;
-            }
-        };
+    let next = match debrid_new_episodes::preload_due(pool, DOWNLOAD_AHEAD_JOB, episode_id).await {
+        Ok(Some(next)) => next,
+        Ok(None) => return,
+        Err(e) => {
+            warn!(error = %e, %episode_id, "next episode preload check failed");
+            return;
+        }
+    };
     let missing = sqlx::query_scalar!(
         r#"
         SELECT NOT EXISTS(
@@ -171,13 +170,8 @@ pub async fn consider(state: &AppState, user_id: Uuid, episode_id: Uuid) {
     .fetch_one(pool)
     .await
     .unwrap_or(false);
-    if !missing {
-        return;
-    }
-    match debrid_new_episodes::retry_due(pool, DOWNLOAD_AHEAD_JOB, &[next]).await {
-        Ok(due) if due.contains(&next) => queue(state, user_id, next, None).await,
-        Ok(_) => {}
-        Err(e) => warn!(error = %e, episode_id = %next, "download ahead retry check failed"),
+    if missing {
+        queue(state, user_id, next, None).await;
     }
 }
 

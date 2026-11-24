@@ -7,7 +7,6 @@ export interface StreamSection {
 
 const TITLES: Record<StreamGroup, string> = {
   played: 'Played before',
-  account: 'On your debrid account',
   available: 'Available',
   uncached: 'Needs downloading',
   failed: 'Previously failed'
@@ -26,7 +25,7 @@ export function streamSections(options: StreamOption[]): StreamSection[] {
       reported.push(option);
       continue;
     }
-    const title = option.group ? TITLES[option.group] : null;
+    const title = (option.group && TITLES[option.group]) || null;
     const last = sections.at(-1);
     if (last && last.title === title) last.options.push(option);
     else sections.push({ title, options: [option] });

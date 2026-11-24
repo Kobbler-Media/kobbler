@@ -6635,7 +6635,7 @@ export interface NzbRef {
 
 export type StreamAvailability = 'ready' | 'likely' | 'unknown' | 'uncached';
 
-export type StreamGroup = 'played' | 'account' | 'available' | 'uncached' | 'failed';
+export type StreamGroup = 'played' | 'available' | 'uncached' | 'failed';
 
 export interface StreamSearchResponse {
   options: StreamOption[];

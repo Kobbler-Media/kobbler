@@ -123,10 +123,16 @@ where
 // =============================================================================
 
 /// The earliest listed air date of the season's episodes, as ISO 8601. Only informs a search,
-/// so a failed lookup costs the hint rather than the search.
+/// so a failed lookup costs the hint rather than the search. Specials have none: S00's oldest
+/// entry dates nothing else in it, and some import paths leave season 0 unflagged.
 pub async fn premiere(pool: &sqlx::PgPool, season_id: Uuid) -> Option<String> {
     sqlx::query_scalar!(
-        r#"SELECT MIN(air_date) AS "premiere" FROM tv_episodes WHERE season_id = $1"#,
+        r#"
+        SELECT MIN(e.air_date) AS "premiere"
+        FROM tv_episodes e
+        JOIN tv_seasons s ON s.id = e.season_id
+        WHERE e.season_id = $1 AND NOT s.is_special AND s.season_identifier <> '0'
+        "#,
         season_id,
     )
     .fetch_one(pool)

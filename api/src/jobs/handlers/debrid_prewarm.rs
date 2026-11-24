@@ -12,14 +12,13 @@ use crate::AppState;
 use crate::debrid_outcomes::PREWARM_JOB;
 use crate::jobs::worker::JobHandler;
 use crate::jobs::{JobError, JobResult};
-use crate::repositories::tv_episodes;
 use crate::routes::admin::stream_search_request::{self, SearchTarget};
 use crate::routes::helpers::build_kobload_client;
 
 #[derive(Deserialize)]
 struct Payload {
     user_id: Uuid,
-    after_episode_id: Uuid,
+    episode_id: Uuid,
 }
 
 pub struct DebridPrewarmHandler {
@@ -50,12 +49,7 @@ impl JobHandler for DebridPrewarmHandler {
     ) -> JobResult<Value> {
         nats_jobs::check_cancelled(&cancel)?;
         let payload: Payload = serde_json::from_value(payload)?;
-        let pool = &self.state.pool;
-        let Some(episode_id) =
-            tv_episodes::next_streamable_episode(pool, payload.after_episode_id).await?
-        else {
-            return Ok(json!({ "skipped": "no next episode" }));
-        };
+        let episode_id = payload.episode_id;
 
         let request = stream_search_request::prepare(
             &self.state,
@@ -74,6 +68,10 @@ impl JobHandler for DebridPrewarmHandler {
             .stream_search(&request)
             .await
             .map_err(|e| JobError::retryable(e.to_string()))?;
+        // `retry_due` holds a `skipped` result for the shorter interval of a fresh air date.
+        if response.options.is_empty() {
+            return Ok(json!({ "episode_id": episode_id, "skipped": "no options" }));
+        }
         Ok(json!({ "episode_id": episode_id, "options": response.options.len() }))
     }
 }
