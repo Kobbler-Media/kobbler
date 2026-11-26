@@ -179,7 +179,8 @@ async fn mp3_as_mp4_is_an_audio_only_faststart_mp4_of_the_mp3_stream() {
         .unwrap()
         .parse()
         .unwrap();
-    assert!((duration - 20.0).abs() < 0.01, "duration {duration}");
+    // libmp3lame's encoder delay makes a nominal 20 s fixture 20.024 s on FFmpeg 9.
+    assert!((duration - 20.0).abs() < 0.03, "duration {duration}");
 }
 
 #[tokio::test]

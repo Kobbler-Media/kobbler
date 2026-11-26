@@ -1,7 +1,8 @@
 //! Discord as a notification agent — the unaddressed half.
 //!
 //! This is the firehose: grabs, imports and failures posted into one channel, for anyone
-//! who wants to watch the library fill up. It is deliberately *not* the same thing as the
+//! who wants to watch the library fill up. Failures, corruption reports and server health
+//! alerts can be split into a separate system channel (`system_channel_id`). It is deliberately *not* the same thing as the
 //! assistant answering someone. A download somebody asked for in a DM is followed up in
 //! that DM by [`crate::chatbot::watches`], which knows who asked.
 //!
@@ -64,6 +65,17 @@ static CONFIG_FIELDS: &[NotificationConfigField] = &[
         help_url: None,
         default: None,
     },
+    NotificationConfigField {
+        key: "system_channel_id",
+        label: "System Notices Channel ID",
+        field_type: ConfigFieldType::String,
+        required: false,
+        description: Some(
+            "Optional. Failed downloads, corrupt media and server health alerts go here instead of the announcements channel. Leave blank to keep everything in one channel",
+        ),
+        help_url: None,
+        default: None,
+    },
 ];
 
 static SUPPORTED_TRIGGERS: &[NotificationTrigger] = &[
@@ -109,6 +121,7 @@ impl NotificationAgentFactory for DiscordFactory {
             client,
             token: field("bot_token"),
             channel_id: field("channel_id"),
+            system_channel_id: field("system_channel_id"),
             pool: pool.clone(),
             agent_id,
         })
@@ -119,6 +132,9 @@ struct DiscordAgent {
     client: reqwest::Client,
     token: String,
     channel_id: String,
+    /// Where failures, corruption reports and health alerts go; empty means they share
+    /// `channel_id` with the releases.
+    system_channel_id: String,
     pool: PgPool,
     agent_id: Uuid,
 }
@@ -145,7 +161,7 @@ impl NotificationAgent for DiscordAgent {
             }
             _ => {
                 let embed = render_embed(payload, today());
-                self.post_content(&self.channel_id, &render(payload), embed)
+                self.post_content(self.channel_for(payload.trigger), &render(payload), embed)
                     .await?;
                 Ok(())
             }
@@ -154,6 +170,21 @@ impl NotificationAgent for DiscordAgent {
 }
 
 impl DiscordAgent {
+    /// Releases (grabs, imports) and tests live in the announcements channel; the rest
+    /// are system notices and move to their own channel when one is configured.
+    fn channel_for(&self, trigger: NotificationTrigger) -> &str {
+        match trigger {
+            NotificationTrigger::OnFailed
+            | NotificationTrigger::OnMediaCorrupt
+            | NotificationTrigger::OnServerHealth
+                if !self.system_channel_id.is_empty() =>
+            {
+                &self.system_channel_id
+            }
+            _ => &self.channel_id,
+        }
+    }
+
     /// Announce an item, or — when it replaced a file already in the library — bring
     /// its existing message up to date without a sound.
     async fn send_release(
@@ -790,12 +821,54 @@ mod tests {
         assert!(text.ends_with("..."));
     }
 
+    fn agent(channel_id: &str, system_channel_id: &str) -> DiscordAgent {
+        DiscordAgent {
+            client: reqwest::Client::new(),
+            token: "token".to_string(),
+            channel_id: channel_id.to_string(),
+            system_channel_id: system_channel_id.to_string(),
+            pool: sqlx::Pool::<sqlx::Postgres>::connect_lazy("postgres://localhost/dummy")
+                .expect("lazy pool"),
+            agent_id: Uuid::nil(),
+        }
+    }
+
+    #[tokio::test]
+    async fn system_notices_go_to_their_own_channel_when_one_is_set() {
+        use NotificationTrigger::*;
+        let cases = [
+            (OnGrab, "releases"),
+            (OnImport, "releases"),
+            (OnTest, "releases"),
+            (OnFailed, "system"),
+            (OnMediaCorrupt, "system"),
+            (OnServerHealth, "system"),
+        ];
+        let split = agent("releases", "system");
+        let unset = agent("releases", "");
+        for (trigger, expected) in cases {
+            assert_eq!(split.channel_for(trigger), expected, "{trigger:?}");
+            assert_eq!(unset.channel_for(trigger), "releases", "{trigger:?} unset");
+        }
+    }
+
+    /// Existing agents were saved without the field and must keep working unchanged.
+    #[test]
+    fn the_system_channel_is_an_optional_field() {
+        let field = CONFIG_FIELDS
+            .iter()
+            .find(|f| f.key == "system_channel_id")
+            .expect("system_channel_id field");
+        assert!(!field.required);
+    }
+
     #[tokio::test]
     async fn missing_config_is_reported_rather_than_requested() {
         let agent = DiscordAgent {
             client: reqwest::Client::new(),
             token: String::new(),
             channel_id: "1".to_string(),
+            system_channel_id: String::new(),
             pool: sqlx::Pool::<sqlx::Postgres>::connect_lazy("postgres://localhost/dummy")
                 .expect("lazy pool"),
             agent_id: Uuid::nil(),

@@ -12,10 +12,12 @@
   let loading = $state(true);
   let error = $state('');
 
-  const channelId = $derived.by(() => {
-    const raw = agent?.config?.['channel_id'];
+  const configuredChannel = (key: string) => {
+    const raw = agent?.config?.[key];
     return typeof raw === 'string' ? raw.trim() : '';
-  });
+  };
+  const channelId = $derived(configuredChannel('channel_id'));
+  const systemChannelId = $derived(configuredChannel('system_channel_id'));
 
   onMount(async () => {
     try {
@@ -76,8 +78,10 @@
               </button>
             </div>
             <p class="hint">
-              Grabs, imports and failures are posted here. Questions asked in a DM are answered in
-              that DM, not in this channel.
+              Grabs and imports are posted here{systemChannelId
+                ? ''
+                : ', along with failures and server alerts'}. Questions asked in a DM are answered
+              in that DM, not in this channel.
             </p>
           {:else}
             <p class="hint">
@@ -88,6 +92,25 @@
             </p>
           {/if}
         </div>
+
+        {#if systemChannelId}
+          <div class="field">
+            <div class="field-label">System notices channel</div>
+            <div class="value-row">
+              <code class="value">{systemChannelId}</code>
+              <button
+                class="btn alt small"
+                type="button"
+                onclick={() => copyText(systemChannelId, 'Channel ID')}
+              >
+                Copy
+              </button>
+            </div>
+            <p class="hint">
+              Failed downloads, corrupt media and server health alerts are posted here.
+            </p>
+          </div>
+        {/if}
       </div>
 
       <div class="steps">
