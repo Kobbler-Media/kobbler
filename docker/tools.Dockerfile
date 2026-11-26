@@ -6,9 +6,13 @@
 # Base: debian:sid + deb-multimedia for ffmpeg with libfdk_aac.
 # We want ffmpeg ≥7.0 (kob-ffmpeg-sys uses AVBufferSrcParameters.side_data)
 # and libfdk_aac (--enable-nonfree, materially better AAC than native at
-# kobbler's 256k HLS default). deb-multimedia ships exactly that on sid as
-# `ffmpeg 8.1` — no from-source build needed. Was previously a multi-stage
-# from-source compile because BtbN's GPL build excludes libfdk_aac.
+# kobbler's 256k HLS default). deb-multimedia ships exactly that on sid — no
+# from-source build needed. Was previously a multi-stage from-source compile
+# because BtbN's GPL build excludes libfdk_aac.
+#
+# The version is whatever sid carries when this layer is built, and Docker will
+# keep serving the cached layer: `docker build --no-cache` to pick up a newer
+# ffmpeg.
 
 FROM debian:sid-slim
 LABEL org.opencontainers.image.source="https://github.com/Kobbler-Media/kobbler"
